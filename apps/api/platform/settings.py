@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://nais_app:nais@localhost:21055/nais"
     migration_database_url: str = "postgresql+psycopg://nais_migrator:nais@localhost:21055/nais"
     redis_url: str = "redis://nais:nais@localhost:21058/0"
-    opensearch_url: str = "http://localhost:21056"
-    opa_url: str = "http://localhost:21057"
+    opensearch_url: str = "http://nais:nais@localhost:21056"
+    opa_url: str = "http://nais:nais@localhost:21057"
     opa_timeout_ms: int = 500
     oidc_issuer: str = "http://localhost:21051/auth/realms/nais"
     oidc_internal_jwks_url: str = "http://localhost:21051/auth/realms/nais/protocol/openid-connect/certs"

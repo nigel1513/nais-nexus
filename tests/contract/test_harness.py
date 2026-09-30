@@ -23,6 +23,11 @@ def test_valid_body_passes() -> None:
     assert_matches_response("getProject", 200, PROJECT)
 
 
+def test_formats_are_checked() -> None:
+    with pytest.raises(AssertionError, match="project_id"):
+        assert_matches_response("getProject", 200, {**PROJECT, "project_id": "not-a-uuid"})
+
+
 def test_contract_violation_fails_with_readable_message() -> None:
     with pytest.raises(AssertionError, match="DELETED"):
         assert_matches_response("getProject", 200, {**PROJECT, "status": "DELETED"})

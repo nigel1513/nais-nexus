@@ -4,9 +4,15 @@ import importlib
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter
+
+if TYPE_CHECKING:  # annotations only; keeps this module import-light and cycle-free
+    import dramatiq
+    from sqlalchemy.orm import Session
+
+    from api.platform.scheduler import Scheduler
 
 DEFAULT_MODULE_ORDER: tuple[str, ...] = (
     "identity",
@@ -36,8 +42,8 @@ class ModuleSpec:
     router: APIRouter | None = None
     migrations_dir: Path | None = None
     wire: Callable[[], None] | None = None
-    register_worker: Callable[[Any, Any], None] | None = None  # (broker, scheduler)
-    seed: Callable[[Any], None] | None = None  # (session)
+    register_worker: "Callable[[dramatiq.Broker, Scheduler], None] | None" = None
+    seed: "Callable[[Session], None] | None" = None
 
 
 def discover_modules(names: Iterable[str] = DEFAULT_MODULE_ORDER) -> list[ModuleSpec]:

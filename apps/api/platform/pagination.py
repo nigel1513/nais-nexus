@@ -2,7 +2,7 @@
 
 import base64
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any
 
@@ -40,7 +40,11 @@ def _invalid_cursor() -> ApiError:
 
 
 def encode_cursor(values: Sequence[Any]) -> str:
-    raw = json.dumps(values, separators=(",", ":"), default=str).encode()
+    """values = the sort key of the last item (list, tuple, SQLAlchemy Row, deque...); scalars inside may be str()-ified."""
+    if isinstance(values, Mapping | str | bytes):
+        raise TypeError(f"cursor values must be a sequence of sort-key values, got {type(values).__name__}")
+    items = values if isinstance(values, list | tuple) else list(values)
+    raw = json.dumps(items, separators=(",", ":"), default=str).encode()
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 

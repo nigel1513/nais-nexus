@@ -1,5 +1,8 @@
+import base64
+from collections import deque
 from typing import Annotated
 
+import pytest
 from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 
@@ -35,9 +38,26 @@ def test_garbage_cursor_is_422() -> None:
 
 
 def test_non_list_cursor_is_422() -> None:
-    for payload in ({"a": 1}, []):
-        response = make_client().get("/api/v1/things", params={"cursor": encode_cursor(payload)})  # type: ignore[arg-type]
+    for raw in (b'{"a":1}', b"[]"):
+        cursor = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+        response = make_client().get("/api/v1/things", params={"cursor": cursor})
         assert response.status_code == 422
+
+
+class FakeRow(tuple):  # type: ignore[type-arg]  # like sqlalchemy.engine.Row: a tuple subclass
+    pass
+
+
+def test_encode_cursor_accepts_tuples_and_row_like_sequences() -> None:
+    assert decode_cursor(encode_cursor(("2026-09-30", 7))) == ["2026-09-30", 7]
+    assert decode_cursor(encode_cursor(FakeRow(("2026-09-30", 7)))) == ["2026-09-30", 7]
+    assert decode_cursor(encode_cursor(deque(["a", 1]))) == ["a", 1]
+
+
+def test_encode_cursor_rejects_mappings_and_strings() -> None:
+    for bad in ({"a": 1}, "abc", b"abc"):
+        with pytest.raises(TypeError):
+            encode_cursor(bad)  # type: ignore[arg-type]
 
 
 def test_oversized_cursor_and_bad_limits_are_422() -> None:

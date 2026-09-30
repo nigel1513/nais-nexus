@@ -49,7 +49,7 @@ filterwarnings = [
 [tool.ruff]
 line-length = 110
 target-version = "py313"
-extend-exclude = ["apps/api/platform/generated", "packages/contracts/python/nais_contracts/api_models.py"]
+extend-exclude = ["apps/api/platform/generated", "packages/contracts/python/nais_contracts/api_models.py", "*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM"]

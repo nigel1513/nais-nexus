@@ -54,7 +54,10 @@ def assert_matches_response(operation_id: str, status_code: int, body: Any) -> N
             raise AssertionError(f"{operation_id} {status_code} declares no body but got {body!r}")
         return
     root = {**_spec(), "$ref": _pointer(*base, "content", "application/json", "schema")}
-    errors = sorted(Draft202012Validator(root).iter_errors(body), key=lambda e: list(e.absolute_path))
+    errors = sorted(
+        Draft202012Validator(root, format_checker=Draft202012Validator.FORMAT_CHECKER).iter_errors(body),
+        key=lambda e: list(e.absolute_path),
+    )
     if errors:
         details = "\n".join(
             f"  {'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}" for e in errors
