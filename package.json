@@ -1,0 +1,8 @@
+{
+  "name": "nais-ai-os",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "contracts": "uv run python packages/contracts/generate.py"
+  }
+}
