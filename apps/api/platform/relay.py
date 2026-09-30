@@ -67,7 +67,21 @@ def dispatch_batch(
             .with_for_update(skip_locked=True)
         ).all()
         for row in rows:
-            envelope = EventEnvelope.model_validate(row.envelope)
+            try:
+                envelope = EventEnvelope.model_validate(row.envelope)
+            except Exception as exc:
+                logger.error("outbox envelope is unparsable, dead-lettering", extra={"outbox_id": row.id})
+                session.execute(
+                    update(outbox_events)
+                    .where(outbox_events.c.id == row.id)
+                    .values(
+                        attempts=row.attempts + 1,
+                        dead_at=now(),
+                        last_error=f"invalid envelope: {exc}"[:4000],
+                    )
+                )
+                dead += 1
+                continue
             error = _run_handlers(session_factory, registry, envelope)
             current = now()
             values: dict[str, Any]

@@ -4,7 +4,7 @@ import uuid
 from collections import Counter
 from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, insert, select
 
 from api.platform import clock
 from api.platform.context import correlation_id
@@ -12,7 +12,7 @@ from api.platform.db import session_factory
 from api.platform.event_bus import HandlerRegistry
 from api.platform.events import EventActor, EventEnvelope
 from api.platform.outbox import OutboxWriter, outbox_events
-from api.platform.relay import dispatch_batch
+from api.platform.relay import RelayResult, dispatch_batch
 from api.platform.testing.fixtures import PgUrls
 
 EVENT = "project.archived.v1"
@@ -123,3 +123,26 @@ def test_concurrent_relays_dispatch_each_event_once(migrated_db: PgUrls) -> None
         thread.join()
     assert set(counts) == set(ids)
     assert set(counts.values()) == {1}
+
+
+def test_unparsable_envelope_is_dead_lettered_without_blocking_others(migrated_db: PgUrls) -> None:
+    clear_outbox(migrated_db.app)
+    calls: list[uuid.UUID] = []
+    registry = HandlerRegistry()
+
+    @registry.subscribe(EVENT)
+    def handler(session, event: EventEnvelope) -> None:  # type: ignore[no-untyped-def]
+        calls.append(event.event_id)
+
+    bad_id = uuid.uuid4()
+    with session_factory(migrated_db.app)() as session, session.begin():
+        session.execute(
+            insert(outbox_events).values(event_id=bad_id, event_type=EVENT, envelope={"garbage": True})
+        )
+    [good_id] = publish(migrated_db.app)
+    result = dispatch_batch(session_factory(migrated_db.app), registry)
+    assert result == RelayResult(dispatched=1, retried=0, dead=1)
+    bad = row(migrated_db.app, bad_id)
+    assert bad.dead_at is not None and bad.attempts == 1 and bad.last_error.startswith("invalid envelope:")
+    assert calls == [good_id]
+    assert row(migrated_db.app, good_id).dispatched_at is not None
