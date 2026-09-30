@@ -10,7 +10,7 @@ start=$(date +%s)
 
 wait_for() {
   local url=$1
-  until curl -fsS -o /dev/null "$url"; do
+  until curl -fsS --max-time 5 -o /dev/null "$url"; do
     if (( $(date +%s) - start > 120 )); then
       echo "GATE A FAIL: $url not healthy within 120s"
       docker compose ps
@@ -33,6 +33,8 @@ set -a
 # shellcheck disable=SC1091
 . ./.env
 set +a
+# .env may carry the external public URL (unreachable from inside the LAN); the smoke always targets the local gateway.
+export NAIS_PUBLIC_BASE_URL="$BASE"
 PYTHONPATH=apps uv run python scripts/storage_smoke.py
 
 fail() { echo "GATE A FAIL: $1"; exit 1; }
@@ -54,8 +56,12 @@ authed_ok "http://localhost:21057/health"
 unauth_401 "http://localhost:21057/health"
 authed_ok "http://localhost:21052/"
 
-docker compose exec -T postgres psql "postgresql://nais:nais@localhost:5432/nais" -c "select 1" >/dev/null \
+# Over the network (-h postgres) so password auth applies; loopback inside the container is trust auth.
+[[ "$(docker compose exec -T -e PGPASSWORD=nais postgres psql -h postgres -U nais -d nais -tAc "select 1" | tr -d '\r')" == "1" ]] \
   || fail "postgres login nais/nais failed"
+if docker compose exec -T -e PGPASSWORD=wrong-password postgres psql -h postgres -U nais -d nais -tAc "select 1" >/dev/null 2>&1; then
+  fail "postgres accepted a wrong password for nais"
+fi
 echo "ok  postgres login nais/nais"
 [[ "$(docker compose exec -T redis redis-cli --user nais --pass nais --no-auth-warning ping | tr -d '\r')" == "PONG" ]] \
   || fail "redis auth nais/nais did not return PONG"
