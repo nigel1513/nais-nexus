@@ -8,7 +8,13 @@ from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from api.platform import ports
-from api.platform.auth import CurrentUser, CurrentUserDep, PrincipalResolver, TokenVerifier, get_token_verifier
+from api.platform.auth import (
+    CurrentUser,
+    CurrentUserDep,
+    PrincipalResolver,
+    TokenVerifier,
+    get_token_verifier,
+)
 from api.platform.errors import ApiError
 from api.platform.events import EventActor
 from api.platform.modules import ModuleSpec
@@ -28,12 +34,20 @@ class FakeResolver:
         if self.error:
             raise self.error
         return CurrentUser(
-            user_id=USER_ID, organization_id=ORG_ID, org_roles=frozenset({"DATA_STEWARD"}),
-            session_id=claims["sid"], display_name=claims["name"],
+            user_id=USER_ID,
+            organization_id=ORG_ID,
+            org_roles=frozenset({"DATA_STEWARD"}),
+            session_id=claims["sid"],
+            display_name=claims["name"],
         )
 
 
-def make_client(*, jwk_fail: Exception | None = None, resolver: FakeResolver | None = FakeResolver()) -> TestClient:
+DEFAULT_RESOLVER = FakeResolver()
+
+
+def make_client(
+    *, jwk_fail: Exception | None = None, resolver: FakeResolver | None = DEFAULT_RESOLVER
+) -> TestClient:
     router = APIRouter()
 
     @router.get("/whoami")
@@ -81,14 +95,28 @@ def test_invalid_claims_are_401(claims: dict[str, Any]) -> None:
 
 def test_alg_none_is_rejected() -> None:
     now = int(time.time())
-    payload = {"iss": ISSUER.issuer, "aud": ISSUER.audience, "sub": "x", "iat": now, "exp": now + 300, "sid": "s"}
+    payload = {
+        "iss": ISSUER.issuer,
+        "aud": ISSUER.audience,
+        "sub": "x",
+        "iat": now,
+        "exp": now + 300,
+        "sid": "s",
+    }
     token = jwt.encode(payload, None, algorithm="none", headers={"kid": ISSUER.kid})  # type: ignore[arg-type]
     assert call(make_client(), token).status_code == 401
 
 
 def test_hs256_with_public_key_is_rejected() -> None:
     now = int(time.time())
-    payload = {"iss": ISSUER.issuer, "aud": ISSUER.audience, "sub": "x", "iat": now, "exp": now + 300, "sid": "s"}
+    payload = {
+        "iss": ISSUER.issuer,
+        "aud": ISSUER.audience,
+        "sub": "x",
+        "iat": now,
+        "exp": now + 300,
+        "sid": "s",
+    }
     token = forge_hs256(payload, ISSUER.public_pem(), ISSUER.kid)
     assert call(make_client(), token).status_code == 401
 

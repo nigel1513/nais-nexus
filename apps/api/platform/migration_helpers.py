@@ -11,6 +11,8 @@ def create_processed_events(schema: str) -> None:
         "processed_events",
         sa.Column("event_id", UUID(as_uuid=True), primary_key=True),
         sa.Column("event_type", sa.Text, nullable=False),
-        sa.Column("processed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "processed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
+        ),
         schema=schema,
     )

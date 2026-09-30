@@ -82,13 +82,17 @@ Purpose = Literal["ACADEMIC_RESEARCH", "AI_TRAINING", "COMMERCIAL_RESEARCH", "ED
 # Governance는 storage_bucket/storage_key를 읽거나 로그에 남기지 않는다.
 from api.modules.catalog.ports import DatasetPolicyView, VersionView, PresignedGet  # 계약 타입만 import
 
-class CatalogQueryPort(Protocol):   # 구현: M03
+
+class CatalogQueryPort(Protocol):  # 구현: M03
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None: ...
     def get_version(self, dataset_version_id: UUID) -> VersionView | None: ...
 
-class StoragePort(Protocol):        # 구현: M03 (catalog가 key를 알고, governance가 권한을 결정)
-    def presign_get(self, dataset_version_id: UUID, file_ids: Sequence[UUID] | None,
-                    ttl_seconds: int) -> list[PresignedGet]: ...   # 알 수 없는 file_id → ValueError(NOT_FOUND)
+
+class StoragePort(Protocol):  # 구현: M03 (catalog가 key를 알고, governance가 권한을 결정)
+    def presign_get(
+        self, dataset_version_id: UUID, file_ids: Sequence[UUID] | None, ttl_seconds: int
+    ) -> list[PresignedGet]: ...  # 알 수 없는 file_id → ValueError(NOT_FOUND)
+
 
 @dataclass(frozen=True)
 class ProjectSummary:
@@ -97,24 +101,28 @@ class ProjectSummary:
     status: Literal["ACTIVE", "ARCHIVED"]
     lead_organization_id: UUID
 
+
 class ProjectQueryPort(Protocol):
     def get_summary(self, project_id: UUID) -> ProjectSummary | None: ...
     def is_active_member(self, project_id: UUID, user_id: UUID) -> bool: ...
     def get_member_role(self, project_id: UUID, user_id: UUID) -> str | None: ...  # ProjectRole
 
+
 @dataclass(frozen=True)
-class Principal:                    # platform auth dependency가 요청마다 구성
+class Principal:  # platform auth dependency가 요청마다 구성
     user_id: UUID
     organization_id: UUID
     organization_code: str
-    org_roles: frozenset[str]        # ORG_ADMIN / DATA_STEWARD / RESOURCE_MANAGER
-    platform_roles: frozenset[str]   # PLATFORM_ADMIN
+    org_roles: frozenset[str]  # ORG_ADMIN / DATA_STEWARD / RESOURCE_MANAGER
+    platform_roles: frozenset[str]  # PLATFORM_ADMIN
     user_status: Literal["ACTIVE", "DISABLED"]
     membership_status: Literal["ACTIVE", "DISABLED"]
 
+
 class IdentityPort(Protocol):
-    def get_principal(self, user_id: UUID) -> Principal | None: ...     # 이벤트 핸들러/잡용
-    def get_public_profile(self, user_id: UUID) -> dict | None: ...     # IdentityPublicProfile
+    def get_principal(self, user_id: UUID) -> Principal | None: ...  # 이벤트 핸들러/잡용
+    def get_public_profile(self, user_id: UUID) -> dict | None: ...  # IdentityPublicProfile
+
 
 @dataclass(frozen=True)
 class OpaDecision:
@@ -123,8 +131,11 @@ class OpaDecision:
     reasons: tuple[str, ...]
     policy_version: str
 
+
 class PolicyDecisionPort(Protocol):  # adapters/opa_http.py, 08_OPA_POLICY.md
-    def decide_data_access(self, opa_input: dict) -> OpaDecision: ...   # timeout/오류 시 PolicyEngineUnavailable raise
+    def decide_data_access(
+        self, opa_input: dict
+    ) -> OpaDecision: ...  # timeout/오류 시 PolicyEngineUnavailable raise
 ```
 
 ### 3.2 Platform 제공 (Agent 0)
@@ -462,8 +473,15 @@ envelope `actor`: 사용자 행위는 `{type: USER, user_id, organization_id}`, 
 
 ```python
 class GrantQueryPort(Protocol):
-    def has_active_grant(self, *, user_id: UUID, project_id: UUID, dataset_id: UUID,
-                         operation: Literal["READ", "COMPUTE"], at: datetime | None = None) -> bool:
+    def has_active_grant(
+        self,
+        *,
+        user_id: UUID,
+        project_id: UUID,
+        dataset_id: UUID,
+        operation: Literal["READ", "COMPUTE"],
+        at: datetime | None = None,
+    ) -> bool:
         """status=ACTIVE ∧ valid_from <= at < expires_at ∧ operation ∈ operations. at 기본값 now."""
 
     def list_active_grant_subjects(self, dataset_id: UUID) -> list[UUID]:
@@ -472,10 +490,17 @@ class GrantQueryPort(Protocol):
     def list_active_grants_for_project(self, project_id: UUID) -> list["GrantSummary"]:
         """P1: 프로젝트 화면/Compute가 연결 가능한 dataset 목록 조회."""
 
-    def authorize_dataset_access(self, *, principal: Principal, dataset_id: UUID,
-                                 dataset_version_id: UUID, project_id: UUID | None,
-                                 operation: Literal["READ", "COMPUTE"]) -> "AccessDecision":
+    def authorize_dataset_access(
+        self,
+        *,
+        principal: Principal,
+        dataset_id: UUID,
+        dataset_version_id: UUID,
+        project_id: UUID | None,
+        operation: Literal["READ", "COMPUTE"],
+    ) -> "AccessDecision":
         """§6.12 step 1~8과 동일 판정(presign 제외). P1 Compute, P2 Data Node가 재사용. 감사 이벤트 발행 포함."""
+
 
 @dataclass(frozen=True)
 class GrantSummary:
@@ -484,6 +509,7 @@ class GrantSummary:
     dataset_id: UUID
     operations: tuple[str, ...]
     expires_at: datetime
+
 
 @dataclass(frozen=True)
 class AccessDecision:

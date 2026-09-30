@@ -3,10 +3,9 @@ from collections import Counter
 from pathlib import PurePosixPath
 
 import yaml
+from api.platform.settings import Settings
 from jsonschema import Draft202012Validator
 from openapi_spec_validator import validate
-
-from api.platform.settings import Settings
 
 CONTRACTS = Settings().contracts_dir
 
@@ -20,7 +19,12 @@ def test_openapi_is_valid() -> None:
 
 
 def test_operation_ids_are_unique() -> None:
-    ids = [op["operationId"] for item in load_openapi()["paths"].values() for op in item.values() if isinstance(op, dict) and "operationId" in op]
+    ids = [
+        op["operationId"]
+        for item in load_openapi()["paths"].values()
+        for op in item.values()
+        if isinstance(op, dict) and "operationId" in op
+    ]
     assert [i for i, n in Counter(ids).items() if n > 1] == []
 
 
@@ -40,11 +44,16 @@ def test_error_codes_are_unique_and_use_known_statuses() -> None:
 
 def test_module_ownership_paths_do_not_overlap() -> None:
     ownership = json.loads((CONTRACTS / "module_ownership.json").read_text())
-    owned = [(module, PurePosixPath(p)) for module, spec in ownership.items() if isinstance(spec, dict) for p in spec.get("path", [])]
+    owned = [
+        (module, PurePosixPath(p))
+        for module, spec in ownership.items()
+        if isinstance(spec, dict)
+        for p in spec.get("path", [])
+    ]
     clashes = [
         (a, str(pa), b, str(pb))
         for i, (a, pa) in enumerate(owned)
-        for b, pb in owned[i + 1:]
+        for b, pb in owned[i + 1 :]
         if a != b and (pa == pb or pa in pb.parents or pb in pa.parents)
     ]
     assert clashes == []

@@ -42,8 +42,15 @@ class FakeIssuer:
     def token(self, *, expires_in: int = 300, **claims: Any) -> str:
         now = int(time.time())
         payload = {
-            "iss": self.issuer, "aud": self.audience, "sub": "kc-user-1", "iat": now, "exp": now + expires_in,
-            "sid": "session-1", "email": "a.researcher@inst-a.local", "name": "A Researcher", "org_code": "inst-a",
+            "iss": self.issuer,
+            "aud": self.audience,
+            "sub": "kc-user-1",
+            "iat": now,
+            "exp": now + expires_in,
+            "sid": "session-1",
+            "email": "a.researcher@inst-a.local",
+            "name": "A Researcher",
+            "org_code": "inst-a",
         }
         payload.update(claims)
         return jwt.encode(payload, self.private_key, algorithm="RS256", headers={"kid": self.kid})

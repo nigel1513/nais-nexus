@@ -53,7 +53,9 @@ def upgrade_all(url: str, modules: Sequence[ModuleSpec], *, sql: bool = False) -
 
 def new_revision(url: str, target: MigrationTarget, message: str) -> Path:
     target.versions_dir.mkdir(parents=True, exist_ok=True)
-    script = command.revision(alembic_config(url, target), message=message, version_path=str(target.versions_dir))
+    script = command.revision(
+        alembic_config(url, target), message=message, version_path=str(target.versions_dir)
+    )
     if script is None or isinstance(script, list):
         raise RuntimeError("alembic did not create exactly one revision")
     return Path(script.path)

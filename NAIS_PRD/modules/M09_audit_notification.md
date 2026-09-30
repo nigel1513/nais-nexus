@@ -47,20 +47,23 @@
 
 ### Ports consumed
 ```python
-class IdentityQueryPort(Protocol):     # M01
+class IdentityQueryPort(Protocol):  # M01
     def get_public_profiles(self, user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]: ...
     def list_users_with_org_role(self, organization_id: UUID, role: str) -> list[UUID]: ...
     def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool: ...
-    def get_email(self, user_id: UUID) -> str | None: ...      # 알림 메일 전용 (M01 §8에 정의)
+    def get_email(self, user_id: UUID) -> str | None: ...  # 알림 메일 전용 (M01 §8에 정의)
 
-class ProjectQueryPort(Protocol):      # M02
+
+class ProjectQueryPort(Protocol):  # M02
     def list_project_ids_for_member(self, user_id: UUID) -> list[UUID]: ...
     def is_active_member(self, project_id: UUID, user_id: UUID) -> bool: ...
 
-class CatalogQueryPort(Protocol):      # M03 §8 (정본). title, owner_organization_id 사용
+
+class CatalogQueryPort(Protocol):  # M03 §8 (정본). title, owner_organization_id 사용
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None: ...
 
-class GrantQueryPort(Protocol):        # M04 §8 (정본)
+
+class GrantQueryPort(Protocol):  # M04 §8 (정본)
     def list_active_grant_subjects(self, dataset_id: UUID) -> list[UUID]: ...
 ```
 

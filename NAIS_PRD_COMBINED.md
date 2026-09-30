@@ -491,7 +491,7 @@ AI-OS는 “그 미션을 실제로 어떻게 수행하는지” 보여준다.
 - P1+: vector/hybrid 가능
 
 ### Object Storage
-- **MinIO** for local/dev
+- **SeaweedFS** (S3 API) for local/dev — MinIO 공식 이미지 배포 중단으로 대체 (D-034)
 - Production: S3-compatible / institutional storage
 
 ### Async
@@ -639,7 +639,7 @@ API
   │ permission check
   │ presigned URL
   ▼
-Browser ───── direct ─────> MinIO/S3
+Browser ───── direct ─────> S3 (dev: SeaweedFS)
 ```
 
 Download도 동일.
@@ -752,8 +752,8 @@ redis
 opensearch
 keycloak
 opa
-minio-a
-minio-b
+storage-a
+storage-b
 worker
 mailpit
 ```
@@ -1551,7 +1551,7 @@ PR 체크리스트: owned path 외 변경 없음 / contract 변경 없음 / migr
 - Wave 1: 레이아웃, Auth.js + Keycloak 로그인(21051/auth), 생성된 API client, MSW mock mode, 전체 P0 route 화면(mock 데이터)
 - Wave 2: 실제 API 연결, 8개 필수 flow, Playwright golden E2E
 
-**Key rules:** backend ORM/model을 추측하지 않고 생성된 contract client만 사용. WCAG 2.2 AA. 브라우저가 MinIO로 직접 업로드/다운로드(presigned URL).
+**Key rules:** backend ORM/model을 추측하지 않고 생성된 contract client만 사용. WCAG 2.2 AA. 브라우저가 S3 스토리지로 직접 업로드/다운로드(presigned URL).
 
 ---
 
@@ -1639,77 +1639,39 @@ http://localhost:21051
 ├── /                     → web:3000        (Next.js, Auth.js는 /web-auth/*)
 ├── /api/                 → api:8000        (FastAPI, /api/v1/*)
 ├── /auth/                → keycloak:8080   (KC_HTTP_RELATIVE_PATH=/auth)
-├── /nais-inst-a/         → minio-a:9000    (Institute A bucket, presigned URL 전용)
-├── /nais-inst-b/         → minio-b:9000    (Institute B bucket, presigned URL 전용)
+├── /nais-inst-a/         → storage-a:8333  (Institute A bucket, presigned URL 전용)
+├── /nais-inst-b/         → storage-b:8333  (Institute B bucket, presigned URL 전용)
 └── /healthz              → gateway 자체 health (200 "ok")
 ```
 
 ### Presigned URL 규칙
 - API는 presigned URL을 **public endpoint `NAIS_PUBLIC_BASE_URL`(기본 `http://localhost:21051`)** 기준, **path-style**로 서명한다.
   - 예: `http://localhost:21051/nais-inst-b/datasets/{dataset_id}/{version_id}/data.csv?X-Amz-...`
-- Nginx는 bucket 경로를 해당 MinIO로 그대로 전달하며, 서명 검증을 위해 `Host` 헤더를 보존한다 (`proxy_set_header Host $http_host;`).
+- Nginx는 bucket 경로를 해당 S3 스토리지(SeaweedFS)로 그대로 전달하며, 서명 검증을 위해 `Host` 헤더를 보존한다 (`proxy_set_header Host $http_host;`).
 - bucket 이름은 전역 유일해야 한다: `nais-inst-a`, `nais-inst-b`, (readiness 산출물) `nais-platform`.
 - 업로드 본문 크기 제한은 bucket 경로에서만 해제한다 (`client_max_body_size 0;`). `/api/`는 `10m`.
 
-### Nginx 참고 설정 (infra/nginx/nais.conf)
-```nginx
-server {
-  listen 21051;
+### Nginx 설정
+정본은 `infra/nginx/nais.conf`다 (Agent 0). 규칙:
+- `resolver 127.0.0.11` + 변수 upstream: web/keycloak가 아직 없어도 gateway가 기동한다. web이 없으면 `/`는 503.
+- 스토리지 경로는 정규식 `location ~ ^/nais-inst-a(/|$)`. `location /nais-inst-a/`만 두면 `/nais-inst-a` 요청이 301 되어 S3 클라이언트가 무한 리다이렉트에 빠진다.
+- 스토리지·keycloak 경로는 `Host $http_host`를 보존한다 (presigned 서명 검증).
 
-  location = /healthz { return 200 "ok"; }
-
-  location /api/ {
-    client_max_body_size 10m;
-    proxy_pass http://api:8000;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_set_header X-Forwarded-Host  $http_host;
-    proxy_set_header X-Request-Id      $request_id;
-  }
-
-  location /auth/ {
-    proxy_pass http://keycloak:8080;
-    proxy_set_header Host              $http_host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-  }
-
-  location /nais-inst-a/ {
-    client_max_body_size 0;
-    proxy_request_buffering off;
-    proxy_pass http://minio-a:9000;
-    proxy_set_header Host $http_host;
-  }
-
-  location /nais-inst-b/ {
-    client_max_body_size 0;
-    proxy_request_buffering off;
-    proxy_pass http://minio-b:9000;
-    proxy_set_header Host $http_host;
-  }
-
-  location / {
-    proxy_pass http://web:3000;
-    proxy_set_header Host $http_host;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-  }
-}
-```
-
-## 2. 개발 도구 포트 (dev only, `127.0.0.1` bind)
+## 2. 개발 포트 (외부 공개, D-037)
 
 | 포트 | 서비스 | 용도 |
 |---:|---|---|
-| 21051 | gateway (nginx) | **서비스 포트 (유일한 공개 포트)** |
+| 21051 | gateway (nginx) | **서비스 포트 (gateway)** |
 | 21052 | mailpit UI | 개발용 메일 확인 |
-| 21053 | minio-a console | Institute A 스토리지 콘솔 |
-| 21054 | minio-b console | Institute B 스토리지 콘솔 |
+| 21053 | storage-a S3 | Institute A 스토리지 S3 endpoint (디버깅) |
+| 21054 | storage-b S3 | Institute B 스토리지 S3 endpoint (디버깅) |
 | 21055 | postgres | 로컬 디버깅 (psql) |
-| 21056 | opensearch | 로컬 디버깅 |
-| 21057 | opa | 정책 디버깅 (`/v1/data`) |
-| 21058~21059 | 예약 | P1 이후 (예: grafana) |
+| 21056 | opensearch | OpenSearch (gateway Basic 인증 nais/nais) |
+| 21057 | opa | OPA (gateway Basic 인증 nais/nais) |
+| 21058 | redis | 로컬 디버깅 |
+| 21059 | 예약 | P1 이후 (예: grafana) |
 
-운영 배포(`docker-compose.prod.yml`)에서는 21052~21059를 publish하지 않는다.
+개발 스택에서는 D-037에 따라 21051~21058 모두 외부에 공개된다 (OpenSearch/OPA는 gateway Basic 인증 nais/nais 경유). `docker-compose.prod.yml`은 직접 노출되는 개발 도구 포트(21052~21059)를 제거한다.
 
 ## 3. Compose 서비스 목록
 
@@ -1718,14 +1680,14 @@ server {
 | gateway | nginx:1.27 | 21051 | Agent 0 | 호스트 21051:21051 |
 | web | apps/web | 3000 | Agent 7 | |
 | api | apps/api | 8000 | Agent 0 (entry) | 모듈 코드는 각 Agent |
-| worker | apps/api (`python -m worker`) | - | Agent 0 (entry) | outbox relay, readiness job, grant expiry sweeper |
+| worker | apps/api (`python -m api.worker`) | - | Agent 0 (entry) | outbox relay, readiness job, grant expiry sweeper |
 | postgres | postgres:16 | 5432 | Agent 0 | DB `nais`, schema 모듈별 |
 | redis | redis:7 | 6379 | Agent 0 | Dramatiq broker |
 | opensearch | opensearch:2 | 9200 | Agent 3 | single-node, security plugin off (dev) |
 | keycloak | keycloak:26 | 8080 | Agent 1 | realm `nais`, relative path `/auth` |
 | opa | openpolicyagent/opa | 8181 | Agent 4 | bundle: `infra/opa/policies` |
-| minio-a | minio/minio | 9000/9001 | Agent 0 | Institute A storage |
-| minio-b | minio/minio | 9000/9001 | Agent 0 | Institute B storage |
+| storage-a | chrislusf/seaweedfs:4.48 | 8333 | Agent 0 | Institute A storage (S3), `nais-platform` bucket도 여기 |
+| storage-b | chrislusf/seaweedfs:4.48 | 8333 | Agent 0 | Institute B storage (S3) |
 | mailpit | axllent/mailpit | 1025/8025 | Agent 6 | SMTP 1025 |
 
 ## 4. 환경 변수 (공통 `.env.example`, Agent 0 소유)
@@ -1737,9 +1699,9 @@ NAIS_PUBLIC_BASE_URL=http://localhost:21051
 NAIS_GATEWAY_PORT=21051
 
 # API
-DATABASE_URL=postgresql+psycopg://nais_app:nais_app@postgres:5432/nais          # 런타임 role (D-027)
-MIGRATION_DATABASE_URL=postgresql+psycopg://nais_migrator:nais_migrator@postgres:5432/nais  # schema owner, migrate 전용
-REDIS_URL=redis://redis:6379/0
+DATABASE_URL=postgresql+psycopg://nais_app:nais@postgres:5432/nais          # 런타임 role (D-027)
+MIGRATION_DATABASE_URL=postgresql+psycopg://nais_migrator:nais@postgres:5432/nais  # schema owner, migrate 전용
+REDIS_URL=redis://nais:nais@redis:6379/0
 OPENSEARCH_URL=http://opensearch:9200
 OPA_URL=http://opa:8181
 OPA_TIMEOUT_MS=500
@@ -1751,14 +1713,19 @@ SMTP_PORT=1025
 
 # Storage (기관별 스토리지를 organization code로 매핑)
 # 기관 code → prefix: 대문자화, '-'→'_' (inst-a → STORAGE_INST_A_*, D-024)
-STORAGE_INST_A_ENDPOINT=http://minio-a:9000
+STORAGE_INST_A_ENDPOINT=http://storage-a:8333
 STORAGE_INST_A_BUCKET=nais-inst-a
-STORAGE_INST_A_ACCESS_KEY=nais-inst-a
-STORAGE_INST_A_SECRET_KEY=change-me-a
-STORAGE_INST_B_ENDPOINT=http://minio-b:9000
+STORAGE_INST_A_ACCESS_KEY=nais
+STORAGE_INST_A_SECRET_KEY=nais
+STORAGE_INST_B_ENDPOINT=http://storage-b:8333
 STORAGE_INST_B_BUCKET=nais-inst-b
-STORAGE_INST_B_ACCESS_KEY=nais-inst-b
-STORAGE_INST_B_SECRET_KEY=change-me-b
+STORAGE_INST_B_ACCESS_KEY=nais
+STORAGE_INST_B_SECRET_KEY=nais
+STORAGE_NAIS_ENDPOINT=http://storage-a:8333
+STORAGE_NAIS_BUCKET=nais-platform
+STORAGE_NAIS_ACCESS_KEY=nais
+STORAGE_NAIS_SECRET_KEY=nais
+STORAGE_ORG_CODES=nais,inst-a,inst-b
 STORAGE_PRESIGN_TTL_SECONDS=300
 STORAGE_MULTIPART_THRESHOLD_BYTES=67108864
 
@@ -1796,12 +1763,13 @@ Gate A(Compile/Boot) 판정: `docker compose up -d` 후 120초 이내 위 3개�
 ## 7. 로컬 실행 규약
 
 ```bash
-cp .env.example .env
-make up          # docker compose up -d --build
-make migrate     # 모든 모듈 alembic upgrade head
-make seed        # 10_SEED_DATA.md 기준 데이터 적재
-open http://localhost:21051
+scripts/nais up            # .env 없으면 .env.example 복사 후 docker compose up -d --build
+scripts/nais migrate       # platform + 모든 모듈 migration (nais_migrator)
+scripts/nais storage-init  # 기관 bucket 생성
+scripts/nais seed          # 10_SEED_DATA.md 기준 데이터 적재
+scripts/nais gate-a        # Gate A 판정
 ```
+`make <target>`도 같은 명령으로 위임된다 (make가 설치된 환경).
 
 
 ---
@@ -2930,7 +2898,7 @@ Seed는 각 모듈이 자기 schema에 대해 제공하는 `seed()` 함수를 Ag
 ```text
 1. identity   (organizations → users → memberships)   + Keycloak realm import
 2. project    (seed project 1개)
-3. catalog    (datasets → versions → files → MinIO objects → publish → OpenSearch index)
+3. catalog    (datasets → versions → files → S3 objects → publish → OpenSearch index)
 4. readiness  (publish 이벤트로 자동 실행되므로 별도 seed 없음. worker 처리 대기)
 5. governance (seed grant 1개: 만료 임박 알림 확인용)
 ```
@@ -2945,7 +2913,7 @@ Seed는 각 모듈이 자기 schema에 대해 제공하는 `seed()` 함수를 Ag
 
 ## 3. Users (M01 + Keycloak)
 
-개발용 공통 비밀번호: `nais-dev-pass` (Keycloak realm import 시 설정, 운영 금지)
+개발용 공통 비밀번호: `nais` (Keycloak realm import 시 설정, 운영 금지)
 
 | 고정 ID 접미사 | email | display_name | org | org roles | platform roles | membership |
 |---|---|---|---|---|---|---|
@@ -3013,7 +2981,7 @@ PRD v1.0에서 비어 있거나 모호했던 부분을 v1.1에서 확정한 기�
 | ID | 주제 | 결정 | 근거 / 비고 |
 |---|---|---|---|
 | D-001 | 외부 포트 | 시스템 단일 진입점은 **Nginx `:21051`**. web, api, keycloak, 객체 스토리지 presigned 경로 모두 21051 아래 path로 라우팅 | 요청자 지정. 상세 `07_RUNTIME_ENVIRONMENT.md` |
-| D-002 | 개발 도구 포트 | Mailpit UI, MinIO console 등 개발 도구는 `127.0.0.1:21052~21059`에만 bind. 운영 배포에서는 노출하지 않음 | 21051은 서비스 포트로만 사용 |
+| D-002 | 개발 도구 포트 | Mailpit UI, 스토리지 S3 endpoint 등 개발 도구는 `127.0.0.1:21052~21059`에만 bind. 운영 배포에서는 노출하지 않음 | 21051은 서비스 포트로만 사용 (D-037로 대체) |
 | D-003 | OPA 소유 경로 | M04가 `infra/opa` 전체 소유. Rego는 `infra/opa/policies/data_access/` | v1.0 문서 간 경로 불일치 해소 |
 | D-004 | 추가 schema | PostgreSQL schema 목록에 `knowledge`(M11), `autonomy`(M12), `platform`(M00) 추가 | v1.0 누락 |
 | D-005 | Outbox 위치 | 단일 `platform.outbox_events` 테이블(M00 소유). 각 모듈은 `platform.outbox.OutboxWriter`로 **자기 트랜잭션 안에서** insert | 같은 PG instance이므로 cross-schema 트랜잭션 가능. 모듈 테이블 직접 접근 금지 원칙과 별개인 플랫폼 인프라 |
@@ -3043,6 +3011,12 @@ PRD v1.0에서 비어 있거나 모호했던 부분을 v1.1에서 확정한 기�
 | D-029 | input_fingerprint | `sha256(manifest_sha256 + metadata_snapshot_sha256 + profile_id + profile_version + validator_version)`. publish 시 dataset metadata를 동결(`metadata_snapshot`) | metadata 변경이 결과 재사용에 반영되도록 |
 | D-030 | Governance 이벤트 payload | 모든 governance 이벤트에 `owner_organization_id` 포함, `requested`에 `dataset_title`/`project_name` 포함 | M09가 추가 조회 없이 audit/알림 생성 |
 | D-031 | VIEWER 접근 요청 | project `VIEWER`는 access request 불가(`FORBIDDEN`) | 최소권한 |
+| D-032 | Python import root | `apps/`를 `PYTHONPATH`에 두고 `api`로 import (`api.platform`, `api.modules.<m>`). 실행: `uvicorn api.main:app`, `python -m api.worker`, `python -m api.platform.cli` | 최상위 `platform` 패키지는 표준 라이브러리를 가린다 |
+| D-033 | Task runner | `scripts/nais <cmd>`가 정본, `Makefile`은 위임만 | 개발 호스트에 make 없음 |
+| D-034 | 개발 스토리지 | MinIO 대신 SeaweedFS 4.48 (S3 API). compose 서비스 `storage-a`/`storage-b`, 포트 8333. 운영은 S3 호환 스토리지 그대로 | MinIO 공식 이미지(Docker Hub, quay.io) 조회 불가 (2026-09-30 확인). gateway 경유 presigned PUT/GET/multipart/변조 거부 검증 완료 |
+| D-035 | 개발 포트 재배치 | 21053/21054 = storage-a/b S3 endpoint, 21058 = redis | 스토리지 콘솔 없음 |
+| D-036 | 모듈 플러그인 계약 | 각 모듈은 `apps/api/modules/<name>/__init__.py`에 `MODULE = ModuleSpec(...)`을 정의. migration은 `python -m api.platform.cli new-migration <module> -m <msg>`로 생성, `alembic.ini` 없음. Dramatiq actor는 모듈 import 시 정의하며 platform이 import 전에 broker를 설정 | Wave 1 병렬 개발용 고정 인터페이스 |
+| D-037 | 개발 환경 외부 접속·단일 계정 | 포트 21051~21058 모두 외부 공개(서버 <NAIS_EXTERNAL_HOST>, 내부 192.168.0.3, 공유기 포트포워딩 필요). 모든 로그인 nais / nais (Postgres superuser, nais_app·nais_migrator 비밀번호, Keycloak 관리자, S3 키, Mailpit, Redis, OpenSearch·OPA는 gateway Basic 인증). seed 사용자 비밀번호도 nais | 소유자 결정(2026-09-30), 보안 위험 수용 |
 
 ## P1 이후로 미룬 항목 (v1.1 검토 중 식별)
 - Dataset version withdraw API 및 `catalog.dataset.version_withdrawn.v1` (enum `WITHDRAWN`만 예약)
@@ -3110,8 +3084,9 @@ Keycloak은 **인증만** 담당하고, 사용자·기관 소속·역할의 sour
 ```python
 # apps/api/platform (Agent 0)
 class OutboxWriter(Protocol):
-    def write(self, session: Session, event_type: str, payload: dict, actor: EventActor,
-              correlation_id: UUID) -> UUID: ...
+    def write(
+        self, session: Session, event_type: str, payload: dict, actor: EventActor, correlation_id: UUID
+    ) -> UUID: ...
 ```
 
 ### Events consumed
@@ -3248,29 +3223,37 @@ envelope `actor`:
 from typing import Protocol
 from uuid import UUID
 
-class CurrentUser(BaseModel):          # apps/api/platform/auth 에 정의 (Agent 0), 전 모듈 공용
+
+class CurrentUser(BaseModel):  # apps/api/platform/auth 에 정의 (Agent 0), 전 모듈 공용
     user_id: UUID
     organization_id: UUID
-    org_roles: frozenset[str]          # ORG_ADMIN | DATA_STEWARD | RESOURCE_MANAGER
-    platform_roles: frozenset[str]     # PLATFORM_ADMIN
+    org_roles: frozenset[str]  # ORG_ADMIN | DATA_STEWARD | RESOURCE_MANAGER
+    platform_roles: frozenset[str]  # PLATFORM_ADMIN
     session_id: str
     display_name: str
-    def has_org_role(self, org_id: UUID, role: str) -> bool:   # org_id == organization_id and role in org_roles
+
+    def has_org_role(
+        self, org_id: UUID, role: str
+    ) -> bool:  # org_id == organization_id and role in org_roles
         ...
     @property
     def is_platform_admin(self) -> bool: ...
 
-class PrincipalResolver(Protocol):     # M01 구현, platform auth dependency가 호출
-    def resolve(self, claims: dict, correlation_id: UUID) -> CurrentUser: ...   # 실패 시 DomainError(code)
 
-class IdentityQueryPort(Protocol):     # 다른 모듈용 read port
+class PrincipalResolver(Protocol):  # M01 구현, platform auth dependency가 호출
+    def resolve(self, claims: dict, correlation_id: UUID) -> CurrentUser: ...  # 실패 시 DomainError(code)
+
+
+class IdentityQueryPort(Protocol):  # 다른 모듈용 read port
     def get_public_profile(self, user_id: UUID) -> IdentityPublicProfile | None: ...
     def get_public_profiles(self, user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]: ...
     def get_organization_summary(self, organization_id: UUID) -> OrganizationSummary | None: ...
-    def is_active_user(self, user_id: UUID) -> bool: ...                # user ACTIVE and membership ACTIVE
+    def is_active_user(self, user_id: UUID) -> bool: ...  # user ACTIVE and membership ACTIVE
     def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool: ...
-    def list_users_with_org_role(self, organization_id: UUID, role: str) -> list[UUID]: ...   # ACTIVE만, M09 알림 수신자용
-    def get_email(self, user_id: UUID) -> str | None: ...   # M09 메일 발송 전용. 다른 모듈은 사용 금지
+    def list_users_with_org_role(
+        self, organization_id: UUID, role: str
+    ) -> list[UUID]: ...  # ACTIVE만, M09 알림 수신자용
+    def get_email(self, user_id: UUID) -> str | None: ...  # M09 메일 발송 전용. 다른 모듈은 사용 금지
 ```
 
 `IdentityPublicProfile`과 `OrganizationSummary`는 `openapi.yaml` components와 동일한 Pydantic 모델이다 (`packages/contracts`의 생성 타입).
@@ -3314,7 +3297,7 @@ DATA_STEWARD, RESOURCE_MANAGER는 M01 관리 권한이 없다.
 - Keycloak에는 **역할을 두지 않는다** (D-019). realm roles는 기본값만 사용한다.
 
 ### Seed (M01 seed, `make seed`)
-dev password: `nais-dev-pass` (dev/test realm 한정)
+dev password: `nais` (dev/test realm 한정)
 
 | 기관 code | name | type |
 |---|---|---|
@@ -3430,7 +3413,7 @@ Seed 규칙:
 
 ### Ports consumed
 ```python
-class IdentityQueryPort(Protocol):   # M01
+class IdentityQueryPort(Protocol):  # M01
     def get_public_profile(self, user_id: UUID) -> IdentityPublicProfile | None: ...
     def get_public_profiles(self, user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]: ...
     def get_organization_summary(self, organization_id: UUID) -> OrganizationSummary | None: ...
@@ -3557,13 +3540,19 @@ ARCHIVED 프로젝트에서의 탈퇴는 허용한다 (grant는 이미 회수된
 
 ```python
 class ProjectQueryPort(Protocol):
-    def is_active_member(self, project_id: UUID, user_id: UUID) -> bool: ...
+    def is_active_member(self, project_id: UUID, user_id: UUID) -> bool:
+        ...
         # project.status == ACTIVE 이고 member.status == ACTIVE 일 때만 True
         # (ARCHIVED 프로젝트는 False — governance 다운로드 검사에 사용)
+
     def get_member_role(self, project_id: UUID, user_id: UUID) -> str | None: ...
-    def get_summary(self, project_id: UUID) -> ProjectSummary | None: ...     # openapi ProjectSummary, my_role=None
-    def list_active_member_ids(self, project_id: UUID) -> list[UUID]: ...      # M09 audit 가시성용
-    def list_project_ids_for_member(self, user_id: UUID) -> list[UUID]: ...    # M09 audit 가시성용 (ACTIVE 멤버십)
+    def get_summary(
+        self, project_id: UUID
+    ) -> ProjectSummary | None: ...  # openapi ProjectSummary, my_role=None
+    def list_active_member_ids(self, project_id: UUID) -> list[UUID]: ...  # M09 audit 가시성용
+    def list_project_ids_for_member(
+        self, user_id: UUID
+    ) -> list[UUID]: ...  # M09 audit 가시성용 (ACTIVE 멤버십)
 ```
 
 ## 9. Authorization matrix
@@ -3693,19 +3682,22 @@ Catalog는 **데이터가 어디에 어떻게 있는지**를 안다. **누가 �
 from typing import Protocol, Sequence
 from uuid import UUID
 
-class AuthContext(Protocol):          # apps/api/platform/auth (M00)
+
+class AuthContext(Protocol):  # apps/api/platform/auth (M00)
     user_id: UUID
     organization_id: UUID
-    org_roles: frozenset[str]         # {"ORG_ADMIN","DATA_STEWARD","RESOURCE_MANAGER"}
-    platform_roles: frozenset[str]    # {"PLATFORM_ADMIN"}
+    org_roles: frozenset[str]  # {"ORG_ADMIN","DATA_STEWARD","RESOURCE_MANAGER"}
+    platform_roles: frozenset[str]  # {"PLATFORM_ADMIN"}
     trace_id: str
 
-class IdentityPort(Protocol):         # provided by M01
+
+class IdentityPort(Protocol):  # provided by M01
     def get_organization_summary(self, organization_id: UUID) -> "OrganizationSummary | None": ...
     def get_organization_summaries(self, ids: Sequence[UUID]) -> dict[UUID, "OrganizationSummary"]: ...
 
-class MalwareScannerPort(Protocol):   # M03 내부 extension point, P0 구현 = NoopScanner
-    def scan(self, bucket: str, key: str) -> "ScanResult": ...   # CLEAN | INFECTED | SKIPPED
+
+class MalwareScannerPort(Protocol):  # M03 내부 extension point, P0 구현 = NoopScanner
+    def scan(self, bucket: str, key: str) -> "ScanResult": ...  # CLEAN | INFECTED | SKIPPED
 ```
 
 - `OrganizationSummary.code`로 기관 스토리지(bucket)를 결정한다 (§4.8, D-024).
@@ -4077,8 +4069,9 @@ from uuid import UUID
 
 AccessLevel = Literal["PUBLIC", "INTERNAL", "CONTROLLED", "SENSITIVE"]
 
+
 @dataclass(frozen=True)
-class DatasetPolicyView:            # = openapi DatasetPolicyView
+class DatasetPolicyView:  # = openapi DatasetPolicyView
     dataset_id: UUID
     owner_organization_id: UUID
     access_level: AccessLevel
@@ -4088,6 +4081,7 @@ class DatasetPolicyView:            # = openapi DatasetPolicyView
     status: Literal["ACTIVE", "WITHDRAWN"]
     title: str
 
+
 @dataclass(frozen=True)
 class FileRef:
     file_id: UUID
@@ -4096,8 +4090,9 @@ class FileRef:
     sha256: str
     media_type: str
     status: Literal["PENDING", "UPLOADED", "VERIFIED", "FAILED"]
-    storage_bucket: str             # 내부 전용. API 응답·이벤트·로그에 노출 금지
+    storage_bucket: str  # 내부 전용. API 응답·이벤트·로그에 노출 금지
     storage_key: str
+
 
 @dataclass(frozen=True)
 class VersionView:
@@ -4108,13 +4103,16 @@ class VersionView:
     status: Literal["DRAFT", "PUBLISHED", "WITHDRAWN"]
     manifest_sha256: str | None
     metadata_snapshot: dict | None  # PUBLISHED에서만 not None
-    files: tuple[FileRef, ...]      # path 오름차순
+    files: tuple[FileRef, ...]  # path 오름차순
+
 
 class CatalogQueryPort(Protocol):
     """Governance(M04), Readiness(M05)용 조회. 권한 판단은 하지 않는다 (is_visible 제외)."""
+
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None: ...
     def get_version(self, dataset_version_id: UUID) -> VersionView | None: ...
-    def is_visible(self, ctx: "AuthContext", dataset_id: UUID) -> bool: ...   # D-012 metadata 가시성
+    def is_visible(self, ctx: "AuthContext", dataset_id: UUID) -> bool: ...  # D-012 metadata 가시성
+
 
 @dataclass(frozen=True)
 class PresignedGet:
@@ -4125,18 +4123,22 @@ class PresignedGet:
     sha256: str
     expires_at: datetime
 
+
 class StoragePort(Protocol):
     """Governance 전용. 호출 전에 Governance가 권한을 결정했다는 전제.
     Catalog는 요청된 파일이 해당 version의 VERIFIED 파일인지 확인만 하고 URL을 서명한다."""
+
     def presign_get(
         self,
         dataset_version_id: UUID,
-        file_ids: Sequence[UUID] | None,   # None = 전체
-        ttl_seconds: int,                  # STORAGE_PRESIGN_TTL_SECONDS (300)
-    ) -> list[PresignedGet]: ...           # 알 수 없는 file_id → ValueError(NOT_FOUND)
+        file_ids: Sequence[UUID] | None,  # None = 전체
+        ttl_seconds: int,  # STORAGE_PRESIGN_TTL_SECONDS (300)
+    ) -> list[PresignedGet]: ...  # 알 수 없는 file_id → ValueError(NOT_FOUND)
+
 
 class CatalogReadPort(Protocol):
     """Readiness(M05) worker 전용. 서비스 자격증명으로 읽기 (D-018). 사용자 grant와 무관."""
+
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
 ```
 
@@ -4228,7 +4230,7 @@ class CatalogReadPort(Protocol):
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `NAIS_PUBLIC_BASE_URL` | `http://localhost:21051` | presign endpoint (path-style) |
-| `STORAGE_<CODE>_ENDPOINT` | 예 `http://minio-a:9000` | 내부 endpoint (HEAD, 해시, multipart complete) |
+| `STORAGE_<CODE>_ENDPOINT` | 예 `http://storage-a:8333` | 내부 endpoint (HEAD, 해시, multipart complete) |
 | `STORAGE_<CODE>_BUCKET` | 예 `nais-inst-a` | 기관 bucket |
 | `STORAGE_<CODE>_ACCESS_KEY` / `STORAGE_<CODE>_SECRET_KEY` | (secret) | 기관 스토리지 서비스 자격증명 |
 | `STORAGE_PRESIGN_TTL_SECONDS` | `300` | 다운로드 URL TTL (StoragePort) |
@@ -4281,7 +4283,7 @@ class CatalogReadPort(Protocol):
 3. Alembic migrations (`catalog` schema, trigger 포함)
 4. Outbox 이벤트 4종 + consumer 2종
 5. Error code 매핑 테스트
-6. Unit / contract / integration 테스트 (MinIO, OpenSearch testcontainer)
+6. Unit / contract / integration 테스트 (SeaweedFS S3, OpenSearch testcontainer)
 7. Seed: Institute A/B dataset (10_SEED_DATA.md 기준)
 8. `infra/opensearch/Dockerfile`, `nais-datasets-v1.json`, fallback template
 9. Integration notes (M04: `StoragePort`/`CatalogQueryPort`, M05: `CatalogReadPort`/`metadata_snapshot`)
@@ -4381,15 +4383,19 @@ Purpose = Literal["ACADEMIC_RESEARCH", "AI_TRAINING", "COMMERCIAL_RESEARCH", "ED
 # Catalog 타입(DatasetPolicyView, FileRef, VersionView, PresignedGet)과
 # CatalogQueryPort / StoragePort의 정본은 modules/M03_data_catalog.md §8 이다 (D-024).
 # Governance는 storage_bucket/storage_key를 읽거나 로그에 남기지 않는다.
-from nais.catalog.ports import DatasetPolicyView, VersionView, PresignedGet  # 계약 타입만 import
+from api.modules.catalog.ports import DatasetPolicyView, VersionView, PresignedGet  # 계약 타입만 import
 
-class CatalogQueryPort(Protocol):   # 구현: M03
+
+class CatalogQueryPort(Protocol):  # 구현: M03
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None: ...
     def get_version(self, dataset_version_id: UUID) -> VersionView | None: ...
 
-class StoragePort(Protocol):        # 구현: M03 (catalog가 key를 알고, governance가 권한을 결정)
-    def presign_get(self, dataset_version_id: UUID, file_ids: Sequence[UUID] | None,
-                    ttl_seconds: int) -> list[PresignedGet]: ...   # 알 수 없는 file_id → ValueError(NOT_FOUND)
+
+class StoragePort(Protocol):  # 구현: M03 (catalog가 key를 알고, governance가 권한을 결정)
+    def presign_get(
+        self, dataset_version_id: UUID, file_ids: Sequence[UUID] | None, ttl_seconds: int
+    ) -> list[PresignedGet]: ...  # 알 수 없는 file_id → ValueError(NOT_FOUND)
+
 
 @dataclass(frozen=True)
 class ProjectSummary:
@@ -4398,24 +4404,28 @@ class ProjectSummary:
     status: Literal["ACTIVE", "ARCHIVED"]
     lead_organization_id: UUID
 
+
 class ProjectQueryPort(Protocol):
     def get_summary(self, project_id: UUID) -> ProjectSummary | None: ...
     def is_active_member(self, project_id: UUID, user_id: UUID) -> bool: ...
     def get_member_role(self, project_id: UUID, user_id: UUID) -> str | None: ...  # ProjectRole
 
+
 @dataclass(frozen=True)
-class Principal:                    # platform auth dependency가 요청마다 구성
+class Principal:  # platform auth dependency가 요청마다 구성
     user_id: UUID
     organization_id: UUID
     organization_code: str
-    org_roles: frozenset[str]        # ORG_ADMIN / DATA_STEWARD / RESOURCE_MANAGER
-    platform_roles: frozenset[str]   # PLATFORM_ADMIN
+    org_roles: frozenset[str]  # ORG_ADMIN / DATA_STEWARD / RESOURCE_MANAGER
+    platform_roles: frozenset[str]  # PLATFORM_ADMIN
     user_status: Literal["ACTIVE", "DISABLED"]
     membership_status: Literal["ACTIVE", "DISABLED"]
 
+
 class IdentityPort(Protocol):
-    def get_principal(self, user_id: UUID) -> Principal | None: ...     # 이벤트 핸들러/잡용
-    def get_public_profile(self, user_id: UUID) -> dict | None: ...     # IdentityPublicProfile
+    def get_principal(self, user_id: UUID) -> Principal | None: ...  # 이벤트 핸들러/잡용
+    def get_public_profile(self, user_id: UUID) -> dict | None: ...  # IdentityPublicProfile
+
 
 @dataclass(frozen=True)
 class OpaDecision:
@@ -4424,8 +4434,11 @@ class OpaDecision:
     reasons: tuple[str, ...]
     policy_version: str
 
+
 class PolicyDecisionPort(Protocol):  # adapters/opa_http.py, 08_OPA_POLICY.md
-    def decide_data_access(self, opa_input: dict) -> OpaDecision: ...   # timeout/오류 시 PolicyEngineUnavailable raise
+    def decide_data_access(
+        self, opa_input: dict
+    ) -> OpaDecision: ...  # timeout/오류 시 PolicyEngineUnavailable raise
 ```
 
 ### 3.2 Platform 제공 (Agent 0)
@@ -4763,8 +4776,15 @@ envelope `actor`: 사용자 행위는 `{type: USER, user_id, organization_id}`, 
 
 ```python
 class GrantQueryPort(Protocol):
-    def has_active_grant(self, *, user_id: UUID, project_id: UUID, dataset_id: UUID,
-                         operation: Literal["READ", "COMPUTE"], at: datetime | None = None) -> bool:
+    def has_active_grant(
+        self,
+        *,
+        user_id: UUID,
+        project_id: UUID,
+        dataset_id: UUID,
+        operation: Literal["READ", "COMPUTE"],
+        at: datetime | None = None,
+    ) -> bool:
         """status=ACTIVE ∧ valid_from <= at < expires_at ∧ operation ∈ operations. at 기본값 now."""
 
     def list_active_grant_subjects(self, dataset_id: UUID) -> list[UUID]:
@@ -4773,10 +4793,17 @@ class GrantQueryPort(Protocol):
     def list_active_grants_for_project(self, project_id: UUID) -> list["GrantSummary"]:
         """P1: 프로젝트 화면/Compute가 연결 가능한 dataset 목록 조회."""
 
-    def authorize_dataset_access(self, *, principal: Principal, dataset_id: UUID,
-                                 dataset_version_id: UUID, project_id: UUID | None,
-                                 operation: Literal["READ", "COMPUTE"]) -> "AccessDecision":
+    def authorize_dataset_access(
+        self,
+        *,
+        principal: Principal,
+        dataset_id: UUID,
+        dataset_version_id: UUID,
+        project_id: UUID | None,
+        operation: Literal["READ", "COMPUTE"],
+    ) -> "AccessDecision":
         """§6.12 step 1~8과 동일 판정(presign 제외). P1 Compute, P2 Data Node가 재사용. 감사 이벤트 발행 포함."""
+
 
 @dataclass(frozen=True)
 class GrantSummary:
@@ -4785,6 +4812,7 @@ class GrantSummary:
     dataset_id: UUID
     operations: tuple[str, ...]
     expires_at: datetime
+
 
 @dataclass(frozen=True)
 class AccessDecision:
@@ -4871,7 +4899,7 @@ Fixture: `10_SEED_DATA.md`의 기관·사용자(`a.researcher`, `b.researcher`, 
 | M04-AT-15 | AT-08 grant | b.steward revoke → 즉시 download-session | revoke 200, download 403 `ACCESS_GRANT_REVOKED` (**revoke 즉시 차단**) |
 | M04-AT-16 | AT-15 | 다시 revoke | 409 `ACCESS_GRANT_NOT_ACTIVE` |
 | M04-AT-17 | a.researcher가 P1 grant 보유, P2에도 멤버 | download-session(project_id=P2) | 403 `ACCESS_GRANT_REQUIRED` (**다른 project의 grant 재사용 불가**) |
-| M04-AT-18 | AT-11 URL | 쿼리의 object key/`X-Amz-Expires`/서명 한 글자 변조 후 GET, 또는 다른 file의 path로 교체 | MinIO 403 (`SignatureDoesNotMatch`/`AccessDenied`) (**URL tampering 불가**). 301초 후 원본 URL GET → 403 (만료) |
+| M04-AT-18 | AT-11 URL | 쿼리의 object key/`X-Amz-Expires`/서명 한 글자 변조 후 GET, 또는 다른 file의 path로 교체 | S3 스토리지가 403 (`SignatureDoesNotMatch`/`AccessDenied`) (**URL tampering 불가**). 301초 후 원본 URL GET → 403 (만료) |
 | M04-AT-19 | OPA 컨테이너 중지 또는 fake가 timeout | 유효 grant로 download-session | 503 `POLICY_ENGINE_UNAVAILABLE`, URL 미발급, `download.denied.v1` 기록 (**OPA unavailable 시 fail-closed**) |
 | M04-AT-20 | OPA fake가 allow=false 반환 | 유효 grant로 download-session | 403 `ACCESS_DENIED_BY_POLICY`, divergence metric +1 |
 | M04-AT-21 | P1이 PRIVATE, 기관 C 사용자 | P1 id로 access request | 403 `ACCESS_NOT_PROJECT_MEMBER` (프로젝트 존재 여부 외 정보 노출 없음). (**다른 기관 사용자가 private project 조회 불가**의 governance 측; 본 테스트는 M02 AT와 쌍) |
@@ -4908,7 +4936,7 @@ Fixture: `10_SEED_DATA.md`의 기관·사용자(`a.researcher`, `b.researcher`, 
 
 ### Known limitations
 - **이미 발급된 presigned URL은 revoke/만료 후에도 최대 TTL(300s)까지 유효**하다. S3 presigned URL은 발급 후 서버에서 무효화할 수 없다. 완화: TTL 300s 상한, 발급 기록/감사. P2 Data Node의 direct transfer endpoint에서는 요청 시점 grant 재검증으로 해소.
-- `FILE_DOWNLOADED` 감사는 **URL 발급 기준**이며 실제 전송 완료를 의미하지 않는다(D-017). P1에서 MinIO bucket notification/access log 연동.
+- `FILE_DOWNLOADED` 감사는 **URL 발급 기준**이며 실제 전송 완료를 의미하지 않는다(D-017). P1에서 S3 스토리지 bucket notification/access log 연동.
 - Grant subject는 사용자 1명(D-008). 같은 프로젝트 공동연구자도 각자 요청해야 한다.
 - `COMPUTE`/`WRITE` operation은 enum만 존재, P0에서 부여 불가.
 - Reviewer의 GET이 상태를 바꾸는(SUBMITTED → UNDER_REVIEW) 부수효과가 있다. 이 전이는 이벤트/감사가 없다.
@@ -4980,14 +5008,17 @@ worker 진입점 `apps/api/worker.py`는 Agent 0 소유이며, readiness는 `reg
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
-class CatalogQueryPort(Protocol):     # M03 public.py
+
+class CatalogQueryPort(Protocol):  # M03 public.py
     def get_version(self, dataset_version_id: UUID) -> "VersionView | None": ...
     def is_visible(self, ctx: "AuthContext", dataset_id: UUID) -> bool: ...
 
-class CatalogReadPort(Protocol):      # M03 public.py, 서비스 자격증명 (D-018)
+
+class CatalogReadPort(Protocol):  # M03 public.py, 서비스 자격증명 (D-018)
     def open_stream(self, file: "FileRef", byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
 
-class AuthContext(Protocol):          # M00
+
+class AuthContext(Protocol):  # M00
     user_id: UUID
     organization_id: UUID
     org_roles: frozenset[str]
@@ -5133,8 +5164,10 @@ Consumer: M03(`readiness_overall` read model), M09(Audit `READINESS_VALIDATION_C
 from typing import Literal, Protocol
 from uuid import UUID
 
+
 class ReadinessQueryPort(Protocol):
     """다른 모듈용 (P1: M06 Marketplace 품질 배지 등). P0에서는 M03이 이벤트 read model을 쓰므로 필수 아님."""
+
     def get_latest_overall(
         self, dataset_version_id: UUID, profile_id: str
     ) -> Literal["PASS", "WARNING", "FAIL"] | None: ...
@@ -5304,7 +5337,7 @@ H100 virtual resource를 Project에 기간제 할당.
 - health
 
 ## P2 Demo
-Institute A MinIO + Institute B MinIO를 별도 Node로 운영.
+Institute A / Institute B S3 스토리지를 별도 Node로 운영.
 
 ## Principle
 metadata centrally discoverable, bytes remain at owner.
@@ -5363,20 +5396,23 @@ metadata centrally discoverable, bytes remain at owner.
 
 ### Ports consumed
 ```python
-class IdentityQueryPort(Protocol):     # M01
+class IdentityQueryPort(Protocol):  # M01
     def get_public_profiles(self, user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]: ...
     def list_users_with_org_role(self, organization_id: UUID, role: str) -> list[UUID]: ...
     def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool: ...
-    def get_email(self, user_id: UUID) -> str | None: ...      # 알림 메일 전용 (M01 §8에 정의)
+    def get_email(self, user_id: UUID) -> str | None: ...  # 알림 메일 전용 (M01 §8에 정의)
 
-class ProjectQueryPort(Protocol):      # M02
+
+class ProjectQueryPort(Protocol):  # M02
     def list_project_ids_for_member(self, user_id: UUID) -> list[UUID]: ...
     def is_active_member(self, project_id: UUID, user_id: UUID) -> bool: ...
 
-class CatalogQueryPort(Protocol):      # M03 §8 (정본). title, owner_organization_id 사용
+
+class CatalogQueryPort(Protocol):  # M03 §8 (정본). title, owner_organization_id 사용
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None: ...
 
-class GrantQueryPort(Protocol):        # M04 §8 (정본)
+
+class GrantQueryPort(Protocol):  # M04 §8 (정본)
     def list_active_grant_subjects(self, dataset_id: UUID) -> list[UUID]: ...
 ```
 

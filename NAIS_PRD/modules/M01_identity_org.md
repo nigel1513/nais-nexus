@@ -52,8 +52,9 @@ Keycloak은 **인증만** 담당하고, 사용자·기관 소속·역할의 sour
 ```python
 # apps/api/platform (Agent 0)
 class OutboxWriter(Protocol):
-    def write(self, session: Session, event_type: str, payload: dict, actor: EventActor,
-              correlation_id: UUID) -> UUID: ...
+    def write(
+        self, session: Session, event_type: str, payload: dict, actor: EventActor, correlation_id: UUID
+    ) -> UUID: ...
 ```
 
 ### Events consumed
@@ -190,29 +191,37 @@ envelope `actor`:
 from typing import Protocol
 from uuid import UUID
 
-class CurrentUser(BaseModel):          # apps/api/platform/auth 에 정의 (Agent 0), 전 모듈 공용
+
+class CurrentUser(BaseModel):  # apps/api/platform/auth 에 정의 (Agent 0), 전 모듈 공용
     user_id: UUID
     organization_id: UUID
-    org_roles: frozenset[str]          # ORG_ADMIN | DATA_STEWARD | RESOURCE_MANAGER
-    platform_roles: frozenset[str]     # PLATFORM_ADMIN
+    org_roles: frozenset[str]  # ORG_ADMIN | DATA_STEWARD | RESOURCE_MANAGER
+    platform_roles: frozenset[str]  # PLATFORM_ADMIN
     session_id: str
     display_name: str
-    def has_org_role(self, org_id: UUID, role: str) -> bool:   # org_id == organization_id and role in org_roles
+
+    def has_org_role(
+        self, org_id: UUID, role: str
+    ) -> bool:  # org_id == organization_id and role in org_roles
         ...
     @property
     def is_platform_admin(self) -> bool: ...
 
-class PrincipalResolver(Protocol):     # M01 구현, platform auth dependency가 호출
-    def resolve(self, claims: dict, correlation_id: UUID) -> CurrentUser: ...   # 실패 시 DomainError(code)
 
-class IdentityQueryPort(Protocol):     # 다른 모듈용 read port
+class PrincipalResolver(Protocol):  # M01 구현, platform auth dependency가 호출
+    def resolve(self, claims: dict, correlation_id: UUID) -> CurrentUser: ...  # 실패 시 DomainError(code)
+
+
+class IdentityQueryPort(Protocol):  # 다른 모듈용 read port
     def get_public_profile(self, user_id: UUID) -> IdentityPublicProfile | None: ...
     def get_public_profiles(self, user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]: ...
     def get_organization_summary(self, organization_id: UUID) -> OrganizationSummary | None: ...
-    def is_active_user(self, user_id: UUID) -> bool: ...                # user ACTIVE and membership ACTIVE
+    def is_active_user(self, user_id: UUID) -> bool: ...  # user ACTIVE and membership ACTIVE
     def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool: ...
-    def list_users_with_org_role(self, organization_id: UUID, role: str) -> list[UUID]: ...   # ACTIVE만, M09 알림 수신자용
-    def get_email(self, user_id: UUID) -> str | None: ...   # M09 메일 발송 전용. 다른 모듈은 사용 금지
+    def list_users_with_org_role(
+        self, organization_id: UUID, role: str
+    ) -> list[UUID]: ...  # ACTIVE만, M09 알림 수신자용
+    def get_email(self, user_id: UUID) -> str | None: ...  # M09 메일 발송 전용. 다른 모듈은 사용 금지
 ```
 
 `IdentityPublicProfile`과 `OrganizationSummary`는 `openapi.yaml` components와 동일한 Pydantic 모델이다 (`packages/contracts`의 생성 타입).

@@ -35,7 +35,9 @@ def pg_urls() -> Iterator[PgUrls]:
     """Throwaway postgres:16 with the same roles/schemas as compose. Skips when Docker is unavailable."""
     from testcontainers.community.postgres import PostgresContainer
 
-    container = PostgresContainer("postgres:16", username="postgres", password="postgres", dbname="nais", driver="psycopg")
+    container = PostgresContainer(
+        "postgres:16", username="postgres", password="postgres", dbname="nais", driver="psycopg"
+    )
     try:
         container.start()
     except Exception as exc:  # docker missing or daemon not reachable
@@ -47,7 +49,11 @@ def pg_urls() -> Iterator[PgUrls]:
             # psycopg's raw cursor with no params leaves the script's format() "%I" placeholders alone
             conn.connection.cursor().execute(INIT_SQL.read_text(encoding="utf-8"))
         engine.dispose()
-        yield PgUrls(superuser=superuser, migrator=_as_role(superuser, "nais_migrator"), app=_as_role(superuser, "nais_app"))
+        yield PgUrls(
+            superuser=superuser,
+            migrator=_as_role(superuser, "nais_migrator"),
+            app=_as_role(superuser, "nais_app"),
+        )
     finally:
         container.stop()
 

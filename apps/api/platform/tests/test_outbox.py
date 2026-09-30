@@ -44,4 +44,6 @@ def test_rolled_back_transaction_leaves_no_event(migrated_db: PgUrls) -> None:
                 session, EventType.PROJECT_ARCHIVED_V1, {"project_id": str(uuid.uuid4())}, EventActor.system()
             )
             raise RuntimeError("business failure after publish")
-        assert session.execute(select(outbox_events).where(outbox_events.c.event_id == event_id)).first() is None
+        assert (
+            session.execute(select(outbox_events).where(outbox_events.c.event_id == event_id)).first() is None
+        )

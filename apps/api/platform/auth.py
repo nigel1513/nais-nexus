@@ -63,7 +63,9 @@ class TokenVerifier:
             )
             return claims
         except jwt.PyJWKClientConnectionError as exc:
-            raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "Identity provider keys are unavailable.") from exc
+            raise ApiError(
+                ErrorCode.DEPENDENCY_UNAVAILABLE, "Identity provider keys are unavailable."
+            ) from exc
         except jwt.PyJWTError as exc:
             raise ApiError(ErrorCode.UNAUTHENTICATED) from exc
 

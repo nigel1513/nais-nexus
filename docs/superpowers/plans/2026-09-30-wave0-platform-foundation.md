@@ -155,11 +155,17 @@ def edit(rel: str, pairs: list[tuple[str, str]]) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-edit("01_ARCHITECTURE.md", [
-    ("- **MinIO** for local/dev", "- **SeaweedFS** (S3 API) for local/dev — MinIO 공식 이미지 배포 중단으로 대체 (D-034)"),
-    ("Browser ───── direct ─────> MinIO/S3", "Browser ───── direct ─────> S3 (dev: SeaweedFS)"),
-    ("minio-a\nminio-b", "storage-a\nstorage-b"),
-])
+edit(
+    "01_ARCHITECTURE.md",
+    [
+        (
+            "- **MinIO** for local/dev",
+            "- **SeaweedFS** (S3 API) for local/dev — MinIO 공식 이미지 배포 중단으로 대체 (D-034)",
+        ),
+        ("Browser ───── direct ─────> MinIO/S3", "Browser ───── direct ─────> S3 (dev: SeaweedFS)"),
+        ("minio-a\nminio-b", "storage-a\nstorage-b"),
+    ],
+)
 
 runtime = (ROOT / "07_RUNTIME_ENVIRONMENT.md").read_text(encoding="utf-8")
 runtime, n = re.subn(
@@ -174,33 +180,64 @@ runtime, n = re.subn(
 assert n == 1
 (ROOT / "07_RUNTIME_ENVIRONMENT.md").write_text(runtime, encoding="utf-8")
 
-edit("07_RUNTIME_ENVIRONMENT.md", [
-    ("→ minio-a:9000    (Institute A bucket", "→ storage-a:8333  (Institute A bucket"),
-    ("→ minio-b:9000    (Institute B bucket", "→ storage-b:8333  (Institute B bucket"),
-    ("bucket 경로를 해당 MinIO로", "bucket 경로를 해당 S3 스토리지(SeaweedFS)로"),
-    ("| 21053 | minio-a console | Institute A 스토리지 콘솔 |", "| 21053 | storage-a S3 | Institute A 스토리지 S3 endpoint (디버깅) |"),
-    ("| 21054 | minio-b console | Institute B 스토리지 콘솔 |", "| 21054 | storage-b S3 | Institute B 스토리지 S3 endpoint (디버깅) |"),
-    ("| 21058~21059 | 예약 | P1 이후 (예: grafana) |", "| 21058 | redis | 로컬 디버깅 |\n| 21059 | 예약 | P1 이후 (예: grafana) |"),
-    ("| worker | apps/api (`python -m worker`)", "| worker | apps/api (`python -m api.worker`)"),
-    ("| minio-a | minio/minio | 9000/9001 | Agent 0 | Institute A storage |", "| storage-a | chrislusf/seaweedfs:4.48 | 8333 | Agent 0 | Institute A storage (S3), `nais-platform` bucket도 여기 |"),
-    ("| minio-b | minio/minio | 9000/9001 | Agent 0 | Institute B storage |", "| storage-b | chrislusf/seaweedfs:4.48 | 8333 | Agent 0 | Institute B storage (S3) |"),
-    ("STORAGE_INST_A_ENDPOINT=http://minio-a:9000", "STORAGE_INST_A_ENDPOINT=http://storage-a:8333"),
-    ("STORAGE_INST_B_ENDPOINT=http://minio-b:9000", "STORAGE_INST_B_ENDPOINT=http://storage-b:8333"),
-    ("STORAGE_INST_B_SECRET_KEY=change-me-b\n",
-     "STORAGE_INST_B_SECRET_KEY=change-me-b\nSTORAGE_NAIS_ENDPOINT=http://storage-a:8333\nSTORAGE_NAIS_BUCKET=nais-platform\n"
-     "STORAGE_NAIS_ACCESS_KEY=nais-inst-a\nSTORAGE_NAIS_SECRET_KEY=change-me-a\nSTORAGE_ORG_CODES=nais,inst-a,inst-b\n"),
-    ("```bash\ncp .env.example .env\nmake up          # docker compose up -d --build\nmake migrate     # 모든 모듈 alembic upgrade head\nmake seed        # 10_SEED_DATA.md 기준 데이터 적재\nopen http://localhost:21051\n```",
-     "```bash\nscripts/nais up            # .env 없으면 .env.example 복사 후 docker compose up -d --build\nscripts/nais migrate       # platform + 모든 모듈 migration (nais_migrator)\nscripts/nais storage-init  # 기관 bucket 생성\nscripts/nais seed          # 10_SEED_DATA.md 기준 데이터 적재\nscripts/nais gate-a        # Gate A 판정\n```\n`make <target>`도 같은 명령으로 위임된다 (make가 설치된 환경)."),
-])
+edit(
+    "07_RUNTIME_ENVIRONMENT.md",
+    [
+        ("→ minio-a:9000    (Institute A bucket", "→ storage-a:8333  (Institute A bucket"),
+        ("→ minio-b:9000    (Institute B bucket", "→ storage-b:8333  (Institute B bucket"),
+        ("bucket 경로를 해당 MinIO로", "bucket 경로를 해당 S3 스토리지(SeaweedFS)로"),
+        (
+            "| 21053 | minio-a console | Institute A 스토리지 콘솔 |",
+            "| 21053 | storage-a S3 | Institute A 스토리지 S3 endpoint (디버깅) |",
+        ),
+        (
+            "| 21054 | minio-b console | Institute B 스토리지 콘솔 |",
+            "| 21054 | storage-b S3 | Institute B 스토리지 S3 endpoint (디버깅) |",
+        ),
+        (
+            "| 21058~21059 | 예약 | P1 이후 (예: grafana) |",
+            "| 21058 | redis | 로컬 디버깅 |\n| 21059 | 예약 | P1 이후 (예: grafana) |",
+        ),
+        ("| worker | apps/api (`python -m worker`)", "| worker | apps/api (`python -m api.worker`)"),
+        (
+            "| minio-a | minio/minio | 9000/9001 | Agent 0 | Institute A storage |",
+            "| storage-a | chrislusf/seaweedfs:4.48 | 8333 | Agent 0 | Institute A storage (S3), `nais-platform` bucket도 여기 |",
+        ),
+        (
+            "| minio-b | minio/minio | 9000/9001 | Agent 0 | Institute B storage |",
+            "| storage-b | chrislusf/seaweedfs:4.48 | 8333 | Agent 0 | Institute B storage (S3) |",
+        ),
+        ("STORAGE_INST_A_ENDPOINT=http://minio-a:9000", "STORAGE_INST_A_ENDPOINT=http://storage-a:8333"),
+        ("STORAGE_INST_B_ENDPOINT=http://minio-b:9000", "STORAGE_INST_B_ENDPOINT=http://storage-b:8333"),
+        (
+            "STORAGE_INST_B_SECRET_KEY=change-me-b\n",
+            "STORAGE_INST_B_SECRET_KEY=change-me-b\nSTORAGE_NAIS_ENDPOINT=http://storage-a:8333\nSTORAGE_NAIS_BUCKET=nais-platform\n"
+            "STORAGE_NAIS_ACCESS_KEY=nais-inst-a\nSTORAGE_NAIS_SECRET_KEY=change-me-a\nSTORAGE_ORG_CODES=nais,inst-a,inst-b\n",
+        ),
+        (
+            "```bash\ncp .env.example .env\nmake up          # docker compose up -d --build\nmake migrate     # 모든 모듈 alembic upgrade head\nmake seed        # 10_SEED_DATA.md 기준 데이터 적재\nopen http://localhost:21051\n```",
+            "```bash\nscripts/nais up            # .env 없으면 .env.example 복사 후 docker compose up -d --build\nscripts/nais migrate       # platform + 모든 모듈 migration (nais_migrator)\nscripts/nais storage-init  # 기관 bucket 생성\nscripts/nais seed          # 10_SEED_DATA.md 기준 데이터 적재\nscripts/nais gate-a        # Gate A 판정\n```\n`make <target>`도 같은 명령으로 위임된다 (make가 설치된 환경).",
+        ),
+    ],
+)
 
 edit("06_AGENT_ASSIGNMENTS.md", [("브라우저가 MinIO로", "브라우저가 S3 스토리지로")])
 edit("10_SEED_DATA.md", [("MinIO objects", "S3 objects")])
-edit("modules/M03_data_catalog.md", [
-    ("`http://minio-a:9000`", "`http://storage-a:8333`"),
-    ("(MinIO, OpenSearch testcontainer)", "(SeaweedFS S3, OpenSearch testcontainer)"),
-])
-edit("modules/M04_access_governance.md", [("from nais.catalog.ports import", "from api.modules.catalog.ports import")])
-edit("modules/M08_federation_data_node.md", [("Institute A MinIO + Institute B MinIO를", "Institute A / Institute B S3 스토리지를")])
+edit(
+    "modules/M03_data_catalog.md",
+    [
+        ("`http://minio-a:9000`", "`http://storage-a:8333`"),
+        ("(MinIO, OpenSearch testcontainer)", "(SeaweedFS S3, OpenSearch testcontainer)"),
+    ],
+)
+edit(
+    "modules/M04_access_governance.md",
+    [("from nais.catalog.ports import", "from api.modules.catalog.ports import")],
+)
+edit(
+    "modules/M08_federation_data_node.md",
+    [("Institute A MinIO + Institute B MinIO를", "Institute A / Institute B S3 스토리지를")],
+)
 edit("11_DECISION_LOG.md", [("MinIO console 등 개발 도구", "스토리지 S3 endpoint 등 개발 도구")])
 
 log = (ROOT / "11_DECISION_LOG.md").read_text(encoding="utf-8")
@@ -220,7 +257,16 @@ own_path = ROOT / "contracts" / "module_ownership.json"
 own = json.loads(own_path.read_text(encoding="utf-8"))
 m00 = own["M00"]["path"]
 m00.remove("apps/api/alembic.ini")
-for extra in ["apps/api/__init__.py", "apps/api/modules/__init__.py", "apps/api/Dockerfile", "conftest.py", "scripts", ".dockerignore", ".python-version", "uv.lock"]:
+for extra in [
+    "apps/api/__init__.py",
+    "apps/api/modules/__init__.py",
+    "apps/api/Dockerfile",
+    "conftest.py",
+    "scripts",
+    ".dockerignore",
+    ".python-version",
+    "uv.lock",
+]:
     if extra not in m00:
         m00.append(extra)
 own["version"] = "1.1.1"
@@ -752,12 +798,17 @@ HEADER = "# GENERATED by packages/contracts/generate.py from NAIS_PRD/contracts/
 
 def render_error_codes() -> str:
     codes = json.loads((CONTRACTS / "error_codes.json").read_text(encoding="utf-8"))["codes"]
-    out = [HEADER.format(source="error_codes.json"), "from enum import StrEnum\n\n\nclass ErrorCode(StrEnum):\n"]
+    out = [
+        HEADER.format(source="error_codes.json"),
+        "from enum import StrEnum\n\n\nclass ErrorCode(StrEnum):\n",
+    ]
     out += [f'    {c["code"]} = "{c["code"]}"\n' for c in codes]
     out.append("\n\nHTTP_STATUS: dict[ErrorCode, int] = {\n")
-    out += [f'    ErrorCode.{c["code"]}: {c["http"]},\n' for c in codes]
+    out += [f"    ErrorCode.{c['code']}: {c['http']},\n" for c in codes]
     out.append("}\n\nDESCRIPTION: dict[ErrorCode, str] = {\n")
-    out += [f'    ErrorCode.{c["code"]}: {json.dumps(c["description"], ensure_ascii=False)},\n' for c in codes]
+    out += [
+        f"    ErrorCode.{c['code']}: {json.dumps(c['description'], ensure_ascii=False)},\n" for c in codes
+    ]
     out.append("}\n")
     return "".join(out)
 
@@ -768,7 +819,10 @@ def render_event_types() -> str:
     def member(event_type: str) -> str:
         return event_type.upper().replace(".", "_")
 
-    out = [HEADER.format(source="events/index.json"), "from enum import StrEnum\n\n\nclass EventType(StrEnum):\n"]
+    out = [
+        HEADER.format(source="events/index.json"),
+        "from enum import StrEnum\n\n\nclass EventType(StrEnum):\n",
+    ]
     out += [f'    {member(e["event_type"])} = "{e["event_type"]}"\n' for e in events]
     out.append("\n\nPRODUCER: dict[EventType, str] = {\n")
     out += [f'    EventType.{member(e["event_type"])}: "{e["producer"]}",\n' for e in events]
@@ -779,11 +833,22 @@ def render_event_types() -> str:
 def run_datamodel_codegen(target: Path) -> None:
     subprocess.run(
         [
-            sys.executable, "-m", "datamodel_code_generator",
-            "--input", str(OPENAPI), "--input-file-type", "openapi",
-            "--output-model-type", "pydantic_v2.BaseModel", "--target-python-version", "3.13",
-            "--use-standard-collections", "--use-union-operator", "--disable-timestamp",
-            "--output", str(target),
+            sys.executable,
+            "-m",
+            "datamodel_code_generator",
+            "--input",
+            str(OPENAPI),
+            "--input-file-type",
+            "openapi",
+            "--output-model-type",
+            "pydantic_v2.BaseModel",
+            "--target-python-version",
+            "3.13",
+            "--use-standard-collections",
+            "--use-union-operator",
+            "--disable-timestamp",
+            "--output",
+            str(target),
         ],
         check=True,
         capture_output=True,
@@ -1053,7 +1118,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         fields = [
-            {"field": ".".join(str(part) for part in err["loc"][1:]) or str(err["loc"][0]), "reason": err["msg"]}
+            {
+                "field": ".".join(str(part) for part in err["loc"][1:]) or str(err["loc"][0]),
+                "reason": err["msg"],
+            }
             for err in exc.errors()
         ]
         body = error_body(ErrorCode.VALIDATION_FAILED, "Request validation failed.", {"fields": fields})
@@ -1281,8 +1349,16 @@ from typing import Any
 from fastapi import APIRouter
 
 DEFAULT_MODULE_ORDER: tuple[str, ...] = (
-    "identity", "project", "catalog", "readiness", "governance",
-    "audit", "marketplace", "compute", "knowledge", "autonomy",
+    "identity",
+    "project",
+    "catalog",
+    "readiness",
+    "governance",
+    "audit",
+    "marketplace",
+    "compute",
+    "knowledge",
+    "autonomy",
 )
 
 
@@ -1778,7 +1854,9 @@ def pg_urls() -> Iterator[PgUrls]:
     """Throwaway postgres:16 with the same roles/schemas as compose. Skips when Docker is unavailable."""
     from testcontainers.postgres import PostgresContainer
 
-    container = PostgresContainer("postgres:16", username="postgres", password="postgres", dbname="nais", driver="psycopg")
+    container = PostgresContainer(
+        "postgres:16", username="postgres", password="postgres", dbname="nais", driver="psycopg"
+    )
     try:
         container.start()
     except Exception as exc:  # docker missing or daemon not reachable
@@ -1789,7 +1867,11 @@ def pg_urls() -> Iterator[PgUrls]:
         with engine.begin() as conn:
             conn.exec_driver_sql(INIT_SQL.read_text(encoding="utf-8"))
         engine.dispose()
-        yield PgUrls(superuser=superuser, migrator=_as_role(superuser, "nais_migrator"), app=_as_role(superuser, "nais_app"))
+        yield PgUrls(
+            superuser=superuser,
+            migrator=_as_role(superuser, "nais_migrator"),
+            app=_as_role(superuser, "nais_app"),
+        )
     finally:
         container.stop()
 
@@ -1818,7 +1900,7 @@ from api.platform.migrate import MigrationTarget, new_revision, upgrade_all
 from api.platform.modules import ModuleSpec
 from api.platform.testing.fixtures import PgUrls
 
-PROBE_REVISION = '''
+PROBE_REVISION = """
 revision = "probe_0001"
 down_revision = None
 branch_labels = None
@@ -1834,7 +1916,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("probe", schema="knowledge")
-'''
+"""
 
 
 def scalar(url: str, sql: str) -> object:
@@ -1847,7 +1929,10 @@ def scalar(url: str, sql: str) -> object:
 
 
 def test_platform_migration_creates_outbox_and_version_table(migrated_db: PgUrls) -> None:
-    assert scalar(migrated_db.app, "SELECT to_regclass('platform.outbox_events')::text") == "platform.outbox_events"
+    assert (
+        scalar(migrated_db.app, "SELECT to_regclass('platform.outbox_events')::text")
+        == "platform.outbox_events"
+    )
     assert scalar(migrated_db.migrator, "SELECT version_num FROM platform.alembic_version") == "platform_0001"
 
 
@@ -1860,7 +1945,9 @@ def test_module_migrations_use_their_own_schema_version_table(migrated_db: PgUrl
     spec = ModuleSpec(name="knowledge", db_schema="knowledge", migrations_dir=tmp_path)
     try:
         assert upgrade_all(migrated_db.migrator, [spec]) == ["platform", "knowledge"]
-        assert scalar(migrated_db.migrator, "SELECT version_num FROM knowledge.alembic_version") == "probe_0001"
+        assert (
+            scalar(migrated_db.migrator, "SELECT version_num FROM knowledge.alembic_version") == "probe_0001"
+        )
     finally:
         engine = create_engine(migrated_db.migrator)
         with engine.begin() as conn:
@@ -1881,7 +1968,11 @@ def test_app_role_can_write_rows_but_not_create_tables(migrated_db: PgUrls) -> N
 
 def test_module_with_migrations_but_no_schema_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="db_schema"):
-        upgrade_all("postgresql+psycopg://x@localhost/nais", [ModuleSpec(name="bad", migrations_dir=tmp_path)], sql=True)
+        upgrade_all(
+            "postgresql+psycopg://x@localhost/nais",
+            [ModuleSpec(name="bad", migrations_dir=tmp_path)],
+            sql=True,
+        )
 
 
 def test_offline_sql_mode_renders_ddl(capsys: pytest.CaptureFixture[str]) -> None:
@@ -2072,7 +2163,9 @@ def create_processed_events(schema: str) -> None:
         "processed_events",
         sa.Column("event_id", UUID(as_uuid=True), primary_key=True),
         sa.Column("event_type", sa.Text, nullable=False),
-        sa.Column("processed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "processed_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")
+        ),
         schema=schema,
     )
 ```
@@ -2133,7 +2226,9 @@ def upgrade_all(url: str, modules: Sequence[ModuleSpec], *, sql: bool = False) -
 
 def new_revision(url: str, target: MigrationTarget, message: str) -> Path:
     target.versions_dir.mkdir(parents=True, exist_ok=True)
-    script = command.revision(alembic_config(url, target), message=message, version_path=str(target.versions_dir))
+    script = command.revision(
+        alembic_config(url, target), message=message, version_path=str(target.versions_dir)
+    )
     if script is None or isinstance(script, list):
         raise RuntimeError("alembic did not create exactly one revision")
     return Path(script.path)
@@ -2222,7 +2317,9 @@ def test_rolled_back_transaction_leaves_no_event(migrated_db: PgUrls) -> None:
                 session, EventType.PROJECT_ARCHIVED_V1, {"project_id": str(uuid.uuid4())}, EventActor.system()
             )
             raise RuntimeError("business failure after publish")
-        assert session.execute(select(outbox_events).where(outbox_events.c.event_id == event_id)).first() is None
+        assert (
+            session.execute(select(outbox_events).where(outbox_events.c.event_id == event_id)).first() is None
+        )
 ```
 
 `apps/api/platform/tests/test_event_bus.py`:
@@ -2261,7 +2358,9 @@ def test_subscribe_registers_handlers_in_order() -> None:
     def second(session, event) -> None: ...  # type: ignore[no-untyped-def]
 
     names = [s.name for s in registry.handlers_for("project.archived.v1")]
-    assert names == [f"{__name__}.test_subscribe_registers_handlers_in_order.<locals>.{n}" for n in ("first", "second")]
+    assert names == [
+        f"{__name__}.test_subscribe_registers_handlers_in_order.<locals>.{n}" for n in ("first", "second")
+    ]
     assert registry.handlers_for("project.created.v1") == []
 
 
@@ -2273,10 +2372,12 @@ def test_subscribe_rejects_unknown_event_types() -> None:
 def test_claim_event_is_idempotent(migrated_db: PgUrls) -> None:
     engine = create_engine(migrated_db.migrator)
     with engine.begin() as conn:
-        conn.execute(text(
-            "CREATE TABLE IF NOT EXISTS autonomy.processed_events "
-            "(event_id uuid PRIMARY KEY, event_type text NOT NULL, processed_at timestamptz NOT NULL DEFAULT now())"
-        ))
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS autonomy.processed_events "
+                "(event_id uuid PRIMARY KEY, event_type text NOT NULL, processed_at timestamptz NOT NULL DEFAULT now())"
+            )
+        )
     try:
         event = envelope()
         with session_factory(migrated_db.app)() as session, session.begin():
@@ -2429,7 +2530,9 @@ class OutboxWriter:
         )
         data = envelope.model_dump(mode="json")
         validate_envelope(data)
-        session.execute(insert(outbox_events).values(event_id=envelope.event_id, event_type=kind.value, envelope=data))
+        session.execute(
+            insert(outbox_events).values(event_id=envelope.event_id, event_type=kind.value, envelope=data)
+        )
         return envelope.event_id
 
 
@@ -2561,7 +2664,9 @@ def publish(url: str, count: int = 1) -> list[uuid.UUID]:
     ids = []
     with session_factory(url)() as session, session.begin():
         for _ in range(count):
-            ids.append(OutboxWriter().write(session, EVENT, {"project_id": str(uuid.uuid4())}, EventActor.system()))
+            ids.append(
+                OutboxWriter().write(session, EVENT, {"project_id": str(uuid.uuid4())}, EventActor.system())
+            )
     return ids
 
 
@@ -2701,7 +2806,9 @@ def backoff_seconds(attempts: int) -> float:
     return float(min(2**attempts, 300))
 
 
-def _run_handlers(session_factory: SessionFactory, registry: HandlerRegistry, envelope: EventEnvelope) -> str | None:
+def _run_handlers(
+    session_factory: SessionFactory, registry: HandlerRegistry, envelope: EventEnvelope
+) -> str | None:
     failures: list[str] = []
     for subscription in registry.handlers_for(envelope.event_type):
         try:
@@ -2709,7 +2816,8 @@ def _run_handlers(session_factory: SessionFactory, registry: HandlerRegistry, en
                 subscription.handler(session, envelope)
         except Exception as exc:
             logger.exception(
-                "event handler failed", extra={"handler": subscription.name, "event_id": str(envelope.event_id)}
+                "event handler failed",
+                extra={"handler": subscription.name, "event_id": str(envelope.event_id)},
             )
             failures.append(f"{subscription.name}: {exc!r}")
     return "; ".join(failures) or None
@@ -2768,7 +2876,9 @@ def run_forever(
 ) -> None:
     while not stop.is_set():
         try:
-            result = dispatch_batch(session_factory, registry, batch_size=batch_size, max_attempts=max_attempts)
+            result = dispatch_batch(
+                session_factory, registry, batch_size=batch_size, max_attempts=max_attempts
+            )
         except Exception:
             logger.exception("outbox relay batch failed")
             stop.wait(idle_sleep_s * 4)
@@ -2858,8 +2968,15 @@ class FakeIssuer:
     def token(self, *, expires_in: int = 300, **claims: Any) -> str:
         now = int(time.time())
         payload = {
-            "iss": self.issuer, "aud": self.audience, "sub": "kc-user-1", "iat": now, "exp": now + expires_in,
-            "sid": "session-1", "email": "a.researcher@inst-a.local", "name": "A Researcher", "org_code": "inst-a",
+            "iss": self.issuer,
+            "aud": self.audience,
+            "sub": "kc-user-1",
+            "iat": now,
+            "exp": now + expires_in,
+            "sid": "session-1",
+            "email": "a.researcher@inst-a.local",
+            "name": "A Researcher",
+            "org_code": "inst-a",
         }
         payload.update(claims)
         return jwt.encode(payload, self.private_key, algorithm="RS256", headers={"kid": self.kid})
@@ -2899,7 +3016,13 @@ from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from api.platform import ports
-from api.platform.auth import CurrentUser, CurrentUserDep, PrincipalResolver, TokenVerifier, get_token_verifier
+from api.platform.auth import (
+    CurrentUser,
+    CurrentUserDep,
+    PrincipalResolver,
+    TokenVerifier,
+    get_token_verifier,
+)
 from api.platform.errors import ApiError
 from api.platform.events import EventActor
 from api.platform.modules import ModuleSpec
@@ -2919,12 +3042,17 @@ class FakeResolver:
         if self.error:
             raise self.error
         return CurrentUser(
-            user_id=USER_ID, organization_id=ORG_ID, org_roles=frozenset({"DATA_STEWARD"}),
-            session_id=claims["sid"], display_name=claims["name"],
+            user_id=USER_ID,
+            organization_id=ORG_ID,
+            org_roles=frozenset({"DATA_STEWARD"}),
+            session_id=claims["sid"],
+            display_name=claims["name"],
         )
 
 
-def make_client(*, jwk_fail: Exception | None = None, resolver: FakeResolver | None = FakeResolver()) -> TestClient:
+def make_client(
+    *, jwk_fail: Exception | None = None, resolver: FakeResolver | None = FakeResolver()
+) -> TestClient:
     router = APIRouter()
 
     @router.get("/whoami")
@@ -2972,14 +3100,28 @@ def test_invalid_claims_are_401(claims: dict[str, Any]) -> None:
 
 def test_alg_none_is_rejected() -> None:
     now = int(time.time())
-    payload = {"iss": ISSUER.issuer, "aud": ISSUER.audience, "sub": "x", "iat": now, "exp": now + 300, "sid": "s"}
+    payload = {
+        "iss": ISSUER.issuer,
+        "aud": ISSUER.audience,
+        "sub": "x",
+        "iat": now,
+        "exp": now + 300,
+        "sid": "s",
+    }
     token = jwt.encode(payload, None, algorithm="none", headers={"kid": ISSUER.kid})  # type: ignore[arg-type]
     assert call(make_client(), token).status_code == 401
 
 
 def test_hs256_with_public_key_is_rejected() -> None:
     now = int(time.time())
-    payload = {"iss": ISSUER.issuer, "aud": ISSUER.audience, "sub": "x", "iat": now, "exp": now + 300, "sid": "s"}
+    payload = {
+        "iss": ISSUER.issuer,
+        "aud": ISSUER.audience,
+        "sub": "x",
+        "iat": now,
+        "exp": now + 300,
+        "sid": "s",
+    }
     token = forge_hs256(payload, ISSUER.public_pem(), ISSUER.kid)
     assert call(make_client(), token).status_code == 401
 
@@ -3081,7 +3223,9 @@ class TokenVerifier:
             )
             return claims
         except jwt.PyJWKClientConnectionError as exc:
-            raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "Identity provider keys are unavailable.") from exc
+            raise ApiError(
+                ErrorCode.DEPENDENCY_UNAVAILABLE, "Identity provider keys are unavailable."
+            ) from exc
         except jwt.PyJWTError as exc:
             raise ApiError(ErrorCode.UNAUTHENTICATED) from exc
 
@@ -3186,7 +3330,11 @@ def test_invalid_org_codes_are_rejected(bad: str) -> None:
 
 def test_load_storage_config() -> None:
     cfg = load_storage_config("inst-b", ENV)
-    assert (cfg.endpoint, cfg.bucket, cfg.access_key) == ("http://storage-b:8333", "nais-inst-b", "nais-inst-b")
+    assert (cfg.endpoint, cfg.bucket, cfg.access_key) == (
+        "http://storage-b:8333",
+        "nais-inst-b",
+        "nais-inst-b",
+    )
 
 
 def test_missing_configuration_names_the_variable() -> None:
@@ -3446,7 +3594,9 @@ def live() -> dict[str, str]:
 
 
 @router.get("/health/ready")
-def ready(request: Request, checks: Annotated[dict[str, HealthCheck], Depends(get_health_checks)]) -> JSONResponse:
+def ready(
+    request: Request, checks: Annotated[dict[str, HealthCheck], Depends(get_health_checks)]
+) -> JSONResponse:
     results = run_checks(checks, request.app.state.settings.health_check_timeout_seconds)
     healthy = all(state == "ok" for state in results.values())
     return JSONResponse(
@@ -3767,7 +3917,9 @@ def count_events(url: str) -> int:
 
 
 def publish(session: Session) -> None:
-    OutboxWriter().write(session, "project.archived.v1", {"project_id": str(uuid.uuid4())}, EventActor.system())
+    OutboxWriter().write(
+        session, "project.archived.v1", {"project_id": str(uuid.uuid4())}, EventActor.system()
+    )
 
 
 def test_seeds_run_in_order_and_skip_modules_without_seed(migrated_db: PgUrls) -> None:
@@ -3805,13 +3957,17 @@ from api.platform import cli
 def test_migrate_passes_sql_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
     monkeypatch.setattr(cli, "discover_modules", lambda: [])
-    monkeypatch.setattr(cli, "upgrade_all", lambda url, modules, sql=False: captured.update(url=url, sql=sql) or [])
+    monkeypatch.setattr(
+        cli, "upgrade_all", lambda url, modules, sql=False: captured.update(url=url, sql=sql) or []
+    )
     assert cli.main(["migrate", "--sql"]) == 0
     assert captured["sql"] is True
     assert "nais_migrator" in captured["url"]
 
 
-def test_new_migration_for_unknown_module_fails(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_new_migration_for_unknown_module_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
     monkeypatch.setattr(cli, "discover_modules", lambda: [])
     assert cli.main(["new-migration", "ghost", "-m", "x"]) == 2
     assert "unknown module 'ghost'" in capsys.readouterr().err
@@ -3867,7 +4023,13 @@ from collections.abc import Sequence
 
 from api.platform.broker import configure_broker
 from api.platform.logs import configure_logging
-from api.platform.migrate import PLATFORM_TARGET, MigrationTarget, migration_targets, new_revision, upgrade_all
+from api.platform.migrate import (
+    PLATFORM_TARGET,
+    MigrationTarget,
+    migration_targets,
+    new_revision,
+    upgrade_all,
+)
 from api.platform.modules import discover_modules
 from api.platform.seed import run_seed
 from api.platform.settings import get_settings
@@ -4001,8 +4163,11 @@ def test_no_content_responses() -> None:
 
 def test_event_validation() -> None:
     event = {
-        "event_id": str(uuid.uuid4()), "event_type": "project.archived.v1", "occurred_at": "2026-09-30T00:00:00Z",
-        "producer": "project", "correlation_id": str(uuid.uuid4()),
+        "event_id": str(uuid.uuid4()),
+        "event_type": "project.archived.v1",
+        "occurred_at": "2026-09-30T00:00:00Z",
+        "producer": "project",
+        "correlation_id": str(uuid.uuid4()),
         "actor": {"type": "SYSTEM", "user_id": None, "organization_id": None},
         "payload": {"project_id": str(uuid.uuid4())},
     }
@@ -4035,7 +4200,12 @@ def test_openapi_is_valid() -> None:
 
 
 def test_operation_ids_are_unique() -> None:
-    ids = [op["operationId"] for item in load_openapi()["paths"].values() for op in item.values() if isinstance(op, dict) and "operationId" in op]
+    ids = [
+        op["operationId"]
+        for item in load_openapi()["paths"].values()
+        for op in item.values()
+        if isinstance(op, dict) and "operationId" in op
+    ]
     assert [i for i, n in Counter(ids).items() if n > 1] == []
 
 
@@ -4055,11 +4225,16 @@ def test_error_codes_are_unique_and_use_known_statuses() -> None:
 
 def test_module_ownership_paths_do_not_overlap() -> None:
     ownership = json.loads((CONTRACTS / "module_ownership.json").read_text())
-    owned = [(module, PurePosixPath(p)) for module, spec in ownership.items() if isinstance(spec, dict) for p in spec.get("path", [])]
+    owned = [
+        (module, PurePosixPath(p))
+        for module, spec in ownership.items()
+        if isinstance(spec, dict)
+        for p in spec.get("path", [])
+    ]
     clashes = [
         (a, str(pa), b, str(pb))
         for i, (a, pa) in enumerate(owned)
-        for b, pb in owned[i + 1:]
+        for b, pb in owned[i + 1 :]
         if a != b and (pa == pb or pa in pb.parents or pb in pa.parents)
     ]
     assert clashes == []
@@ -4090,7 +4265,9 @@ _METHODS = ("get", "post", "put", "patch", "delete")
 
 @lru_cache(maxsize=1)
 def _spec() -> dict[str, Any]:
-    spec: dict[str, Any] = yaml.safe_load((get_settings().contracts_dir / "openapi.yaml").read_text(encoding="utf-8"))
+    spec: dict[str, Any] = yaml.safe_load(
+        (get_settings().contracts_dir / "openapi.yaml").read_text(encoding="utf-8")
+    )
     return spec
 
 
@@ -4130,7 +4307,9 @@ def assert_matches_response(operation_id: str, status_code: int, body: Any) -> N
     root = {**_spec(), "$ref": _pointer(*base, "content", "application/json", "schema")}
     errors = sorted(Draft202012Validator(root).iter_errors(body), key=lambda e: list(e.absolute_path))
     if errors:
-        details = "\n".join(f"  {'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}" for e in errors)
+        details = "\n".join(
+            f"  {'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}" for e in errors
+        )
         raise AssertionError(f"{operation_id} {status_code} response violates openapi.yaml:\n{details}")
 
 
@@ -4627,16 +4806,27 @@ def check(org_code: str) -> None:
     client = public_client(cfg, BASE)
     key = f"_smoke/{org_code}.txt"
     body = f"nais gate-a {org_code}".encode()
-    put_url = client.generate_presigned_url("put_object", Params={"Bucket": cfg.bucket, "Key": key}, ExpiresIn=60)
+    put_url = client.generate_presigned_url(
+        "put_object", Params={"Bucket": cfg.bucket, "Key": key}, ExpiresIn=60
+    )
     put = httpx.put(put_url, content=body, timeout=10)
     expect(put.status_code == 200, f"{org_code} presigned PUT returned {put.status_code}: {put.text[:200]}")
-    get_url = client.generate_presigned_url("get_object", Params={"Bucket": cfg.bucket, "Key": key}, ExpiresIn=60)
+    get_url = client.generate_presigned_url(
+        "get_object", Params={"Bucket": cfg.bucket, "Key": key}, ExpiresIn=60
+    )
     got = httpx.get(get_url, timeout=10)
-    expect(got.status_code == 200 and got.content == body, f"{org_code} presigned GET returned {got.status_code}")
+    expect(
+        got.status_code == 200 and got.content == body, f"{org_code} presigned GET returned {got.status_code}"
+    )
     tampered = httpx.get(get_url.replace(f"{org_code}.txt", f"{org_code}-x.txt"), timeout=10)
-    expect(tampered.status_code == 403, f"{org_code} tampered URL returned {tampered.status_code}, expected 403")
+    expect(
+        tampered.status_code == 403, f"{org_code} tampered URL returned {tampered.status_code}, expected 403"
+    )
     anonymous = httpx.get(f"{BASE}/{cfg.bucket}/{key}", timeout=10)
-    expect(anonymous.status_code == 403, f"{org_code} anonymous GET returned {anonymous.status_code}, expected 403")
+    expect(
+        anonymous.status_code == 403,
+        f"{org_code} anonymous GET returned {anonymous.status_code}, expected 403",
+    )
     print(f"ok  storage {org_code} ({cfg.bucket})")
 
 

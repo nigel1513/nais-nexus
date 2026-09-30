@@ -42,6 +42,9 @@ package = false
 pythonpath = ["apps", "packages/contracts/python"]
 testpaths = ["apps/api", "tests/contract"]
 addopts = "--import-mode=importlib -ra"
+filterwarnings = [
+    "ignore:Using .httpx. with .starlette.testclient. is deprecated",
+]
 
 [tool.ruff]
 line-length = 110

@@ -4,7 +4,7 @@ import base64
 import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Annotated, Any, Generic, TypeVar
+from typing import Annotated, Any
 
 from fastapi import Query
 from pydantic import BaseModel
@@ -12,7 +12,6 @@ from pydantic import BaseModel
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
 
-T = TypeVar("T")
 MAX_CURSOR_LENGTH = 512
 
 
@@ -21,7 +20,7 @@ class PageInfo(BaseModel):
     has_more: bool
 
 
-class Page(BaseModel, Generic[T]):
+class Page[T](BaseModel):
     items: list[T]
     page: PageInfo
 
@@ -65,7 +64,7 @@ def page_params(
     return PageParams(cursor=decode_cursor(cursor) if cursor else None, limit=limit)
 
 
-def build_page(rows: Sequence[T], limit: int, key: Callable[[T], Sequence[Any]]) -> Page[T]:
+def build_page[T](rows: Sequence[T], limit: int, key: Callable[[T], Sequence[Any]]) -> Page[T]:
     has_more = len(rows) > limit
     items = list(rows[:limit])
     next_cursor = encode_cursor(key(items[-1])) if has_more and items else None

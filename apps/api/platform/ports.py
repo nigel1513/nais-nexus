@@ -1,8 +1,6 @@
 """Tiny port registry: modules provide implementations, consumers look them up by Protocol type."""
 
-from typing import TypeVar, cast
-
-T = TypeVar("T")
+from typing import cast
 
 
 class PortNotProvided(LookupError):
@@ -12,11 +10,11 @@ class PortNotProvided(LookupError):
 _registry: dict[object, object] = {}
 
 
-def provide(port: type[T], impl: T) -> None:
+def provide[T](port: type[T], impl: T) -> None:
     _registry[port] = impl
 
 
-def get(port: type[T]) -> T:
+def get[T](port: type[T]) -> T:
     try:
         return cast(T, _registry[port])
     except KeyError:

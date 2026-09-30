@@ -18,7 +18,9 @@ def count_events(url: str) -> int:
 
 
 def publish(session: Session) -> None:
-    OutboxWriter().write(session, "project.archived.v1", {"project_id": str(uuid.uuid4())}, EventActor.system())
+    OutboxWriter().write(
+        session, "project.archived.v1", {"project_id": str(uuid.uuid4())}, EventActor.system()
+    )
 
 
 def test_seeds_run_in_order_and_skip_modules_without_seed(migrated_db: PgUrls) -> None:

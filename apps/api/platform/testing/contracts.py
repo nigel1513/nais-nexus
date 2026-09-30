@@ -14,7 +14,9 @@ _METHODS = ("get", "post", "put", "patch", "delete")
 
 @lru_cache(maxsize=1)
 def _spec() -> dict[str, Any]:
-    spec: dict[str, Any] = yaml.safe_load((get_settings().contracts_dir / "openapi.yaml").read_text(encoding="utf-8"))
+    spec: dict[str, Any] = yaml.safe_load(
+        (get_settings().contracts_dir / "openapi.yaml").read_text(encoding="utf-8")
+    )
     return spec
 
 
@@ -54,7 +56,9 @@ def assert_matches_response(operation_id: str, status_code: int, body: Any) -> N
     root = {**_spec(), "$ref": _pointer(*base, "content", "application/json", "schema")}
     errors = sorted(Draft202012Validator(root).iter_errors(body), key=lambda e: list(e.absolute_path))
     if errors:
-        details = "\n".join(f"  {'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}" for e in errors)
+        details = "\n".join(
+            f"  {'/'.join(map(str, e.absolute_path)) or '(root)'}: {e.message}" for e in errors
+        )
         raise AssertionError(f"{operation_id} {status_code} response violates openapi.yaml:\n{details}")
 
 

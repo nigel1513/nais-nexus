@@ -1,7 +1,6 @@
 import uuid
 
 import pytest
-
 from api.platform.testing.contracts import assert_matches_response, assert_valid_event, operation
 
 PROJECT = {
@@ -49,8 +48,11 @@ def test_no_content_responses() -> None:
 
 def test_event_validation() -> None:
     event = {
-        "event_id": str(uuid.uuid4()), "event_type": "project.archived.v1", "occurred_at": "2026-09-30T00:00:00Z",
-        "producer": "project", "correlation_id": str(uuid.uuid4()),
+        "event_id": str(uuid.uuid4()),
+        "event_type": "project.archived.v1",
+        "occurred_at": "2026-09-30T00:00:00Z",
+        "producer": "project",
+        "correlation_id": str(uuid.uuid4()),
         "actor": {"type": "SYSTEM", "user_id": None, "organization_id": None},
         "payload": {"project_id": str(uuid.uuid4())},
     }

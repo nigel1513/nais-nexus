@@ -9,8 +9,16 @@ from typing import Any
 from fastapi import APIRouter
 
 DEFAULT_MODULE_ORDER: tuple[str, ...] = (
-    "identity", "project", "catalog", "readiness", "governance",
-    "audit", "marketplace", "compute", "knowledge", "autonomy",
+    "identity",
+    "project",
+    "catalog",
+    "readiness",
+    "governance",
+    "audit",
+    "marketplace",
+    "compute",
+    "knowledge",
+    "autonomy",
 )
 
 

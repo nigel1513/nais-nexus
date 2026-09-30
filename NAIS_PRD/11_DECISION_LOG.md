@@ -41,7 +41,6 @@ PRD v1.0에서 비어 있거나 모호했던 부분을 v1.1에서 확정한 기�
 | D-034 | 개발 스토리지 | MinIO 대신 SeaweedFS 4.48 (S3 API). compose 서비스 `storage-a`/`storage-b`, 포트 8333. 운영은 S3 호환 스토리지 그대로 | MinIO 공식 이미지(Docker Hub, quay.io) 조회 불가 (2026-09-30 확인). gateway 경유 presigned PUT/GET/multipart/변조 거부 검증 완료 |
 | D-035 | 개발 포트 재배치 | 21053/21054 = storage-a/b S3 endpoint, 21058 = redis | 스토리지 콘솔 없음 |
 | D-036 | 모듈 플러그인 계약 | 각 모듈은 `apps/api/modules/<name>/__init__.py`에 `MODULE = ModuleSpec(...)`을 정의. migration은 `python -m api.platform.cli new-migration <module> -m <msg>`로 생성, `alembic.ini` 없음. Dramatiq actor는 모듈 import 시 정의하며 platform이 import 전에 broker를 설정 | Wave 1 병렬 개발용 고정 인터페이스 |
-
 | D-037 | 개발 환경 외부 접속·단일 계정 | 포트 21051~21058 모두 외부 공개(서버 <NAIS_EXTERNAL_HOST>, 내부 192.168.0.3, 공유기 포트포워딩 필요). 모든 로그인 nais / nais (Postgres superuser, nais_app·nais_migrator 비밀번호, Keycloak 관리자, S3 키, Mailpit, Redis, OpenSearch·OPA는 gateway Basic 인증). seed 사용자 비밀번호도 nais | 소유자 결정(2026-09-30), 보안 위험 수용 |
 
 ## P1 이후로 미룬 항목 (v1.1 검토 중 식별)

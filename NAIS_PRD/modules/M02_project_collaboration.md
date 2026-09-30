@@ -45,7 +45,7 @@
 
 ### Ports consumed
 ```python
-class IdentityQueryPort(Protocol):   # M01
+class IdentityQueryPort(Protocol):  # M01
     def get_public_profile(self, user_id: UUID) -> IdentityPublicProfile | None: ...
     def get_public_profiles(self, user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]: ...
     def get_organization_summary(self, organization_id: UUID) -> OrganizationSummary | None: ...
@@ -172,13 +172,19 @@ ARCHIVED 프로젝트에서의 탈퇴는 허용한다 (grant는 이미 회수된
 
 ```python
 class ProjectQueryPort(Protocol):
-    def is_active_member(self, project_id: UUID, user_id: UUID) -> bool: ...
+    def is_active_member(self, project_id: UUID, user_id: UUID) -> bool:
+        ...
         # project.status == ACTIVE 이고 member.status == ACTIVE 일 때만 True
         # (ARCHIVED 프로젝트는 False — governance 다운로드 검사에 사용)
+
     def get_member_role(self, project_id: UUID, user_id: UUID) -> str | None: ...
-    def get_summary(self, project_id: UUID) -> ProjectSummary | None: ...     # openapi ProjectSummary, my_role=None
-    def list_active_member_ids(self, project_id: UUID) -> list[UUID]: ...      # M09 audit 가시성용
-    def list_project_ids_for_member(self, user_id: UUID) -> list[UUID]: ...    # M09 audit 가시성용 (ACTIVE 멤버십)
+    def get_summary(
+        self, project_id: UUID
+    ) -> ProjectSummary | None: ...  # openapi ProjectSummary, my_role=None
+    def list_active_member_ids(self, project_id: UUID) -> list[UUID]: ...  # M09 audit 가시성용
+    def list_project_ids_for_member(
+        self, user_id: UUID
+    ) -> list[UUID]: ...  # M09 audit 가시성용 (ACTIVE 멤버십)
 ```
 
 ## 9. Authorization matrix

@@ -59,19 +59,22 @@ Catalog는 **데이터가 어디에 어떻게 있는지**를 안다. **누가 �
 from typing import Protocol, Sequence
 from uuid import UUID
 
-class AuthContext(Protocol):          # apps/api/platform/auth (M00)
+
+class AuthContext(Protocol):  # apps/api/platform/auth (M00)
     user_id: UUID
     organization_id: UUID
-    org_roles: frozenset[str]         # {"ORG_ADMIN","DATA_STEWARD","RESOURCE_MANAGER"}
-    platform_roles: frozenset[str]    # {"PLATFORM_ADMIN"}
+    org_roles: frozenset[str]  # {"ORG_ADMIN","DATA_STEWARD","RESOURCE_MANAGER"}
+    platform_roles: frozenset[str]  # {"PLATFORM_ADMIN"}
     trace_id: str
 
-class IdentityPort(Protocol):         # provided by M01
+
+class IdentityPort(Protocol):  # provided by M01
     def get_organization_summary(self, organization_id: UUID) -> "OrganizationSummary | None": ...
     def get_organization_summaries(self, ids: Sequence[UUID]) -> dict[UUID, "OrganizationSummary"]: ...
 
-class MalwareScannerPort(Protocol):   # M03 내부 extension point, P0 구현 = NoopScanner
-    def scan(self, bucket: str, key: str) -> "ScanResult": ...   # CLEAN | INFECTED | SKIPPED
+
+class MalwareScannerPort(Protocol):  # M03 내부 extension point, P0 구현 = NoopScanner
+    def scan(self, bucket: str, key: str) -> "ScanResult": ...  # CLEAN | INFECTED | SKIPPED
 ```
 
 - `OrganizationSummary.code`로 기관 스토리지(bucket)를 결정한다 (§4.8, D-024).
@@ -443,8 +446,9 @@ from uuid import UUID
 
 AccessLevel = Literal["PUBLIC", "INTERNAL", "CONTROLLED", "SENSITIVE"]
 
+
 @dataclass(frozen=True)
-class DatasetPolicyView:            # = openapi DatasetPolicyView
+class DatasetPolicyView:  # = openapi DatasetPolicyView
     dataset_id: UUID
     owner_organization_id: UUID
     access_level: AccessLevel
@@ -454,6 +458,7 @@ class DatasetPolicyView:            # = openapi DatasetPolicyView
     status: Literal["ACTIVE", "WITHDRAWN"]
     title: str
 
+
 @dataclass(frozen=True)
 class FileRef:
     file_id: UUID
@@ -462,8 +467,9 @@ class FileRef:
     sha256: str
     media_type: str
     status: Literal["PENDING", "UPLOADED", "VERIFIED", "FAILED"]
-    storage_bucket: str             # 내부 전용. API 응답·이벤트·로그에 노출 금지
+    storage_bucket: str  # 내부 전용. API 응답·이벤트·로그에 노출 금지
     storage_key: str
+
 
 @dataclass(frozen=True)
 class VersionView:
@@ -474,13 +480,16 @@ class VersionView:
     status: Literal["DRAFT", "PUBLISHED", "WITHDRAWN"]
     manifest_sha256: str | None
     metadata_snapshot: dict | None  # PUBLISHED에서만 not None
-    files: tuple[FileRef, ...]      # path 오름차순
+    files: tuple[FileRef, ...]  # path 오름차순
+
 
 class CatalogQueryPort(Protocol):
     """Governance(M04), Readiness(M05)용 조회. 권한 판단은 하지 않는다 (is_visible 제외)."""
+
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None: ...
     def get_version(self, dataset_version_id: UUID) -> VersionView | None: ...
-    def is_visible(self, ctx: "AuthContext", dataset_id: UUID) -> bool: ...   # D-012 metadata 가시성
+    def is_visible(self, ctx: "AuthContext", dataset_id: UUID) -> bool: ...  # D-012 metadata 가시성
+
 
 @dataclass(frozen=True)
 class PresignedGet:
@@ -491,18 +500,22 @@ class PresignedGet:
     sha256: str
     expires_at: datetime
 
+
 class StoragePort(Protocol):
     """Governance 전용. 호출 전에 Governance가 권한을 결정했다는 전제.
     Catalog는 요청된 파일이 해당 version의 VERIFIED 파일인지 확인만 하고 URL을 서명한다."""
+
     def presign_get(
         self,
         dataset_version_id: UUID,
-        file_ids: Sequence[UUID] | None,   # None = 전체
-        ttl_seconds: int,                  # STORAGE_PRESIGN_TTL_SECONDS (300)
-    ) -> list[PresignedGet]: ...           # 알 수 없는 file_id → ValueError(NOT_FOUND)
+        file_ids: Sequence[UUID] | None,  # None = 전체
+        ttl_seconds: int,  # STORAGE_PRESIGN_TTL_SECONDS (300)
+    ) -> list[PresignedGet]: ...  # 알 수 없는 file_id → ValueError(NOT_FOUND)
+
 
 class CatalogReadPort(Protocol):
     """Readiness(M05) worker 전용. 서비스 자격증명으로 읽기 (D-018). 사용자 grant와 무관."""
+
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
 ```
 

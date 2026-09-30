@@ -65,7 +65,9 @@ def live() -> dict[str, str]:
 
 
 @router.get("/health/ready")
-def ready(request: Request, checks: Annotated[dict[str, HealthCheck], Depends(get_health_checks)]) -> JSONResponse:
+def ready(
+    request: Request, checks: Annotated[dict[str, HealthCheck], Depends(get_health_checks)]
+) -> JSONResponse:
     results = run_checks(checks, request.app.state.settings.health_check_timeout_seconds)
     healthy = all(state == "ok" for state in results.values())
     return JSONResponse(

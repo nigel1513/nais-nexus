@@ -52,7 +52,10 @@ def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> JSONResponse:
         fields = [
-            {"field": ".".join(str(part) for part in err["loc"][1:]) or str(err["loc"][0]), "reason": err["msg"]}
+            {
+                "field": ".".join(str(part) for part in err["loc"][1:]) or str(err["loc"][0]),
+                "reason": err["msg"],
+            }
             for err in exc.errors()
         ]
         body = error_body(ErrorCode.VALIDATION_FAILED, "Request validation failed.", {"fields": fields})

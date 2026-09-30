@@ -27,7 +27,9 @@ def publish(url: str, count: int = 1) -> list[uuid.UUID]:
     ids = []
     with session_factory(url)() as session, session.begin():
         for _ in range(count):
-            ids.append(OutboxWriter().write(session, EVENT, {"project_id": str(uuid.uuid4())}, EventActor.system()))
+            ids.append(
+                OutboxWriter().write(session, EVENT, {"project_id": str(uuid.uuid4())}, EventActor.system())
+            )
     return ids
 
 

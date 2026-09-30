@@ -31,7 +31,9 @@ def backoff_seconds(attempts: int) -> float:
     return float(min(2**attempts, 300))
 
 
-def _run_handlers(session_factory: SessionFactory, registry: HandlerRegistry, envelope: EventEnvelope) -> str | None:
+def _run_handlers(
+    session_factory: SessionFactory, registry: HandlerRegistry, envelope: EventEnvelope
+) -> str | None:
     failures: list[str] = []
     for subscription in registry.handlers_for(envelope.event_type):
         try:
@@ -39,7 +41,8 @@ def _run_handlers(session_factory: SessionFactory, registry: HandlerRegistry, en
                 subscription.handler(session, envelope)
         except Exception as exc:
             logger.exception(
-                "event handler failed", extra={"handler": subscription.name, "event_id": str(envelope.event_id)}
+                "event handler failed",
+                extra={"handler": subscription.name, "event_id": str(envelope.event_id)},
             )
             failures.append(f"{subscription.name}: {exc!r}")
     return "; ".join(failures) or None
@@ -112,7 +115,9 @@ def run_forever(
 ) -> None:
     while not stop.is_set():
         try:
-            result = dispatch_batch(session_factory, registry, batch_size=batch_size, max_attempts=max_attempts)
+            result = dispatch_batch(
+                session_factory, registry, batch_size=batch_size, max_attempts=max_attempts
+            )
         except Exception:
             logger.exception("outbox relay batch failed")
             stop.wait(idle_sleep_s * 4)

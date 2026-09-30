@@ -6,7 +6,13 @@ from collections.abc import Sequence
 
 from api.platform.broker import configure_broker
 from api.platform.logs import configure_logging
-from api.platform.migrate import PLATFORM_TARGET, MigrationTarget, migration_targets, new_revision, upgrade_all
+from api.platform.migrate import (
+    PLATFORM_TARGET,
+    MigrationTarget,
+    migration_targets,
+    new_revision,
+    upgrade_all,
+)
 from api.platform.modules import discover_modules
 from api.platform.seed import run_seed
 from api.platform.settings import get_settings

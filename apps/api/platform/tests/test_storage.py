@@ -23,7 +23,11 @@ def test_invalid_org_codes_are_rejected(bad: str) -> None:
 
 def test_load_storage_config() -> None:
     cfg = load_storage_config("inst-b", ENV)
-    assert (cfg.endpoint, cfg.bucket, cfg.access_key) == ("http://storage-b:8333", "nais-inst-b", "nais-inst-b")
+    assert (cfg.endpoint, cfg.bucket, cfg.access_key) == (
+        "http://storage-b:8333",
+        "nais-inst-b",
+        "nais-inst-b",
+    )
 
 
 def test_missing_configuration_names_the_variable() -> None:

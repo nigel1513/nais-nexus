@@ -32,7 +32,9 @@ def test_subscribe_registers_handlers_in_order() -> None:
     def second(session, event) -> None: ...  # type: ignore[no-untyped-def]
 
     names = [s.name for s in registry.handlers_for("project.archived.v1")]
-    assert names == [f"{__name__}.test_subscribe_registers_handlers_in_order.<locals>.{n}" for n in ("first", "second")]
+    assert names == [
+        f"{__name__}.test_subscribe_registers_handlers_in_order.<locals>.{n}" for n in ("first", "second")
+    ]
     assert registry.handlers_for("project.created.v1") == []
 
 
@@ -44,10 +46,12 @@ def test_subscribe_rejects_unknown_event_types() -> None:
 def test_claim_event_is_idempotent(migrated_db: PgUrls) -> None:
     engine = create_engine(migrated_db.migrator)
     with engine.begin() as conn:
-        conn.execute(text(
-            "CREATE TABLE IF NOT EXISTS autonomy.processed_events "
-            "(event_id uuid PRIMARY KEY, event_type text NOT NULL, processed_at timestamptz NOT NULL DEFAULT now())"
-        ))
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS autonomy.processed_events "
+                "(event_id uuid PRIMARY KEY, event_type text NOT NULL, processed_at timestamptz NOT NULL DEFAULT now())"
+            )
+        )
     try:
         event = envelope()
         with session_factory(migrated_db.app)() as session, session.begin():

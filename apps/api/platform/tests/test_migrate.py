@@ -8,7 +8,7 @@ from api.platform.migrate import MigrationTarget, new_revision, upgrade_all
 from api.platform.modules import ModuleSpec
 from api.platform.testing.fixtures import PgUrls
 
-PROBE_REVISION = '''
+PROBE_REVISION = """
 revision = "probe_0001"
 down_revision = None
 branch_labels = None
@@ -24,7 +24,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("probe", schema="knowledge")
-'''
+"""
 
 
 def scalar(url: str, sql: str) -> object:
@@ -37,7 +37,10 @@ def scalar(url: str, sql: str) -> object:
 
 
 def test_platform_migration_creates_outbox_and_version_table(migrated_db: PgUrls) -> None:
-    assert scalar(migrated_db.app, "SELECT to_regclass('platform.outbox_events')::text") == "platform.outbox_events"
+    assert (
+        scalar(migrated_db.app, "SELECT to_regclass('platform.outbox_events')::text")
+        == "platform.outbox_events"
+    )
     assert scalar(migrated_db.migrator, "SELECT version_num FROM platform.alembic_version") == "platform_0001"
 
 
@@ -50,7 +53,9 @@ def test_module_migrations_use_their_own_schema_version_table(migrated_db: PgUrl
     spec = ModuleSpec(name="knowledge", db_schema="knowledge", migrations_dir=tmp_path)
     try:
         assert upgrade_all(migrated_db.migrator, [spec]) == ["platform", "knowledge"]
-        assert scalar(migrated_db.migrator, "SELECT version_num FROM knowledge.alembic_version") == "probe_0001"
+        assert (
+            scalar(migrated_db.migrator, "SELECT version_num FROM knowledge.alembic_version") == "probe_0001"
+        )
     finally:
         engine = create_engine(migrated_db.migrator)
         with engine.begin() as conn:
@@ -71,7 +76,11 @@ def test_app_role_can_write_rows_but_not_create_tables(migrated_db: PgUrls) -> N
 
 def test_module_with_migrations_but_no_schema_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="db_schema"):
-        upgrade_all("postgresql+psycopg://x@localhost/nais", [ModuleSpec(name="bad", migrations_dir=tmp_path)], sql=True)
+        upgrade_all(
+            "postgresql+psycopg://x@localhost/nais",
+            [ModuleSpec(name="bad", migrations_dir=tmp_path)],
+            sql=True,
+        )
 
 
 def test_offline_sql_mode_renders_ddl(capsys: pytest.CaptureFixture[str]) -> None:

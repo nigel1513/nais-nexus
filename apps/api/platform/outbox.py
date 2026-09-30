@@ -53,7 +53,9 @@ class OutboxWriter:
         )
         data = envelope.model_dump(mode="json")
         validate_envelope(data)
-        session.execute(insert(outbox_events).values(event_id=envelope.event_id, event_type=kind.value, envelope=data))
+        session.execute(
+            insert(outbox_events).values(event_id=envelope.event_id, event_type=kind.value, envelope=data)
+        )
         return envelope.event_id
 
 

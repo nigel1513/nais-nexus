@@ -58,14 +58,17 @@ worker 진입점 `apps/api/worker.py`는 Agent 0 소유이며, readiness는 `reg
 from typing import BinaryIO, Protocol
 from uuid import UUID
 
-class CatalogQueryPort(Protocol):     # M03 public.py
+
+class CatalogQueryPort(Protocol):  # M03 public.py
     def get_version(self, dataset_version_id: UUID) -> "VersionView | None": ...
     def is_visible(self, ctx: "AuthContext", dataset_id: UUID) -> bool: ...
 
-class CatalogReadPort(Protocol):      # M03 public.py, 서비스 자격증명 (D-018)
+
+class CatalogReadPort(Protocol):  # M03 public.py, 서비스 자격증명 (D-018)
     def open_stream(self, file: "FileRef", byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
 
-class AuthContext(Protocol):          # M00
+
+class AuthContext(Protocol):  # M00
     user_id: UUID
     organization_id: UUID
     org_roles: frozenset[str]
@@ -211,8 +214,10 @@ Consumer: M03(`readiness_overall` read model), M09(Audit `READINESS_VALIDATION_C
 from typing import Literal, Protocol
 from uuid import UUID
 
+
 class ReadinessQueryPort(Protocol):
     """다른 모듈용 (P1: M06 Marketplace 품질 배지 등). P0에서는 M03이 이벤트 read model을 쓰므로 필수 아님."""
+
     def get_latest_overall(
         self, dataset_version_id: UUID, profile_id: str
     ) -> Literal["PASS", "WARNING", "FAIL"] | None: ...

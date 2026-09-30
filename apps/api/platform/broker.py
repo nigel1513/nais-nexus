@@ -7,6 +7,6 @@ from api.platform.settings import Settings
 
 
 def configure_broker(settings: Settings, broker: dramatiq.Broker | None = None) -> dramatiq.Broker:
-    chosen = broker if broker is not None else RedisBroker(url=settings.redis_url)
+    chosen = broker if broker is not None else RedisBroker(url=settings.redis_url)  # type: ignore[no-untyped-call]  # dramatiq lacks annotations
     dramatiq.set_broker(chosen)
     return chosen

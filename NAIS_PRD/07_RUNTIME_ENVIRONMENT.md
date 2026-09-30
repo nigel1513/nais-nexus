@@ -33,7 +33,7 @@ http://localhost:21051
 
 | 포트 | 서비스 | 용도 |
 |---:|---|---|
-| 21051 | gateway (nginx) | **서비스 포트 (유일한 공개 포트)** |
+| 21051 | gateway (nginx) | **서비스 포트 (gateway)** |
 | 21052 | mailpit UI | 개발용 메일 확인 |
 | 21053 | storage-a S3 | Institute A 스토리지 S3 endpoint (디버깅) |
 | 21054 | storage-b S3 | Institute B 스토리지 S3 endpoint (디버깅) |
@@ -43,7 +43,7 @@ http://localhost:21051
 | 21058 | redis | 로컬 디버깅 |
 | 21059 | 예약 | P1 이후 (예: grafana) |
 
-운영 배포(`docker-compose.prod.yml`)에서는 21052~21059를 publish하지 않는다.
+개발 스택에서는 D-037에 따라 21051~21058 모두 외부에 공개된다 (OpenSearch/OPA는 gateway Basic 인증 nais/nais 경유). `docker-compose.prod.yml`은 직접 노출되는 개발 도구 포트(21052~21059)를 제거한다.
 
 ## 3. Compose 서비스 목록
 
