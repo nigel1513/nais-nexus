@@ -27,7 +27,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "pytest>=8.3",
-    "testcontainers[postgres]>=4.8",
+    "testcontainers[postgres]>=4.15",
     "ruff>=0.6",
     "mypy>=1.11",
     "types-PyYAML>=6.0",

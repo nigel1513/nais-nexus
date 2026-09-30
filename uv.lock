@@ -1047,7 +1047,7 @@ dev = [
     { name = "openapi-spec-validator", specifier = ">=0.7" },
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.6" },
-    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.8" },
+    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.15" },
     { name = "types-pyyaml", specifier = ">=6.0" },
 ]
 
