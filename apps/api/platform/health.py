@@ -1,3 +1,4 @@
+import logging
 import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -12,20 +13,23 @@ from sqlalchemy import text
 from api.platform.db import engine_for
 from api.platform.settings import get_settings
 
+logger = logging.getLogger("nais.health")
 HealthCheck = Callable[[], None]
 router = APIRouter(tags=["health"])
-_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="health")
+_executor = ThreadPoolExecutor(max_workers=32, thread_name_prefix="health")
 
 
 def default_health_checks() -> dict[str, HealthCheck]:
     settings = get_settings()
 
     def postgres() -> None:
-        with engine_for(settings.database_url).connect() as conn:
+        with engine_for(settings.database_url).begin() as conn:
+            conn.execute(text("SET LOCAL statement_timeout = 1500"))
             conn.execute(text("SELECT 1"))
 
     def redis() -> None:
-        Redis.from_url(settings.redis_url, socket_timeout=1, socket_connect_timeout=1).ping()
+        with Redis.from_url(settings.redis_url, socket_timeout=1, socket_connect_timeout=1) as client:
+            client.ping()
 
     def opensearch() -> None:
         httpx.get(f"{settings.opensearch_url}/_cluster/health", timeout=1.5).raise_for_status()
@@ -49,7 +53,9 @@ def run_checks(checks: dict[str, HealthCheck], timeout_s: float) -> dict[str, st
             future.result(timeout=max(0.0, deadline - time.monotonic()))
             results[name] = "ok"
         except Exception:
+            logger.warning("health check failed", extra={"check": name})
             results[name] = "down"
+            future.cancel()
     return results
 
 

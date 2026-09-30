@@ -49,3 +49,13 @@ def test_default_checks_cover_the_gate_a_dependencies() -> None:
     from api.platform.health import default_health_checks
 
     assert set(default_health_checks()) == {"postgres", "redis", "opensearch", "opa"}
+
+
+def test_pool_not_filled_with_hung_checks() -> None:
+    client = client_with({"opensearch": hang, "postgres": ok}, timeout=0.2)
+    for _ in range(5):
+        response = client.get("/api/v1/health/ready")
+        assert response.status_code == 503
+        checks = response.json()["checks"]
+        assert checks["postgres"] == "ok"
+        assert checks["opensearch"] == "down"
