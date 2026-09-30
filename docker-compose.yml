@@ -86,7 +86,7 @@ services:
     command: ["start-dev", "--import-realm"]
     environment:
       KC_HTTP_RELATIVE_PATH: /auth
-      KC_HOSTNAME: http://localhost:21051/auth
+      KC_HOSTNAME: ${NAIS_PUBLIC_BASE_URL:-http://localhost:21051}/auth
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"
