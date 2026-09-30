@@ -1,5 +1,8 @@
+import uuid
+
 import pytest
 
+from api.platform.context import correlation_id
 from api.platform.scheduler import Scheduler
 
 
@@ -54,3 +57,17 @@ def test_invalid_and_duplicate_jobs_are_rejected() -> None:
     scheduler.every(1, "dup", lambda: None)
     with pytest.raises(ValueError):
         scheduler.every(1, "dup", lambda: None)
+
+
+def test_each_run_gets_its_own_stable_correlation_id() -> None:
+    clock = FakeClock()
+    seen: list[tuple[uuid.UUID, uuid.UUID]] = []
+    scheduler = Scheduler(clock=clock)
+    scheduler.every(1, "probe", lambda: seen.append((correlation_id(), correlation_id())))
+    clock.value = 1
+    scheduler.run_pending()
+    clock.value = 2
+    scheduler.run_pending()
+    assert len(seen) == 2
+    assert all(first == second for first, second in seen)
+    assert seen[0][0] != seen[1][0]

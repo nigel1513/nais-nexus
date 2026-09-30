@@ -6,6 +6,9 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from api.platform.context import use_correlation_id
+from api.platform.ids import new_id
+
 logger = logging.getLogger("nais.scheduler")
 
 
@@ -43,7 +46,8 @@ class Scheduler:
             if job.next_run > now:
                 continue
             try:
-                job.fn()
+                with use_correlation_id(new_id()):  # one correlation id per run
+                    job.fn()
             except Exception:
                 logger.exception("scheduled job failed", extra={"job": job.name})
             job.next_run = now + job.interval_s

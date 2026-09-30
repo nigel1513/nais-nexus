@@ -15,11 +15,13 @@ def set_correlation_id(value: UUID) -> None:
 
 
 def correlation_id() -> UUID:
+    """The id set for this request/job/message, or a fresh one-off id (NOT stored) when none is set.
+
+    Stable scopes are opened by the HTTP middleware (set_correlation_id), the scheduler, the Dramatiq
+    CorrelationMiddleware and the outbox relay (use_correlation_id). Never cache a generated id on a thread.
+    """
     value = _correlation_id.get()
-    if value is None:
-        value = new_id()
-        _correlation_id.set(value)
-    return value
+    return new_id() if value is None else value
 
 
 def trace_id() -> str:
