@@ -1,6 +1,8 @@
 # Production override (use as `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`).
-# Dev tool ports are removed; the gateway ports remain. Dev exposure is governed by D-037.
+# Dev tool ports are removed and the gateway exposes only 21051 (no OpenSearch/OPA). Dev exposure is governed by D-037.
 services:
+  gateway:
+    ports: !override ["21051:21051"]
   postgres:
     ports: !reset []
   redis:

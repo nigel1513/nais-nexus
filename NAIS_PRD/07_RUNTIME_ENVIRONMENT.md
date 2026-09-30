@@ -2,8 +2,8 @@
 
 ## 1. 단일 진입점: `:21051`
 
-NAIS AI-OS는 호스트에 **21051 포트 하나만** 서비스 포트로 노출한다.
-모든 트래픽은 Nginx(`gateway`)가 path 기준으로 내부 컨테이너에 전달한다.
+NAIS AI-OS의 서비스 진입점은 gateway **21051** 포트다. 개발 스택에서는 D-037에 따라 21051~21058 모든 포트가 외부에 공개되며
+(2장 표), 21051 외 포트는 개발 도구·디버깅 용도다. 서비스 트래픽은 모두 21051의 Nginx(`gateway`)가 path 기준으로 내부 컨테이너에 전달한다.
 
 ```text
 http://localhost:21051
@@ -13,6 +13,7 @@ http://localhost:21051
 ├── /auth/                → keycloak:8080   (KC_HTTP_RELATIVE_PATH=/auth)
 ├── /nais-inst-a/         → storage-a:8333  (Institute A bucket, presigned URL 전용)
 ├── /nais-inst-b/         → storage-b:8333  (Institute B bucket, presigned URL 전용)
+├── /nais-platform/       → storage-a:8333  (readiness 산출물 bucket, presigned URL 전용)
 └── /healthz              → gateway 자체 health (200 "ok")
 ```
 
@@ -43,7 +44,7 @@ http://localhost:21051
 | 21058 | redis | 로컬 디버깅 |
 | 21059 | 예약 | P1 이후 (예: grafana) |
 
-개발 스택에서는 D-037에 따라 21051~21058 모두 외부에 공개된다 (OpenSearch/OPA는 gateway Basic 인증 nais/nais 경유). `docker-compose.prod.yml`은 직접 노출되는 개발 도구 포트(21052~21059)를 제거한다.
+개발 스택에서는 D-037에 따라 21051~21058 모두 외부에 공개된다 (OpenSearch/OPA는 gateway Basic 인증 nais/nais 경유). `docker-compose.prod.yml`은 직접 노출되는 개발 도구 포트(21052~21059)를 제거하고 gateway도 21051만 노출한다 (21056/21057 제거).
 
 ## 3. Compose 서비스 목록
 
