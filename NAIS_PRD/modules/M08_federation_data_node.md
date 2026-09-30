@@ -17,7 +17,7 @@
 - health
 
 ## P2 Demo
-Institute A MinIO + Institute B MinIO를 별도 Node로 운영.
+Institute A / Institute B S3 스토리지를 별도 Node로 운영.
 
 ## Principle
 metadata centrally discoverable, bytes remain at owner.

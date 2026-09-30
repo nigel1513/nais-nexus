@@ -594,7 +594,7 @@ class CatalogReadPort(Protocol):
 | 변수 | 기본값 | 설명 |
 |---|---|---|
 | `NAIS_PUBLIC_BASE_URL` | `http://localhost:21051` | presign endpoint (path-style) |
-| `STORAGE_<CODE>_ENDPOINT` | 예 `http://minio-a:9000` | 내부 endpoint (HEAD, 해시, multipart complete) |
+| `STORAGE_<CODE>_ENDPOINT` | 예 `http://storage-a:8333` | 내부 endpoint (HEAD, 해시, multipart complete) |
 | `STORAGE_<CODE>_BUCKET` | 예 `nais-inst-a` | 기관 bucket |
 | `STORAGE_<CODE>_ACCESS_KEY` / `STORAGE_<CODE>_SECRET_KEY` | (secret) | 기관 스토리지 서비스 자격증명 |
 | `STORAGE_PRESIGN_TTL_SECONDS` | `300` | 다운로드 URL TTL (StoragePort) |
@@ -647,7 +647,7 @@ class CatalogReadPort(Protocol):
 3. Alembic migrations (`catalog` schema, trigger 포함)
 4. Outbox 이벤트 4종 + consumer 2종
 5. Error code 매핑 테스트
-6. Unit / contract / integration 테스트 (MinIO, OpenSearch testcontainer)
+6. Unit / contract / integration 테스트 (SeaweedFS S3, OpenSearch testcontainer)
 7. Seed: Institute A/B dataset (10_SEED_DATA.md 기준)
 8. `infra/opensearch/Dockerfile`, `nais-datasets-v1.json`, fallback template
 9. Integration notes (M04: `StoragePort`/`CatalogQueryPort`, M05: `CatalogReadPort`/`metadata_snapshot`)

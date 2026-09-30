@@ -10,7 +10,7 @@ Seed는 각 모듈이 자기 schema에 대해 제공하는 `seed()` 함수를 Ag
 ```text
 1. identity   (organizations → users → memberships)   + Keycloak realm import
 2. project    (seed project 1개)
-3. catalog    (datasets → versions → files → MinIO objects → publish → OpenSearch index)
+3. catalog    (datasets → versions → files → S3 objects → publish → OpenSearch index)
 4. readiness  (publish 이벤트로 자동 실행되므로 별도 seed 없음. worker 처리 대기)
 5. governance (seed grant 1개: 만료 임박 알림 확인용)
 ```

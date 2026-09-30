@@ -37,7 +37,7 @@
 - P1+: vector/hybrid 가능
 
 ### Object Storage
-- **MinIO** for local/dev
+- **SeaweedFS** (S3 API) for local/dev — MinIO 공식 이미지 배포 중단으로 대체 (D-034)
 - Production: S3-compatible / institutional storage
 
 ### Async
@@ -185,7 +185,7 @@ API
   │ permission check
   │ presigned URL
   ▼
-Browser ───── direct ─────> MinIO/S3
+Browser ───── direct ─────> S3 (dev: SeaweedFS)
 ```
 
 Download도 동일.
@@ -298,8 +298,8 @@ redis
 opensearch
 keycloak
 opa
-minio-a
-minio-b
+storage-a
+storage-b
 worker
 mailpit
 ```

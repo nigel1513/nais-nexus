@@ -80,7 +80,7 @@ Purpose = Literal["ACADEMIC_RESEARCH", "AI_TRAINING", "COMMERCIAL_RESEARCH", "ED
 # Catalog 타입(DatasetPolicyView, FileRef, VersionView, PresignedGet)과
 # CatalogQueryPort / StoragePort의 정본은 modules/M03_data_catalog.md §8 이다 (D-024).
 # Governance는 storage_bucket/storage_key를 읽거나 로그에 남기지 않는다.
-from nais.catalog.ports import DatasetPolicyView, VersionView, PresignedGet  # 계약 타입만 import
+from api.modules.catalog.ports import DatasetPolicyView, VersionView, PresignedGet  # 계약 타입만 import
 
 class CatalogQueryPort(Protocol):   # 구현: M03
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None: ...

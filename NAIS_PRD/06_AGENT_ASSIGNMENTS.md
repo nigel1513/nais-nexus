@@ -150,7 +150,7 @@ PR 체크리스트: owned path 외 변경 없음 / contract 변경 없음 / migr
 - Wave 1: 레이아웃, Auth.js + Keycloak 로그인(21051/auth), 생성된 API client, MSW mock mode, 전체 P0 route 화면(mock 데이터)
 - Wave 2: 실제 API 연결, 8개 필수 flow, Playwright golden E2E
 
-**Key rules:** backend ORM/model을 추측하지 않고 생성된 contract client만 사용. WCAG 2.2 AA. 브라우저가 MinIO로 직접 업로드/다운로드(presigned URL).
+**Key rules:** backend ORM/model을 추측하지 않고 생성된 contract client만 사용. WCAG 2.2 AA. 브라우저가 S3 스토리지로 직접 업로드/다운로드(presigned URL).
 
 ---
 
