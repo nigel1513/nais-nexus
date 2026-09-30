@@ -2,13 +2,16 @@ import json
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, ConfigDict
 
 from api.platform.settings import get_settings
+
+if TYPE_CHECKING:
+    from api.platform.auth import CurrentUser
 
 
 class EventActor(BaseModel):
@@ -21,6 +24,10 @@ class EventActor(BaseModel):
     @classmethod
     def system(cls) -> "EventActor":
         return cls(type="SYSTEM")
+
+    @classmethod
+    def for_user(cls, user: "CurrentUser") -> "EventActor":
+        return cls(type="USER", user_id=user.user_id, organization_id=user.organization_id)
 
 
 class EventEnvelope(BaseModel):
