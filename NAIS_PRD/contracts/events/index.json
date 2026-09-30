@@ -1,0 +1,135 @@
+{
+  "version": "1.1.0",
+  "events": [
+    {
+      "event_type": "identity.organization.created.v1",
+      "producer": "identity",
+      "description": "Organization registered."
+    },
+    {
+      "event_type": "identity.user.created.v1",
+      "producer": "identity",
+      "description": "User provisioned from first OIDC login or seed."
+    },
+    {
+      "event_type": "identity.user.logged_in.v1",
+      "producer": "identity",
+      "description": "First authenticated request of a session (Audit LOGIN)."
+    },
+    {
+      "event_type": "identity.membership.changed.v1",
+      "producer": "identity",
+      "description": "Organization membership roles or status changed (Audit ADMIN_ROLE_CHANGED)."
+    },
+    {
+      "event_type": "project.created.v1",
+      "producer": "project",
+      "description": "Project created."
+    },
+    {
+      "event_type": "project.archived.v1",
+      "producer": "project",
+      "description": "Project archived."
+    },
+    {
+      "event_type": "project.member.added.v1",
+      "producer": "project",
+      "description": "Member added (P0 direct add; also triggers invitation notification)."
+    },
+    {
+      "event_type": "project.member.removed.v1",
+      "producer": "project",
+      "description": "Member removed. Governance revokes that user's grants scoped to the project."
+    },
+    {
+      "event_type": "project.member.role_changed.v1",
+      "producer": "project",
+      "description": "Member project role changed."
+    },
+    {
+      "event_type": "catalog.dataset.created.v1",
+      "producer": "catalog",
+      "description": "Dataset created."
+    },
+    {
+      "event_type": "catalog.dataset.access_level_changed.v1",
+      "producer": "catalog",
+      "description": "Access level changed (Audit POLICY_CHANGED)."
+    },
+    {
+      "event_type": "catalog.dataset.policy_changed.v1",
+      "producer": "catalog",
+      "description": "allowed_purposes / approval_required / max_grant_days changed (Audit POLICY_CHANGED)."
+    },
+    {
+      "event_type": "catalog.dataset.version_published.v1",
+      "producer": "catalog",
+      "description": "Version published and now immutable. Readiness auto-queues default profile."
+    },
+    {
+      "event_type": "governance.access.requested.v1",
+      "producer": "governance",
+      "description": "Access request submitted or resubmitted."
+    },
+    {
+      "event_type": "governance.access.review_started.v1",
+      "producer": "governance",
+      "description": "Reviewer started review (SUBMITTED -> UNDER_REVIEW, D-025)."
+    },
+    {
+      "event_type": "governance.access.approved.v1",
+      "producer": "governance",
+      "description": "Request approved; grant created ACTIVE."
+    },
+    {
+      "event_type": "governance.access.rejected.v1",
+      "producer": "governance",
+      "description": "Request rejected."
+    },
+    {
+      "event_type": "governance.access.changes_requested.v1",
+      "producer": "governance",
+      "description": "Reviewer asked requester to change the request."
+    },
+    {
+      "event_type": "governance.access.withdrawn.v1",
+      "producer": "governance",
+      "description": "Requester withdrew the request."
+    },
+    {
+      "event_type": "governance.access.revoked.v1",
+      "producer": "governance",
+      "description": "Grant revoked by steward, org admin, or system (project member removed / project archived / membership disabled)."
+    },
+    {
+      "event_type": "governance.access.expiring_soon.v1",
+      "producer": "governance",
+      "description": "Emitted once per grant 72h before expires_at."
+    },
+    {
+      "event_type": "governance.access.expired.v1",
+      "producer": "governance",
+      "description": "Sweeper marked grant EXPIRED. Enforcement does not depend on this event."
+    },
+    {
+      "event_type": "governance.download.authorized.v1",
+      "producer": "governance",
+      "description": "Signed download URLs issued (Audit FILE_DOWNLOADED)."
+    },
+    {
+      "event_type": "governance.download.denied.v1",
+      "producer": "governance",
+      "description": "Download session denied (security monitoring)."
+    },
+    {
+      "event_type": "readiness.validation.started.v1",
+      "producer": "readiness",
+      "description": "Validation run moved to RUNNING."
+    },
+    {
+      "event_type": "readiness.validation.completed.v1",
+      "producer": "readiness",
+      "description": "Validation run finished (run_status COMPLETED or FAILED)."
+    }
+  ]
+}

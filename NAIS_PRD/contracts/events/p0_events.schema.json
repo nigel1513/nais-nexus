@@ -1,0 +1,1558 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nais.local/contracts/events/p0_events.schema.json",
+  "title": "NAIS P0 Domain Events",
+  "description": "Envelope + per-event payload. Owner: Agent 0. event_type suffix .vN is the payload version; breaking change => new version, old one kept for one release.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "occurred_at",
+    "producer",
+    "correlation_id",
+    "actor",
+    "payload"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "event_type": {
+      "type": "string"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "type": "string",
+      "enum": [
+        "identity",
+        "project",
+        "catalog",
+        "governance",
+        "readiness",
+        "audit",
+        "platform"
+      ]
+    },
+    "correlation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "user_id",
+        "organization_id"
+      ],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "USER",
+            "SYSTEM"
+          ]
+        },
+        "user_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        },
+        "organization_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "uuid"
+        }
+      }
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "title": "identity.organization.created.v1",
+      "description": "Organization registered.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "identity.organization.created.v1"
+        },
+        "producer": {
+          "const": "identity"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "organization_id",
+            "code",
+            "name",
+            "type"
+          ],
+          "properties": {
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "code": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "RESEARCH_INSTITUTE",
+                "UNIVERSITY",
+                "COMPANY",
+                "PLATFORM_OPERATOR"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "identity.user.created.v1",
+      "description": "User provisioned from first OIDC login or seed.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "identity.user.created.v1"
+        },
+        "producer": {
+          "const": "identity"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "user_id",
+            "organization_id",
+            "display_name",
+            "email"
+          ],
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "display_name": {
+              "type": "string"
+            },
+            "email": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "identity.user.logged_in.v1",
+      "description": "First authenticated request of a session (Audit LOGIN).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "identity.user.logged_in.v1"
+        },
+        "producer": {
+          "const": "identity"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "user_id",
+            "organization_id",
+            "session_id"
+          ],
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "session_id": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "identity.membership.changed.v1",
+      "description": "Organization membership roles or status changed (Audit ADMIN_ROLE_CHANGED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "identity.membership.changed.v1"
+        },
+        "producer": {
+          "const": "identity"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "user_id",
+            "organization_id",
+            "previous_roles",
+            "roles",
+            "previous_status",
+            "status"
+          ],
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "previous_roles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ORG_ADMIN",
+                  "DATA_STEWARD",
+                  "RESOURCE_MANAGER"
+                ]
+              }
+            },
+            "roles": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "ORG_ADMIN",
+                  "DATA_STEWARD",
+                  "RESOURCE_MANAGER"
+                ]
+              }
+            },
+            "previous_status": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "DISABLED"
+              ]
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "DISABLED"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "project.created.v1",
+      "description": "Project created.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "project.created.v1"
+        },
+        "producer": {
+          "const": "project"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "name",
+            "lead_organization_id",
+            "visibility",
+            "owner_user_id"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "lead_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "visibility": {
+              "type": "string",
+              "enum": [
+                "PRIVATE",
+                "PUBLIC"
+              ]
+            },
+            "owner_user_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "project.archived.v1",
+      "description": "Project archived.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "project.archived.v1"
+        },
+        "producer": {
+          "const": "project"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "project.member.added.v1",
+      "description": "Member added (P0 direct add; also triggers invitation notification).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "project.member.added.v1"
+        },
+        "producer": {
+          "const": "project"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "project_name",
+            "user_id",
+            "organization_id",
+            "role",
+            "added_by"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_name": {
+              "type": "string"
+            },
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "PROJECT_OWNER",
+                "PROJECT_ADMIN",
+                "RESEARCHER",
+                "VIEWER"
+              ]
+            },
+            "added_by": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "project.member.removed.v1",
+      "description": "Member removed. Governance revokes that user's grants scoped to the project.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "project.member.removed.v1"
+        },
+        "producer": {
+          "const": "project"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "user_id",
+            "organization_id",
+            "removed_by"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "removed_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "project.member.role_changed.v1",
+      "description": "Member project role changed.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "project.member.role_changed.v1"
+        },
+        "producer": {
+          "const": "project"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "user_id",
+            "previous_role",
+            "role",
+            "changed_by"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "previous_role": {
+              "type": "string",
+              "enum": [
+                "PROJECT_OWNER",
+                "PROJECT_ADMIN",
+                "RESEARCHER",
+                "VIEWER"
+              ]
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "PROJECT_OWNER",
+                "PROJECT_ADMIN",
+                "RESEARCHER",
+                "VIEWER"
+              ]
+            },
+            "changed_by": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "catalog.dataset.created.v1",
+      "description": "Dataset created.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "catalog.dataset.created.v1"
+        },
+        "producer": {
+          "const": "catalog"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dataset_id",
+            "owner_organization_id",
+            "title",
+            "access_level"
+          ],
+          "properties": {
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "title": {
+              "type": "string"
+            },
+            "access_level": {
+              "type": "string",
+              "enum": [
+                "PUBLIC",
+                "INTERNAL",
+                "CONTROLLED",
+                "SENSITIVE"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "catalog.dataset.access_level_changed.v1",
+      "description": "Access level changed (Audit POLICY_CHANGED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "catalog.dataset.access_level_changed.v1"
+        },
+        "producer": {
+          "const": "catalog"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dataset_id",
+            "owner_organization_id",
+            "previous_access_level",
+            "access_level"
+          ],
+          "properties": {
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "previous_access_level": {
+              "type": "string",
+              "enum": [
+                "PUBLIC",
+                "INTERNAL",
+                "CONTROLLED",
+                "SENSITIVE"
+              ]
+            },
+            "access_level": {
+              "type": "string",
+              "enum": [
+                "PUBLIC",
+                "INTERNAL",
+                "CONTROLLED",
+                "SENSITIVE"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "catalog.dataset.policy_changed.v1",
+      "description": "allowed_purposes / approval_required / max_grant_days changed (Audit POLICY_CHANGED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "catalog.dataset.policy_changed.v1"
+        },
+        "producer": {
+          "const": "catalog"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dataset_id",
+            "owner_organization_id",
+            "previous",
+            "current"
+          ],
+          "properties": {
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "previous": {
+              "$ref": "#/$defs/DatasetPolicy"
+            },
+            "current": {
+              "$ref": "#/$defs/DatasetPolicy"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "catalog.dataset.version_published.v1",
+      "description": "Version published and now immutable. Readiness auto-queues default profile.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "catalog.dataset.version_published.v1"
+        },
+        "producer": {
+          "const": "catalog"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dataset_id",
+            "dataset_version_id",
+            "version_label",
+            "owner_organization_id",
+            "file_count",
+            "total_bytes",
+            "manifest_sha256"
+          ],
+          "properties": {
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version_label": {
+              "type": "string"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "file_count": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "total_bytes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "manifest_sha256": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.requested.v1",
+      "description": "Access request submitted or resubmitted.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.requested.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_request_id",
+            "dataset_id",
+            "project_id",
+            "requester_user_id",
+            "requester_organization_id",
+            "owner_organization_id",
+            "purpose",
+            "operations",
+            "requested_days",
+            "resubmission",
+            "dataset_title",
+            "project_name"
+          ],
+          "properties": {
+            "access_request_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requester_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requester_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "purpose": {
+              "$ref": "#/$defs/Purpose"
+            },
+            "operations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "READ",
+                  "COMPUTE",
+                  "WRITE"
+                ]
+              }
+            },
+            "requested_days": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "resubmission": {
+              "type": "boolean"
+            },
+            "dataset_title": {
+              "type": "string"
+            },
+            "project_name": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.review_started.v1",
+      "description": "Reviewer started review (SUBMITTED -> UNDER_REVIEW, D-025).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.review_started.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_request_id",
+            "dataset_id",
+            "project_id",
+            "requester_user_id",
+            "owner_organization_id",
+            "reviewer_user_id"
+          ],
+          "properties": {
+            "access_request_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requester_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reviewer_user_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.approved.v1",
+      "description": "Request approved; grant created ACTIVE.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.approved.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_request_id",
+            "access_grant_id",
+            "dataset_id",
+            "project_id",
+            "subject_user_id",
+            "owner_organization_id",
+            "operations",
+            "valid_from",
+            "expires_at",
+            "policy_version",
+            "reviewer_user_id"
+          ],
+          "properties": {
+            "access_request_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "access_grant_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "subject_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "operations": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "READ",
+                  "COMPUTE",
+                  "WRITE"
+                ]
+              }
+            },
+            "valid_from": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "policy_version": {
+              "type": "string"
+            },
+            "reviewer_user_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.rejected.v1",
+      "description": "Request rejected.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.rejected.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_request_id",
+            "dataset_id",
+            "project_id",
+            "requester_user_id",
+            "owner_organization_id",
+            "reviewer_user_id",
+            "reason"
+          ],
+          "properties": {
+            "access_request_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requester_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reviewer_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reason": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.changes_requested.v1",
+      "description": "Reviewer asked requester to change the request.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.changes_requested.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_request_id",
+            "dataset_id",
+            "project_id",
+            "requester_user_id",
+            "owner_organization_id",
+            "reviewer_user_id",
+            "comment"
+          ],
+          "properties": {
+            "access_request_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requester_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "reviewer_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "comment": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.withdrawn.v1",
+      "description": "Requester withdrew the request.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.withdrawn.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_request_id",
+            "dataset_id",
+            "project_id",
+            "requester_user_id",
+            "owner_organization_id"
+          ],
+          "properties": {
+            "access_request_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "requester_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.revoked.v1",
+      "description": "Grant revoked by steward, org admin, or system (project member removed / project archived / membership disabled).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.revoked.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_grant_id",
+            "dataset_id",
+            "project_id",
+            "subject_user_id",
+            "owner_organization_id",
+            "revoked_by",
+            "reason",
+            "revocation_cause"
+          ],
+          "properties": {
+            "access_grant_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "subject_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "revoked_by": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "revocation_cause": {
+              "type": "string",
+              "enum": [
+                "MANUAL",
+                "PROJECT_MEMBER_REMOVED",
+                "PROJECT_ARCHIVED",
+                "MEMBERSHIP_DISABLED"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.expiring_soon.v1",
+      "description": "Emitted once per grant 72h before expires_at.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.expiring_soon.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_grant_id",
+            "dataset_id",
+            "project_id",
+            "subject_user_id",
+            "owner_organization_id",
+            "expires_at"
+          ],
+          "properties": {
+            "access_grant_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "subject_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.access.expired.v1",
+      "description": "Sweeper marked grant EXPIRED. Enforcement does not depend on this event.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.access.expired.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "access_grant_id",
+            "dataset_id",
+            "project_id",
+            "subject_user_id",
+            "owner_organization_id",
+            "expires_at"
+          ],
+          "properties": {
+            "access_grant_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "subject_user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.download.authorized.v1",
+      "description": "Signed download URLs issued (Audit FILE_DOWNLOADED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.download.authorized.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dataset_id",
+            "dataset_version_id",
+            "owner_organization_id",
+            "project_id",
+            "access_grant_id",
+            "basis",
+            "file_ids",
+            "ttl_seconds",
+            "policy_version"
+          ],
+          "properties": {
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "access_grant_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "basis": {
+              "type": "string",
+              "enum": [
+                "GRANT",
+                "PUBLIC",
+                "OWNER_ORGANIZATION"
+              ]
+            },
+            "file_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "ttl_seconds": {
+              "type": "integer"
+            },
+            "policy_version": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "governance.download.denied.v1",
+      "description": "Download session denied (security monitoring).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "governance.download.denied.v1"
+        },
+        "producer": {
+          "const": "governance"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dataset_id",
+            "dataset_version_id",
+            "owner_organization_id",
+            "project_id",
+            "error_code",
+            "reasons"
+          ],
+          "properties": {
+            "dataset_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "project_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "error_code": {
+              "type": "string"
+            },
+            "reasons": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "readiness.validation.started.v1",
+      "description": "Validation run moved to RUNNING.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "readiness.validation.started.v1"
+        },
+        "producer": {
+          "const": "readiness"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validation_id",
+            "dataset_id",
+            "dataset_version_id",
+            "profile_id",
+            "profile_version"
+          ],
+          "properties": {
+            "validation_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "profile_id": {
+              "type": "string"
+            },
+            "profile_version": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "readiness.validation.completed.v1",
+      "description": "Validation run finished (run_status COMPLETED or FAILED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "readiness.validation.completed.v1"
+        },
+        "producer": {
+          "const": "readiness"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "validation_id",
+            "dataset_id",
+            "dataset_version_id",
+            "owner_organization_id",
+            "profile_id",
+            "profile_version",
+            "run_status",
+            "overall_status",
+            "summary",
+            "validator_version",
+            "input_fingerprint"
+          ],
+          "properties": {
+            "validation_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "profile_id": {
+              "type": "string"
+            },
+            "profile_version": {
+              "type": "string"
+            },
+            "run_status": {
+              "type": "string",
+              "enum": [
+                "COMPLETED",
+                "FAILED"
+              ]
+            },
+            "overall_status": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "PASS",
+                "WARNING",
+                "FAIL",
+                null
+              ]
+            },
+            "summary": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "pass",
+                "warning",
+                "fail",
+                "not_applicable"
+              ],
+              "properties": {
+                "pass": {
+                  "type": "integer"
+                },
+                "warning": {
+                  "type": "integer"
+                },
+                "fail": {
+                  "type": "integer"
+                },
+                "not_applicable": {
+                  "type": "integer"
+                }
+              }
+            },
+            "validator_version": {
+              "type": "string"
+            },
+            "input_fingerprint": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "Purpose": {
+      "type": "string",
+      "enum": [
+        "ACADEMIC_RESEARCH",
+        "AI_TRAINING",
+        "COMMERCIAL_RESEARCH",
+        "EDUCATION",
+        "PUBLIC_INTEREST"
+      ]
+    },
+    "DatasetPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_purposes",
+        "approval_required",
+        "max_grant_days"
+      ],
+      "properties": {
+        "allowed_purposes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Purpose"
+          }
+        },
+        "approval_required": {
+          "type": "boolean"
+        },
+        "max_grant_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 365
+        }
+      }
+    }
+  }
+}

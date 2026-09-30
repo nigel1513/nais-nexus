@@ -1,0 +1,276 @@
+{
+  "$comment": "Shared error code registry. Owner: Agent 0. Other agents request additions via CONTRACT_CHANGE_REQUEST.md. Envelope: {\"error\": {\"code\", \"message\", \"trace_id\", \"details?\"}}",
+  "version": "1.1.1",
+  "codes": [
+    {
+      "code": "VALIDATION_FAILED",
+      "http": 422,
+      "module": "platform",
+      "description": "Request body/query failed schema validation. details.fields[] lists offending fields."
+    },
+    {
+      "code": "UNAUTHENTICATED",
+      "http": 401,
+      "module": "platform",
+      "description": "Missing, invalid or expired bearer token."
+    },
+    {
+      "code": "FORBIDDEN",
+      "http": 403,
+      "module": "platform",
+      "description": "Authenticated but not allowed to perform this action."
+    },
+    {
+      "code": "NOT_FOUND",
+      "http": 404,
+      "module": "platform",
+      "description": "Resource does not exist or caller may not know it exists."
+    },
+    {
+      "code": "CONFLICT",
+      "http": 409,
+      "module": "platform",
+      "description": "Generic state conflict."
+    },
+    {
+      "code": "RATE_LIMITED",
+      "http": 429,
+      "module": "platform",
+      "description": "Too many requests."
+    },
+    {
+      "code": "INTERNAL_ERROR",
+      "http": 500,
+      "module": "platform",
+      "description": "Unexpected server error. trace_id must be present."
+    },
+    {
+      "code": "DEPENDENCY_UNAVAILABLE",
+      "http": 503,
+      "module": "platform",
+      "description": "A required backing service is unavailable."
+    },
+    {
+      "code": "USER_DISABLED",
+      "http": 403,
+      "module": "identity",
+      "description": "User account is disabled in NAIS."
+    },
+    {
+      "code": "ORGANIZATION_UNKNOWN",
+      "http": 403,
+      "module": "identity",
+      "description": "Token org_code does not map to a registered organization."
+    },
+    {
+      "code": "MEMBERSHIP_DISABLED",
+      "http": 403,
+      "module": "identity",
+      "description": "User's organization membership is disabled."
+    },
+    {
+      "code": "ROLE_NOT_ASSIGNABLE",
+      "http": 422,
+      "module": "identity",
+      "description": "Role is not valid for this scope or caller cannot assign it."
+    },
+    {
+      "code": "PROJECT_ARCHIVED",
+      "http": 409,
+      "module": "project",
+      "description": "Operation not allowed on an archived project."
+    },
+    {
+      "code": "PROJECT_MEMBER_EXISTS",
+      "http": 409,
+      "module": "project",
+      "description": "User is already an active project member."
+    },
+    {
+      "code": "PROJECT_LAST_OWNER",
+      "http": 409,
+      "module": "project",
+      "description": "Cannot remove or demote the last PROJECT_OWNER."
+    },
+    {
+      "code": "PROJECT_MEMBER_NOT_FOUND",
+      "http": 404,
+      "module": "project",
+      "description": "User is not a member of the project."
+    },
+    {
+      "code": "DATASET_VERSION_IMMUTABLE",
+      "http": 409,
+      "module": "catalog",
+      "description": "Version is PUBLISHED and cannot be modified."
+    },
+    {
+      "code": "DATASET_VERSION_NOT_PUBLISHED",
+      "http": 409,
+      "module": "shared",
+      "description": "Operation requires a PUBLISHED version. Shared: used by catalog, governance, readiness."
+    },
+    {
+      "code": "DATASET_VERSION_INCOMPLETE",
+      "http": 409,
+      "module": "catalog",
+      "description": "Publish requested but some files are not uploaded/verified, or no files exist."
+    },
+    {
+      "code": "DATASET_VERSION_LABEL_EXISTS",
+      "http": 409,
+      "module": "catalog",
+      "description": "Version label already used in this dataset."
+    },
+    {
+      "code": "UPLOAD_SESSION_EXPIRED",
+      "http": 409,
+      "module": "catalog",
+      "description": "Upload session expired; create a new one."
+    },
+    {
+      "code": "UPLOAD_CHECKSUM_MISMATCH",
+      "http": 422,
+      "module": "catalog",
+      "description": "Stored object sha256/size does not match manifest."
+    },
+    {
+      "code": "FILE_TYPE_NOT_ALLOWED",
+      "http": 422,
+      "module": "catalog",
+      "description": "Media type or extension is not in the allow list."
+    },
+    {
+      "code": "FILE_TOO_LARGE",
+      "http": 422,
+      "module": "catalog",
+      "description": "File exceeds the per-file size limit."
+    },
+    {
+      "code": "UPLOAD_ARCHIVE_UNSAFE",
+      "http": 422,
+      "module": "catalog",
+      "description": "Archive exceeds limits (compression ratio > 100, > 10k entries, or > 20 GiB uncompressed)."
+    },
+    {
+      "code": "MALWARE_DETECTED",
+      "http": 422,
+      "module": "catalog",
+      "description": "Malware scanner reported the object as infected; object deleted."
+    },
+    {
+      "code": "INVALID_POLICY",
+      "http": 422,
+      "module": "catalog",
+      "description": "Dataset policy is inconsistent (e.g. SENSITIVE with max_grant_days > 30)."
+    },
+    {
+      "code": "ACCESS_REQUEST_INVALID_STATE",
+      "http": 409,
+      "module": "governance",
+      "description": "Transition not allowed from the current request state."
+    },
+    {
+      "code": "ACCESS_REQUEST_DUPLICATE",
+      "http": 409,
+      "module": "governance",
+      "description": "An open request or active grant already exists for the same user/project/dataset."
+    },
+    {
+      "code": "ACCESS_PURPOSE_NOT_ALLOWED",
+      "http": 422,
+      "module": "governance",
+      "description": "Purpose is not in the dataset's allowed_purposes."
+    },
+    {
+      "code": "ACCESS_OPERATION_NOT_ALLOWED",
+      "http": 422,
+      "module": "governance",
+      "description": "Requested operation cannot be granted (e.g. WRITE, or COMPUTE in P0)."
+    },
+    {
+      "code": "ACCESS_DURATION_EXCEEDED",
+      "http": 422,
+      "module": "governance",
+      "description": "Requested/approved duration exceeds max_grant_days."
+    },
+    {
+      "code": "ACCESS_NOT_PROJECT_MEMBER",
+      "http": 403,
+      "module": "governance",
+      "description": "Requester is not an ACTIVE member of the referenced project."
+    },
+    {
+      "code": "ACCESS_NOT_REVIEWER",
+      "http": 403,
+      "module": "governance",
+      "description": "Caller is not a DATA_STEWARD of the dataset owner organization."
+    },
+    {
+      "code": "ACCESS_NOT_REQUIRED",
+      "http": 422,
+      "module": "governance",
+      "description": "Dataset access level does not require a grant (PUBLIC, or INTERNAL for own org)."
+    },
+    {
+      "code": "ACCESS_GRANT_REQUIRED",
+      "http": 403,
+      "module": "governance",
+      "description": "No active grant for this user/project/dataset."
+    },
+    {
+      "code": "ACCESS_GRANT_EXPIRED",
+      "http": 403,
+      "module": "governance",
+      "description": "The access grant has expired."
+    },
+    {
+      "code": "ACCESS_GRANT_REVOKED",
+      "http": 403,
+      "module": "governance",
+      "description": "The access grant has been revoked."
+    },
+    {
+      "code": "ACCESS_GRANT_NOT_ACTIVE",
+      "http": 409,
+      "module": "governance",
+      "description": "Grant is not ACTIVE (cannot revoke twice)."
+    },
+    {
+      "code": "ACCESS_DENIED_BY_POLICY",
+      "http": 403,
+      "module": "governance",
+      "description": "OPA returned allow=false. details.reasons[] contains policy reason codes."
+    },
+    {
+      "code": "POLICY_ENGINE_UNAVAILABLE",
+      "http": 503,
+      "module": "governance",
+      "description": "OPA unreachable or timed out. Fail-closed."
+    },
+    {
+      "code": "READINESS_PROFILE_UNKNOWN",
+      "http": 422,
+      "module": "readiness",
+      "description": "Unknown readiness profile id."
+    },
+    {
+      "code": "READINESS_VALIDATION_IN_PROGRESS",
+      "http": 409,
+      "module": "readiness",
+      "description": "A QUEUED/RUNNING validation already exists for this version and profile."
+    },
+    {
+      "code": "READINESS_NOT_AVAILABLE",
+      "http": 404,
+      "module": "readiness",
+      "description": "No validation has been run for this version/profile."
+    },
+    {
+      "code": "NOTIFICATION_NOT_FOUND",
+      "http": 404,
+      "module": "audit",
+      "description": "Notification does not exist or belongs to another user."
+    }
+  ]
+}

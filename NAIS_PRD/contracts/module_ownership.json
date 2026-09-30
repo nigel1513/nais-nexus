@@ -1,0 +1,122 @@
+{
+  "version": "1.1.0",
+  "$comment": "Folder ownership per module. An agent edits only its own paths. Shared files are Agent 0 only. See 02_PARALLEL_DEVELOPMENT_PLAN.md and 11_DECISION_LOG.md (D-003, D-004, D-005).",
+  "M00": {
+    "name": "Platform Contracts / Foundation",
+    "owner": "Agent 0 - Platform Architect",
+    "release": "P0",
+    "db_schema": "platform",
+    "path": [
+      "packages/contracts",
+      "packages/config",
+      "apps/api/platform",
+      "apps/api/main.py",
+      "apps/api/worker.py",
+      "apps/api/alembic.ini",
+      "infra/docker",
+      "infra/nginx",
+      "docs/adr",
+      "tests/contract",
+      "docker-compose.yml",
+      "docker-compose.prod.yml",
+      ".env.example",
+      "Makefile",
+      "pyproject.toml",
+      "package.json",
+      "pnpm-workspace.yaml",
+      ".github/workflows"
+    ]
+  },
+  "M01": {
+    "name": "Identity & Organization",
+    "owner": "Agent 1 - Identity",
+    "release": "P0",
+    "db_schema": "identity",
+    "path": ["apps/api/modules/identity", "infra/keycloak"]
+  },
+  "M02": {
+    "name": "Project Collaboration",
+    "owner": "Agent 2 - Project",
+    "release": "P0",
+    "db_schema": "project",
+    "path": ["apps/api/modules/project"]
+  },
+  "M03": {
+    "name": "Data Catalog & Version",
+    "owner": "Agent 3 - Catalog",
+    "release": "P0",
+    "db_schema": "catalog",
+    "path": ["apps/api/modules/catalog", "infra/opensearch"]
+  },
+  "M04": {
+    "name": "Access Governance",
+    "owner": "Agent 4 - Governance",
+    "release": "P0",
+    "db_schema": "governance",
+    "path": ["apps/api/modules/governance", "infra/opa"]
+  },
+  "M05": {
+    "name": "AI-Ready Pipeline",
+    "owner": "Agent 5 - Readiness",
+    "release": "P0",
+    "db_schema": "readiness",
+    "path": ["apps/api/modules/readiness", "tests/fixtures/readiness"]
+  },
+  "M06": {
+    "name": "AI Marketplace",
+    "owner": "Agent 8 - Marketplace",
+    "release": "P1",
+    "db_schema": "marketplace",
+    "path": ["apps/api/modules/marketplace"]
+  },
+  "M07": {
+    "name": "Compute / GPU Resource",
+    "owner": "Agent 9 - Compute",
+    "release": "P1",
+    "db_schema": "compute",
+    "path": ["apps/api/modules/compute"]
+  },
+  "M08": {
+    "name": "Federation / Data Node",
+    "owner": "Agent 11 - Federation",
+    "release": "P2",
+    "db_schema": null,
+    "$comment_db": "Separate service with its own database; not part of the api PostgreSQL schemas.",
+    "path": ["services/data-node"]
+  },
+  "M09": {
+    "name": "Audit & Notification",
+    "owner": "Agent 6 - Audit",
+    "release": "P0",
+    "db_schema": "audit",
+    "path": ["apps/api/modules/audit"]
+  },
+  "M10": {
+    "name": "Web Portal",
+    "owner": "Agent 7 - Web",
+    "release": "P0",
+    "db_schema": null,
+    "path": ["apps/web", "packages/ui"]
+  },
+  "M11": {
+    "name": "Knowledge / Ontology",
+    "owner": "Agent 10 - Knowledge",
+    "release": "P1",
+    "db_schema": "knowledge",
+    "path": ["apps/api/modules/knowledge"]
+  },
+  "M12": {
+    "name": "Autonomous Science",
+    "owner": "Agent 12 - Autonomous Science",
+    "release": "P3",
+    "db_schema": "autonomy",
+    "path": ["apps/api/modules/autonomy"]
+  },
+  "QA": {
+    "name": "E2E / Security Test",
+    "owner": "Agent I - QA (Wave 2)",
+    "release": "P0",
+    "db_schema": null,
+    "path": ["tests/e2e", "tests/security", "tests/load"]
+  }
+}

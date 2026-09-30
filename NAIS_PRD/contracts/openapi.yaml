@@ -1,0 +1,1318 @@
+openapi: 3.1.0
+info:
+  title: NAIS AI-OS / Research Commons API
+  version: 1.1.1
+  description: |
+    P0 contract. Owner: Agent 0 (Platform). Changes only via CONTRACT_CHANGE_REQUEST.md.
+
+    Conventions
+    - Base path `/api/v1`, served behind gateway `http://localhost:21051`.
+    - IDs are opaque UUID (v7 recommended). Times are UTC ISO 8601.
+    - Errors use `ErrorEnvelope`; codes are listed in `contracts/error_codes.json`.
+    - List endpoints use cursor pagination (`cursor`, `limit` default 20, max 100).
+    - Every response carries `X-Request-Id`; `error.trace_id` equals the OpenTelemetry trace id.
+    - "Not visible" resources return 404 (not 403) to avoid existence leaks, except where noted.
+servers:
+  - url: http://localhost:21051/api/v1
+security:
+  - bearerAuth: []
+tags:
+  - name: health
+  - name: identity
+  - name: projects
+  - name: catalog
+  - name: governance
+  - name: readiness
+  - name: audit
+  - name: notifications
+
+paths:
+  /health/live:
+    get:
+      tags: [health]
+      operationId: healthLive
+      security: []
+      responses:
+        "200": { description: Process alive, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+  /health/ready:
+    get:
+      tags: [health]
+      operationId: healthReady
+      security: []
+      responses:
+        "200": { description: All dependencies reachable, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+        "503": { description: A dependency is down, content: { application/json: { schema: { $ref: "#/components/schemas/Health" } } } }
+
+  # ---------------------------------------------------------------- identity (M01)
+  /me:
+    get:
+      tags: [identity]
+      operationId: getMe
+      description: Returns the caller. First call of a session provisions the user (JIT) and emits identity.user.logged_in.v1.
+      responses:
+        "200": { description: Caller profile, content: { application/json: { schema: { $ref: "#/components/schemas/Me" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error", description: "JIT provisioning email conflict (CONFLICT)" }
+  /users:
+    get:
+      tags: [identity]
+      operationId: listUsers
+      description: Directory search for inviting members. Returns only ACTIVE users with an ACTIVE membership.
+      parameters:
+        - { name: q, in: query, schema: { type: string, minLength: 2 }, description: Matches display_name or email prefix }
+        - { name: organization_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Users
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/IdentityPublicProfile" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+  /organizations:
+    get:
+      tags: [identity]
+      operationId: listOrganizations
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Organizations
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/OrganizationSummary" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+  /organizations/{organization_id}:
+    parameters: [ { $ref: "#/components/parameters/OrganizationId" } ]
+    get:
+      tags: [identity]
+      operationId: getOrganization
+      responses:
+        "200": { description: Organization, content: { application/json: { schema: { $ref: "#/components/schemas/Organization" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /organizations/{organization_id}/members:
+    parameters: [ { $ref: "#/components/parameters/OrganizationId" } ]
+    get:
+      tags: [identity]
+      operationId: listOrganizationMembers
+      description: ORG_ADMIN of the organization or PLATFORM_ADMIN only.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Members
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/OrganizationMembership" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /organizations/{organization_id}/members/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+      - $ref: "#/components/parameters/UserId"
+    patch:
+      tags: [identity]
+      operationId: updateOrganizationMember
+      description: ORG_ADMIN / PLATFORM_ADMIN. Emits identity.membership.changed.v1. Disabling a membership triggers grant revocation (MEMBERSHIP_DISABLED).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              minProperties: 1
+              properties:
+                roles: { type: array, items: { $ref: "#/components/schemas/OrgRole" }, uniqueItems: true }
+                status: { $ref: "#/components/schemas/ActiveStatus" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/OrganizationMembership" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  # ---------------------------------------------------------------- projects (M02)
+  /projects:
+    get:
+      tags: [projects]
+      operationId: listProjects
+      description: Projects the caller is a member of, plus PUBLIC projects when `scope=discover`.
+      parameters:
+        - { name: scope, in: query, schema: { type: string, enum: [mine, discover], default: mine } }
+        - { name: status, in: query, schema: { $ref: "#/components/schemas/ProjectStatus" } }
+        - { name: q, in: query, schema: { type: string } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Projects
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ProjectSummary" } } } }
+    post:
+      tags: [projects]
+      operationId: createProject
+      description: Caller becomes PROJECT_OWNER; caller's organization becomes lead organization.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectCreate" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } }
+        "422": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    get:
+      tags: [projects]
+      operationId: getProject
+      description: Members only. Non-members get 404 for PRIVATE and 403 FORBIDDEN for PUBLIC.
+      responses:
+        "200": { description: Project, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [projects]
+      operationId: updateProject
+      description: PROJECT_OWNER / PROJECT_ADMIN.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectUpdate" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/archive:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    post:
+      tags: [projects]
+      operationId: archiveProject
+      description: PROJECT_OWNER only. Emits project.archived.v1; governance revokes all project-scoped grants.
+      responses:
+        "200": { description: Archived, content: { application/json: { schema: { $ref: "#/components/schemas/Project" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/members:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    get:
+      tags: [projects]
+      operationId: listProjectMembers
+      responses:
+        "200": { description: Members, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ProjectMember" } } } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [projects]
+      operationId: addProjectMember
+      description: PROJECT_OWNER / PROJECT_ADMIN. Cross-organization users allowed. P0 adds directly (ACTIVE) and notifies (D-007).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [user_id, role]
+              properties:
+                user_id: { $ref: "#/components/schemas/Id" }
+                role: { $ref: "#/components/schemas/ProjectRole" }
+      responses:
+        "201": { description: Added, content: { application/json: { schema: { $ref: "#/components/schemas/ProjectMember" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/members/{user_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/UserId"
+    patch:
+      tags: [projects]
+      operationId: updateProjectMemberRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [role]
+              properties:
+                role: { $ref: "#/components/schemas/ProjectRole" }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/ProjectMember" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [projects]
+      operationId: removeProjectMember
+      description: PROJECT_OWNER / PROJECT_ADMIN, or the member themself (leave). Emits project.member.removed.v1.
+      responses:
+        "204": { description: Removed }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  # ---------------------------------------------------------------- catalog (M03)
+  /datasets:
+    get:
+      tags: [catalog]
+      operationId: searchDatasets
+      description: OpenSearch-backed metadata search. Visibility per D-012. Search p95 < 1.5s.
+      parameters:
+        - { name: q, in: query, schema: { type: string } }
+        - { name: access_level, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/AccessLevel" } } }
+        - { name: owner_organization_id, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/Id" } } }
+        - { name: purpose, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/Purpose" } } }
+        - { name: keyword, in: query, style: form, explode: true, schema: { type: array, items: { type: string } } }
+        - { name: readiness_status, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/ReadinessOverall" } } }
+        - { name: sort, in: query, schema: { type: string, enum: [relevance, updated_desc, title_asc], default: relevance } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200": { description: Results, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetSearchResult" } } } }
+    post:
+      tags: [catalog]
+      operationId: createDataset
+      description: DATA_STEWARD of owner_organization_id only (D-013).
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCreate" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Dataset" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /datasets/{dataset_id}:
+    parameters: [ { $ref: "#/components/parameters/DatasetId" } ]
+    get:
+      tags: [catalog]
+      operationId: getDataset
+      responses:
+        "200": { description: Dataset, content: { application/json: { schema: { $ref: "#/components/schemas/Dataset" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [catalog]
+      operationId: updateDataset
+      description: Owner-org DATA_STEWARD. Policy/access_level changes emit POLICY_CHANGED events. Existing grants are not altered by policy changes.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetUpdate" } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Dataset" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /datasets/{dataset_id}/policy:
+    parameters: [ { $ref: "#/components/parameters/DatasetId" } ]
+    get:
+      tags: [catalog]
+      operationId: getDatasetPolicy
+      description: Read model consumed by governance and web.
+      responses:
+        "200": { description: Policy view, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetPolicyView" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /datasets/{dataset_id}/versions:
+    parameters: [ { $ref: "#/components/parameters/DatasetId" } ]
+    get:
+      tags: [catalog]
+      operationId: listDatasetVersions
+      description: Non-stewards see only PUBLISHED versions.
+      responses:
+        "200": { description: Versions, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/DatasetVersion" } } } } } } }
+    post:
+      tags: [catalog]
+      operationId: createDatasetVersion
+      description: Owner-org DATA_STEWARD. Creates a DRAFT version.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version_label]
+              properties:
+                version_label: { type: string, pattern: "^[A-Za-z0-9._-]{1,32}$", examples: ["v1", "2026.09"] }
+                change_note: { type: string, maxLength: 2000 }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersion" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}:
+    parameters: [ { $ref: "#/components/parameters/VersionId" } ]
+    get:
+      tags: [catalog]
+      operationId: getDatasetVersion
+      description: Includes file manifest (names, sizes, checksums) - manifest is metadata, not data.
+      responses:
+        "200": { description: Version, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersion" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}/upload-session:
+    parameters: [ { $ref: "#/components/parameters/VersionId" } ]
+    post:
+      tags: [catalog]
+      operationId: createUploadSession
+      description: Owner-org DATA_STEWARD, DRAFT version only. Returns presigned PUT URLs (multipart above 64 MiB). Session TTL 1h.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UploadSessionCreate" } } }
+      responses:
+        "201": { description: Session, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /upload-sessions/{upload_session_id}:
+    parameters:
+      - { name: upload_session_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    get:
+      tags: [catalog]
+      operationId: getUploadSession
+      description: Owner-org DATA_STEWARD. Poll file verification status. Presigned URLs are omitted after the session is COMPLETED/EXPIRED.
+      responses:
+        "200": { description: Session, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}/files/{file_id}:
+    parameters:
+      - { $ref: "#/components/parameters/VersionId" }
+      - { name: file_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    delete:
+      tags: [catalog]
+      operationId: deleteDraftFile
+      description: Owner-org DATA_STEWARD, DRAFT version only. Removes manifest row and stored object.
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /upload-sessions/{upload_session_id}/complete:
+    parameters:
+      - { name: upload_session_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    post:
+      tags: [catalog]
+      operationId: completeUploadSession
+      description: Completes multipart uploads and verifies size + sha256 (D-014). Files <= 256 MiB are verified synchronously (VERIFIED/FAILED in the response); larger files return UPLOADED and are verified asynchronously by the worker — poll getUploadSession. Files failing verification are marked FAILED with failure_code and deleted from storage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                parts:
+                  type: array
+                  description: Required for multipart files.
+                  items:
+                    type: object
+                    required: [file_id, etags]
+                    properties:
+                      file_id: { $ref: "#/components/schemas/Id" }
+                      etags: { type: array, items: { type: object, required: [part_number, etag], properties: { part_number: { type: integer, minimum: 1 }, etag: { type: string } } } }
+      responses:
+        "200": { description: Session result, content: { application/json: { schema: { $ref: "#/components/schemas/UploadSession" } } } }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}/publish:
+    parameters: [ { $ref: "#/components/parameters/VersionId" } ]
+    post:
+      tags: [catalog]
+      operationId: publishDatasetVersion
+      description: Owner-org DATA_STEWARD. Requires >=1 file and all files VERIFIED. Version becomes immutable. Emits catalog.dataset.version_published.v1.
+      responses:
+        "200": { description: Published, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersion" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  # ---------------------------------------------------------------- governance (M04)
+  /access-requests:
+    get:
+      tags: [governance]
+      operationId: listAccessRequests
+      parameters:
+        - { name: role, in: query, schema: { type: string, enum: [requester, reviewer], default: requester }, description: "requester = my requests; reviewer = requests for datasets owned by orgs where I am DATA_STEWARD" }
+        - { name: status, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/AccessRequestStatus" } } }
+        - { name: project_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: dataset_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Requests
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/AccessRequest" } } } }
+    post:
+      tags: [governance]
+      operationId: createAccessRequest
+      description: Creates in SUBMITTED (D-015). Caller must be an ACTIVE member of project_id with role other than VIEWER (VIEWER -> FORBIDDEN). Project must be ACTIVE.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequestCreate" } } }
+      responses:
+        "201": { description: Submitted, content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequest" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /access-requests/{access_request_id}:
+    parameters: [ { $ref: "#/components/parameters/AccessRequestId" } ]
+    get:
+      tags: [governance]
+      operationId: getAccessRequest
+      description: Visible to requester and owner-org DATA_STEWARD/ORG_ADMIN. Read-only, no state change (D-025).
+      responses:
+        "200": { description: Request, content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequest" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /access-requests/{access_request_id}/start-review:
+    parameters: [ { $ref: "#/components/parameters/AccessRequestId" } ]
+    post:
+      tags: [governance]
+      operationId: startAccessReview
+      description: Owner-org DATA_STEWARD (not the requester). SUBMITTED -> UNDER_REVIEW, emits governance.access.review_started.v1. Idempotent for UNDER_REVIEW. Optional — approve/reject/request-changes also accept SUBMITTED (D-025).
+      responses:
+        "200": { description: Under review, content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequest" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /access-requests/{access_request_id}/approve:
+    parameters: [ { $ref: "#/components/parameters/AccessRequestId" } ]
+    post:
+      tags: [governance]
+      operationId: approveAccessRequest
+      description: Owner-org DATA_STEWARD. Allowed from SUBMITTED/UNDER_REVIEW. Creates ACTIVE grant.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/AccessApprove" } } }
+      responses:
+        "200": { description: Approved, content: { application/json: { schema: { $ref: "#/components/schemas/AccessDecisionResult" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /access-requests/{access_request_id}/reject:
+    parameters: [ { $ref: "#/components/parameters/AccessRequestId" } ]
+    post:
+      tags: [governance]
+      operationId: rejectAccessRequest
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reason], properties: { reason: { type: string, minLength: 1, maxLength: 2000 } } }
+      responses:
+        "200": { description: Rejected, content: { application/json: { schema: { $ref: "#/components/schemas/AccessDecisionResult" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /access-requests/{access_request_id}/request-changes:
+    parameters: [ { $ref: "#/components/parameters/AccessRequestId" } ]
+    post:
+      tags: [governance]
+      operationId: requestAccessChanges
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [comment], properties: { comment: { type: string, minLength: 1, maxLength: 2000 } } }
+      responses:
+        "200": { description: Changes requested, content: { application/json: { schema: { $ref: "#/components/schemas/AccessDecisionResult" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /access-requests/{access_request_id}/resubmit:
+    parameters: [ { $ref: "#/components/parameters/AccessRequestId" } ]
+    post:
+      tags: [governance]
+      operationId: resubmitAccessRequest
+      description: Requester only, from CHANGE_REQUESTED. Fields omitted keep previous values.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                purpose: { $ref: "#/components/schemas/Purpose" }
+                purpose_detail: { type: string, minLength: 20, maxLength: 4000 }
+                operations: { type: array, items: { $ref: "#/components/schemas/Operation" }, minItems: 1, uniqueItems: true }
+                requested_days: { type: integer, minimum: 1, maximum: 365 }
+      responses:
+        "200": { description: Resubmitted, content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequest" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /access-requests/{access_request_id}/withdraw:
+    parameters: [ { $ref: "#/components/parameters/AccessRequestId" } ]
+    post:
+      tags: [governance]
+      operationId: withdrawAccessRequest
+      description: Requester only, from SUBMITTED/UNDER_REVIEW/CHANGE_REQUESTED.
+      responses:
+        "200": { description: Withdrawn, content: { application/json: { schema: { $ref: "#/components/schemas/AccessRequest" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /access-grants:
+    get:
+      tags: [governance]
+      operationId: listAccessGrants
+      parameters:
+        - { name: role, in: query, schema: { type: string, enum: [subject, owner], default: subject }, description: "subject = grants I hold; owner = grants on my org's datasets (DATA_STEWARD/ORG_ADMIN)" }
+        - { name: status, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/AccessGrantStatus" } } }
+        - { name: project_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: dataset_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Grants
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/AccessGrant" } } } }
+  /access-grants/{access_grant_id}/revoke:
+    parameters:
+      - { name: access_grant_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    post:
+      tags: [governance]
+      operationId: revokeAccessGrant
+      description: Owner-org DATA_STEWARD / ORG_ADMIN. Effective immediately for new download sessions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reason], properties: { reason: { type: string, minLength: 1, maxLength: 2000 } } }
+      responses:
+        "200": { description: Revoked, content: { application/json: { schema: { $ref: "#/components/schemas/AccessGrant" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}/download-session:
+    parameters: [ { $ref: "#/components/parameters/VersionId" } ]
+    post:
+      tags: [governance]
+      operationId: createDownloadSession
+      description: |
+        Order (01_ARCHITECTURE §7): version PUBLISHED → basis (PUBLIC / OWNER_ORGANIZATION / GRANT) → for GRANT: active grant for (caller, project, dataset),
+        operation READ, not expired, caller still ACTIVE project member → OPA decision → presigned GET URLs (TTL 300s).
+        Every outcome is audited (authorized/denied).
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DownloadSessionCreate" } } }
+      responses:
+        "201": { description: Signed URLs, content: { application/json: { schema: { $ref: "#/components/schemas/DownloadSession" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  # ---------------------------------------------------------------- readiness (M05)
+  /readiness-profiles:
+    get:
+      tags: [readiness]
+      operationId: listReadinessProfiles
+      responses:
+        "200": { description: Profiles, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ReadinessProfile" } } } } } } }
+  /dataset-versions/{version_id}/readiness-validations:
+    parameters: [ { $ref: "#/components/parameters/VersionId" } ]
+    post:
+      tags: [readiness]
+      operationId: startReadinessValidation
+      description: Owner-org DATA_STEWARD. PUBLISHED versions only. Same input fingerprint + profile version returns the existing COMPLETED result (200) instead of re-running.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [profile_id], properties: { profile_id: { type: string, examples: ["GENERIC_BASIC", "TABULAR_ML_BASIC"] } } }
+      responses:
+        "200": { description: Existing identical result, content: { application/json: { schema: { $ref: "#/components/schemas/ReadinessValidation" } } } }
+        "202": { description: Queued, content: { application/json: { schema: { $ref: "#/components/schemas/ReadinessValidation" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}/readiness:
+    parameters: [ { $ref: "#/components/parameters/VersionId" } ]
+    get:
+      tags: [readiness]
+      operationId: getReadiness
+      description: Latest validation per profile for this version. Visible to anyone who can see the dataset metadata. No results yet -> 200 with empty items; profile_id given but never run -> 404 READINESS_NOT_AVAILABLE.
+      parameters:
+        - { name: profile_id, in: query, schema: { type: string } }
+      responses:
+        "200": { description: Latest results, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ReadinessValidation" } } } } } } }
+        "404": { $ref: "#/components/responses/Error" }
+
+  # ---------------------------------------------------------------- audit & notifications (M09)
+  /audit-events:
+    get:
+      tags: [audit]
+      operationId: listAuditEvents
+      description: |
+        Scope: PLATFORM_ADMIN all; ORG_ADMIN/DATA_STEWARD events where actor org or resource owner org is theirs;
+        other users: own actions, plus events of projects they are members of when project_id is given.
+      parameters:
+        - { name: action, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/AuditAction" } } }
+        - { name: actor_user_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: organization_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: project_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: resource_type, in: query, schema: { $ref: "#/components/schemas/ResourceType" } }
+        - { name: resource_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Audit events (newest first)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/AuditEvent" } } } }
+        "403": { $ref: "#/components/responses/Error" }
+  /notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      parameters:
+        - { name: unread_only, in: query, schema: { type: boolean, default: false } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Caller's notifications
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - type: object
+                    properties:
+                      items: { type: array, items: { $ref: "#/components/schemas/Notification" } }
+                      unread_count: { type: integer }
+  /notifications/{notification_id}/read:
+    parameters:
+      - { name: notification_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    post:
+      tags: [notifications]
+      operationId: markNotificationRead
+      responses:
+        "200": { description: Marked, content: { application/json: { schema: { $ref: "#/components/schemas/Notification" } } } }
+        "404": { $ref: "#/components/responses/Error" }
+  /notifications/read-all:
+    post:
+      tags: [notifications]
+      operationId: markAllNotificationsRead
+      responses:
+        "204": { description: All marked read }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak realm `nais` access token. Required claims sub, email, name, org_code; audience nais-api.
+
+  parameters:
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+    OrganizationId: { name: organization_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    UserId: { name: user_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    ProjectId: { name: project_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    DatasetId: { name: dataset_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    VersionId: { name: version_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    AccessRequestId: { name: access_request_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+
+  responses:
+    Error:
+      description: Error envelope. See contracts/error_codes.json for codes and HTTP mapping.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  schemas:
+    # ---------- shared
+    Id: { type: string, format: uuid }
+    Timestamp: { type: string, format: date-time }
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, trace_id]
+          properties:
+            code: { type: string, examples: ["ACCESS_GRANT_EXPIRED"] }
+            message: { type: string }
+            trace_id: { type: string }
+            details: { type: object, additionalProperties: true }
+    PageEnvelope:
+      type: object
+      required: [items, page]
+      properties:
+        items: { type: array, items: {} }
+        page:
+          type: object
+          required: [has_more]
+          properties:
+            next_cursor: { type: [string, "null"] }
+            has_more: { type: boolean }
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ok, degraded, down] }
+        checks: { type: object, additionalProperties: { type: string, enum: [ok, down] } }
+
+    # ---------- enums
+    ActiveStatus: { type: string, enum: [ACTIVE, DISABLED] }
+    OrganizationType: { type: string, enum: [RESEARCH_INSTITUTE, UNIVERSITY, COMPANY, PLATFORM_OPERATOR] }
+    OrgRole: { type: string, enum: [ORG_ADMIN, DATA_STEWARD, RESOURCE_MANAGER] }
+    PlatformRole: { type: string, enum: [PLATFORM_ADMIN] }
+    ProjectRole: { type: string, enum: [PROJECT_OWNER, PROJECT_ADMIN, RESEARCHER, VIEWER] }
+    ProjectStatus: { type: string, enum: [ACTIVE, ARCHIVED] }
+    ProjectVisibility: { type: string, enum: [PRIVATE, PUBLIC] }
+    AccessLevel: { type: string, enum: [PUBLIC, INTERNAL, CONTROLLED, SENSITIVE] }
+    Purpose: { type: string, enum: [ACADEMIC_RESEARCH, AI_TRAINING, COMMERCIAL_RESEARCH, EDUCATION, PUBLIC_INTEREST] }
+    Operation: { type: string, enum: [READ, COMPUTE, WRITE], description: "P0 grantable: READ only (D-009)" }
+    DatasetStatus: { type: string, enum: [ACTIVE, WITHDRAWN] }
+    DatasetVersionStatus: { type: string, enum: [DRAFT, PUBLISHED, WITHDRAWN] }
+    FileStatus: { type: string, enum: [PENDING, UPLOADED, VERIFIED, FAILED] }
+    AccessRequestStatus: { type: string, enum: [DRAFT, SUBMITTED, UNDER_REVIEW, CHANGE_REQUESTED, APPROVED, REJECTED, WITHDRAWN] }
+    AccessGrantStatus: { type: string, enum: [ACTIVE, EXPIRED, REVOKED] }
+    ReadinessRunStatus: { type: string, enum: [QUEUED, RUNNING, COMPLETED, FAILED] }
+    ReadinessOverall: { type: string, enum: [PASS, WARNING, FAIL] }
+    ReadinessCheckStatus: { type: string, enum: [PASS, WARNING, FAIL, NOT_APPLICABLE] }
+    ResourceType: { type: string, enum: [USER, ORGANIZATION, MEMBERSHIP, PROJECT, PROJECT_MEMBER, DATASET, DATASET_VERSION, DATASET_FILE, ACCESS_REQUEST, ACCESS_GRANT, READINESS_VALIDATION] }
+    AuditAction:
+      type: string
+      enum: [LOGIN, USER_CREATED, ORGANIZATION_CREATED, ADMIN_ROLE_CHANGED, PROJECT_CREATED, PROJECT_ARCHIVED, PROJECT_MEMBER_ADDED, PROJECT_MEMBER_REMOVED, PROJECT_MEMBER_ROLE_CHANGED,
+             DATASET_CREATED, DATASET_VERSION_PUBLISHED, POLICY_CHANGED, ACCESS_REQUESTED, ACCESS_REVIEW_STARTED, ACCESS_APPROVED, ACCESS_REJECTED, ACCESS_CHANGES_REQUESTED, ACCESS_WITHDRAWN,
+             ACCESS_REVOKED, ACCESS_EXPIRED, FILE_DOWNLOADED, DOWNLOAD_DENIED, READINESS_VALIDATION_COMPLETED]
+    NotificationType:
+      type: string
+      enum: [PROJECT_INVITATION, ACCESS_SUBMITTED, ACCESS_APPROVED, ACCESS_REJECTED, ACCESS_CHANGES_REQUESTED, ACCESS_EXPIRING, ACCESS_REVOKED, DATASET_PUBLISHED]
+
+    # ---------- identity read models
+    IdentityPublicProfile:
+      type: object
+      required: [user_id, display_name, organization_id, status]
+      properties:
+        user_id: { $ref: "#/components/schemas/Id" }
+        display_name: { type: string }
+        organization_id: { $ref: "#/components/schemas/Id" }
+        organization_name: { type: string }
+        status: { $ref: "#/components/schemas/ActiveStatus" }
+    OrganizationSummary:
+      type: object
+      required: [organization_id, code, name, type]
+      properties:
+        organization_id: { $ref: "#/components/schemas/Id" }
+        code: { type: string, pattern: "^[a-z0-9-]{2,32}$", examples: ["inst-a"] }
+        name: { type: string }
+        type: { $ref: "#/components/schemas/OrganizationType" }
+    Organization:
+      allOf:
+        - $ref: "#/components/schemas/OrganizationSummary"
+        - type: object
+          properties:
+            ror_id: { type: [string, "null"], description: "P2 extension" }
+            homepage_url: { type: [string, "null"], format: uri }
+            member_count: { type: integer }
+            dataset_count: { type: integer }
+            created_at: { $ref: "#/components/schemas/Timestamp" }
+    OrganizationMembership:
+      type: object
+      required: [user_id, organization_id, roles, status]
+      properties:
+        user_id: { $ref: "#/components/schemas/Id" }
+        organization_id: { $ref: "#/components/schemas/Id" }
+        display_name: { type: string }
+        email: { type: string, format: email }
+        roles: { type: array, items: { $ref: "#/components/schemas/OrgRole" } }
+        status: { $ref: "#/components/schemas/ActiveStatus" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    Me:
+      type: object
+      required: [user_id, display_name, email, status, organization, org_roles, platform_roles]
+      properties:
+        user_id: { $ref: "#/components/schemas/Id" }
+        display_name: { type: string }
+        email: { type: string, format: email }
+        status: { $ref: "#/components/schemas/ActiveStatus" }
+        organization: { $ref: "#/components/schemas/OrganizationSummary" }
+        org_roles: { type: array, items: { $ref: "#/components/schemas/OrgRole" } }
+        platform_roles: { type: array, items: { $ref: "#/components/schemas/PlatformRole" } }
+
+    # ---------- projects
+    ProjectSummary:
+      type: object
+      required: [project_id, name, status, lead_organization_id, visibility]
+      properties:
+        project_id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        status: { $ref: "#/components/schemas/ProjectStatus" }
+        visibility: { $ref: "#/components/schemas/ProjectVisibility" }
+        lead_organization_id: { $ref: "#/components/schemas/Id" }
+        my_role: { oneOf: [ { $ref: "#/components/schemas/ProjectRole" }, { type: "null" } ] }
+        member_count: { type: integer }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    Project:
+      allOf:
+        - $ref: "#/components/schemas/ProjectSummary"
+        - type: object
+          required: [description, organizations, created_at]
+          properties:
+            description: { type: string }
+            keywords: { type: array, items: { type: string } }
+            start_date: { type: [string, "null"], format: date }
+            end_date: { type: [string, "null"], format: date }
+            organizations:
+              type: array
+              items:
+                type: object
+                required: [organization_id, role]
+                properties:
+                  organization_id: { $ref: "#/components/schemas/Id" }
+                  name: { type: string }
+                  role: { type: string, enum: [LEAD, PARTNER], description: "PARTNER rows are derived from members' organizations" }
+            created_by: { $ref: "#/components/schemas/Id" }
+            created_at: { $ref: "#/components/schemas/Timestamp" }
+            archived_at: { type: [string, "null"], format: date-time }
+    ProjectCreate:
+      type: object
+      additionalProperties: false
+      required: [name, description]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+        visibility: { $ref: "#/components/schemas/ProjectVisibility" }
+        keywords: { type: array, items: { type: string, maxLength: 50 }, maxItems: 20 }
+        start_date: { type: string, format: date }
+        end_date: { type: string, format: date }
+    ProjectUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        name: { type: string, minLength: 2, maxLength: 200 }
+        description: { type: string, maxLength: 10000 }
+        visibility: { $ref: "#/components/schemas/ProjectVisibility" }
+        keywords: { type: array, items: { type: string, maxLength: 50 }, maxItems: 20 }
+        start_date: { type: [string, "null"], format: date }
+        end_date: { type: [string, "null"], format: date }
+    ProjectMember:
+      type: object
+      required: [project_id, user_id, organization_id, role, joined_at]
+      properties:
+        project_id: { $ref: "#/components/schemas/Id" }
+        user_id: { $ref: "#/components/schemas/Id" }
+        display_name: { type: string }
+        organization_id: { $ref: "#/components/schemas/Id" }
+        organization_name: { type: string }
+        role: { $ref: "#/components/schemas/ProjectRole" }
+        joined_at: { $ref: "#/components/schemas/Timestamp" }
+        added_by: { $ref: "#/components/schemas/Id" }
+
+    # ---------- catalog
+    DatasetPolicyView:
+      type: object
+      required: [dataset_id, owner_organization_id, access_level, allowed_purposes, approval_required, max_grant_days]
+      properties:
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        owner_organization_id: { $ref: "#/components/schemas/Id" }
+        access_level: { $ref: "#/components/schemas/AccessLevel" }
+        allowed_purposes: { type: array, items: { $ref: "#/components/schemas/Purpose" }, minItems: 1 }
+        approval_required: { type: boolean, description: "P0: always true for CONTROLLED/SENSITIVE; ignored for PUBLIC/INTERNAL" }
+        max_grant_days: { type: integer, minimum: 1, maximum: 365, description: "SENSITIVE <= 30" }
+    DatasetCreate:
+      type: object
+      additionalProperties: false
+      required: [owner_organization_id, title, description, access_level, license, allowed_purposes]
+      properties:
+        owner_organization_id: { $ref: "#/components/schemas/Id" }
+        title: { type: string, minLength: 3, maxLength: 300 }
+        description: { type: string, maxLength: 20000 }
+        keywords: { type: array, items: { type: string, maxLength: 50 }, maxItems: 30 }
+        domain: { type: string, examples: ["materials", "bio", "energy"] }
+        access_level: { $ref: "#/components/schemas/AccessLevel" }
+        license: { type: string, examples: ["CC-BY-4.0", "NAIS-CONTROLLED-1.0"] }
+        usage_policy: { type: string, maxLength: 10000 }
+        allowed_purposes: { type: array, items: { $ref: "#/components/schemas/Purpose" }, minItems: 1, uniqueItems: true }
+        max_grant_days: { type: integer, minimum: 1, maximum: 365, default: 180 }
+        contact_email: { type: string, format: email }
+        provenance: { type: string, maxLength: 10000, description: "How the data was produced (instrument, method, source)" }
+    DatasetUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        title: { type: string, minLength: 3, maxLength: 300 }
+        description: { type: string, maxLength: 20000 }
+        keywords: { type: array, items: { type: string, maxLength: 50 }, maxItems: 30 }
+        domain: { type: string }
+        access_level: { $ref: "#/components/schemas/AccessLevel" }
+        license: { type: string }
+        usage_policy: { type: string, maxLength: 10000 }
+        allowed_purposes: { type: array, items: { $ref: "#/components/schemas/Purpose" }, minItems: 1, uniqueItems: true }
+        max_grant_days: { type: integer, minimum: 1, maximum: 365 }
+        contact_email: { type: string, format: email }
+        provenance: { type: string, maxLength: 10000 }
+        status: { $ref: "#/components/schemas/DatasetStatus" }
+    Dataset:
+      type: object
+      required: [dataset_id, owner_organization_id, title, description, access_level, license, policy, status, created_at, updated_at]
+      properties:
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        owner_organization_id: { $ref: "#/components/schemas/Id" }
+        owner_organization_name: { type: string }
+        title: { type: string }
+        description: { type: string }
+        keywords: { type: array, items: { type: string } }
+        domain: { type: [string, "null"] }
+        access_level: { $ref: "#/components/schemas/AccessLevel" }
+        license: { type: string }
+        usage_policy: { type: [string, "null"] }
+        contact_email: { type: [string, "null"] }
+        provenance: { type: [string, "null"] }
+        policy: { $ref: "#/components/schemas/DatasetPolicyView" }
+        status: { $ref: "#/components/schemas/DatasetStatus" }
+        latest_published_version: { oneOf: [ { $ref: "#/components/schemas/DatasetVersionSummary" }, { type: "null" } ] }
+        created_by: { $ref: "#/components/schemas/Id" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    DatasetVersionSummary:
+      type: object
+      required: [dataset_version_id, version_label, status]
+      properties:
+        dataset_version_id: { $ref: "#/components/schemas/Id" }
+        version_label: { type: string }
+        status: { $ref: "#/components/schemas/DatasetVersionStatus" }
+        published_at: { type: [string, "null"], format: date-time }
+        readiness_overall:
+          description: "Latest COMPLETED result of TABULAR_ML_BASIC if present, else GENERIC_BASIC; null if none"
+          oneOf: [ { $ref: "#/components/schemas/ReadinessOverall" }, { type: "null" } ]
+    DatasetVersion:
+      allOf:
+        - $ref: "#/components/schemas/DatasetVersionSummary"
+        - type: object
+          required: [dataset_id, files, file_count, total_bytes, created_at]
+          properties:
+            dataset_id: { $ref: "#/components/schemas/Id" }
+            change_note: { type: [string, "null"] }
+            files: { type: array, items: { $ref: "#/components/schemas/DatasetFile" } }
+            file_count: { type: integer }
+            total_bytes: { type: integer }
+            manifest_sha256: { type: [string, "null"], description: "sha256 over sorted 'path\\tsize\\tsha256' lines; set on publish" }
+            created_at: { $ref: "#/components/schemas/Timestamp" }
+    DatasetFile:
+      type: object
+      required: [file_id, path, size_bytes, sha256, media_type, status]
+      properties:
+        file_id: { $ref: "#/components/schemas/Id" }
+        path: { type: string, pattern: "^[A-Za-z0-9._/-]{1,512}$", description: "Relative path, no '..' or leading '/'" }
+        size_bytes: { type: integer, minimum: 1 }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        media_type: { type: string }
+        status: { $ref: "#/components/schemas/FileStatus" }
+    UploadSessionCreate:
+      type: object
+      additionalProperties: false
+      required: [files]
+      properties:
+        files:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: object
+            additionalProperties: false
+            required: [path, size_bytes, sha256, media_type]
+            properties:
+              path: { type: string, pattern: "^[A-Za-z0-9._/-]{1,512}$" }
+              size_bytes: { type: integer, minimum: 1, maximum: 53687091200, description: "P0 per-file limit 50 GiB" }
+              sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+              media_type: { type: string }
+    UploadSession:
+      type: object
+      required: [upload_session_id, dataset_version_id, status, expires_at, files]
+      properties:
+        upload_session_id: { $ref: "#/components/schemas/Id" }
+        dataset_version_id: { $ref: "#/components/schemas/Id" }
+        status: { type: string, enum: [OPEN, COMPLETED, EXPIRED] }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        files:
+          type: array
+          items:
+            type: object
+            required: [file_id, path, status, upload]
+            properties:
+              file_id: { $ref: "#/components/schemas/Id" }
+              path: { type: string }
+              status: { $ref: "#/components/schemas/FileStatus" }
+              failure_code: { type: [string, "null"] }
+              upload:
+                oneOf:
+                  - type: object
+                    required: [method, url]
+                    properties:
+                      method: { const: PUT }
+                      url: { type: string, format: uri }
+                      headers: { type: object, additionalProperties: { type: string } }
+                  - type: object
+                    required: [method, part_size_bytes, parts]
+                    properties:
+                      method: { const: MULTIPART }
+                      part_size_bytes: { type: integer }
+                      parts: { type: array, items: { type: object, required: [part_number, url], properties: { part_number: { type: integer }, url: { type: string, format: uri } } } }
+    DatasetSearchHit:
+      type: object
+      required: [dataset_id, title, owner_organization_id, access_level]
+      properties:
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        title: { type: string }
+        snippet: { type: string }
+        owner_organization_id: { $ref: "#/components/schemas/Id" }
+        owner_organization_name: { type: string }
+        access_level: { $ref: "#/components/schemas/AccessLevel" }
+        keywords: { type: array, items: { type: string } }
+        allowed_purposes: { type: array, items: { $ref: "#/components/schemas/Purpose" } }
+        latest_version_label: { type: [string, "null"] }
+        readiness_overall: { oneOf: [ { $ref: "#/components/schemas/ReadinessOverall" }, { type: "null" } ] }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    FacetBucket:
+      type: object
+      required: [value, count]
+      properties:
+        value: { type: string }
+        label: { type: string }
+        count: { type: integer }
+    DatasetSearchResult:
+      allOf:
+        - $ref: "#/components/schemas/PageEnvelope"
+        - type: object
+          required: [total, facets]
+          properties:
+            items: { type: array, items: { $ref: "#/components/schemas/DatasetSearchHit" } }
+            total: { type: integer }
+            facets:
+              type: object
+              properties:
+                access_level: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+                owner_organization_id: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+                purpose: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+                keyword: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+                readiness_status: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+
+    # ---------- governance
+    AccessRequestCreate:
+      type: object
+      additionalProperties: false
+      required: [dataset_id, project_id, purpose, purpose_detail, operations, requested_days]
+      properties:
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        purpose: { $ref: "#/components/schemas/Purpose" }
+        purpose_detail: { type: string, minLength: 20, maxLength: 4000 }
+        operations: { type: array, items: { $ref: "#/components/schemas/Operation" }, minItems: 1, uniqueItems: true }
+        requested_days: { type: integer, minimum: 1, maximum: 365 }
+    AccessRequest:
+      type: object
+      required: [access_request_id, dataset_id, project_id, requester_user_id, requester_organization_id, owner_organization_id, purpose, purpose_detail, operations, requested_days, status, created_at, updated_at]
+      properties:
+        access_request_id: { $ref: "#/components/schemas/Id" }
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        dataset_title: { type: string }
+        project_id: { $ref: "#/components/schemas/Id" }
+        project_name: { type: string }
+        requester_user_id: { $ref: "#/components/schemas/Id" }
+        requester_display_name: { type: string }
+        requester_organization_id: { $ref: "#/components/schemas/Id" }
+        owner_organization_id: { $ref: "#/components/schemas/Id" }
+        purpose: { $ref: "#/components/schemas/Purpose" }
+        purpose_detail: { type: string }
+        operations: { type: array, items: { $ref: "#/components/schemas/Operation" } }
+        requested_days: { type: integer }
+        status: { $ref: "#/components/schemas/AccessRequestStatus" }
+        history:
+          type: array
+          items:
+            type: object
+            required: [status, at]
+            properties:
+              status: { $ref: "#/components/schemas/AccessRequestStatus" }
+              at: { $ref: "#/components/schemas/Timestamp" }
+              by_user_id: { $ref: "#/components/schemas/Id" }
+              comment: { type: [string, "null"] }
+        access_grant_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    AccessApprove:
+      type: object
+      additionalProperties: false
+      required: [grant_days]
+      properties:
+        grant_days: { type: integer, minimum: 1, maximum: 365, description: "<= requested_days and <= max_grant_days; expires_at = approved_at + grant_days" }
+        operations: { type: array, items: { $ref: "#/components/schemas/Operation" }, minItems: 1, uniqueItems: true, description: "Subset of requested operations; default = requested" }
+        note: { type: string, maxLength: 2000 }
+    AccessDecisionResult:
+      type: object
+      required: [access_request]
+      properties:
+        access_request: { $ref: "#/components/schemas/AccessRequest" }
+        access_grant: { oneOf: [ { $ref: "#/components/schemas/AccessGrant" }, { type: "null" } ] }
+    AccessGrant:
+      type: object
+      required: [access_grant_id, subject_type, subject_user_id, project_id, dataset_id, purpose, operations, valid_from, expires_at, granted_by, policy_version, status]
+      properties:
+        access_grant_id: { $ref: "#/components/schemas/Id" }
+        access_request_id: { $ref: "#/components/schemas/Id" }
+        subject_type: { const: USER }
+        subject_user_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        dataset_title: { type: string }
+        purpose: { $ref: "#/components/schemas/Purpose" }
+        operations: { type: array, items: { $ref: "#/components/schemas/Operation" } }
+        valid_from: { $ref: "#/components/schemas/Timestamp" }
+        expires_at: { $ref: "#/components/schemas/Timestamp" }
+        granted_by: { $ref: "#/components/schemas/Id" }
+        policy_version: { type: string, examples: ["data_access@1.0.0"] }
+        status: { $ref: "#/components/schemas/AccessGrantStatus", description: "Computed: ACTIVE with expires_at <= now is returned as EXPIRED" }
+        revoked_at: { type: [string, "null"], format: date-time }
+        revoked_by: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        revocation_reason: { type: [string, "null"] }
+    DownloadSessionCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        project_id: { $ref: "#/components/schemas/Id", description: "Required when basis would be GRANT (CONTROLLED/SENSITIVE for non-owner org)" }
+        file_ids: { type: array, items: { $ref: "#/components/schemas/Id" }, minItems: 1, maxItems: 500, description: "Default: all files of the version" }
+    DownloadSession:
+      type: object
+      required: [dataset_version_id, basis, expires_at, files]
+      properties:
+        dataset_version_id: { $ref: "#/components/schemas/Id" }
+        basis: { type: string, enum: [PUBLIC, OWNER_ORGANIZATION, GRANT] }
+        access_grant_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        expires_at: { $ref: "#/components/schemas/Timestamp", description: "URL expiry (now + 300s)" }
+        files:
+          type: array
+          items:
+            type: object
+            required: [file_id, path, url, size_bytes, sha256]
+            properties:
+              file_id: { $ref: "#/components/schemas/Id" }
+              path: { type: string }
+              url: { type: string, format: uri }
+              size_bytes: { type: integer }
+              sha256: { type: string }
+
+    # ---------- readiness
+    ReadinessProfile:
+      type: object
+      required: [profile_id, version, name, checks]
+      properties:
+        profile_id: { type: string }
+        version: { type: string }
+        name: { type: string }
+        description: { type: string }
+        checks:
+          type: array
+          items:
+            type: object
+            required: [check_id, severity]
+            properties:
+              check_id: { type: string }
+              severity: { type: string, enum: [REQUIRED, RECOMMENDED], description: "REQUIRED FAIL => overall FAIL; RECOMMENDED FAIL => overall WARNING" }
+    ReadinessCheckResult:
+      type: object
+      required: [check_id, status, severity, message, evidence]
+      properties:
+        check_id: { type: string }
+        status: { $ref: "#/components/schemas/ReadinessCheckStatus" }
+        severity: { type: string, enum: [REQUIRED, RECOMMENDED] }
+        message: { type: string }
+        evidence: { type: object, additionalProperties: true, description: "Statistics/locations only, never raw values (D-018)" }
+    ReadinessValidation:
+      type: object
+      required: [validation_id, dataset_version_id, profile_id, profile_version, run_status, created_at]
+      properties:
+        validation_id: { $ref: "#/components/schemas/Id" }
+        dataset_version_id: { $ref: "#/components/schemas/Id" }
+        profile_id: { type: string }
+        profile_version: { type: string }
+        run_status: { $ref: "#/components/schemas/ReadinessRunStatus" }
+        overall_status: { oneOf: [ { $ref: "#/components/schemas/ReadinessOverall" }, { type: "null" } ] }
+        summary:
+          type: object
+          properties:
+            pass: { type: integer }
+            warning: { type: integer }
+            fail: { type: integer }
+            not_applicable: { type: integer }
+        checks: { type: array, items: { $ref: "#/components/schemas/ReadinessCheckResult" } }
+        validator_version: { type: string }
+        input_fingerprint: { type: string, description: "sha256(manifest_sha256 + metadata_snapshot_sha256 + profile_id + profile_version + validator_version)" }
+        error: { type: [string, "null"], description: "Set when run_status=FAILED" }
+        triggered_by: { type: string, enum: [AUTO_ON_PUBLISH, USER] }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        started_at: { type: [string, "null"], format: date-time }
+        completed_at: { type: [string, "null"], format: date-time }
+
+    # ---------- audit / notification
+    AuditEvent:
+      type: object
+      required: [audit_event_id, occurred_at, action, result, actor, resource, source_event_id, trace_id]
+      properties:
+        audit_event_id: { $ref: "#/components/schemas/Id" }
+        occurred_at: { $ref: "#/components/schemas/Timestamp" }
+        action: { $ref: "#/components/schemas/AuditAction" }
+        result: { type: string, enum: [SUCCESS, DENIED] }
+        reason: { type: [string, "null"] }
+        actor:
+          type: object
+          required: [type]
+          properties:
+            type: { type: string, enum: [USER, SYSTEM] }
+            user_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+            display_name: { type: [string, "null"] }
+            organization_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        resource:
+          type: object
+          required: [type, id]
+          properties:
+            type: { $ref: "#/components/schemas/ResourceType" }
+            id: { $ref: "#/components/schemas/Id" }
+            owner_organization_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        project_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        policy_version: { type: [string, "null"] }
+        source_event_id: { $ref: "#/components/schemas/Id" }
+        source_event_type: { type: string }
+        trace_id: { type: string, description: "= source event correlation_id" }
+        details: { type: object, additionalProperties: true }
+    Notification:
+      type: object
+      required: [notification_id, type, title, created_at, read]
+      properties:
+        notification_id: { $ref: "#/components/schemas/Id" }
+        type: { $ref: "#/components/schemas/NotificationType" }
+        title: { type: string }
+        body: { type: string }
+        link: { type: string, description: "Web route, e.g. /commons/access/{id}" }
+        read: { type: boolean }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
