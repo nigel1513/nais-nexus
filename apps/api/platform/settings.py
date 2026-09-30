@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     outbox_batch_size: int = 100
     outbox_max_attempts: int = 10
     worker_threads: int = 4
+    worker_shutdown_timeout_ms: int = 8000
     storage_org_codes: str = "nais,inst-a,inst-b"
     health_check_timeout_seconds: float = 2.0
 
