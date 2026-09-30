@@ -570,7 +570,7 @@ Fixture: `10_SEED_DATA.md`의 기관·사용자(`a.researcher`, `b.researcher`, 
 | M04-AT-15 | AT-08 grant | b.steward revoke → 즉시 download-session | revoke 200, download 403 `ACCESS_GRANT_REVOKED` (**revoke 즉시 차단**) |
 | M04-AT-16 | AT-15 | 다시 revoke | 409 `ACCESS_GRANT_NOT_ACTIVE` |
 | M04-AT-17 | a.researcher가 P1 grant 보유, P2에도 멤버 | download-session(project_id=P2) | 403 `ACCESS_GRANT_REQUIRED` (**다른 project의 grant 재사용 불가**) |
-| M04-AT-18 | AT-11 URL | 쿼리의 object key/`X-Amz-Expires`/서명 한 글자 변조 후 GET, 또는 다른 file의 path로 교체 | MinIO 403 (`SignatureDoesNotMatch`/`AccessDenied`) (**URL tampering 불가**). 301초 후 원본 URL GET → 403 (만료) |
+| M04-AT-18 | AT-11 URL | 쿼리의 object key/`X-Amz-Expires`/서명 한 글자 변조 후 GET, 또는 다른 file의 path로 교체 | S3 스토리지가 403 (`SignatureDoesNotMatch`/`AccessDenied`) (**URL tampering 불가**). 301초 후 원본 URL GET → 403 (만료) |
 | M04-AT-19 | OPA 컨테이너 중지 또는 fake가 timeout | 유효 grant로 download-session | 503 `POLICY_ENGINE_UNAVAILABLE`, URL 미발급, `download.denied.v1` 기록 (**OPA unavailable 시 fail-closed**) |
 | M04-AT-20 | OPA fake가 allow=false 반환 | 유효 grant로 download-session | 403 `ACCESS_DENIED_BY_POLICY`, divergence metric +1 |
 | M04-AT-21 | P1이 PRIVATE, 기관 C 사용자 | P1 id로 access request | 403 `ACCESS_NOT_PROJECT_MEMBER` (프로젝트 존재 여부 외 정보 노출 없음). (**다른 기관 사용자가 private project 조회 불가**의 governance 측; 본 테스트는 M02 AT와 쌍) |
@@ -607,7 +607,7 @@ Fixture: `10_SEED_DATA.md`의 기관·사용자(`a.researcher`, `b.researcher`, 
 
 ### Known limitations
 - **이미 발급된 presigned URL은 revoke/만료 후에도 최대 TTL(300s)까지 유효**하다. S3 presigned URL은 발급 후 서버에서 무효화할 수 없다. 완화: TTL 300s 상한, 발급 기록/감사. P2 Data Node의 direct transfer endpoint에서는 요청 시점 grant 재검증으로 해소.
-- `FILE_DOWNLOADED` 감사는 **URL 발급 기준**이며 실제 전송 완료를 의미하지 않는다(D-017). P1에서 MinIO bucket notification/access log 연동.
+- `FILE_DOWNLOADED` 감사는 **URL 발급 기준**이며 실제 전송 완료를 의미하지 않는다(D-017). P1에서 S3 스토리지 bucket notification/access log 연동.
 - Grant subject는 사용자 1명(D-008). 같은 프로젝트 공동연구자도 각자 요청해야 한다.
 - `COMPUTE`/`WRITE` operation은 enum만 존재, P0에서 부여 불가.
 - Reviewer의 GET이 상태를 바꾸는(SUBMITTED → UNDER_REVIEW) 부수효과가 있다. 이 전이는 이벤트/감사가 없다.
