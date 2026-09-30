@@ -40,6 +40,10 @@ class HandlerRegistry:
     def handlers_for(self, event_type: str) -> list[Subscription]:
         return list(self._subscriptions.get(event_type, []))
 
+    def table(self) -> dict[str, list[str]]:
+        """event_type -> handler names. Events absent here are marked dispatched with no handler run."""
+        return {kind: [s.name for s in subs] for kind, subs in sorted(self._subscriptions.items()) if subs}
+
 
 registry = HandlerRegistry()
 subscribe = registry.subscribe

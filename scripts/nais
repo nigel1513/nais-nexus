@@ -38,6 +38,7 @@ case "$cmd" in
   down)            docker compose down "$@" ;;
   logs)            docker compose logs -f "$@" ;;
   migrate)         ensure_env; cli migrate "$@" ;;
+  new-migration)   PYTHONPATH=apps:packages/contracts/python uv run python -m api.platform.cli new-migration "$@" ;;
   seed)            ensure_env; cli seed ;;
   storage-init)    ensure_env; cli storage-init ;;
   credentials)     credentials ;;
@@ -48,6 +49,6 @@ case "$cmd" in
   contracts-check) uv run python packages/contracts/generate.py --check ;;
   contract-test)   uv run pytest tests/contract "$@" ;;
   gate-a)          scripts/gate_a.sh ;;
-  help)            echo "usage: scripts/nais {up|down|logs|migrate|seed|storage-init|credentials|test|lint|typecheck|contracts|contracts-check|contract-test|gate-a}" ;;
+  help)            echo "usage: scripts/nais {up|down|logs|migrate|new-migration <module> -m <msg>|seed|storage-init|credentials|test|lint|typecheck|contracts|contracts-check|contract-test|gate-a}" ;;
   *)               echo "unknown command: $cmd" >&2; exit 2 ;;
 esac

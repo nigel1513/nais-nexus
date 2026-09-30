@@ -1,9 +1,12 @@
+import logging
 import threading
 from typing import Any
 
 import dramatiq
+import pytest
 from dramatiq.brokers.stub import StubBroker
 
+from api.platform.event_bus import HandlerRegistry
 from api.platform.modules import ModuleSpec
 from api.platform.settings import Settings
 from api.worker import build_worker, supervise
@@ -47,3 +50,20 @@ def test_supervise_returns_0_when_stop_set_normally() -> None:
     waiter.join()
     assert code == 0
     assert stop.is_set()
+
+
+def test_build_worker_logs_the_subscription_table(caplog: pytest.LogCaptureFixture) -> None:
+    registry = HandlerRegistry()
+
+    @registry.subscribe("project.archived.v1")
+    def on_archived(session, event) -> None: ...  # type: ignore[no-untyped-def]
+
+    with caplog.at_level(logging.INFO, logger="nais.worker"):
+        build_worker(modules=[], broker=StubBroker(), settings=Settings(), registry=registry)
+    [record] = [r for r in caplog.records if r.getMessage() == "event subscriptions"]
+    assert record.levelno == logging.INFO
+    assert record.subscriptions == {  # type: ignore[attr-defined]
+        "project.archived.v1": [
+            f"{__name__}.test_build_worker_logs_the_subscription_table.<locals>.on_archived"
+        ]
+    }

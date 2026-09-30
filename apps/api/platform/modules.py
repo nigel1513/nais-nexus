@@ -24,6 +24,13 @@ DEFAULT_MODULE_ORDER: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class ModuleSpec:
+    """What a module plugs into the platform (D-036).
+
+    Event handlers register with @subscribe at import time, so the module package __init__ MUST import its handler
+    modules; otherwise its events are relayed with no handler and silently marked dispatched. The worker logs the
+    subscription table (event_type -> handlers) at start. Endpoints get a DB session via api.platform.db.SessionDep.
+    """
+
     name: str
     db_schema: str | None = None
     router: APIRouter | None = None

@@ -12,7 +12,7 @@ from dramatiq import Worker
 from api.platform import relay
 from api.platform.broker import configure_broker
 from api.platform.db import session_factory
-from api.platform.event_bus import registry
+from api.platform.event_bus import HandlerRegistry, registry
 from api.platform.logs import configure_logging
 from api.platform.modules import ModuleSpec, discover_modules
 from api.platform.scheduler import Scheduler
@@ -33,6 +33,7 @@ def build_worker(
     modules: Sequence[ModuleSpec] | None = None,
     broker: dramatiq.Broker | None = None,
     settings: Settings | None = None,
+    registry: HandlerRegistry = registry,
 ) -> WorkerRuntime:
     settings = settings or get_settings()
     chosen = configure_broker(settings, broker)  # before module import: actors bind at import time
@@ -43,6 +44,9 @@ def build_worker(
             spec.wire()
         if spec.register_worker is not None:
             spec.register_worker(chosen, scheduler)
+    # Handlers subscribe at import time: a module must import its handler modules from its package __init__,
+    # otherwise its events are relayed with no handler and silently marked dispatched.
+    logger.info("event subscriptions", extra={"subscriptions": registry.table()})
     return WorkerRuntime(broker=chosen, scheduler=scheduler, modules=specs)
 
 
