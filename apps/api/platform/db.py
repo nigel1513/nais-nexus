@@ -1,11 +1,13 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from functools import lru_cache
+from typing import Annotated
 
+from fastapi import Depends, Request
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from api.platform.settings import get_settings
+from api.platform.settings import Settings, get_settings
 
 
 @lru_cache(maxsize=8)
@@ -30,7 +32,13 @@ def session_scope(url: str | None = None) -> Iterator[Session]:
         session.close()
 
 
-def get_session() -> Iterator[Session]:
-    """FastAPI dependency: one transaction per request, rolled back on any error."""
-    with session_scope() as session:
+def get_session(request: Request) -> Iterator[Session]:
+    """One transaction per request, rolled back on any error. Use it through SessionDep."""
+    settings: Settings = getattr(request.app.state, "settings", None) or get_settings()
+    with session_scope(settings.database_url) as session:
         yield session
+
+
+SessionDep = Annotated[Session, Depends(get_session, scope="function")]
+"""THE way endpoints get a DB session. scope="function" commits BEFORE the response is built, so a failed
+commit (e.g. a deferred constraint) becomes a 500 error envelope instead of an already-sent 2xx."""
