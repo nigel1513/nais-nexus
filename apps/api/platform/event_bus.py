@@ -45,18 +45,25 @@ registry = HandlerRegistry()
 subscribe = registry.subscribe
 
 
-def claim_event(session: Session, schema: str, envelope: EventEnvelope) -> bool:
-    """Insert into <schema>.processed_events; False means this consumer already handled the event."""
+def claim_event(session: Session, schema: str, envelope: EventEnvelope, handler: str | None = None) -> bool:
+    """Insert into <schema>.processed_events; False means this consumer already handled the event.
+
+    Without handler: one claim per (event_id) - table from create_processed_events(schema).
+    With handler: one claim per (event_id, handler) - table from create_processed_events(schema, per_handler=True).
+    """
     if not _SCHEMA_NAME.fullmatch(schema):
         raise ValueError(f"invalid schema name: {schema!r}")
-    result = cast(
-        CursorResult[Any],
-        session.execute(
-            text(
-                f'INSERT INTO "{schema}".processed_events (event_id, event_type) '
-                "VALUES (:event_id, :event_type) ON CONFLICT (event_id) DO NOTHING"
-            ),
-            {"event_id": envelope.event_id, "event_type": envelope.event_type},
-        ),
-    )
+    params: dict[str, Any] = {"event_id": envelope.event_id, "event_type": envelope.event_type}
+    if handler is None:
+        sql = (
+            f'INSERT INTO "{schema}".processed_events (event_id, event_type) '
+            "VALUES (:event_id, :event_type) ON CONFLICT (event_id) DO NOTHING"
+        )
+    else:
+        sql = (
+            f'INSERT INTO "{schema}".processed_events (event_id, handler, event_type) '
+            "VALUES (:event_id, :handler, :event_type) ON CONFLICT (event_id, handler) DO NOTHING"
+        )
+        params["handler"] = handler
+    result = cast(CursorResult[Any], session.execute(text(sql), params))
     return result.rowcount == 1

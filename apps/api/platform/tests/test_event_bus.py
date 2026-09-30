@@ -1,12 +1,17 @@
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import create_engine, text
 
 from api.platform.db import session_factory
 from api.platform.event_bus import HandlerRegistry, claim_event
 from api.platform.events import EventActor, EventEnvelope
+from api.platform.migration_helpers import create_processed_events
 from api.platform.testing.fixtures import PgUrls
 
 
@@ -43,25 +48,41 @@ def test_subscribe_rejects_unknown_event_types() -> None:
         HandlerRegistry().subscribe("nope.v1")
 
 
-def test_claim_event_is_idempotent(migrated_db: PgUrls) -> None:
-    engine = create_engine(migrated_db.migrator)
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                "CREATE TABLE IF NOT EXISTS autonomy.processed_events "
-                "(event_id uuid PRIMARY KEY, event_type text NOT NULL, processed_at timestamptz NOT NULL DEFAULT now())"
-            )
-        )
+@contextmanager
+def processed_events_table(urls: PgUrls, *, per_handler: bool) -> Iterator[None]:
+    engine = create_engine(urls.migrator)
+    with engine.begin() as conn, Operations.context(MigrationContext.configure(conn)):
+        create_processed_events("autonomy", per_handler=per_handler)
     try:
+        yield
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE autonomy.processed_events"))
+        engine.dispose()
+
+
+def test_claim_event_is_idempotent(migrated_db: PgUrls) -> None:
+    with processed_events_table(migrated_db, per_handler=False):
         event = envelope()
         with session_factory(migrated_db.app)() as session, session.begin():
             assert claim_event(session, "autonomy", event) is True
         with session_factory(migrated_db.app)() as session, session.begin():
             assert claim_event(session, "autonomy", event) is False
-    finally:
-        with engine.begin() as conn:
-            conn.execute(text("DROP TABLE autonomy.processed_events"))
-        engine.dispose()
+
+
+def test_claim_event_per_handler_claims_once_per_handler(migrated_db: PgUrls) -> None:
+    with processed_events_table(migrated_db, per_handler=True):
+        event = envelope()
+        with session_factory(migrated_db.app)() as session, session.begin():
+            assert claim_event(session, "autonomy", event, handler="grants") is True
+            assert claim_event(session, "autonomy", event, handler="grants") is False
+            assert claim_event(session, "autonomy", event, handler="notify") is True
+        with session_factory(migrated_db.app)() as session:
+            stored = session.execute(
+                text("SELECT handler FROM autonomy.processed_events WHERE event_id = :id ORDER BY handler"),
+                {"id": event.event_id},
+            ).scalars()
+            assert list(stored) == ["grants", "notify"]
 
 
 def test_claim_event_rejects_unsafe_schema_names(migrated_db: PgUrls) -> None:
