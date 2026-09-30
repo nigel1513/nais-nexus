@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     nais_public_base_url: str = "http://localhost:21051"
     database_url: str = "postgresql+psycopg://nais_app:nais@localhost:21055/nais"
     migration_database_url: str = "postgresql+psycopg://nais_migrator:nais@localhost:21055/nais"
-    redis_url: str = "redis://localhost:21058/0"
+    redis_url: str = "redis://nais:nais@localhost:21058/0"
     opensearch_url: str = "http://localhost:21056"
     opa_url: str = "http://localhost:21057"
     opa_timeout_ms: int = 500

@@ -9,7 +9,7 @@ def test_defaults_point_at_the_21051_gateway(monkeypatch: pytest.MonkeyPatch) ->
     settings = Settings()
     assert settings.nais_public_base_url == "http://localhost:21051"
     assert settings.oidc_issuer == "http://localhost:21051/auth/realms/nais"
-    assert settings.redis_url == "redis://localhost:21058/0"
+    assert settings.redis_url == "redis://nais:nais@localhost:21058/0"
 
 
 def test_environment_overrides_defaults(monkeypatch: pytest.MonkeyPatch) -> None:

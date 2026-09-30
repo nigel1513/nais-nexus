@@ -25,7 +25,7 @@ Seed는 각 모듈이 자기 schema에 대해 제공하는 `seed()` 함수를 Ag
 
 ## 3. Users (M01 + Keycloak)
 
-개발용 공통 비밀번호: `nais-dev-pass` (Keycloak realm import 시 설정, 운영 금지)
+개발용 공통 비밀번호: `nais` (Keycloak realm import 시 설정, 운영 금지)
 
 | 고정 ID 접미사 | email | display_name | org | org roles | platform roles | membership |
 |---|---|---|---|---|---|---|

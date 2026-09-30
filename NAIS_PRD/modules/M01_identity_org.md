@@ -256,7 +256,7 @@ DATA_STEWARD, RESOURCE_MANAGER는 M01 관리 권한이 없다.
 - Keycloak에는 **역할을 두지 않는다** (D-019). realm roles는 기본값만 사용한다.
 
 ### Seed (M01 seed, `make seed`)
-dev password: `nais-dev-pass` (dev/test realm 한정)
+dev password: `nais` (dev/test realm 한정)
 
 | 기관 code | name | type |
 |---|---|---|

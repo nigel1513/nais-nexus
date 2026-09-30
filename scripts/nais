@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+# NAIS task runner (D-033). Usage: scripts/nais <command> [args]
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+ensure_env() {
+  if [[ ! -f .env ]]; then
+    cp .env.example .env
+    echo "created .env from .env.example"
+  fi
+}
+
+cli() { docker compose run --rm --no-deps api python -m api.platform.cli "$@"; }
+
+credentials() {
+  local host="<NAIS_EXTERNAL_HOST>"
+  if [[ -f .env ]]; then
+    host="$(grep -E '^NAIS_EXTERNAL_HOST=' .env | tail -1 | cut -d= -f2- || true)"
+    host="${host:-<NAIS_EXTERNAL_HOST>}"
+  fi
+  cat <<TXT
+gateway     http://$host:21051            (api docs /api/v1/docs, keycloak /auth/ admin nais/nais)
+mailpit     http://$host:21052            nais / nais
+storage-a   http://$host:21053            S3 key nais / secret nais
+storage-b   http://$host:21054            S3 key nais / secret nais
+postgres    $host:21055  db=nais          nais / nais  (app: nais_app / nais, migrator: nais_migrator / nais)
+opensearch  http://$host:21056            nais / nais (basic auth)
+opa         http://$host:21057            nais / nais (basic auth)
+redis       $host:21058                   nais / nais
+TXT
+}
+
+cmd="${1:-help}"
+shift || true
+case "$cmd" in
+  up)              ensure_env; docker compose up -d --build "$@" ;;
+  down)            docker compose down "$@" ;;
+  logs)            docker compose logs -f "$@" ;;
+  migrate)         ensure_env; cli migrate "$@" ;;
+  seed)            ensure_env; cli seed ;;
+  storage-init)    ensure_env; cli storage-init ;;
+  credentials)     credentials ;;
+  test)            uv run pytest "$@" ;;
+  lint)            uv run ruff check . && uv run ruff format --check . ;;
+  typecheck)       uv run mypy ;;
+  contracts)       uv run python packages/contracts/generate.py "$@" ;;
+  contracts-check) uv run python packages/contracts/generate.py --check ;;
+  contract-test)   uv run pytest tests/contract "$@" ;;
+  gate-a)          scripts/gate_a.sh ;;
+  help)            echo "usage: scripts/nais {up|down|logs|migrate|seed|storage-init|credentials|test|lint|typecheck|contracts|contracts-check|contract-test|gate-a}" ;;
+  *)               echo "unknown command: $cmd" >&2; exit 2 ;;
+esac

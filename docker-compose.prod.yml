@@ -1,0 +1,15 @@
+# Production override (use as `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d`).
+# Dev tool ports are removed; the gateway ports remain. Dev exposure is governed by D-037.
+services:
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+  storage-a:
+    ports: !reset []
+  storage-b:
+    ports: !reset []
+  mailpit:
+    ports: !reset []
+  keycloak:
+    command: ["start", "--import-realm"]

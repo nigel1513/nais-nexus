@@ -29,7 +29,7 @@ http://localhost:21051
 - 스토리지 경로는 정규식 `location ~ ^/nais-inst-a(/|$)`. `location /nais-inst-a/`만 두면 `/nais-inst-a` 요청이 301 되어 S3 클라이언트가 무한 리다이렉트에 빠진다.
 - 스토리지·keycloak 경로는 `Host $http_host`를 보존한다 (presigned 서명 검증).
 
-## 2. 개발 도구 포트 (dev only, `127.0.0.1` bind)
+## 2. 개발 포트 (외부 공개, D-037)
 
 | 포트 | 서비스 | 용도 |
 |---:|---|---|
@@ -38,8 +38,8 @@ http://localhost:21051
 | 21053 | storage-a S3 | Institute A 스토리지 S3 endpoint (디버깅) |
 | 21054 | storage-b S3 | Institute B 스토리지 S3 endpoint (디버깅) |
 | 21055 | postgres | 로컬 디버깅 (psql) |
-| 21056 | opensearch | 로컬 디버깅 |
-| 21057 | opa | 정책 디버깅 (`/v1/data`) |
+| 21056 | opensearch | OpenSearch (gateway Basic 인증 nais/nais) |
+| 21057 | opa | OPA (gateway Basic 인증 nais/nais) |
 | 21058 | redis | 로컬 디버깅 |
 | 21059 | 예약 | P1 이후 (예: grafana) |
 
@@ -71,9 +71,9 @@ NAIS_PUBLIC_BASE_URL=http://localhost:21051
 NAIS_GATEWAY_PORT=21051
 
 # API
-DATABASE_URL=postgresql+psycopg://nais_app:nais_app@postgres:5432/nais          # 런타임 role (D-027)
-MIGRATION_DATABASE_URL=postgresql+psycopg://nais_migrator:nais_migrator@postgres:5432/nais  # schema owner, migrate 전용
-REDIS_URL=redis://redis:6379/0
+DATABASE_URL=postgresql+psycopg://nais_app:nais@postgres:5432/nais          # 런타임 role (D-027)
+MIGRATION_DATABASE_URL=postgresql+psycopg://nais_migrator:nais@postgres:5432/nais  # schema owner, migrate 전용
+REDIS_URL=redis://nais:nais@redis:6379/0
 OPENSEARCH_URL=http://opensearch:9200
 OPA_URL=http://opa:8181
 OPA_TIMEOUT_MS=500
@@ -87,16 +87,16 @@ SMTP_PORT=1025
 # 기관 code → prefix: 대문자화, '-'→'_' (inst-a → STORAGE_INST_A_*, D-024)
 STORAGE_INST_A_ENDPOINT=http://storage-a:8333
 STORAGE_INST_A_BUCKET=nais-inst-a
-STORAGE_INST_A_ACCESS_KEY=nais-inst-a
-STORAGE_INST_A_SECRET_KEY=change-me-a
+STORAGE_INST_A_ACCESS_KEY=nais
+STORAGE_INST_A_SECRET_KEY=nais
 STORAGE_INST_B_ENDPOINT=http://storage-b:8333
 STORAGE_INST_B_BUCKET=nais-inst-b
-STORAGE_INST_B_ACCESS_KEY=nais-inst-b
-STORAGE_INST_B_SECRET_KEY=change-me-b
+STORAGE_INST_B_ACCESS_KEY=nais
+STORAGE_INST_B_SECRET_KEY=nais
 STORAGE_NAIS_ENDPOINT=http://storage-a:8333
 STORAGE_NAIS_BUCKET=nais-platform
-STORAGE_NAIS_ACCESS_KEY=nais-inst-a
-STORAGE_NAIS_SECRET_KEY=change-me-a
+STORAGE_NAIS_ACCESS_KEY=nais
+STORAGE_NAIS_SECRET_KEY=nais
 STORAGE_ORG_CODES=nais,inst-a,inst-b
 STORAGE_PRESIGN_TTL_SECONDS=300
 STORAGE_MULTIPART_THRESHOLD_BYTES=67108864
