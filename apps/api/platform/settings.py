@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     nais_public_base_url: str = "http://localhost:21051"
-    database_url: str = "postgresql+psycopg://nais_app:nais_app@localhost:21055/nais"
-    migration_database_url: str = "postgresql+psycopg://nais_migrator:nais_migrator@localhost:21055/nais"
+    database_url: str = "postgresql+psycopg://nais_app:nais@localhost:21055/nais"
+    migration_database_url: str = "postgresql+psycopg://nais_migrator:nais@localhost:21055/nais"
     redis_url: str = "redis://localhost:21058/0"
     opensearch_url: str = "http://localhost:21056"
     opa_url: str = "http://localhost:21057"
