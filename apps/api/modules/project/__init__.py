@@ -4,6 +4,7 @@ from pathlib import Path
 
 from api.modules.project.query import wire
 from api.modules.project.router import router
+from api.modules.project.seed import seed
 from api.platform.modules import ModuleSpec
 
 MODULE = ModuleSpec(
@@ -12,4 +13,5 @@ MODULE = ModuleSpec(
     router=router,
     migrations_dir=Path(__file__).parent / "migrations",
     wire=wire,
+    seed=seed,
 )
