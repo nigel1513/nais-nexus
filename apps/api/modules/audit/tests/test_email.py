@@ -54,6 +54,20 @@ def test_build_message_contains_title_body_and_absolute_link() -> None:
     assert "본문" in content and "http://localhost:21051/commons/projects/x" in content
 
 
+def test_subject_control_characters_become_spaces_and_message_serializes() -> None:
+    msg = build_message(
+        to_address="b.researcher@inst-b.local",
+        title="제목\r\n줄\t바꿈",
+        body="본문",
+        link="/x",
+        settings=SETTINGS,
+    )
+    assert msg["Subject"] == "제목  줄 바꿈"
+    header_block = msg.as_bytes().split(b"\n\n", 1)[0]
+    assert header_block.count(b"Subject:") == 1 and b"\r" not in header_block
+    assert len(header_block.splitlines()) == len(msg.keys())  # no injected header line
+
+
 def test_pending_email_is_sent(db: PgUrls) -> None:  # M09-AT-09 (mail half, fake SMTP)
     run(db, notifier, envelope("project.member.added.v1"))
     sender = FakeSender()

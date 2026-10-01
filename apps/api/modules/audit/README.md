@@ -63,12 +63,12 @@ Applied as a mandatory SQL predicate (`visibility.audit_scope`), never as post-f
 - State machine: PENDING -> SENT on success; on failure attempts+1 with backoff 1m, 5m, 15m, 1h; at 5 attempts
   -> FAILED. Recipient addresses are scrubbed (case-insensitive) from stored error text, bounded to 2000 chars.
   Korean bodies use quoted-printable/base64 transfer encoding.
-- Purge: `audit.purge_notifications` (daily) deletes READ notifications older than `NOTIFICATION_RETENTION_DAYS`
+- Purge: `audit.purge_notifications` (daily) deletes READ notifications whose `created_at` is older than `NOTIFICATION_RETENTION_DAYS` (age is measured from `created_at`, not `read_at`)
   in short `SKIP LOCKED` batches (email rows cascade). It is registered with `run_immediately=True` because the
   scheduler clock is not persisted and frequent redeploys would otherwise never reach the first daily run.
 
 ## Adding an event type (other modules)
-Ask Agent 6 to add a row to `mapping.AUDIT_RULES` (and `notification_rules._BUILDERS` if it notifies).
+Ask the M09 owners to add a row to `mapping.AUDIT_RULES` (and `notification_rules._BUILDERS` if it notifies).
 Until then the event is claimed and a `no audit mapping for event type` warning is logged.
 
 ## Env
@@ -81,4 +81,4 @@ Until then the event is claimed and a `no audit mapping for event type` warning 
 - Until M04 ships, grants-based visibility/recipients are empty in production (flag off).
 - Email delivery is at-least-once (duplicates possible after worker death); the scheduler runs jobs sequentially.
 - Naive `from`/`to` datetimes are accepted on the audit list (treated as UTC by the DB layer, not rejected).
-- No `created_at` index for the purge scan; `audit_events.id` has no server default (writers supply ids).
+- No `created_at` index for the purge scan; `audit_events.audit_event_id` has no server default (writers supply ids).

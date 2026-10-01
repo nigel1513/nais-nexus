@@ -82,6 +82,9 @@ class _Claimed:
     link: str
 
 
+_CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
+
+
 def build_message(
     *, to_address: str, title: str, body: str, link: str, settings: AuditSettings
 ) -> EmailMessage:
@@ -89,7 +92,7 @@ def build_message(
     message = EmailMessage()
     message["From"] = settings.smtp_from
     message["To"] = to_address
-    message["Subject"] = title
+    message["Subject"] = _CONTROL_CHARS.sub(" ", title)
     parts = [title, body, f"{settings.nais_public_base_url.rstrip('/')}{link}"]
     message.set_content("\n\n".join(p for p in parts if p), cte="quoted-printable")
     return message

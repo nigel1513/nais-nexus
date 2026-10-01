@@ -60,6 +60,10 @@ def test_golden_flow_produces_all_twelve_required_actions(db: PgUrls) -> None:  
         assert item["resource"]["type"] and item["resource"]["id"]
     requested = next(i for i in items if i["action"] == "ACCESS_REQUESTED")
     assert "purpose_detail" not in requested["details"]  # M09-AT-16 via the API
+    # purpose_detail cannot appear in a contract-valid event; the strip itself is unit-tested in test_mapping.py.
+    assert requested["details"] == payload_for("governance.access.requested.v1")
+    assert scalar(db, "SELECT count(*) FROM audit.notifications") > 0
+    assert scalar(db, "SELECT count(*) FROM audit.email_deliveries WHERE status <> 'PENDING'") == 0
 
 
 def test_relay_redelivery_yields_one_audit_row_and_one_notification(db: PgUrls) -> None:  # M09-AT-02

@@ -31,7 +31,7 @@ def purge_notifications(
     now: Callable[[], datetime] = clock.now,
     batch_size: int = PURGE_BATCH_SIZE,
 ) -> int:
-    """Delete READ notifications older than NOTIFICATION_RETENTION_DAYS (email rows cascade), in short batches.
+    """Delete READ notifications whose created_at is older than NOTIFICATION_RETENTION_DAYS (email rows cascade), in short batches.
 
     Never touches audit_events (append-only).
     """
