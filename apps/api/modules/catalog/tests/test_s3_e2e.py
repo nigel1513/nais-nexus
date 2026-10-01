@@ -99,3 +99,25 @@ def test_at07_multipart_with_wrong_content_fails_and_object_is_gone(
     )
     key = file_row(db, body["files"][0]["file_id"])["storage_key"]
     assert seaweed_registry.for_org("inst-b").head(key) is None
+
+
+def test_storage_port_presigned_get_downloads_through_the_gateway(
+    s3_api: CatalogApi, db: PgUrls, s3_prefixes: list[str]
+) -> None:
+    from uuid import UUID
+
+    from api.modules.catalog.public import StoragePort
+    from api.platform import ports
+
+    dataset_id, version_id = new_draft(s3_api)
+    s3_prefixes.append(f"datasets/{dataset_id}/")
+    data = b"a,b\n1,2\n"
+    body = start_upload(s3_api, version_id, {"data/a.csv": data})
+    upload = body["files"][0]["upload"]
+    assert httpx.put(upload["url"], content=data, headers=upload["headers"], timeout=60).status_code == 200
+    assert complete(s3_api, body["upload_session_id"]).json()["files"][0]["status"] == "VERIFIED"
+    assert s3_api.post("b.steward", f"/dataset-versions/{version_id}/publish").status_code == 200
+    [signed] = ports.get(StoragePort).presign_get(UUID(version_id), None, 300)
+    response = httpx.get(signed.url, timeout=30)
+    assert response.status_code == 200 and response.content == data
+    assert response.headers["content-disposition"] == 'attachment; filename="a.csv"'
