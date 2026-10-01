@@ -1,13 +1,18 @@
+import contextlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
+from api.modules.identity import members as members_module
 from api.modules.identity.members import update_member
 from api.modules.identity.schemas import MemberUpdateIn
 from api.modules.identity.seed_data import ORGS_BY_CODE, USERS_BY_EMAIL
-from api.modules.identity.tests.support import bearer, events, make_client, token_for
+from api.modules.identity.tests.support import bearer, events, make_client, scalar, token_for
 from api.platform.auth import CurrentUser
 from api.platform.db import session_scope
 from api.platform.errors import ApiError
@@ -194,3 +199,91 @@ def test_non_platform_admin_cannot_remove_last_org_admin(seeded: PgUrls) -> None
     with pytest.raises(ApiError) as caught, session_scope(seeded.app) as session:
         update_member(session, actor, INST_A, uid("a.admin@inst-a.local"), MemberUpdateIn(roles=[]))
     assert caught.value.code.value == "ROLE_NOT_ASSIGNABLE"
+
+
+def test_non_platform_admin_cannot_disable_last_active_admin(seeded: PgUrls) -> None:
+    # Same stale-token actor as above, but removing the last ORG_ADMIN through status=DISABLED.
+    actor = CurrentUser(
+        user_id=uid("a.steward@inst-a.local"),
+        organization_id=INST_A,
+        org_roles=frozenset({"ORG_ADMIN"}),
+        session_id="s",
+        display_name="A Steward",
+    )
+    with pytest.raises(ApiError) as caught, session_scope(seeded.app) as session:
+        update_member(session, actor, INST_A, uid("a.admin@inst-a.local"), MemberUpdateIn(status="DISABLED"))
+    assert caught.value.code.value == "ROLE_NOT_ASSIGNABLE"
+    assert "last ORG_ADMIN" in caught.value.message
+
+
+def test_platform_admin_cannot_disable_own_membership(client: TestClient, seeded: PgUrls) -> None:
+    nais = ORGS_BY_CODE["nais"].organization_id
+    response = patch(client, "admin@nais.local", nais, "admin@nais.local", {"status": "DISABLED"})
+    assert response.status_code == 422 and error_code(response) == "ROLE_NOT_ASSIGNABLE"
+    assert (
+        scalar(
+            seeded,
+            "SELECT status FROM identity.organization_memberships WHERE user_id = :u AND organization_id = :o",
+            u=uid("admin@nais.local"),
+            o=nais,
+        )
+        == "ACTIVE"
+    )
+
+
+def test_concurrent_demotions_serialize_and_keep_one_admin(
+    seeded: PgUrls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with session_scope(seeded.app) as session:
+        session.execute(
+            text(
+                "UPDATE identity.organization_memberships SET roles = ARRAY['ORG_ADMIN'] "
+                "WHERE user_id = :u AND organization_id = :o"
+            ),
+            {"u": uid("a.steward@inst-a.local"), "o": INST_A},
+        )
+    admin, steward = uid("a.admin@inst-a.local"), uid("a.steward@inst-a.local")
+
+    def actor_for(user_id: UUID) -> CurrentUser:
+        return CurrentUser(
+            user_id=user_id,
+            organization_id=INST_A,
+            org_roles=frozenset({"ORG_ADMIN"}),
+            session_id="s",
+            display_name="x",
+        )
+
+    barrier = threading.Barrier(2)
+    original_count = members_module._active_admin_count
+
+    def count_after_both_locked_their_target(session: Any, organization_id: UUID) -> int:
+        # Forces the interleaving that deadlocked: each transaction holds its target row before either counts.
+        # With the organization lock the second transaction never gets here in time, so the wait just times out.
+        with contextlib.suppress(threading.BrokenBarrierError):
+            barrier.wait(timeout=1.5)
+        return original_count(session, organization_id)
+
+    monkeypatch.setattr(members_module, "_active_admin_count", count_after_both_locked_their_target)
+
+    def demote(actor: UUID, target: UUID) -> str:
+        try:
+            with session_scope(seeded.app) as session:
+                update_member(session, actor_for(actor), INST_A, target, MemberUpdateIn(roles=[]))
+        except ApiError as err:
+            return err.code.value
+        return "OK"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = sorted(
+            f.result() for f in [pool.submit(demote, admin, steward), pool.submit(demote, steward, admin)]
+        )
+    assert results == ["OK", "ROLE_NOT_ASSIGNABLE"]
+    assert (
+        scalar(
+            seeded,
+            "SELECT count(*) FROM identity.organization_memberships "
+            "WHERE organization_id = :o AND status = 'ACTIVE' AND 'ORG_ADMIN' = ANY(roles)",
+            o=INST_A,
+        )
+        == 1
+    )

@@ -22,10 +22,11 @@ ORG_ADMIN = "ORG_ADMIN"
 ORG_ROLES = frozenset({"ORG_ADMIN", "DATA_STEWARD", "RESOURCE_MANAGER"})
 
 
-def ensure_organization(session: Session, organization_id: UUID) -> None:
-    found = session.execute(
-        select(organizations.c.organization_id).where(organizations.c.organization_id == organization_id)
-    ).first()
+def ensure_organization(session: Session, organization_id: UUID, *, lock: bool = False) -> None:
+    stmt = select(organizations.c.organization_id).where(organizations.c.organization_id == organization_id)
+    if lock:
+        stmt = stmt.with_for_update()  # serializes member updates within one organization
+    found = session.execute(stmt).first()
     if found is None:
         raise ApiError(ErrorCode.NOT_FOUND)
 
@@ -84,14 +85,13 @@ def _validated_roles(roles: list[str]) -> list[str]:
 
 
 def _active_admin_count(session: Session, organization_id: UUID) -> int:
+    """Callers hold the organization row lock, so the count needs no row locks of its own."""
     rows = session.execute(
-        select(memberships.c.user_id)
-        .where(
+        select(memberships.c.user_id).where(
             memberships.c.organization_id == organization_id,
             memberships.c.status == "ACTIVE",
             literal(ORG_ADMIN) == any_(memberships.c.roles),
         )
-        .with_for_update()
     ).all()
     return len(rows)
 
@@ -105,7 +105,7 @@ def update_member(
             "Provide roles and/or status.",
             {"fields": [{"field": "body", "reason": "EMPTY"}]},
         )
-    ensure_organization(session, organization_id)
+    ensure_organization(session, organization_id, lock=True)
     ensure_org_admin(actor, organization_id)
     row = session.execute(
         _membership_select()
@@ -126,9 +126,9 @@ def update_member(
         and row.status == "ACTIVE"
         and (ORG_ADMIN not in roles or status != "ACTIVE")
     )
+    if user_id == actor.user_id and status != "ACTIVE":
+        raise ApiError(ErrorCode.ROLE_NOT_ASSIGNABLE, "You cannot disable your own membership.")
     if not actor.is_platform_admin:
-        if user_id == actor.user_id and status != "ACTIVE":
-            raise ApiError(ErrorCode.ROLE_NOT_ASSIGNABLE, "You cannot disable your own membership.")
         if user_id == actor.user_id and loses_admin:
             raise ApiError(ErrorCode.ROLE_NOT_ASSIGNABLE, "You cannot remove your own ORG_ADMIN role.")
         if loses_admin and _active_admin_count(session, organization_id) <= 1:
@@ -139,7 +139,7 @@ def update_member(
     now = clock.now()
     session.execute(
         update(memberships)
-        .where(memberships.c.user_id == user_id)
+        .where(memberships.c.organization_id == organization_id, memberships.c.user_id == user_id)
         .values(roles=roles, status=status, updated_at=now, updated_by=actor.user_id)
     )
     outbox.write(
