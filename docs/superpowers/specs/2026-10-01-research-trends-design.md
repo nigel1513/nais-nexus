@@ -1,7 +1,9 @@
-# 연구 동향 (논문·학회) 설계 — 모듈 M12 Research Trends
+# 연구 동향 (논문·학회) 설계 — 모듈 M13 Research Trends
+
+> 모듈 번호: PRD에 M12(Autonomous Science)가 이미 있으므로 M13으로 둔다.
 
 - 날짜: 2026-10-01
-- 대상: 신규 모듈 M12 `trends`(백엔드), M10 Web(신규 화면 `/commons/trends`)
+- 대상: 신규 모듈 M13 `trends`(백엔드), M10 Web(신규 화면 `/commons/trends`)
 - 데이터 포털 고도화(Wave 1.5)와 파일이 겹치지 않아 병렬 진행 가능. 계약은 openapi에 별도 태그 `trends`로 추가.
 
 ## 1. 목적과 결정 사항 (사용자 대화 2026-10-01)
@@ -24,7 +26,8 @@ NST 산하 연구기관 연구자가 로그인해서 **과학기술 분야별로
 - **OpenAlex API** (CC0 메타데이터). 확인된 사실(2026-10-01 서버에서 직접 호출):
   - 서버에서 접근 가능. NST 기관이 ROR/OpenAlex ID로 식별됨(예: KIST works_count 41,801).
   - 사용량 과금 체계: 응답 헤더 `x-ratelimit-limit-usd: 0.1`(키 없는 일일 한도 $0.10), 목록/그룹 질의 1건 `$0.0001`, 일부 질의 `$0.001`. 키 없이 하루 약 1,000건 수준.
-  - **결정**: 무료 API 키를 발급받아 `OPENALEX_API_KEY`(.env, 커밋 금지)로 사용. 키의 일일 한도는 설계 확정 시 운영자가 확인한다. 수집기는 **일일 예산 상한 `TRENDS_DAILY_BUDGET_USD`(기본 0.08)**을 헤더 `x-ratelimit-remaining-usd`로 추적해 넘기 전에 멈추고 다음 날 이어서 한다.
+  - **결정(2026-10-01, 사용자): 과금하지 않는다.** 유료 충전(prepaid) 없이 무료 일일 한도 안에서만 수집한다. 한도를 넘는 요청은 보내지 않으며, 다 못 한 갱신은 다음 날로 넘긴다(분야별 갱신 주기가 하루보다 길어질 수 있음을 화면에 "마지막 갱신"으로 표시).
+  - 무료 API 키를 발급받아 `OPENALEX_API_KEY`(.env, 커밋 금지)로 사용. 키의 일일 한도는 설계 확정 시 운영자가 확인한다. 수집기는 **일일 예산 상한 `TRENDS_DAILY_BUDGET_USD`(기본 0.08)**을 헤더 `x-ratelimit-remaining-usd`로 추적해 넘기 전에 멈추고 다음 날 이어서 한다.
 - **DBLP**(보조, CS 학회): OpenAlex에서 학회(conference) 지표가 부족한 컴퓨터과학 세부분야만 학회 목록 보강. 1차 구현은 OpenAlex만, DBLP는 단계 3.
 - 저장소형 출처(SSRN, Zenodo, arXiv 등 `type=repository`)는 순위에서 제외(논문 목록에는 표시).
 
