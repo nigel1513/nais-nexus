@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from api.modules.identity.seed_data import ORGANIZATIONS, ORGS_BY_CODE, USERS, SeedOrganization, SeedUser
-from api.modules.identity.tables import memberships, organizations, users
+from api.modules.identity.tables import CURRENT_MEMBERSHIP, memberships, organizations, users
 from api.platform import clock
 from api.platform.events import EventActor
 from api.platform.generated.event_types import EventType
@@ -67,6 +67,7 @@ def _seed_user(session: Session, user: SeedUser, correlation_id: UUID) -> None:
             email=user.email,
             display_name=user.display_name,
             platform_roles=list(user.platform_roles),
+            national_researcher_number=user.national_researcher_number,
         )
         .on_conflict_do_nothing(index_elements=[users.c.user_id])
         .returning(users.c.user_id)
@@ -83,6 +84,11 @@ def _seed_user(session: Session, user: SeedUser, correlation_id: UUID) -> None:
                 updated_at=clock.now(),
             )
         )
+        session.execute(
+            update(users)
+            .where(users.c.user_id == user.user_id, users.c.national_researcher_number.is_(None))
+            .values(national_researcher_number=user.national_researcher_number)
+        )
     roles = sorted(user.org_roles)
     session.execute(
         pg_insert(memberships)
@@ -95,6 +101,7 @@ def _seed_user(session: Session, user: SeedUser, correlation_id: UUID) -> None:
         )
         .on_conflict_do_update(
             index_elements=[memberships.c.user_id],
+            index_where=CURRENT_MEMBERSHIP,
             set_={
                 "organization_id": organization_id,
                 "roles": roles,
@@ -102,6 +109,7 @@ def _seed_user(session: Session, user: SeedUser, correlation_id: UUID) -> None:
                 "updated_at": clock.now(),
                 "updated_by": None,
             },
+            where=memberships.c.organization_id == organization_id,
         )
     )
     if created is not None:

@@ -27,6 +27,7 @@ users = Table(
     Column("display_name", String(200), nullable=False),
     Column("status", String(16)),
     Column("platform_roles", ARRAY(Text)),
+    Column("national_researcher_number", String(8)),
     Column("last_login_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True)),
     Column("updated_at", DateTime(timezone=True)),
@@ -40,6 +41,8 @@ memberships = Table(
     Column("organization_id", UUID(as_uuid=True), nullable=False),
     Column("roles", ARRAY(Text)),
     Column("status", String(16)),
+    Column("started_at", DateTime(timezone=True)),
+    Column("ended_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True)),
     Column("updated_at", DateTime(timezone=True)),
     Column("updated_by", UUID(as_uuid=True)),
@@ -52,3 +55,6 @@ user_sessions = Table(
     Column("user_id", UUID(as_uuid=True), nullable=False),
     Column("first_seen_at", DateTime(timezone=True)),
 )
+
+# The one membership that counts (spec §3.0b). Every read joining memberships uses it, except history listings.
+CURRENT_MEMBERSHIP = memberships.c.ended_at.is_(None)

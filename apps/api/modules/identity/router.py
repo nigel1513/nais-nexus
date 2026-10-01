@@ -5,9 +5,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from api.modules.identity import directory, members
+from api.modules.identity import directory, members, profile, transfer
 from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary
-from api.modules.identity.schemas import MembershipOut, MemberUpdateIn, MeOut, OrganizationOut
+from api.modules.identity.schemas import (
+    MembershipOut,
+    MemberUpdateIn,
+    MeOut,
+    MeUpdateIn,
+    OrganizationOut,
+    TransferIn,
+)
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 from api.platform.pagination import Page, PageParams, page_params
@@ -19,6 +26,11 @@ Paging = Annotated[PageParams, Depends(page_params)]
 @router.get("/me", operation_id="getMe")
 def get_me(user: CurrentUserDep, session: SessionDep) -> MeOut:
     return directory.get_me(session, user.user_id)
+
+
+@router.patch("/me", operation_id="updateMe")
+def update_me(body: MeUpdateIn, user: CurrentUserDep, session: SessionDep) -> MeOut:
+    return profile.update_me(session, user, body)
 
 
 @router.get("/users", operation_id="listUsers")
@@ -58,3 +70,10 @@ def update_organization_member(
     organization_id: UUID, user_id: UUID, body: MemberUpdateIn, user: CurrentUserDep, session: SessionDep
 ) -> MembershipOut:
     return members.update_member(session, user, organization_id, user_id, body)
+
+
+@router.post("/users/{user_id}/transfer", operation_id="transferUserOrganization")
+def transfer_user_organization(
+    user_id: UUID, body: TransferIn, user: CurrentUserDep, session: SessionDep
+) -> MembershipOut:
+    return transfer.transfer_user(session, user, user_id, body)

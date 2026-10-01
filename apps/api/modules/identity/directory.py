@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary
 from api.modules.identity.schemas import MeOut, OrganizationOut
-from api.modules.identity.tables import memberships, organizations, users
+from api.modules.identity.tables import CURRENT_MEMBERSHIP, memberships, organizations, users
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
 from api.platform.pagination import Page, PageParams, build_page
@@ -24,6 +24,7 @@ def get_me(session: Session, user_id: UUID) -> MeOut:
             users.c.email,
             users.c.status,
             users.c.platform_roles,
+            users.c.national_researcher_number,
             memberships.c.roles,
             organizations.c.organization_id,
             organizations.c.code,
@@ -31,7 +32,7 @@ def get_me(session: Session, user_id: UUID) -> MeOut:
             organizations.c.type,
         )
         .select_from(
-            users.join(memberships, memberships.c.user_id == users.c.user_id).join(
+            users.join(memberships, and_(memberships.c.user_id == users.c.user_id, CURRENT_MEMBERSHIP)).join(
                 organizations, organizations.c.organization_id == memberships.c.organization_id
             )
         )
@@ -47,6 +48,7 @@ def get_me(session: Session, user_id: UUID) -> MeOut:
         ),
         org_roles=sorted(row.roles),
         platform_roles=sorted(row.platform_roles),
+        national_researcher_number=row.national_researcher_number,
     )
 
 
@@ -105,6 +107,7 @@ def get_organization(session: Session, organization_id: UUID) -> OrganizationOut
         .where(
             memberships.c.organization_id == organizations.c.organization_id,
             memberships.c.status == "ACTIVE",
+            CURRENT_MEMBERSHIP,
         )
         .scalar_subquery()
     )
@@ -141,11 +144,12 @@ def search_users(
         select(
             users.c.user_id,
             users.c.display_name,
+            users.c.national_researcher_number,
             memberships.c.organization_id,
             organizations.c.name.label("organization_name"),
         )
         .select_from(
-            users.join(memberships, memberships.c.user_id == users.c.user_id).join(
+            users.join(memberships, and_(memberships.c.user_id == users.c.user_id, CURRENT_MEMBERSHIP)).join(
                 organizations, organizations.c.organization_id == memberships.c.organization_id
             )
         )
@@ -179,6 +183,7 @@ def search_users(
             organization_id=r.organization_id,
             organization_name=r.organization_name,
             status="ACTIVE",
+            national_researcher_number=r.national_researcher_number,
         )
         for r in rows
     ]
