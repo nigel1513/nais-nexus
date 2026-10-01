@@ -16,6 +16,14 @@ scripts/nais gate-a        # boot + readiness + storage smoke
 ```
 
 ### External access
+## Web portal (Wave 1)
+
+`http://localhost:21051/` (or `http://<NAIS_EXTERNAL_HOST>:21051/`). In Wave 1 the portal runs in **mock mode**
+(`WEB_API_MOCKING=enabled`): seed-mirroring mock API and a demo login at `/mock-login` (pick a seed user). Real
+Keycloak login + live API need M04 governance (Wave 2). Details: [`apps/web/README.md`](apps/web/README.md).
+Module docs: `apps/api/modules/<module>/README.md`. `docker-compose.prod.yml` is **not supported before Wave 2**
+(dev Keycloak realm still imported).
+
 Dev server: the public host is set as NAIS_EXTERNAL_HOST in your local `.env` (not committed). The router must forward TCP 21051-21058 to it.
 All ports 21051-21058 are externally reachable and every login is `nais` / `nais` (D-037).
 

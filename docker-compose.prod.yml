@@ -15,3 +15,11 @@ services:
     ports: !reset []
   keycloak:
     command: ["start", "--import-realm"]
+    # NOTE (Wave 1): the realm import is still the DEV realm (nais-e2e password-grant client + seed users, D-037).
+    # Production is not supported before Wave 2 — replace with a prod realm (no test client, no seed users) first.
+  web:
+    build:
+      args:
+        NEXT_PUBLIC_API_MOCKING: disabled
+    environment:
+      NEXT_PUBLIC_API_MOCKING: disabled

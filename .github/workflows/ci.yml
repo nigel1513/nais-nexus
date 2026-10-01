@@ -20,7 +20,7 @@ jobs:
         run: uv run pytest -q
       - name: migration dry-run
         env:
-          PYTHONPATH: apps
+          PYTHONPATH: apps:packages/contracts/python
           MIGRATION_DATABASE_URL: postgresql+psycopg://ci:ci@localhost/nais
         run: uv run python -m api.platform.cli migrate --sql > /dev/null
 
@@ -37,8 +37,29 @@ jobs:
       - run: uv sync --frozen
       - run: uv run python packages/contracts/generate.py --check
 
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: web checks (contracts drift, lint, types, unit)
+        working-directory: apps/web
+        run: pnpm contracts:check && pnpm lint && pnpm typecheck && pnpm test
+      - name: ui package checks
+        working-directory: packages/ui
+        run: pnpm typecheck && pnpm test
+      - name: real-mode build (mock disabled)
+        working-directory: apps/web
+        env:
+          NEXT_PUBLIC_API_MOCKING: disabled
+        run: pnpm build
+
   gate-a:
-    needs: [python, contracts]
+    needs: [python, contracts, web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

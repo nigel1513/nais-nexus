@@ -40,3 +40,10 @@ Audit visibility for a given project_id: use `project_id in ProjectQueryPort.lis
 ## Carry (from M10 Task 12 review)
 - M03 updateDataset has no way to clear optional fields (domain, usage_policy, contact_email, provenance): StrictIn rejects null. The web blocks clearing with a message. Consider explicit-null/empty-string clear semantics in a later contract bump.
 - openapi DatasetFile has no failure_code; web can only show a generic reason for async FAILED files. Consider adding it in the next contract bump.
+
+## Wave 1 final integration review (carried to Wave 2)
+- docker-compose.prod.yml: web pinned to real mode, but Keycloak still imports the DEV realm (nais-e2e + seed users) → production unsupported until a prod realm exists.
+- NAIS_PRD_COMBINED.md is stale (no D-038..D-040) — regenerate.
+- M05 spec doc: add readiness.validations.requester_organization_id and the 128 KiB DB vs 64 KiB app evidence bound.
+- CI does not exercise S3 (dev-stack) and nori paths; gate_a now builds web + opensearch images (network).
+- Dramatiq "middleware twice" warning from two Workers on one broker — harmless.
