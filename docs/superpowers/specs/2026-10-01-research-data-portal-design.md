@@ -162,6 +162,8 @@
 
 | operation | 내용 | 권한 |
 |---|---|---|
+| `updateMe` (신규, `PATCH /me`) | 본인의 `national_researcher_number`, `orcid` 등록·수정(빈 값으로 해제 가능) | 본인 |
+| `getMe`, `IdentityPublicProfile` | 두 식별번호 필드 추가(선택) | 기존 |
 | `createDataset` / `updateDataset` | §3.2 필드 추가. PI·담당자 필수(생성), ACTIVE·소유기관 검증 → 422 `VALIDATION_FAILED` reason `PERSON_NOT_ELIGIBLE` | 소유기관 DATA_STEWARD |
 | `getDataset` | 응답에 `people{principal_investigator, steward_contact(email은 공개 시만), contributors[]}`, 연구 맥락, 데이터 정보, 자동 통계(형식·파일 수·용량·행/열 수=readiness profile) | 가시성 D-012 |
 | `listVocabulary` (신규) | `GET /vocabulary/{scheme}` | 인증 사용자 |
