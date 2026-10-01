@@ -1,8 +1,8 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { getDb } from "@/mocks/db";
-import { DATASET, ORG, USER } from "@/mocks/fixtures";
+import { DATASET, ORG, USER, VERSION } from "@/mocks/fixtures";
 import { router } from "../../../tests/navigation";
 import { renderScreen } from "../../../tests/render";
 import { DatasetDetailScreen } from "./dataset-detail-screen";
@@ -56,14 +56,22 @@ describe("Data Card", () => {
 });
 
 describe("Data Card extras", () => {
-  it("?v= selects that version and changing the select writes ?v", async () => {
+  it("?v= selects that version and changing the select switches the content", async () => {
+    const db = getDb();
+    const v1 = db.versions.find((v) => v.dataset_version_id === VERSION.battery)!;
+    const v2id = "00000000-0000-7000-8000-000000002199";
+    db.versions.push({ ...v1, dataset_version_id: v2id, version_label: "v2", published_at: "2099-01-01T00:00:00Z", files: [], file_count: 3 });
     const ds = DATASET.battery;
-    renderScreen(<DatasetDetailScreen datasetId={ds} />, { user: USER.bSteward, path: `/commons/data/${ds}` });
+    renderScreen(<DatasetDetailScreen datasetId={ds} />, { user: USER.bResearcher, path: `/commons/data/${ds}` });
     const select = (await screen.findByRole("combobox", { name: "버전" })) as HTMLSelectElement;
-    const other = Array.from(select.options).find((o) => o.value !== select.value);
-    if (!other) return;
-    await userEvent.selectOptions(select, other.value);
-    expect(router.replace).toHaveBeenLastCalledWith(expect.stringContaining(`v=${other.value}`), { scroll: false });
+    await waitFor(() => expect(select.options.length).toBe(2));
+    expect(select.value).toBe(v2id); // latest published by default
+    expect(screen.getByText("파일 3개")).toBeInTheDocument();
+    await userEvent.selectOptions(select, VERSION.battery);
+    expect(router.replace).toHaveBeenLastCalledWith(expect.stringContaining(`v=${VERSION.battery}`), { scroll: false });
+    await waitFor(() => expect(select.value).toBe(VERSION.battery));
+    expect(screen.queryByText("파일 3개")).not.toBeInTheDocument();
+    expect(screen.getByText(`파일 ${v1.file_count}개`)).toBeInTheDocument();
   });
   it("has the Metadata JSON-LD button and the column table slot", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
