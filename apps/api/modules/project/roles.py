@@ -32,7 +32,7 @@ def can_manage_member(actor_role: str | None, *roles_involved: str) -> bool:
     if actor_role == OWNER:
         return True
     if actor_role == ADMIN:
-        return all(role in _ADMIN_MANAGEABLE for role in roles_involved)
+        return bool(roles_involved) and all(role in _ADMIN_MANAGEABLE for role in roles_involved)
     return False
 
 

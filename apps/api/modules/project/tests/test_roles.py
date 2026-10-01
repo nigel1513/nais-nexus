@@ -29,6 +29,7 @@ def test_project_level_matrix(actor: str | None, edit: bool, visibility: bool, a
         (O, (O, V), True),
         (A, (R,), True),
         (A, (V, R), True),
+        (A, (), False),  # ADMIN with no roles to manage
         (A, (R, A), False),  # granting ADMIN is OWNER-only
         (A, (A, R), False),  # revoking ADMIN (including the actor's own) is OWNER-only
         (A, (A,), False),  # removing an ADMIN is OWNER-only
