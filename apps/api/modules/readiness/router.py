@@ -5,11 +5,17 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from api.modules.readiness.catalog_port import CatalogQueryPort, VersionView
 from api.modules.readiness.profile_registry import PROFILE_ORDER, PROFILES
-from api.modules.readiness.service import latest_per_profile, load_checks, request_validation, to_api
+from api.modules.readiness.service import (
+    RequestNotSettled,
+    latest_per_profile,
+    load_checks,
+    request_validation,
+    to_api,
+)
 from api.platform import ports
 from api.platform.auth import CurrentUser, CurrentUserDep
 from api.platform.context import correlation_id
@@ -25,7 +31,7 @@ _UNAVAILABLE = "Catalog is temporarily unavailable."
 class StartValidationBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    profile_id: str
+    profile_id: str = Field(max_length=64)
 
 
 def _catalog() -> CatalogQueryPort:
@@ -66,9 +72,13 @@ def start_readiness_validation(
     profile = PROFILES.get(body.profile_id)
     if profile is None:
         raise ApiError(ErrorCode.READINESS_PROFILE_UNKNOWN, details={"profile_id": body.profile_id})
-    outcome = request_validation(
-        session, version, profile, triggered_by="USER", requester=user, correlation_id=correlation_id()
-    )
+    try:
+        outcome = request_validation(
+            session, version, profile, triggered_by="USER", requester=user, correlation_id=correlation_id()
+        )
+    except RequestNotSettled:
+        logger.exception("validation request did not settle")
+        raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "Readiness is temporarily unavailable.") from None
     validation_id = outcome.row["validation_id"]
     if outcome.kind == "IN_PROGRESS":
         raise ApiError(

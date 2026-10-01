@@ -24,6 +24,10 @@ INFLIGHT = ("QUEUED", "RUNNING")
 MAX_DECISIONS = 3
 
 
+class RequestNotSettled(RuntimeError):
+    """Concurrent requests kept winning the insert race; the caller may retry."""
+
+
 @dataclass(frozen=True)
 class RequestOutcome:
     kind: Literal["REUSED", "IN_PROGRESS", "QUEUED"]
@@ -119,7 +123,7 @@ def request_validation(
             continue
         jobs.enqueue_after_commit(session, row["validation_id"], correlation_id)
         return RequestOutcome("QUEUED", row)
-    raise RuntimeError("could not settle the validation request after concurrent conflicts")
+    raise RequestNotSettled("could not settle the validation request after concurrent conflicts")
 
 
 def load_checks(session: Session, validation_ids: list[UUID]) -> dict[UUID, list[dict[str, Any]]]:

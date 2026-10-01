@@ -31,6 +31,7 @@ USERS: dict[str, CurrentUser] = {  # 10_SEED_DATA.md §3 ids
     "a_researcher": _user("0a02", ORG_A, "A Researcher"),
     "a_steward": _user("0a03", ORG_A, "A Steward", {"DATA_STEWARD"}),
     "b_researcher": _user("0b02", ORG_B, "B Researcher"),
+    "b_orgadmin": _user("0b04", ORG_B, "B Org Admin", {"ORG_ADMIN"}),
     "b_steward": _user("0b03", ORG_B, "B Steward", {"DATA_STEWARD"}),
 }
 

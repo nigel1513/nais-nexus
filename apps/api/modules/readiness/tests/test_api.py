@@ -1,6 +1,7 @@
 """HTTP contract and authorization (M05 §6, §9): M05-AT-03..09, M05-AT-12."""
 
 import dataclasses
+import sys
 import uuid
 from typing import Any
 
@@ -11,6 +12,7 @@ from sqlalchemy import func, select, update
 from api.modules.readiness import jobs
 from api.modules.readiness.catalog_port import CatalogQueryPort, VersionView
 from api.modules.readiness.fakes import FIXTURES_ROOT, FixtureCatalog
+from api.modules.readiness.service import RequestNotSettled
 from api.modules.readiness.tables import validations
 from api.modules.readiness.tests.dbutil import events, queued_messages
 from api.modules.readiness.tests.helpers import ORG_B, clean_snapshot
@@ -127,7 +129,7 @@ def test_draft_version_is_rejected(client: TestClient, catalog: FixtureCatalog) 
     assert (response.status_code, error_code(response)) == (409, "DATASET_VERSION_NOT_PUBLISHED")
 
 
-@pytest.mark.parametrize("user", ["a_researcher", "a_steward", "b_researcher"])
+@pytest.mark.parametrize("user", ["a_researcher", "a_steward", "b_researcher", "b_orgadmin"])
 def test_non_owner_steward_is_forbidden(client: TestClient, catalog: FixtureCatalog, user: str) -> None:
     """M05-AT-06 (+ same-org non-steward, other-org steward)."""
     view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
@@ -299,8 +301,15 @@ class _Boom:
         raise ConnectionError("connect to minio.internal.nais:9000 refused")
 
 
-def test_catalog_outage_is_a_generic_503(client: TestClient) -> None:
+def test_catalog_outage_is_a_generic_503(client: TestClient, catalog: FixtureCatalog) -> None:
     ports.provide(CatalogQueryPort, _Boom())
+    try:
+        _assert_generic_503(client)
+    finally:
+        ports.provide(CatalogQueryPort, catalog)
+
+
+def _assert_generic_503(client: TestClient) -> None:
     vid = "0199a000-0000-7000-8000-000000000001"
     for response in (start(client, vid, "b_steward"), readiness(client, vid, "b_steward")):
         assert (response.status_code, error_code(response)) == (503, "DEPENDENCY_UNAVAILABLE")
@@ -310,6 +319,49 @@ def test_catalog_outage_is_a_generic_503(client: TestClient) -> None:
 
 
 def test_missing_catalog_port_is_503(client: TestClient) -> None:
+    saved = dict(ports._registry)  # noqa: SLF001
     ports._registry.pop(CatalogQueryPort, None)  # noqa: SLF001  - the real port is unwired
-    vid = "0199a000-0000-7000-8000-000000000001"
-    assert readiness(client, vid, "b_steward").status_code == 503
+    try:
+        vid = "0199a000-0000-7000-8000-000000000001"
+        assert readiness(client, vid, "b_steward").status_code == 503
+    finally:
+        ports._registry.clear()  # noqa: SLF001
+        ports._registry.update(saved)  # noqa: SLF001
+
+
+def test_unsettled_concurrent_request_is_a_generic_503(
+    client: TestClient, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def never_settles(*args: Any, **kwargs: Any) -> Any:
+        raise RequestNotSettled("could not settle (internal detail)")
+
+    monkeypatch.setattr(sys.modules["api.modules.readiness.router"], "request_validation", never_settles)
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    response = start(client, view.dataset_version_id, "b_steward")
+    assert (response.status_code, error_code(response)) == (503, "DEPENDENCY_UNAVAILABLE")
+    assert "settle" not in response.text
+    assert_matches_response("startReadinessValidation", 503, response.json())
+
+
+def test_overlong_profile_id_is_a_validation_error(client: TestClient, catalog: FixtureCatalog) -> None:
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    response = start(client, view.dataset_version_id, "b_steward", profile_id="X" * 65)
+    assert (response.status_code, error_code(response)) == (422, "VALIDATION_FAILED")
+
+
+def test_non_owner_reads_withdrawn_results_only_while_the_dataset_is_visible(
+    client: TestClient, catalog: FixtureCatalog, db: PgUrls
+) -> None:
+    """D-012: a withdrawn-only dataset is invisible to other institutions; with another PUBLISHED version the
+    withdrawn version's results stay readable (same rule as M03 can_see_dataset)."""
+    view = _completed(client, catalog, db)
+    catalog.replace_view(dataclasses.replace(view, status="WITHDRAWN"))
+    hidden = readiness(client, view.dataset_version_id, "a_researcher")
+    assert (hidden.status_code, error_code(hidden)) == (404, "NOT_FOUND")
+    assert readiness(client, view.dataset_version_id, "b_researcher").status_code == 200  # owner institution
+    catalog.add_version(
+        {"README.md": b"# x\n"}, clean_snapshot(), owner_organization_id=ORG_B, dataset_id=view.dataset_id
+    )
+    shown = readiness(client, view.dataset_version_id, "a_researcher")
+    assert shown.status_code == 200
+    assert len(shown.json()["items"]) == 2
