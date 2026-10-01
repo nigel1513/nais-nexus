@@ -109,3 +109,10 @@ def test_hashing_checks_the_file_deadline() -> None:
     ctx = dataclasses.replace(make_ctx(), file_timeout_s=1.0, monotonic=Ticking())
     with pytest.raises(FileTimeout):
         file_checksum.check(ctx)
+
+
+def test_manifest_comparison_ignores_hex_case() -> None:
+    ctx = make_ctx()
+    assert ctx.manifest_sha256 is not None
+    outcome = file_checksum.check(dataclasses.replace(ctx, manifest_sha256=ctx.manifest_sha256.upper()))
+    assert (outcome.status, outcome.evidence["manifest_match"]) == ("PASS", True)

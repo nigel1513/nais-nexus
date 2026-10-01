@@ -37,7 +37,9 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
             catalog_verified += 1
             if ref.status != "VERIFIED":
                 not_verified.append(ref.path)
-    manifest_match = ctx.manifest_sha256 is not None and manifest_sha256(ctx.files) == ctx.manifest_sha256
+    manifest_match = (
+        ctx.manifest_sha256 is not None and manifest_sha256(ctx.files).lower() == ctx.manifest_sha256.lower()
+    )
     evidence = {
         "files_total": len(ctx.files),
         "recomputed": recomputed,
