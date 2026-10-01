@@ -22,20 +22,22 @@ export const auditHandlers = [
     const isOrgScoped = user.org_roles.includes("ORG_ADMIN") || user.org_roles.includes("DATA_STEWARD");
     const isProjectMember = !!projectId && !!memberOf(db, projectId, user.user_id);
 
-    if (!isPlatformAdmin && !isOrgScoped) {
-      if (projectId && !isProjectMember) fail("FORBIDDEN", "Not a member of this project");
-      if (orgId && orgId !== user.organization_id) fail("FORBIDDEN", "Other organizations are not visible");
+    if (!isPlatformAdmin) {
+      if (orgId && orgId !== user.organization_id) fail("FORBIDDEN", "organization_id is outside your organization.");
+      if (projectId && !isProjectMember && !isOrgScoped) fail("FORBIDDEN", "You are not a member of this project.");
     }
 
+    const isDownload = (e: Schemas["AuditEvent"]) => e.action === "FILE_DOWNLOADED" || e.action === "DOWNLOAD_DENIED";
     const inScope = (e: Schemas["AuditEvent"]) => {
       if (isPlatformAdmin) return true;
       if (e.actor.user_id === user.user_id) return true;
-      const denied = e.action === "DOWNLOAD_DENIED";
+      // Staff: owner-org rows, plus actor-org rows except downloads of data owned elsewhere (M09-AT-08).
       if (isOrgScoped) {
-        if (denied ? e.resource.owner_organization_id === user.organization_id : e.actor.organization_id === user.organization_id || e.resource.owner_organization_id === user.organization_id) return true;
+        if (e.resource.owner_organization_id === user.organization_id) return true;
+        if (e.actor.organization_id === user.organization_id && !isDownload(e)) return true;
       }
       // Project-member scope never includes DOWNLOAD_DENIED.
-      return isProjectMember && e.project_id === projectId && !denied;
+      return isProjectMember && e.project_id === projectId && e.action !== "DOWNLOAD_DENIED";
     };
     const items = db.audit
       .filter(inScope)
@@ -46,7 +48,7 @@ export const auditHandlers = [
       .filter((e) => !resourceType || e.resource.type === resourceType)
       .filter((e) => !resourceId || e.resource.id === resourceId)
       .filter((e) => !from || e.occurred_at >= from)
-      .filter((e) => !to || e.occurred_at <= to)
+      .filter((e) => !to || e.occurred_at < to)
       .sort(newestFirst("occurred_at"));
     return HttpResponse.json(paginate(items, url));
   }),
