@@ -32,7 +32,7 @@ export function MeGate({ children }: { children: ReactNode }) {
   }, [code, pathname, router, search]);
 
   if (!ready || me.isPending || redirecting) return <DelayedSkeleton lines={4} />;
-  if (me.isError) return <ErrorView error={me.error} onRetry={() => void me.refetch()} />;
+  if (me.isError && !me.data) return <ErrorView error={me.error} onRetry={() => void me.refetch()} />;
   return <>{children}</>;
 }
 

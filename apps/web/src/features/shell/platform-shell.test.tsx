@@ -1,10 +1,12 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { getDb } from "@/mocks/db";
 import { USER } from "@/mocks/fixtures";
 import { router, setLocation } from "../../../tests/navigation";
 import { renderWithProviders } from "../../../tests/render";
+import { server } from "../../../tests/msw";
 import { PlatformShell } from "./platform-shell";
 
 const page = <h1>본문</h1>;
@@ -65,5 +67,36 @@ describe("PlatformShell", () => {
     await userEvent.keyboard("{Escape}");
     expect(screen.queryByRole("link", { name: "설정" })).not.toBeInTheDocument();
     expect(menuButton).toHaveFocus();
+  });
+
+  it("keeps the page when a background getMe refetch fails (error view only without cached data)", async () => {
+    const { queryClient } = renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
+    await screen.findByRole("heading", { name: "본문" });
+    server.use(http.get("*/mock-api/v1/me", () => HttpResponse.json({ error: { code: "INTERNAL_ERROR", message: "x", trace_id: "t" } }, { status: 500 })));
+    await queryClient.invalidateQueries({ queryKey: ["getMe", {}] });
+    await waitFor(() => expect(queryClient.getQueryState(["getMe", {}])?.status).toBe("error"));
+    expect(screen.getByRole("heading", { name: "본문" })).toBeInTheDocument();
+  });
+
+  it("shows a toast when marking a notification read fails, and still never follows an unsafe link", async () => {
+    getDb().notifications.find((n) => n.link === "/commons/access?tab=grants")!.link = "/\\evil.com";
+    server.use(http.post("*/mock-api/v1/notifications/:id/read", () => HttpResponse.json({ error: { code: "INTERNAL_ERROR", message: "x", trace_id: "t" } }, { status: 500 })));
+    renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
+    await userEvent.click(await screen.findByRole("button", { name: "알림 1개 읽지 않음" }));
+    await userEvent.click(screen.getByRole("button", { name: /접근 권한이 .* UTC에 만료됩니다/ }));
+    expect(await screen.findByText("알림을 읽음 처리하지 못했습니다.")).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("closes the notification panel and the user menu on an outside click", async () => {
+    renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
+    await userEvent.click(await screen.findByRole("button", { name: "알림 1개 읽지 않음" }));
+    expect(screen.getByText("읽지 않은 알림")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("heading", { name: "본문" }));
+    expect(screen.queryByText("읽지 않은 알림")).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /A Researcher/ }));
+    expect(screen.getByRole("link", { name: "설정" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("heading", { name: "본문" }));
+    expect(screen.queryByRole("link", { name: "설정" })).not.toBeInTheDocument();
   });
 });

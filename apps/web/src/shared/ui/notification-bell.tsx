@@ -4,9 +4,12 @@ import { Bell } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useListNotifications, useMarkAllNotificationsRead, useMarkNotificationRead } from "@/features/notifications/api";
+import { useOutsideDismiss } from "@/shared/hooks/use-dismiss";
+import { safeInternalPath } from "@/shared/lib/links";
 import { DateTime } from "./date-text";
+import { useToast } from "./toast";
 
 export function NotificationBell() {
   const t = useTranslations();
@@ -14,6 +17,10 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const panelId = useId();
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const toast = useToast();
+  const close = useCallback(() => setOpen(false), []);
+  useOutsideDismiss(open, rootRef, close);
   const { data } = useListNotifications({ unread_only: true }, { poll: true });
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
@@ -33,7 +40,7 @@ export function NotificationBell() {
   }, [open]);
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <Button
         ref={buttonRef}
         variant="ghost"
@@ -72,9 +79,10 @@ export function NotificationBell() {
                     className="w-full rounded px-2 py-2 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
                     onClick={async () => {
                       setOpen(false);
-                      await markRead.mutateAsync(n.notification_id).catch(() => undefined);
-                      // Only in-app routes are followed; anything else stays on the page.
-                      if (n.link && n.link.startsWith("/") && !n.link.startsWith("//")) router.push(n.link);
+                      await markRead.mutateAsync(n.notification_id).catch(() => toast(t("shell.markReadFailed"), "error"));
+                      // Only same-origin in-app routes are followed; anything else stays on the page.
+                      const target = safeInternalPath(n.link);
+                      if (target) router.push(target);
                     }}
                   >
                     <span className="block font-medium">{n.title}</span>

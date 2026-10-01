@@ -43,6 +43,7 @@
     "markAllRead": "모두 읽음",
     "noNotifications": "새 알림이 없습니다.",
     "allNotifications": "모든 알림 보기",
+    "markReadFailed": "알림을 읽음 처리하지 못했습니다.",
     "unreadAnnouncement": "읽지 않은 알림 {count}개",
     "userMenu": "사용자 메뉴"
   },
