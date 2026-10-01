@@ -1,8 +1,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { ConfirmDialog, DataTable, ErrorState, FileDropzone, FormField, Input, StatusBadge } from "./index";
+import { act } from "@testing-library/react";
+import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle, DataTable, ErrorState, FileDropzone, FormField, Input, StatusBadge } from "./index";
 
 describe("StatusBadge", () => {
   it("renders text label plus a decorative icon (never color alone)", () => {
@@ -28,6 +29,7 @@ describe("ErrorState", () => {
         traceIdLabel="추적 ID"
         copyLabel="추적 ID 복사"
         copiedLabel="복사됨"
+        copyFailedLabel="복사 실패"
         retryLabel="다시 시도"
         onRetry={onRetry}
       />,
@@ -72,7 +74,7 @@ describe("ConfirmDialog", () => {
     expect(dialog).toHaveTextContent("즉시 회수됩니다");
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(trigger).toHaveFocus();
+    await waitFor(() => expect(trigger).toHaveFocus());
     await user.click(trigger);
     await user.click(screen.getAllByRole("button", { name: "보관" }).at(-1)!);
     expect(onConfirm).toHaveBeenCalledOnce();
@@ -125,5 +127,139 @@ describe("FileDropzone", () => {
     const file = new File(["a,b\n1,2\n"], "data.csv", { type: "text/csv" });
     await user.upload(screen.getByLabelText("파일 선택"), file);
     expect(onFiles).toHaveBeenCalledWith([file]);
+  });
+});
+
+describe("Dialog focus management", () => {
+  it("keeps focus inside the dialog under StrictMode", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      function H() {
+        const [open, setOpen] = useState(false);
+        return (
+          <>
+            <button onClick={() => setOpen(true)}>열기</button>
+            <ConfirmDialog open={open} onOpenChange={setOpen} title="t" confirmLabel="확인" cancelLabel="취소" closeLabel="닫기" onConfirm={() => {}} />
+          </>
+        );
+      }
+      render(
+        <StrictMode>
+          <H />
+        </StrictMode>,
+      );
+      await user.click(screen.getByRole("button", { name: "열기" }));
+      await act(async () => {
+        vi.runAllTimers();
+      });
+      expect(screen.getByRole("dialog")).toContainElement(document.activeElement as HTMLElement);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns focus to the inner opener when a nested dialog closes, then to the outer trigger", async () => {
+    const user = userEvent.setup();
+    function H() {
+      const [outer, setOuter] = useState(false);
+      const [inner, setInner] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOuter(true)}>outer-trigger</button>
+          <Dialog open={outer} onOpenChange={setOuter}>
+            <DialogContent closeLabel="닫기-외부">
+              <DialogTitle>외부</DialogTitle>
+              <DialogDescription>d</DialogDescription>
+              <button onClick={() => setInner(true)}>inner-trigger</button>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={inner} onOpenChange={setInner}>
+            <DialogContent closeLabel="닫기-내부">
+              <DialogTitle>내부</DialogTitle>
+              <DialogDescription>d</DialogDescription>
+            </DialogContent>
+          </Dialog>
+        </>
+      );
+    }
+    render(<H />);
+    const outerTrigger = screen.getByRole("button", { name: "outer-trigger" });
+    await user.click(outerTrigger);
+    const innerTrigger = await screen.findByRole("button", { name: "inner-trigger" });
+    await user.click(innerTrigger);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "내부" })).not.toBeInTheDocument());
+    await waitFor(() => expect(innerTrigger).toHaveFocus());
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(outerTrigger).toHaveFocus());
+  });
+
+  it("honours onCloseAutoFocus preventDefault (no refocus of the opener)", async () => {
+    const user = userEvent.setup();
+    function H() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>opener</button>
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogContent closeLabel="닫기" onCloseAutoFocus={(e) => e.preventDefault()}>
+              <DialogTitle>t</DialogTitle>
+              <DialogDescription>d</DialogDescription>
+            </DialogContent>
+          </Dialog>
+        </>
+      );
+    }
+    render(<H />);
+    const opener = screen.getByRole("button", { name: "opener" });
+    await user.click(opener);
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(opener).not.toHaveFocus();
+  });
+});
+
+describe("FileDropzone focus and drop", () => {
+  it("shows a focus indicator on the label when the input is focused", async () => {
+    const user = userEvent.setup();
+    render(<FileDropzone label="올리기" hint="CSV" fileButtonLabel="파일 선택" folderButtonLabel="폴더 선택" onFiles={() => {}} />);
+    await user.tab();
+    const input = screen.getByLabelText("파일 선택");
+    expect(input).toHaveFocus();
+    expect(input).toHaveClass("peer");
+    expect(input).toHaveAccessibleDescription("CSV");
+    expect(screen.getByText("파일 선택").className).toContain("peer-focus-visible:outline-2");
+  });
+  it("ignores empty drops", () => {
+    const onFiles = vi.fn();
+    render(<FileDropzone label="올리기" fileButtonLabel="a" folderButtonLabel="b" onFiles={onFiles} />);
+    const group = screen.getByRole("group", { name: "올리기" });
+    const ev = new Event("drop", { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, "dataTransfer", { value: { files: [] } });
+    group.dispatchEvent(ev);
+    expect(onFiles).not.toHaveBeenCalled();
+  });
+});
+
+describe("ErrorState clipboard failure", () => {
+  const props = { title: "오류", message: "m", traceId: "t-1", traceIdLabel: "ID", copyLabel: "복사", copiedLabel: "복사됨", copyFailedLabel: "복사 실패" };
+  it("announces failure when the clipboard is missing", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    render(<ErrorState {...props} />);
+    await user.click(screen.getByRole("button", { name: "복사" }));
+    expect(await screen.findByText("복사 실패")).toBeInTheDocument();
+    expect(screen.queryByText("복사됨")).not.toBeInTheDocument();
+  });
+  it("announces failure when writeText rejects", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) }, configurable: true });
+    render(<ErrorState {...props} />);
+    await user.click(screen.getByRole("button", { name: "복사" }));
+    expect(await screen.findByText("복사 실패")).toBeInTheDocument();
+    expect(screen.queryByText("복사됨")).not.toBeInTheDocument();
   });
 });

@@ -10,6 +10,7 @@ export function ErrorState({
   traceIdLabel,
   copyLabel,
   copiedLabel,
+  copyFailedLabel,
   retryLabel,
   onRetry,
 }: {
@@ -19,10 +20,11 @@ export function ErrorState({
   traceIdLabel: string;
   copyLabel: string;
   copiedLabel: string;
+  copyFailedLabel: string;
   retryLabel?: string;
   onRetry?: () => void;
 }) {
-  const [copied, setCopied] = useState(false);
+  const [copyState, setCopyState] = useState<"copied" | "failed" | null>(null);
   return (
     <div role="alert" className="flex flex-col gap-2 rounded-lg border border-danger p-4">
       <p className="flex items-center gap-2 font-medium text-danger">
@@ -39,13 +41,20 @@ export function ErrorState({
             size="sm"
             variant="outline"
             onClick={async () => {
-              await navigator.clipboard?.writeText(traceId);
-              setCopied(true);
+              // Reset first so a repeated copy re-announces the same message.
+              setCopyState(null);
+              try {
+                if (!navigator.clipboard) throw new Error("clipboard unavailable");
+                await navigator.clipboard.writeText(traceId);
+                setCopyState("copied");
+              } catch {
+                setCopyState("failed");
+              }
             }}
           >
             {copyLabel}
           </Button>
-          <span aria-live="polite">{copied ? copiedLabel : ""}</span>
+          <span aria-live="polite">{copyState === "copied" ? copiedLabel : copyState === "failed" ? copyFailedLabel : ""}</span>
         </p>
       ) : null}
       {onRetry && retryLabel ? (

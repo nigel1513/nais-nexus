@@ -9,15 +9,14 @@ export const DialogTrigger = DialogPrimitive.Trigger;
 export const DialogClose = DialogPrimitive.Close;
 
 /**
- * Controlled dialogs have no DialogTrigger, so Radix would drop focus on close. This renders only while the content is
- * mounted: it remembers what had focus on first render (still the opener, since Radix moves focus inside in an effect)
- * and returns focus there on unmount, which is synchronous and so does not depend on Radix's close timeout.
+ * Controlled dialogs have no DialogTrigger, so Radix has nothing to return focus to. This renders only while the content
+ * is mounted and remembers the opener in a layout effect, which runs before Radix moves focus inside (its focus effect is
+ * a passive effect). The capture is guarded, so StrictMode's simulated unmount/remount neither re-captures nor refocuses.
  */
 function FocusReturn({ target }: { target: React.MutableRefObject<HTMLElement | null> }) {
-  if (target.current === null && typeof document !== "undefined") {
-    target.current = document.activeElement as HTMLElement | null;
-  }
-  React.useEffect(() => () => target.current?.focus(), [target]);
+  React.useLayoutEffect(() => {
+    if (target.current === null) target.current = document.activeElement as HTMLElement | null;
+  }, [target]);
   return null;
 }
 
@@ -37,7 +36,8 @@ export function DialogContent({
           onCloseAutoFocus?.(event);
           if (event.defaultPrevented) return;
           event.preventDefault();
-          returnTo.current?.focus();
+          const opener = returnTo.current;
+          if (opener?.isConnected) opener.focus();
         }}
         className={cn(
           "fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-lg border border-border bg-background p-6 shadow-lg",
@@ -48,7 +48,7 @@ export function DialogContent({
         <FocusReturn target={returnTo} />
         {children}
         <DialogPrimitive.Close
-          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted"
+          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           aria-label={closeLabel}
         >
           <X aria-hidden="true" className="h-4 w-4" />

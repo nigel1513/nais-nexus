@@ -23,7 +23,7 @@ export const Checkbox = React.forwardRef<HTMLInputElement, Omit<React.InputHTMLA
   { className, ...props },
   ref,
 ) {
-  return <input ref={ref} type="checkbox" className={cn("h-5 w-5 accent-primary", className)} {...props} />;
+  return <input ref={ref} type="checkbox" className={cn("h-6 w-6 accent-primary", className)} {...props} />;
 });
 
 export function Label({ className, ...props }: React.LabelHTMLAttributes<HTMLLabelElement>) {
