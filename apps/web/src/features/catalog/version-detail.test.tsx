@@ -17,7 +17,7 @@ const open = (user: string, datasetId: string, versionId: string) =>
 describe("VersionDetailScreen", () => {
   it("shows header, file manifest and readiness checks of a published version", async () => {
     open(USER.bSteward, DATASET.battery, VERSION.battery);
-    expect(await screen.findByRole("heading", { level: 1, name: "버전 v1" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "버전 v2.0" })).toBeInTheDocument();
     expect(screen.getAllByText("게시됨").length).toBeGreaterThan(0);
     expect(screen.getAllByText("data/measurements.csv").length).toBeGreaterThan(0);
     const readiness = screen.getByRole("region", { name: "AI-Ready 검증" });
@@ -56,7 +56,7 @@ describe("VersionDetailScreen", () => {
     await waitFor(() => expect(request).toBeEnabled()); // the single grant project is pre-selected once projects load
     await userEvent.click(request);
     const links = await within(panel).findAllByRole("link");
-    expect(links.map((a) => a.textContent)).toEqual(["README.md", "_codebook.csv", "_schema.json", "data/measurements.csv"]);
+    expect(links.map((a) => a.textContent)).toEqual(["README.md", "_codebook.csv", "_schema.json", "data/measurements.csv", "data/test_cells.csv"]);
     expect(links[0]).toHaveAttribute("download");
     expect(within(panel).getByText(/링크 만료까지 \d:\d\d/)).toBeInTheDocument();
   });
@@ -186,7 +186,7 @@ describe("VersionDetailScreen", () => {
 
   it("a non-steward sees no publish, upload or readiness start", async () => {
     open(USER.aResearcher, DATASET.battery, VERSION.battery);
-    await screen.findByRole("heading", { level: 1, name: "버전 v1" });
+    await screen.findByRole("heading", { level: 1, name: "버전 v2.0" });
     await screen.findByRole("region", { name: "AI-Ready 검증" });
     expect(screen.queryByRole("button", { name: "게시" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "파일 업로드" })).not.toBeInTheDocument();

@@ -26,9 +26,9 @@ describe("DataSearchScreen", () => {
   it("filters by subject facet and shows PI, period and subtitle on cards", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
     const card = (await screen.findByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).closest("article")!;
-    expect(within(card as HTMLElement).getByText("연료전지 고분자 막 시편 1,000개의 온도·압력 측정")).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
     expect(within(card as HTMLElement).getByText(/B Researcher/)).toBeInTheDocument();
-    expect(within(card as HTMLElement).getByText(/2026-01-01 – 2026-01-01/)).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText(/2026-01-12 – 2026-06-30/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: /^재료 \(/ }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/commons/data?subject=MATERIALS", { scroll: false }));
   });
@@ -148,7 +148,7 @@ describe("DatasetDetailScreen", () => {
     const cta = await screen.findByRole("link", { name: "다운로드" });
     expect(cta).toHaveAttribute("href", `/commons/data/${DATASET.battery}/versions/${VERSION.battery}?download=1`);
     expect(screen.getAllByText(/후 만료/).length).toBeGreaterThan(0);
-    expect(screen.getByText(/환경 챔버\(모델 EC-200\)/)).toBeInTheDocument();
+    expect(screen.getByText(/충방전 시험기\(모델 BT-5000\)/)).toBeInTheDocument();
   });
 
   it("requests access through the dialog (allowed purposes only, SENSITIVE ≤ 30 days)", async () => {
@@ -316,8 +316,8 @@ describe("DatasetDetailScreen", () => {
     const days = screen.getByLabelText(/^최대 이용 기간/);
     await userEvent.clear(days);
     await userEvent.type(days, "90");
-    await userEvent.type(screen.getByRole("combobox", { name: "공동연구자 검색" }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: "공동연구자 검색" }), "A S");
+    await userEvent.click(await screen.findByRole("option", { name: /A Steward/ }));
     await userEvent.click(screen.getByRole("button", { name: "추가" }));
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
     await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "변경" }));

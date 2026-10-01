@@ -12,13 +12,13 @@ describe("Data Card", () => {
   it("renders header, subtitle, tags, AI-ready badge and the metadata block", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
     expect(await screen.findByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeInTheDocument();
-    expect(screen.getByText("연료전지 고분자 막 시편 1,000개의 온도·압력 측정")).toBeInTheDocument();
+    expect(screen.getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "데이터 카드" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("button", { name: /AI-ready/ })).toBeInTheDocument();
     const meta = screen.getByRole("region", { name: "메타데이터" });
-    expect(within(meta).getByText("2026-01-01 – 2026-01-01")).toBeInTheDocument();
-    expect(within(meta).getByText("재료")).toBeInTheDocument();
-    expect(within(meta).getByText(/NTIS 10000002/)).toBeInTheDocument();
+    expect(within(meta).getByText("2026-01-12 – 2026-06-30")).toBeInTheDocument();
+    expect(within(meta).getByText("에너지")).toBeInTheDocument();
+    expect(within(meta).getAllByText(/NTIS 10000002/).length).toBeGreaterThan(0); // PI and contributor
     expect((screen.getByRole("combobox", { name: "버전" }) as HTMLSelectElement).value).toMatch(/\S/);
   });
 
@@ -56,22 +56,26 @@ describe("Data Card", () => {
 });
 
 describe("Data Card extras", () => {
-  it("?v= selects that version and changing the select switches the content", async () => {
-    const db = getDb();
-    const v1 = db.versions.find((v) => v.dataset_version_id === VERSION.battery)!;
-    const v2id = "00000000-0000-7000-8000-000000002199";
-    db.versions.push({ ...v1, dataset_version_id: v2id, version_label: "v2", published_at: "2099-01-01T00:00:00Z", files: [], file_count: 3 });
+  it("lists the three seeded published versions, defaults to the latest and switches via the select", async () => {
     const ds = DATASET.battery;
     renderScreen(<DatasetDetailScreen datasetId={ds} />, { user: USER.bResearcher, path: `/commons/data/${ds}` });
     const select = (await screen.findByRole("combobox", { name: "버전" })) as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(2));
-    expect(select.value).toBe(v2id); // latest published by default
-    expect(screen.getByText("파일 3개")).toBeInTheDocument();
-    await userEvent.selectOptions(select, VERSION.battery);
-    expect(router.replace).toHaveBeenLastCalledWith(expect.stringContaining(`v=${VERSION.battery}`), { scroll: false });
-    await waitFor(() => expect(select.value).toBe(VERSION.battery));
-    expect(screen.queryByText("파일 3개")).not.toBeInTheDocument();
-    expect(screen.getByText(`파일 ${v1.file_count}개`)).toBeInTheDocument();
+    await waitFor(() => expect(select.options.length).toBe(3)); // the DRAFT is hidden from researchers
+    expect([...select.options].map((o) => o.textContent)).toEqual([expect.stringContaining("v2.0"), expect.stringContaining("v1.1"), expect.stringContaining("v1.0")]);
+    expect(select.value).toBe(VERSION.battery);
+    expect(screen.getByText("파일 5개")).toBeInTheDocument();
+    await userEvent.selectOptions(select, VERSION.batteryV10);
+    expect(router.replace).toHaveBeenLastCalledWith(expect.stringContaining(`v=${VERSION.batteryV10}`), { scroll: false });
+    await waitFor(() => expect(select.value).toBe(VERSION.batteryV10));
+    expect(screen.getByText("파일 2개")).toBeInTheDocument();
+  });
+  it("shows the DRAFT version only to the owner steward", async () => {
+    const ds = DATASET.battery;
+    renderScreen(<DatasetDetailScreen datasetId={ds} />, { user: USER.bSteward, path: `/commons/data/${ds}` });
+    const select = (await screen.findByRole("combobox", { name: "버전" })) as HTMLSelectElement;
+    await waitFor(() => expect(select.options.length).toBe(4));
+    expect(select.value).toBe(VERSION.battery); // latest published, not the draft
+    expect([...select.options].some((o) => o.value === VERSION.batteryDraft)).toBe(true);
   });
   it("has the Metadata JSON-LD button and the column table slot", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });

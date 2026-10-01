@@ -1,5 +1,6 @@
 import type { Schemas } from "@/shared/api/types";
-import { profileCsv, SEED_MEASUREMENTS_CSV, type Hint } from "./previews";
+import { profileCsv, type Hint } from "./previews";
+import * as tables from "./seed-tables";
 import { buildResult } from "./readiness-results";
 import { SEED_FILES } from "./seed-files";
 import { VOCABULARY } from "./vocabulary";
@@ -26,7 +27,7 @@ export const USER = {
 } as const;
 export const PROJECT = { seed: sid("1001") } as const;
 export const DATASET = { battery: sid("2001"), openMaterials: sid("2002"), qcLogs: sid("2003"), sensors: sid("2004"), electrolyte: sid("2005") } as const;
-export const VERSION = { battery: sid("2101"), openMaterials: sid("2102"), qcLogs: sid("2103"), sensors: sid("2104"), electrolyte: sid("2105") } as const;
+export const VERSION = { batteryV10: sid("2111"), batteryV11: sid("2112"), batteryDraft: sid("2113"), battery: sid("2101"), openMaterials: sid("2102"), qcLogs: sid("2103"), sensors: sid("2104"), electrolyte: sid("2105") } as const;
 export const REQUEST = { seedApproved: sid("3001") } as const;
 export const GRANT = { seed: sid("4001") } as const;
 
@@ -47,20 +48,77 @@ export const SEED_USERS = users.map((u) => ({ id: u.user_id, label: u.display_na
 const STEWARD = { [ORG.a]: USER.aSteward, [ORG.b]: USER.bSteward } as Record<string, string>;
 const ORG_NAME = { [ORG.nais]: "NAIS", [ORG.a]: "Institute A", [ORG.b]: "Institute B" } as Record<string, string>;
 
-/** seed_data.py CLEAN_METADATA / metadata_for(): the same text every seed dataset receives, with per-fixture degradations. */
-const CLEAN_METADATA = {
-  description: "연료전지용 고분자 전해질 막 시편 1,000개에 대해 온도와 압력을 측정한 표 형식 데이터셋이다. 재료 코드는 codebook에 정의되어 있다.",
-  keywords: ["fuel-cell", "membrane", "temperature", "pressure"],
-  domain: "materials" as string | null,
-  license: "CC-BY-4.0",
-  usage_policy: "학술 연구 및 AI 학습 목적에 한해 사용한다. 재배포 금지. 결과 공개 시 출처를 표기한다." as string | null,
-  contact_email: "steward@inst-b.example" as string | null,
-  provenance: "Institute B 연료전지 실험실의 환경 챔버(모델 EC-200)에서 2026년 1월 1일 1분 간격으로 자동 수집한 측정값." as string | null,
-};
 type Fixture = "clean_tabular" | "missing_metadata" | "invalid_units" | "missing_provenance" | null;
-function metadataFor(fixture: Fixture) {
-  const m = { ...CLEAN_METADATA };
-  if (fixture === "missing_metadata") Object.assign(m, { description: "측정 데이터", keywords: [], domain: null, contact_email: null });
+type Meta = { description: string; keywords: string[]; domain: string | null; license: string; usage_policy: string | null; contact_email: string | null; provenance: string | null };
+
+/** Descriptive metadata per seed dataset (distinct, matching each title); per-fixture degradations are applied on top by metadataFor(). */
+const META: Record<string, Meta> = {
+  [DATASET.battery]: {
+    description: [
+      "리튬이온 18650 셀 12개를 상온(25 ℃)에서 1C 정전류-정전압으로 충방전하며 사이클별 용량, 평균 전압, 셀 표면 온도를 기록한 사이클 수명 시험 데이터셋이다.",
+      "NCM811/흑연 계열 8개 셀과 NCM811/실리콘-탄소 계열 4개 셀이 포함되며, 용량 유지율 80 % 도달 시점까지 열화 경향을 확인할 수 있다.",
+      "",
+      "- `data/measurements.csv`: 사이클별 `capacity_ah`, `voltage_v`, `temp_c`",
+      "- `data/test_cells.csv`: 셀별 화학계와 정격 용량 (v1.1 이후)",
+      "- `_codebook.csv`, `_schema.json`: 컬럼 정의와 단위 (v2.0)",
+    ].join("\n"),
+    keywords: ["lithium-ion", "cycle-life", "capacity-fade", "NCM811", "battery"],
+    domain: "energy",
+    license: "CC-BY-4.0",
+    usage_policy: "학술 연구 및 AI 학습 목적에 한해 사용한다. 재배포 금지. 결과 공개 시 출처를 표기한다.",
+    contact_email: "steward@inst-b.example",
+    provenance: "Institute B 이차전지 실험실의 충방전 시험기(모델 BT-5000)와 항온 챔버에서 2026년 1월부터 6월까지 사이클마다 자동 수집한 측정값. 사이클 1~200은 v1.0, 201~500은 v1.1, 501~1000은 v2.0에서 추가되었다.",
+  },
+  [DATASET.openMaterials]: {
+    description: [
+      "세라믹과 초내열 합금 4종(Al2O3, ZrO2, Inconel 718, Ti-6Al-4V) 시편의 밀도, 비커스 경도, XRD 격자상수를 정리한 공개 재료 물성 표이다.",
+      "2024년 1월부터 2025년 12월까지 공동 장비실에서 측정한 값을 연 1회 갱신하며, 시편 번호로 원 측정 조건 문서와 연결할 수 있다.",
+    ].join("\n\n"),
+    keywords: ["materials-properties", "ceramic", "superalloy", "hardness", "XRD"],
+    domain: "materials",
+    license: "CC-BY-4.0",
+    usage_policy: "출처를 표기하면 자유롭게 이용할 수 있다.",
+    contact_email: "steward@inst-b.example",
+    provenance: "Institute B 공동 장비실의 Vickers 경도계와 분말 XRD(Cu Kα)로 시편당 5회 측정해 평균한 값.",
+  },
+  [DATASET.qcLogs]: {
+    description: [
+      "Institute B 시제품 소결 라인 3개의 배치별 공정 온도와 압력, 검사 시각을 기록한 내부 품질관리(QC) 로그이다.",
+      "월 단위로 누적되며 내부 공정 개선과 이상 배치 탐지 연구에만 사용한다. 일부 단위 표기가 UCUM이 아니므로 정리가 필요하다.",
+    ].join("\n\n"),
+    keywords: ["quality-control", "sintering", "process-log", "batch", "internal"],
+    domain: "materials",
+    license: "CC-BY-4.0",
+    usage_policy: "Institute B 내부 연구 목적으로만 사용한다. 외부 공유 금지.",
+    contact_email: "steward@inst-b.example",
+    provenance: "소결 라인 PLC가 배치 종료 시 기록한 공정값을 월 1회 수집해 정리한 로그.",
+  },
+  [DATASET.sensors]: {
+    description: "시설 센서 측정 데이터",
+    keywords: ["facility", "sensor", "HVAC", "humidity", "vibration"],
+    domain: "environment",
+    license: "CC-BY-4.0",
+    usage_policy: "시설 운영 정보이므로 승인된 학술 연구 목적에 한해 사용한다.",
+    contact_email: "steward@inst-a.example",
+    provenance: "Institute A 시험동 공조 설비(HVAC 1~4호기)에 설치된 상대습도·온도·진동 센서가 15분 간격으로 기록한 스트림.",
+  },
+  [DATASET.electrolyte]: {
+    description: [
+      "고체-액체 하이브리드 전해질 후보 조성 24종의 이온전도도와 전기화학 안정창을 스크리닝한 초안 데이터셋이다.",
+      "외부 위탁분석기관에서 측정 중이며 결과가 도착하는 대로 비정기적으로 갱신된다. 아직 검증되지 않은 값이 포함될 수 있다.",
+    ].join("\n\n"),
+    keywords: ["electrolyte", "ionic-conductivity", "screening", "solid-state"],
+    domain: "energy",
+    license: "CC-BY-4.0",
+    usage_policy: "학술 연구 및 AI 학습 목적에 한해 사용한다. 초안 단계이므로 인용하지 않는다.",
+    contact_email: "steward@inst-a.example",
+    provenance: "Institute A가 합성한 조성 시료를 외부 위탁분석기관 K-Lab이 임피던스 분광과 순환전압전류법으로 측정한 결과.",
+  },
+};
+function metadataFor(datasetId: string, fixture: Fixture) {
+  const m: Meta = { ...META[datasetId]! };
+  // Degraded on purpose so the seed readiness outcome (09_AI_READY_RULES §5.6) is explainable from the metadata itself.
+  if (fixture === "missing_metadata") Object.assign(m, { keywords: [], domain: null, contact_email: null });
   if (fixture === "missing_provenance") m.provenance = null;
   return m;
 }
@@ -94,42 +152,99 @@ export function emptyResearch() {
 const PEOPLE = { [ORG.a]: [USER.aResearcher, USER.aSteward], [ORG.b]: [USER.bResearcher, USER.bSteward] } as Record<string, [string, string]>;
 const RESEARCH: Record<string, Partial<ReturnType<typeof emptyResearch>>> = {
   [DATASET.battery]: {
-    subtitle: "연료전지 고분자 막 시편 1,000개의 온도·압력 측정",
-    subject_codes: ["ENERGY", "MATERIALS"],
-    material_codes: ["POLYMER_MEMBRANE", "ELECTROLYTE"],
-    method_codes: ["SENSOR_LOGGING"],
-    method_detail: "환경 챔버 EC-200, 1분 간격 자동 계측",
-    temporal_start: "2026-01-01",
-    temporal_end: "2026-01-01",
+    subtitle: "리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력",
+    subject_codes: ["ENERGY", "BATTERY"],
+    material_codes: ["CATHODE", "ANODE", "ELECTROLYTE"],
+    method_codes: ["ELECTROCHEM_CYCLING", "SENSOR_LOGGING"],
+    method_detail: "충방전 시험기 BT-5000, 1C CC-CV(2.5–4.2 V), 항온 챔버 25 ℃, 사이클마다 용량·평균 전압·표면 온도 기록",
+    temporal_start: "2026-01-12",
+    temporal_end: "2026-06-30",
     collecting_organization_id: ORG.b,
-    project_title: "연료전지 막 내구성 평가",
-    project_code: "NST-2026-0001",
+    project_title: "차세대 이차전지 수명 예측 연구",
+    project_code: "NST-2026-0101",
     funding_agency: "국가과학기술연구회",
-    update_frequency: "ONCE",
+    update_frequency: "QUARTERLY",
     contact_email_public: true,
+    related_publications: [
+      { title: "Early-cycle capacity fade prediction for NCM811 cells (mock reference)", doi: "10.99999/nais.mock.2026.0101" },
+      { title: "실리콘-탄소 음극 셀의 사이클 열화 비교 (모의 참고문헌)", doi: "10.99999/nais.mock.2026.0102", url: "https://example.org/mock/battery-fade" },
+    ],
   },
   [DATASET.openMaterials]: {
-    subtitle: "공개 재료 물성 측정값 (2024–2025)",
+    subtitle: "세라믹·초내열 합금 4종의 밀도, 경도, 격자상수 (2024–2025)",
     subject_codes: ["MATERIALS"],
     material_codes: ["METAL_ALLOY", "CERAMIC"],
     method_codes: ["XRD"],
-    temporal_start: "2024-01-01",
-    temporal_end: "2025-12-31",
-    collecting_organization_id: ORG.b,
+    method_detail: "분말 XRD(Cu Kα, 2θ 20–90°)와 Vickers 경도(HV10), 시편당 5회 평균",
+    temporal_start: "2024-01-15",
+    temporal_end: "2025-12-19",
+    // Collected by the other council institute (not the owner).
+    collecting_organization_id: ORG.a,
+    project_title: "공개 재료 물성 DB 구축",
+    project_code: "NST-2024-0207",
+    funding_agency: "과학기술정보통신부",
     update_frequency: "YEARLY",
+    related_publications: [{ title: "Hardness and lattice parameters of structural ceramics (mock reference)", doi: "10.99999/nais.mock.2025.0207" }],
   },
-  [DATASET.qcLogs]: { subject_codes: ["MATERIALS"], method_codes: ["SENSOR_LOGGING"], temporal_start: "2025-07-01", collecting_organization_id: ORG.b, update_frequency: "MONTHLY" },
-  [DATASET.sensors]: {},
+  [DATASET.qcLogs]: {
+    subtitle: "소결 라인 3기의 배치별 공정 온도·압력 QC 로그 (월 갱신)",
+    subject_codes: ["MATERIALS"],
+    material_codes: ["CERAMIC"],
+    method_codes: ["SENSOR_LOGGING"],
+    method_detail: "소결로 PLC 로그를 배치 종료 시 수집, 월 1회 정리",
+    temporal_start: "2025-07-01",
+    // Open-ended: the log keeps growing.
+    temporal_end: null,
+    collecting_organization_id: ORG.b,
+    project_title: "소결 공정 이상 탐지 고도화",
+    project_code: "NST-2025-0318",
+    funding_agency: "산업통상자원부",
+    update_frequency: "MONTHLY",
+    related_publications: [],
+  },
+  [DATASET.sensors]: {
+    subtitle: "시험동 공조 설비 4기의 습도·온도·진동 센서 스트림",
+    subject_codes: ["ENVIRONMENT", "STANDARDS"],
+    material_codes: [],
+    method_codes: ["SENSOR_LOGGING"],
+    method_detail: "상대습도·온도·RMS 진동 센서, 15분 간격 수집",
+    temporal_start: "2026-02-01",
+    temporal_end: "2026-08-31",
+    collecting_organization_id: ORG.a,
+    project_title: "연구시설 환경 모니터링 체계 구축",
+    project_code: "NST-2026-0415",
+    funding_agency: "국가과학기술연구회",
+    update_frequency: "MONTHLY",
+    related_publications: [{ title: "Vibration and humidity monitoring for precision labs (mock reference)", doi: "10.99999/nais.mock.2026.0415" }],
+  },
   [DATASET.electrolyte]: {
+    subtitle: "하이브리드 전해질 후보 24종의 이온전도도·안정창 스크리닝 (초안)",
     subject_codes: ["ENERGY", "CHEMISTRY"],
-    material_codes: ["ELECTROLYTE"],
+    material_codes: ["ELECTROLYTE", "POLYMER"],
     method_codes: ["ELECTROCHEM_CYCLING"],
+    method_detail: "임피던스 분광(1 MHz–0.1 Hz)과 순환전압전류법(0–5 V vs Li/Li+)",
     temporal_start: "2026-03-01",
     temporal_end: "2026-06-30",
     collecting_organization_name: "외부 위탁분석기관 K-Lab",
+    project_title: "고체전해질 후보 물질 탐색",
+    project_code: "NST-2026-0522",
+    funding_agency: "한국연구재단",
     update_frequency: "IRREGULAR",
+    related_publications: [{ title: "Hybrid solid-liquid electrolytes: a screening study (mock reference)", doi: "10.99999/nais.mock.2026.0522" }],
   },
 };
+
+/** Contributors: [dataset, user, role, affiliation org at the time]. Any active member qualifies (not only the owner org). */
+const CONTRIBUTORS: [string, string, Schemas["ContributorRole"], string][] = [
+  [DATASET.battery, USER.bResearcher, "CO_INVESTIGATOR", ORG.b],
+  [DATASET.battery, USER.aResearcher, "DATA_COLLECTOR", ORG.a],
+  [DATASET.battery, USER.bSteward, "DATA_CURATOR", ORG.b],
+  [DATASET.openMaterials, USER.aResearcher, "DATA_COLLECTOR", ORG.a],
+  [DATASET.openMaterials, USER.bSteward, "DATA_CURATOR", ORG.b],
+  [DATASET.qcLogs, USER.bResearcher, "DATA_COLLECTOR", ORG.b],
+  [DATASET.sensors, USER.aSteward, "DATA_CURATOR", ORG.a],
+  [DATASET.electrolyte, USER.bResearcher, "CO_INVESTIGATOR", ORG.b],
+];
 
 function policy(dataset_id: string, owner: string, level: Schemas["AccessLevel"], purposes: Schemas["Purpose"][], maxDays: number): Schemas["DatasetPolicyView"] {
   return {
@@ -189,7 +304,7 @@ export function createSeed(now: Date): MockDb {
     owner_organization_id: d.owner,
     owner_organization_name: ORG_NAME[d.owner],
     title: d.title,
-    ...metadataFor(d.fixture),
+    ...metadataFor(d.id, d.fixture),
     ...emptyResearch(),
     principal_investigator_id: PEOPLE[d.owner]![0],
     principal_investigator_org_id: d.owner,
@@ -208,13 +323,14 @@ export function createSeed(now: Date): MockDb {
     const seeded = filesKey[d.id] ? SEED_FILES[filesKey[d.id]!]! : undefined;
     const files: Schemas["DatasetFile"][] = (seeded?.files ?? []).map((f) => ({ ...f, status: "VERIFIED" }));
     const published = d.fixture !== null;
+    const isBattery = d.id === DATASET.battery;
     return {
       dataset_version_id: versionOf[d.id]!,
       dataset_id: d.id,
-      version_label: "v1",
+      version_label: isBattery ? "v2.0" : "v1",
       status: published ? "PUBLISHED" : "DRAFT",
       published_at: published ? seedTime : null,
-      change_note: "Seed data (10_SEED_DATA.md)",
+      change_note: isBattery ? "사이클 501~1000 추가, 컬럼 정의(_codebook.csv)와 스키마(_schema.json) 정비, 셀 정보 파일 포함" : "Seed data (10_SEED_DATA.md)",
       files,
       file_count: files.length,
       total_bytes: files.reduce((n, f) => n + f.size_bytes, 0),
@@ -223,20 +339,78 @@ export function createSeed(now: Date): MockDb {
     };
   });
 
-  // 10_SEED_DATA §5 _schema.json hints; _codebook.csv starts with "_" so it is not tabular.
-  const seedHints: Record<string, Hint> = {
-    sample_id: { type: "string" },
-    temperature_c: { type: "number", unit: "Cel", description: "시편 온도", concept_iri: "http://qudt.org/vocab/quantitykind/Temperature" },
-    pressure_kpa: { type: "number", unit: "kPa", description: "챔버 압력", concept_iri: "http://qudt.org/vocab/quantitykind/Pressure" },
-    material: { type: "string" },
-    measured_at: { type: "datetime" },
+  // Battery history: v1.0 and v1.1 are older PUBLISHED versions; the DRAFT is only visible to the owner steward (access.can_see_all_versions).
+  const encoder = new TextEncoder();
+  const batteryFile = (versionId: string, path: string, body: string, media_type: string): Schemas["DatasetFile"] => ({
+    file_id: sid(`${versionId.slice(-4)}${hex(path.length + body.length).slice(-4)}${String(path.length).padStart(2, "0")}`).slice(0, 36),
+    path,
+    size_bytes: encoder.encode(body).length,
+    sha256: hex(encoder.encode(body).length * 31 + path.length * 7),
+    media_type,
+    status: "VERIFIED",
+  });
+  const README_V10 = "# Battery Cycling Measurements\n\n18650 셀 사이클 1~200 (v1.0).";
+  const README_V11 = "# Battery Cycling Measurements\n\n18650 셀 사이클 1~500 (v1.1), 셀 정보 추가.";
+  const batteryVersion = (id: string, label: string, status: "PUBLISHED" | "DRAFT", daysAgo: number, note: string, files: Schemas["DatasetFile"][]): StoredVersion => ({
+    dataset_version_id: id,
+    dataset_id: DATASET.battery,
+    version_label: label,
+    status,
+    published_at: status === "PUBLISHED" ? at(-daysAgo * 86_400) : null,
+    change_note: note,
+    files,
+    file_count: files.length,
+    total_bytes: files.reduce((n, f) => n + f.size_bytes, 0),
+    manifest_sha256: status === "PUBLISHED" ? hex(files.reduce((n, f) => n + f.size_bytes, id.length)) : null,
+    created_at: at(-daysAgo * 86_400 - 3600),
+  });
+  const csvV10 = tables.batteryCycles(200);
+  const csvV11 = tables.batteryCycles(500);
+  const csvDraft = tables.batteryCycles(1200);
+  const cellsCsv = tables.batteryCells();
+  const batteryHistory: StoredVersion[] = [
+    batteryVersion(VERSION.batteryV10, "v1.0", "PUBLISHED", 120, "최초 공개: 셀 12개의 사이클 1~200 용량·전압·온도", [
+      batteryFile(VERSION.batteryV10, "README.md", README_V10, "text/markdown"),
+      batteryFile(VERSION.batteryV10, "data/measurements.csv", csvV10, "text/csv"),
+    ]),
+    batteryVersion(VERSION.batteryV11, "v1.1", "PUBLISHED", 60, "사이클 201~500 추가, 셀별 화학계·정격 용량 파일(test_cells.csv) 추가", [
+      batteryFile(VERSION.batteryV11, "README.md", README_V11, "text/markdown"),
+      batteryFile(VERSION.batteryV11, "data/test_cells.csv", cellsCsv, "text/csv"),
+      batteryFile(VERSION.batteryV11, "data/measurements.csv", csvV11, "text/csv"),
+    ]),
+    batteryVersion(VERSION.batteryDraft, "v2.1-draft", "DRAFT", 3, "사이클 1001~1200 추가 및 이상 셀(C07) 제외 검토 중", [
+      batteryFile(VERSION.batteryDraft, "data/measurements.csv", csvDraft, "text/csv"),
+    ]),
+  ];
+  // v2.0 (VERSION.battery) additionally ships the cell table; its CSV is the 1,000-cycle series.
+  const v20 = versions.find((v) => v.dataset_version_id === VERSION.battery)!;
+  v20.files.push(batteryFile(VERSION.battery, "data/test_cells.csv", cellsCsv, "text/csv"));
+  v20.file_count = v20.files.length;
+  v20.total_bytes = v20.files.reduce((n, f) => n + f.size_bytes, 0);
+  v20.published_at = seedTime;
+  versions.push(...batteryHistory);
+
+  // Each tabular file gets a profile/preview built from a topic-specific CSV (not the shared README/codebook files, which start with "_" or are markdown).
+  const tableFor = (v: StoredVersion, path: string): { text: string; hints: Record<string, Hint> } | null => {
+    if (path === "data/test_cells.csv") return { text: cellsCsv, hints: tables.BATTERY_CELLS_HINTS };
+    if (path !== "data/measurements.csv") return null;
+    if (v.dataset_id === DATASET.battery) {
+      const rows = v.dataset_version_id === VERSION.batteryV10 ? 200 : v.dataset_version_id === VERSION.batteryV11 ? 500 : v.dataset_version_id === VERSION.batteryDraft ? 1200 : 1000;
+      return { text: tables.batteryCycles(rows), hints: tables.BATTERY_CYCLES_HINTS };
+    }
+    if (v.dataset_id === DATASET.openMaterials) return { text: tables.openMaterials(), hints: tables.OPEN_MATERIALS_HINTS };
+    if (v.dataset_id === DATASET.qcLogs) return { text: tables.qcLogs(), hints: tables.QC_LOGS_HINTS };
+    if (v.dataset_id === DATASET.sensors) return { text: tables.sensors(), hints: tables.SENSORS_HINTS };
+    return null;
   };
   const previews: MockDb["previews"] = {};
   for (const v of versions.filter((x) => x.status === "PUBLISHED")) {
-    const file = v.files.find((f) => f.path === "data/measurements.csv");
-    if (!file) continue;
-    const { columns, preview, rowsSampled, truncated, columnsTruncated } = profileCsv(SEED_MEASUREMENTS_CSV, file.path, seedHints);
-    previews[file.file_id] = { status: "READY", column_profile: { format: "csv", rows_sampled: rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at: seedTime };
+    for (const file of v.files) {
+      const table = tableFor(v, file.path);
+      if (!table) continue;
+      const { columns, preview, rowsSampled, truncated, columnsTruncated } = profileCsv(table.text, file.path, table.hints);
+      previews[file.file_id] = { status: "READY", column_profile: { format: "csv", rows_sampled: rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at: seedTime };
+    }
   }
 
   const uploadSessions: Schemas["UploadSession"][] = seedDatasets
@@ -276,6 +450,8 @@ export function createSeed(now: Date): MockDb {
   ];
   const validations: StoredValidation[] = [
     ...both(VERSION.battery),
+    ...both(VERSION.batteryV10),
+    ...both(VERSION.batteryV11),
     ...both(VERSION.openMaterials, {
       "provenance.presence": ["FAIL", "provenance 정보가 없습니다.", { sources: ["dataset.provenance", "README.md"] }],
     }),
@@ -375,6 +551,7 @@ export function createSeed(now: Date): MockDb {
       audit("DATASET_CREATED", STEWARD[d.owner]!, "DATASET", d.id, d.owner),
       ...(d.fixture ? [audit("DATASET_VERSION_PUBLISHED", STEWARD[d.owner]!, "DATASET_VERSION", versionOf[d.id]!, d.owner)] : []),
     ]),
+    ...batteryHistory.filter((v) => v.status === "PUBLISHED").map((v) => audit("DATASET_VERSION_PUBLISHED", STEWARD[ORG.b]!, "DATASET_VERSION", v.dataset_version_id, ORG.b)),
     ...validations.map((v) => {
       const datasetId = versions.find((x) => x.dataset_version_id === v.dataset_version_id)!.dataset_id;
       const owner = datasets.find((d) => d.dataset_id === datasetId)!.owner_organization_id;
@@ -422,7 +599,7 @@ export function createSeed(now: Date): MockDb {
     grants,
     validations,
     audit: seedAudit,
-    contributors: [],
+    contributors: CONTRIBUTORS.map(([dataset_id, user_id, role, affiliation_organization_id], i) => ({ dataset_id, user_id, role, affiliation_organization_id, position: CONTRIBUTORS.filter((c, j) => j < i && c[0] === dataset_id).length })),
     vocabulary: [...VOCABULARY],
     previews,
     objects: {},

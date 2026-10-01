@@ -7,7 +7,7 @@ import { ORG, USER, VERSION } from "../fixtures";
 
 const as = (user: string | null) => setMockUser(user);
 const list = async (query: Record<string, unknown> = {}) =>
-  ((await unwrap(api.GET("/audit-events", { params: { query: query as never } }))) as Page<AuditEvent>).items;
+  ((await unwrap(api.GET("/audit-events", { params: { query: { limit: 100, ...query } as never } }))) as Page<AuditEvent>).items;
 
 function push(action: AuditEvent["action"], actorId: string, actorOrg: string, ownerOrg: string, occurredAt: string): string {
   const id = crypto.randomUUID();

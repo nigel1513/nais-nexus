@@ -52,7 +52,7 @@ describe("catalog mocks", () => {
       code: "VALIDATION_FAILED",
       details: { fields: [{ field: "domain", reason: "NULL_NOT_ALLOWED" }] },
     });
-    expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.domain).toBe("materials");
+    expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.domain).toBe("energy");
   });
 
   it("hides DRAFT versions from non-stewards", async () => {
@@ -229,7 +229,7 @@ describe("governance mocks", () => {
   it("serves DATA_STEWARD version detail with files", async () => {
     as(USER.bSteward);
     const v = (await unwrap(api.GET("/dataset-versions/{version_id}", { params: { path: { version_id: VERSION.battery } } }))) as DatasetVersion;
-    expect(v.files).toHaveLength(4);
+    expect(v.files).toHaveLength(5);
     expect(v.readiness_overall).toBe("PASS");
   });
 });
@@ -475,10 +475,10 @@ const datasetCreate = (org: string) => ({
 describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
   it("returns people with at-the-time and current affiliation, email only when public", async () => {
     const battery = await getJson(USER.aResearcher, `/datasets/${DATASET.battery}`);
-    expect(battery.subtitle).toBe("연료전지 고분자 막 시편 1,000개의 온도·압력 측정");
+    expect(battery.subtitle).toBe("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력");
     expect(battery.people.principal_investigator).toMatchObject({ display_name: "B Researcher", national_researcher_number: "10000002", affiliation: { organization_id: ORG.b, name: "Institute B" } });
     expect(battery.people.steward_contact.email).toBe("b.steward@inst-b.local"); // 2001 is contact_email_public
-    expect(battery.stats).toMatchObject({ file_count: 4 });
+    expect(battery.stats).toMatchObject({ file_count: 5 });
     expect(battery.principal_investigator_id).toBeUndefined();
     const open = await getJson(USER.aResearcher, `/datasets/${DATASET.openMaterials}`);
     expect(open.people.steward_contact.email).toBeUndefined();
@@ -524,11 +524,11 @@ describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
     expect(bad.status).toBe(422);
     expect((await bad.json()).error.details.fields).toEqual([{ field: "temporal_to", reason: "TEMPORAL_RANGE" }]);
     const all = await getJson(USER.aResearcher, "/datasets");
-    expect(all.facets.subject).toEqual(expect.arrayContaining([{ value: "MATERIALS", count: 2 }]));
-    expect(all.facets.collecting_organization_id).toEqual(expect.arrayContaining([{ value: ORG.b, count: 2, label: "Institute B" }]));
+    expect(all.facets.subject).toEqual(expect.arrayContaining([{ value: "MATERIALS", count: 1 }, { value: "ENERGY", count: 2 }]));
+    expect(all.facets.collecting_organization_id).toEqual(expect.arrayContaining([{ value: ORG.a, count: 2, label: "Institute A" }, { value: ORG.b, count: 1, label: "Institute B" }]));
     const byPi = await getJson(USER.aResearcher, `/datasets?principal_investigator_id=${USER.bResearcher}&material=ELECTROLYTE&method=SENSOR_LOGGING`);
     expect(byPi.items.map((h: { dataset_id: string }) => h.dataset_id)).toEqual([DATASET.battery]);
-    expect(byPi.items[0]).toMatchObject({ principal_investigator_name: "B Researcher", collecting_organization_name: "Institute B", subject_codes: ["ENERGY", "MATERIALS"] });
+    expect(byPi.items[0]).toMatchObject({ principal_investigator_name: "B Researcher", collecting_organization_name: "Institute B", subject_codes: ["ENERGY", "BATTERY"] });
     // q reaches vocabulary labels and the PI name; an open-ended period (qcLogs) overlaps later windows.
     expect((await getJson(USER.aResearcher, "/datasets?q=%EC%9E%AC%EB%A3%8C")).items.length).toBeGreaterThan(0);
     expect((await getJson(USER.bResearcher, "/datasets?temporal_from=2030-01-01")).items.map((h: { dataset_id: string }) => h.dataset_id)).toEqual([DATASET.qcLogs]);
@@ -553,7 +553,7 @@ describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
     expect((await send(USER.admin, "POST", "/vocabulary/METHOD", { ...term, code: "OTHER", parent_code: "MISSING" })).status).toBe(422);
     const doc = await getJson(USER.aResearcher, `/datasets/${DATASET.battery}/metadata.jsonld`);
     expect(doc["@type"]).toEqual(["Dataset", "dcat:Dataset"]);
-    expect(doc.temporalCoverage).toBe("2026-01-01/2026-01-01");
+    expect(doc.temporalCoverage).toBe("2026-01-12/2026-06-30");
     expect(doc.about[0]).toMatchObject({ "@type": "DefinedTerm", "@id": expect.stringContaining("/vocabulary/SUBJECT/") });
   });
 
