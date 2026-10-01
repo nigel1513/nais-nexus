@@ -4,7 +4,7 @@ Field-identical to openapi components IdentityPublicProfile / OrganizationSummar
 CurrentUser, and IdentityQueryPort; they never read identity.* tables.
 """
 
-from typing import Literal
+from typing import Literal, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -30,3 +30,27 @@ class IdentityPublicProfile(BaseModel):
     organization_id: UUID
     organization_name: str | None = None
     status: ActiveStatus
+
+
+class IdentityQueryPort(Protocol):
+    """Read port for other modules (spec §8). Look it up with api.platform.ports.get(IdentityQueryPort)."""
+
+    def get_public_profile(self, user_id: UUID) -> IdentityPublicProfile | None: ...
+
+    def get_public_profiles(self, user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]: ...
+
+    def get_organization_summary(self, organization_id: UUID) -> OrganizationSummary | None: ...
+
+    def is_active_user(self, user_id: UUID) -> bool:
+        """User ACTIVE and membership ACTIVE."""
+        ...
+
+    def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool: ...
+
+    def list_users_with_org_role(self, organization_id: UUID, role: str) -> list[UUID]:
+        """ACTIVE users with an ACTIVE membership holding role (M09 notification recipients)."""
+        ...
+
+    def get_email(self, user_id: UUID) -> str | None:
+        """M09 mail delivery only. Other modules must not use it."""
+        ...

@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+from api.modules.identity.public import IdentityQueryPort
+from api.modules.identity.query import SqlIdentityQuery
 from api.modules.identity.resolver import IdentityPrincipalResolver, SessionFactory
 from api.modules.identity.router import router
 from api.modules.identity.seed import seed
@@ -14,6 +16,7 @@ from api.platform.modules import ModuleSpec
 def wire_ports(sessions: SessionFactory = session_scope) -> None:
     """Provide M01's ports. Production uses DATABASE_URL; tests pass a factory bound to their database."""
     ports.provide(PrincipalResolver, IdentityPrincipalResolver(sessions))
+    ports.provide(IdentityQueryPort, SqlIdentityQuery(sessions))
 
 
 def wire() -> None:
