@@ -173,7 +173,7 @@ class RecordingSearchIndex:
     def refresh(self) -> None:
         return None
 
-    def create_index(self, name: str) -> None:
+    def create_index(self, name: str, *, exist_ok: bool = True) -> None:
         return None
 
     def next_index_name(self) -> str:

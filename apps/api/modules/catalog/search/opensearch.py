@@ -56,12 +56,12 @@ class OpenSearchIndex:
         plugins = self._ok(self._request("GET", "/_cat/plugins", params={"format": "json"})).json()
         return any(plugin.get("component") == "analysis-nori" for plugin in plugins)
 
-    def create_index(self, name: str) -> None:
+    def create_index(self, name: str, *, exist_ok: bool = True) -> None:
         nori = self.nori_available()
         if not nori:
             logger.warning("analysis-nori not installed; using the fallback analyzer", extra={"index": name})
         response = self._request("PUT", f"/{name}", json=index_body(nori=nori))
-        if response.status_code == 400 and "resource_already_exists_exception" in response.text:
+        if exist_ok and response.status_code == 400 and "resource_already_exists_exception" in response.text:
             return
         self._ok(response)
 
@@ -132,6 +132,8 @@ class OpenSearchIndex:
         response = self._request(
             "GET", f"/_cat/indices/{self.alias}-v*", params={"format": "json", "h": "index"}
         )
+        if response.status_code != 404:
+            self._ok(response)
         names = [item["index"] for item in response.json()] if response.status_code == 200 else []
         pattern = re.compile(rf"^{re.escape(self.alias)}-v(\d+)$")
         numbers = [int(match.group(1)) for name in names if (match := pattern.match(name))]
