@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nais.local/readiness/table_schema_subset_v1.json",
+  "title": "NAIS _schema.json subset (Frictionless Data Package subset, 09_AI_READY_RULES.md 1.2)",
+  "type": "object",
+  "required": ["resources"],
+  "properties": {
+    "resources": { "type": "array", "items": { "$ref": "#/$defs/resource" } }
+  },
+  "$defs": {
+    "resource": {
+      "type": "object",
+      "required": ["path", "schema"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "schema": { "$ref": "#/$defs/tableSchema" }
+      }
+    },
+    "tableSchema": {
+      "type": "object",
+      "required": ["fields"],
+      "properties": {
+        "fields": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/field" } },
+        "primaryKey": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+          ]
+        },
+        "missingValues": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": ["name", "type"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "type": { "enum": ["string", "integer", "number", "boolean", "date", "datetime"] },
+        "unit": { "type": "string" },
+        "description": { "type": "string" },
+        "constraints": {
+          "type": "object",
+          "properties": {
+            "required": { "type": "boolean" },
+            "enum": { "type": "array" }
+          }
+        },
+        "x-nais-concept": { "type": "string" }
+      }
+    }
+  }
+}
