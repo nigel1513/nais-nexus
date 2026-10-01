@@ -1,0 +1,741 @@
+{
+  "common": {
+    "appName": "NAIS Research Commons",
+    "skipToContent": "본문으로 건너뛰기",
+    "loading": "불러오는 중…",
+    "loadMore": "더 보기",
+    "retry": "다시 시도",
+    "errorTitle": "문제가 발생했습니다",
+    "traceId": "추적 ID",
+    "copyTraceId": "추적 ID 복사",
+    "copied": "복사됨",
+    "required": "(필수)",
+    "cancel": "취소",
+    "close": "닫기",
+    "save": "저장",
+    "edit": "편집",
+    "actions": "작업",
+    "yes": "예",
+    "no": "아니요",
+    "breadcrumb": "현재 위치",
+    "notValidated": "검증 전",
+    "expired": "만료됨",
+    "expiresInDays": "{count}일 후 만료",
+    "expiresInHours": "{count}시간 후 만료",
+    "formErrors": "입력값 {count}개를 확인해 주세요."
+  },
+  "nav": {
+    "dashboard": "대시보드",
+    "projects": "프로젝트",
+    "data": "데이터",
+    "access": "접근 관리",
+    "activity": "활동",
+    "organization": "기관 관리",
+    "settings": "설정"
+  },
+  "shell": {
+    "mainNav": "주 메뉴",
+    "searchLabel": "데이터 검색",
+    "searchPlaceholder": "데이터셋 제목, 설명, 키워드 검색",
+    "notifications": "{count, plural, =0 {알림} other {알림 #개 읽지 않음}}",
+    "notificationsTitle": "읽지 않은 알림",
+    "markAllRead": "모두 읽음",
+    "noNotifications": "새 알림이 없습니다.",
+    "allNotifications": "모든 알림 보기",
+    "unreadAnnouncement": "읽지 않은 알림 {count}개",
+    "userMenu": "사용자 메뉴"
+  },
+  "landing": {
+    "title": "NAIS AI-OS Research Commons",
+    "subtitle": "기관의 경계를 넘어 공동 프로젝트를 만들고, AI-Ready 데이터를 찾고, 승인된 범위 안에서 안전하게 이용하세요.",
+    "cta": "Research Commons 시작하기",
+    "signIn": "로그인",
+    "featuresTitle": "주요 기능",
+    "features": {
+      "projects": {
+        "title": "공동 프로젝트",
+        "body": "여러 기관의 연구자가 한 프로젝트에서 협업합니다."
+      },
+      "data": {
+        "title": "데이터 검색",
+        "body": "기관별 데이터를 메타데이터로 찾고 AI-Ready 수준을 확인합니다."
+      },
+      "governance": {
+        "title": "접근 거버넌스",
+        "body": "목적과 기간을 정해 요청하고, 소유 기관이 승인·회수합니다."
+      }
+    },
+    "aboutTitle": "NAIS 소개",
+    "placeholder": {
+      "about": "About",
+      "research": "Research",
+      "news": "News",
+      "body": "준비 중인 콘텐츠입니다."
+    },
+    "footer": "© NAIS · 개발 환경"
+  },
+  "auth": {
+    "mockTitle": "개발용 로그인 (Mock)",
+    "mockDescription": "Mock 모드에서는 seed 사용자를 골라 로그인합니다. 실제 Keycloak 로그인은 Wave 2에서 연결됩니다.",
+    "mockUser": "사용자",
+    "signIn": "로그인",
+    "signOut": "로그아웃"
+  },
+  "blocked": {
+    "title": "계정을 사용할 수 없습니다",
+    "generic": "현재 계정으로는 서비스를 이용할 수 없습니다.",
+    "help": "기관 관리자에게 문의하세요.",
+    "home": "처음으로",
+    "switchAccount": "다른 계정으로 로그인"
+  },
+  "notFound": {
+    "title": "페이지를 찾을 수 없습니다",
+    "home": "대시보드로 이동"
+  },
+  "dashboard": {
+    "title": "대시보드",
+    "greeting": "{name}님, 오늘 확인할 일을 모았습니다.",
+    "myProjects": "내 프로젝트",
+    "openRequests": "진행 중 요청",
+    "myGrants": "내 권한",
+    "reviewQueue": "검토 대기",
+    "noProjects": "아직 참여한 프로젝트가 없습니다.",
+    "createFirstProject": "첫 공동 프로젝트 만들기",
+    "noRequests": "진행 중인 요청이 없습니다.",
+    "noGrants": "유효한 접근 권한이 없습니다.",
+    "noReview": "검토할 요청이 없습니다.",
+    "viewAll": "전체 보기",
+    "requestedBy": "{name} 요청"
+  },
+  "projects": {
+    "list": {
+      "title": "프로젝트",
+      "tabsLabel": "프로젝트 범위",
+      "mine": "내 프로젝트",
+      "discover": "공개 프로젝트",
+      "search": "프로젝트 검색",
+      "searchPlaceholder": "프로젝트 이름으로 검색",
+      "allStatuses": "모든 상태",
+      "name": "이름",
+      "lead": "주관 기관",
+      "myRole": "내 역할",
+      "members": "멤버 수",
+      "status": "상태",
+      "updated": "수정일",
+      "noMatch": "조건에 맞는 프로젝트가 없습니다.",
+      "emptyMine": "아직 참여한 프로젝트가 없습니다.",
+      "emptyDiscover": "공개된 프로젝트가 없습니다."
+    },
+    "new": {
+      "title": "새 프로젝트",
+      "description": "프로젝트를 만들면 내가 소유자가 되고, 내 기관이 주관 기관이 됩니다.",
+      "submit": "프로젝트 만들기",
+      "created": "프로젝트를 만들었습니다."
+    },
+    "form": {
+      "name": "이름",
+      "description": "설명",
+      "descriptionHint": "최대 10,000자",
+      "visibility": "공개 범위",
+      "keywords": "키워드",
+      "keywordsHint": "쉼표로 구분 (최대 20개)",
+      "startDate": "시작일",
+      "endDate": "종료일",
+      "visibilityHelp": {
+        "PRIVATE": "멤버만 프로젝트를 볼 수 있습니다. (기본값)",
+        "PUBLIC": "모든 인증 사용자가 요약을 볼 수 있고, 상세는 멤버만 볼 수 있습니다."
+      }
+    },
+    "detail": {
+      "title": "프로젝트",
+      "tabsLabel": "프로젝트 정보",
+      "tabs": {
+        "overview": "개요",
+        "members": "멤버",
+        "data": "데이터",
+        "activity": "활동"
+      },
+      "membersOnly": "멤버만 상세를 볼 수 있습니다.",
+      "archivedBanner": "보관된 프로젝트입니다. 모든 변경이 비활성화되었습니다.",
+      "archive": "보관",
+      "archiveTitle": "프로젝트 보관",
+      "archiveWarning": "보관 시 이 프로젝트로 받은 모든 데이터 접근 권한이 즉시 회수됩니다. 되돌릴 수 없습니다.",
+      "archived": "프로젝트를 보관했습니다.",
+      "saved": "프로젝트를 저장했습니다.",
+      "period": "기간",
+      "organizations": "참여 기관",
+      "createdAt": "생성일",
+      "orgRole": {
+        "LEAD": "주관",
+        "PARTNER": "참여"
+      }
+    },
+    "members": {
+      "caption": "프로젝트 멤버",
+      "name": "이름",
+      "organization": "기관",
+      "role": "역할",
+      "joined": "참여일",
+      "newRole": "추가할 역할",
+      "add": "추가",
+      "added": "멤버를 추가했습니다.",
+      "roleFor": "{name} 역할",
+      "roleChanged": "역할을 변경했습니다.",
+      "remove": "제거",
+      "removed": "멤버를 제거했습니다.",
+      "leave": "프로젝트 나가기",
+      "leaveTitle": "프로젝트에서 나가기",
+      "removeTitle": "{name}님을 프로젝트에서 제거",
+      "removeWarning": "이 프로젝트로 받은 해당 사용자의 데이터 접근 권한도 회수됩니다.",
+      "searchUser": "사용자 검색",
+      "searchPlaceholder": "이름 또는 이메일 앞부분 (2자 이상)",
+      "searchHint": "2자 이상 입력하세요.",
+      "resultCount": "{count}명 검색됨"
+    },
+    "data": {
+      "grants": "이 프로젝트로 받은 권한",
+      "requests": "이 프로젝트의 접근 요청",
+      "noGrants": "받은 권한이 없습니다.",
+      "noRequests": "접근 요청이 없습니다."
+    }
+  },
+  "data": {
+    "search": {
+      "title": "데이터 검색",
+      "filters": "검색 필터",
+      "results": "검색 결과",
+      "total": "총 {count}건",
+      "sort": "정렬",
+      "sortOptions": {
+        "relevance": "관련도순",
+        "updated_desc": "최근 수정순",
+        "title_asc": "제목순"
+      },
+      "facet": {
+        "access_level": "접근 수준",
+        "owner_organization_id": "소유 기관",
+        "purpose": "허용 목적",
+        "keyword": "키워드",
+        "readiness_status": "AI-Ready"
+      },
+      "owner": "소유 기관",
+      "purposes": "허용 목적",
+      "latestVersion": "최신 버전",
+      "updated": "수정일",
+      "empty": "조건에 맞는 데이터가 없습니다.",
+      "reset": "필터 초기화"
+    },
+    "new": {
+      "title": "데이터셋 등록",
+      "description": "데이터셋은 내 기관 소유로 등록됩니다. 등록 후 첫 버전을 만들어 파일을 올리세요.",
+      "submit": "등록",
+      "created": "데이터셋을 등록했습니다."
+    },
+    "form": {
+      "owner": "소유 기관",
+      "title": "제목",
+      "description": "설명",
+      "keywords": "키워드",
+      "domain": "분야",
+      "domainHint": "예: materials, bio, energy",
+      "accessLevel": "접근 수준",
+      "license": "라이선스",
+      "licenseHint": "예: CC-BY-4.0, NAIS-CONTROLLED-1.0",
+      "usagePolicy": "이용 정책",
+      "allowedPurposes": "허용 목적",
+      "maxGrantDays": "최대 이용 기간(일)",
+      "maxGrantDaysHint": "1~365일",
+      "sensitiveHint": "민감 데이터는 최대 30일까지만 설정할 수 있습니다.",
+      "contactEmail": "연락처 이메일",
+      "provenance": "출처(Provenance)",
+      "provenanceHint": "데이터를 만든 장비, 방법, 원천",
+      "accessLevelHelp": {
+        "PUBLIC": "모든 인증 사용자가 승인 없이 다운로드할 수 있습니다.",
+        "INTERNAL": "소유 기관 구성원만 검색하고 이용할 수 있습니다.",
+        "CONTROLLED": "승인된 프로젝트만 정해진 기간 동안 이용할 수 있습니다.",
+        "SENSITIVE": "승인이 필요하며 최대 30일까지만 이용할 수 있습니다."
+      }
+    },
+    "detail": {
+      "metadata": "메타데이터",
+      "policy": "이용 정책",
+      "readiness": "AI-Ready 요약",
+      "versions": "버전",
+      "noVersions": "아직 버전이 없습니다.",
+      "download": "다운로드",
+      "viewRequest": "요청 상태 보기",
+      "unavailable": "소유 기관 구성원만 이용할 수 있는 데이터입니다.",
+      "noPublishedVersion": "아직 게시된 버전이 없습니다.",
+      "approvalRequired": "승인 필요",
+      "days": "{count}일",
+      "firstVersionHint": "데이터셋이 등록되었습니다. 첫 버전을 만들어 파일을 올리세요.",
+      "saved": "데이터셋을 저장했습니다.",
+      "policyChangeTitle": "이용 정책 변경",
+      "policyChangeWarning": "변경한 정책은 새 요청부터 적용됩니다. 기존 권한에는 소급 적용되지 않습니다.",
+      "policyChangeConfirm": "변경"
+    },
+    "version": {
+      "newTitle": "새 버전",
+      "newDescription": "초안(DRAFT) 버전을 만든 뒤 파일을 올리고 게시합니다.",
+      "label": "버전 이름",
+      "labelHint": "영문, 숫자, . _ - (32자 이하), 예: v1, 2026.09",
+      "changeNote": "변경 내용",
+      "create": "버전 만들기"
+    }
+  },
+  "version": {
+    "title": "버전 {label}",
+    "fileCount": "파일 {count}개",
+    "publish": "게시",
+    "publishTitle": "버전 게시",
+    "publishWarning": "게시 후에는 수정할 수 없습니다. 게시하면 AI-Ready 검증이 자동으로 시작됩니다.",
+    "published": "버전을 게시했습니다.",
+    "publishHint": "모든 파일이 검증되고 1개 이상일 때 게시할 수 있습니다.",
+    "files": {
+      "title": "파일",
+      "path": "경로",
+      "size": "크기",
+      "status": "상태",
+      "empty": "아직 파일이 없습니다."
+    }
+  },
+  "upload": {
+    "title": "파일 업로드",
+    "dropLabel": "파일을 끌어다 놓거나 선택하세요",
+    "dropHint": "파일당 최대 50 GiB, 한 번에 500개까지",
+    "chooseFiles": "파일 선택",
+    "chooseFolder": "폴더 선택",
+    "caption": "업로드할 파일",
+    "tooMany": "한 번에 500개까지만 올릴 수 있습니다.",
+    "pathIssues": "{count}개 파일의 경로에 허용되지 않는 문자가 있습니다. 확인 후 자동 변환하세요.",
+    "autoConvert": "모두 자동 변환",
+    "start": "업로드 시작",
+    "retryFailed": "실패한 파일 다시 업로드",
+    "restartExpired": "남은 파일 다시 업로드",
+    "remove": "삭제",
+    "progressFor": "{path} 진행률",
+    "issue": {
+      "pattern": "영문, 숫자, . _ - / 만 사용할 수 있습니다.",
+      "dotdot": "'..' 경로는 사용할 수 없습니다.",
+      "leading-slash": "'/'로 시작할 수 없습니다.",
+      "empty": "빈 파일은 올릴 수 없습니다.",
+      "too-large": "50 GiB를 넘는 파일은 올릴 수 없습니다.",
+      "duplicate": "같은 경로의 파일이 이미 있습니다."
+    },
+    "status": {
+      "ready": "대기",
+      "hashing": "체크섬 계산 중",
+      "hashed": "체크섬 완료",
+      "uploading": "업로드 중",
+      "UPLOADED": "검증 중",
+      "VERIFIED": "검증됨",
+      "FAILED": "실패"
+    },
+    "announce": {
+      "done": "{count}개 파일을 업로드하고 검증했습니다.",
+      "partial": "{failed}개 파일이 검증에 실패했습니다."
+    }
+  },
+  "download": {
+    "title": "다운로드",
+    "project": "이용 프로젝트",
+    "projectHint": "승인받은 프로젝트를 선택하세요.",
+    "request": "다운로드 링크 받기",
+    "renew": "링크 다시 받기",
+    "expiresIn": "링크 만료까지 {time}",
+    "expired": "링크가 만료되었습니다. 다시 받으세요.",
+    "copySha": "SHA-256 복사",
+    "verifyHint": "다운로드한 파일의 SHA-256 값을 위 값과 비교해 무결성을 확인하세요."
+  },
+  "readiness": {
+    "title": "AI-Ready 검증",
+    "notPublished": "게시 후 검증 결과가 표시됩니다.",
+    "profile": "검증 프로파일",
+    "run": "검증 실행",
+    "started": "검증을 시작했습니다.",
+    "completedAnnounce": "AI-Ready 검증이 완료되었습니다.",
+    "check": "점검 항목",
+    "severityLabel": "중요도",
+    "status": "결과",
+    "message": "설명",
+    "evidence": "근거 보기",
+    "checksCaption": "{profile} 점검 결과",
+    "summary": "통과 {pass} · 경고 {warning} · 실패 {fail} · 해당 없음 {na}",
+    "severity": {
+      "REQUIRED": "필수",
+      "RECOMMENDED": "권장"
+    }
+  },
+  "access": {
+    "title": "접근 관리",
+    "description": "접근 요청과 권한을 한곳에서 관리합니다.",
+    "tabsLabel": "접근 관리 보기",
+    "tabs": {
+      "requests": "내 요청",
+      "review": "검토 대기",
+      "reviewWithCount": "검토 대기 ({count})",
+      "grants": "내 권한",
+      "orgGrants": "기관 권한"
+    },
+    "allStatuses": "모든 상태",
+    "emptyRequests": "보낸 접근 요청이 없습니다.",
+    "emptyReview": "검토할 요청이 없습니다.",
+    "emptyGrants": "받은 접근 권한이 없습니다.",
+    "emptyOrgGrants": "우리 기관 데이터에 부여된 유효 권한이 없습니다.",
+    "columns": {
+      "dataset": "데이터셋",
+      "requester": "요청자",
+      "project": "프로젝트",
+      "purpose": "목적",
+      "days": "기간",
+      "status": "상태",
+      "updated": "최근 변경",
+      "expires": "만료",
+      "subject": "대상 사용자"
+    },
+    "revoke": "회수",
+    "revokeTitle": "{dataset} 권한 회수",
+    "revokeWarning": "회수하면 새 다운로드 링크가 즉시 발급되지 않습니다.",
+    "revokeReason": "회수 사유",
+    "revoked": "권한을 회수했습니다.",
+    "reasonHint": "최대 2000자. 요청자에게 전달됩니다.",
+    "request": {
+      "title": "접근 요청",
+      "description": "{title}에 대한 접근을 요청합니다. 승인 여부는 데이터 소유 기관이 결정합니다.",
+      "project": "프로젝트",
+      "chooseProject": "프로젝트 선택",
+      "noProject": "먼저 프로젝트를 만들거나 참여하세요. (열람자 역할로는 요청할 수 없습니다)",
+      "purpose": "이용 목적",
+      "detail": "목적 상세",
+      "detailCount": "{count} / 4000자",
+      "operations": "권한",
+      "comingSoon": "추후 지원",
+      "days": "이용 기간(일)",
+      "daysHint": "1~{max}일",
+      "submit": "요청 보내기",
+      "sent": "요청을 보냈습니다.",
+      "viewExisting": "기존 요청 보기"
+    },
+    "detail": {
+      "title": "접근 요청: {dataset}",
+      "summary": "요청 내용",
+      "history": "진행 이력",
+      "createdAt": "요청일",
+      "byRequester": "요청자",
+      "byReviewer": "검토자",
+      "approve": "승인",
+      "approveTitle": "접근 요청 승인",
+      "approveDescription": "승인 기간은 최대 {max}일입니다.",
+      "grantDays": "승인 기간(일)",
+      "grantDaysHint": "1~{max}일 (요청 기간과 데이터 정책 중 짧은 값)",
+      "note": "메모 (선택)",
+      "approved": "요청을 승인했습니다.",
+      "reject": "거절",
+      "rejectTitle": "접근 요청 거절",
+      "rejectReason": "거절 사유",
+      "rejected": "요청을 거절했습니다.",
+      "requestChanges": "수정 요청",
+      "requestChangesTitle": "요청 수정 요청",
+      "changesComment": "수정 요청 내용",
+      "changesRequested": "수정을 요청했습니다.",
+      "resubmitTitle": "요청 수정 후 다시 제출",
+      "resubmit": "다시 제출",
+      "resubmitted": "요청을 다시 제출했습니다.",
+      "withdraw": "요청 철회",
+      "withdrawTitle": "요청 철회",
+      "withdrawWarning": "철회한 요청은 되돌릴 수 없습니다.",
+      "withdrawn": "요청을 철회했습니다.",
+      "handledElsewhere": "다른 사용자가 먼저 처리했습니다. 최신 상태를 불러옵니다.",
+      "grantTitle": "승인된 권한",
+      "grantExpires": "만료:"
+    }
+  },
+  "activity": {
+    "title": "활동 · 감사 로그",
+    "empty": "표시할 활동이 없습니다.",
+    "system": "시스템",
+    "showDetails": "상세 보기",
+    "policyVersion": "정책 버전",
+    "scope": {
+      "platform": "플랫폼 전체 활동이 표시됩니다.",
+      "org": "우리 기관과 관련된 활동이 표시됩니다.",
+      "self": "본인이 수행한 활동만 표시됩니다."
+    },
+    "filter": {
+      "actions": "행위 선택",
+      "project": "프로젝트",
+      "allProjects": "모든 프로젝트",
+      "resourceType": "대상 종류",
+      "allResources": "모든 대상",
+      "from": "시작일",
+      "to": "종료일"
+    },
+    "columns": {
+      "time": "시각",
+      "actor": "행위자",
+      "action": "행위",
+      "target": "대상",
+      "result": "결과",
+      "reason": "사유",
+      "details": "상세"
+    },
+    "result": {
+      "SUCCESS": "성공",
+      "DENIED": "거부"
+    }
+  },
+  "settings": {
+    "title": "설정",
+    "profile": "내 정보",
+    "name": "이름",
+    "email": "이메일",
+    "organization": "기관",
+    "roles": "기관 역할",
+    "profileHint": "정보 변경은 기관 관리자에게 문의하세요.",
+    "language": "언어",
+    "notifications": "알림",
+    "notificationList": "알림 목록",
+    "unread": "읽지 않음",
+    "open": "열기",
+    "markRead": "읽음 처리"
+  },
+  "org": {
+    "title": "{name} 기관 관리",
+    "description": "기관 멤버의 역할과 상태를 관리합니다.",
+    "code": "기관 코드",
+    "type": "기관 유형",
+    "memberCount": "멤버 수",
+    "datasetCount": "데이터셋 수",
+    "members": "멤버",
+    "rolesFor": "{name} 역할",
+    "saveChanges": "변경 저장",
+    "confirmTitle": "{name} 설정 변경",
+    "confirmDescription": "역할과 상태를 변경합니다.",
+    "disableWarning": "이 사용자의 모든 데이터 접근 권한이 회수됩니다. 계속하시겠습니까?",
+    "confirm": "변경",
+    "saved": "변경했습니다.",
+    "selfDemotionTitle": "본인 권한 해제 확인",
+    "selfDemotionWarning": "본인의 기관 관리자 권한을 해제하면 이 화면에 다시 들어올 수 없습니다. 정말 해제하시겠습니까?",
+    "selfDemotionConfirm": "해제"
+  },
+  "reserved": {
+    "marketplace": "AI Marketplace",
+    "compute": "Compute",
+    "comingSoon": "준비 중입니다",
+    "description": "P1에서 제공될 예정입니다."
+  },
+  "validation": {
+    "required": "필수 항목입니다.",
+    "projectName": "이름은 2자 이상 200자 이하로 입력하세요.",
+    "projectDescription": "설명은 10,000자 이하로 입력하세요.",
+    "keywordsMax": "키워드는 최대 20개, 각 50자 이하로 입력하세요.",
+    "endBeforeStart": "종료일은 시작일과 같거나 이후여야 합니다.",
+    "datasetTitle": "제목은 3자 이상 300자 이하로 입력하세요.",
+    "datasetDescription": "설명은 20,000자 이하로 입력하세요.",
+    "datasetKeywords": "키워드는 최대 30개, 각 50자 이하로 입력하세요.",
+    "longText": "10,000자 이하로 입력하세요.",
+    "purposesMin": "허용 목적을 1개 이상 선택하세요.",
+    "maxGrantDays": "최대 이용 기간은 1~365일입니다.",
+    "sensitiveMax": "민감 데이터는 최대 30일까지만 설정할 수 있습니다.",
+    "email": "올바른 이메일 주소를 입력하세요.",
+    "projectRequired": "프로젝트를 선택하세요.",
+    "purposeDetail": "목적 상세는 20자 이상 4000자 이하로 입력하세요.",
+    "requestedDays": "이용 기간은 1일 이상 {max}일 이하로 입력하세요.",
+    "grantDays": "승인 기간은 1일 이상 {max}일 이하입니다.",
+    "versionLabel": "버전 이름은 영문, 숫자, . _ - 로 32자 이하입니다."
+  },
+  "errors": {
+    "fallback": "요청을 처리하지 못했습니다. 문제가 계속되면 추적 ID와 함께 문의하세요.",
+    "VALIDATION_FAILED": "입력값을 확인해 주세요.",
+    "UNAUTHENTICATED": "로그인이 필요합니다.",
+    "FORBIDDEN": "이 작업을 수행할 권한이 없습니다.",
+    "NOT_FOUND": "찾을 수 없거나 접근 권한이 없습니다.",
+    "CONFLICT": "다른 변경과 충돌했습니다. 새로고침 후 다시 시도하세요.",
+    "RATE_LIMITED": "요청이 너무 많습니다. 잠시 후 다시 시도하세요.",
+    "INTERNAL_ERROR": "서버에서 오류가 발생했습니다. 문제가 계속되면 추적 ID와 함께 문의하세요.",
+    "DEPENDENCY_UNAVAILABLE": "일시적으로 서비스를 이용할 수 없습니다. 잠시 후 다시 시도하세요.",
+    "USER_DISABLED": "비활성화된 계정입니다. 기관 관리자에게 문의하세요.",
+    "ORGANIZATION_UNKNOWN": "등록되지 않은 기관 계정입니다.",
+    "MEMBERSHIP_DISABLED": "기관 멤버십이 비활성화되었습니다. 기관 관리자에게 문의하세요.",
+    "ROLE_NOT_ASSIGNABLE": "이 범위에서 지정할 수 없는 역할입니다.",
+    "PROJECT_ARCHIVED": "보관된 프로젝트에서는 이 작업을 할 수 없습니다.",
+    "PROJECT_MEMBER_EXISTS": "이미 프로젝트 멤버입니다.",
+    "PROJECT_LAST_OWNER": "프로젝트에는 소유자가 최소 1명 있어야 합니다.",
+    "PROJECT_MEMBER_NOT_FOUND": "프로젝트 멤버가 아닙니다.",
+    "DATASET_VERSION_IMMUTABLE": "게시된 버전은 수정할 수 없습니다. 새 버전을 만드세요.",
+    "DATASET_VERSION_NOT_PUBLISHED": "아직 게시되지 않은 버전입니다.",
+    "DATASET_VERSION_INCOMPLETE": "업로드가 끝나지 않았거나 검증에 실패한 파일이 있습니다.",
+    "DATASET_VERSION_LABEL_EXISTS": "이미 사용 중인 버전 이름입니다.",
+    "UPLOAD_SESSION_EXPIRED": "업로드 세션이 만료되었습니다. 남은 파일을 다시 업로드합니다.",
+    "UPLOAD_CHECKSUM_MISMATCH": "업로드된 파일이 원본과 다릅니다. 다시 업로드하세요.",
+    "FILE_TYPE_NOT_ALLOWED": "허용되지 않는 파일 형식입니다.",
+    "FILE_TOO_LARGE": "파일이 최대 크기(50 GiB)를 초과합니다.",
+    "UPLOAD_ARCHIVE_UNSAFE": "압축 파일이 허용 한도(압축률, 항목 수, 해제 크기)를 넘습니다.",
+    "MALWARE_DETECTED": "악성 코드가 발견되어 파일을 삭제했습니다.",
+    "INVALID_POLICY": "데이터 정책 설정이 올바르지 않습니다. (민감 데이터는 최대 30일)",
+    "ACCESS_REQUEST_INVALID_STATE": "요청 상태가 바뀌었습니다. 새로고침 후 다시 확인하세요.",
+    "ACCESS_REQUEST_DUPLICATE": "이미 진행 중인 요청이나 유효한 권한이 있습니다.",
+    "ACCESS_PURPOSE_NOT_ALLOWED": "이 데이터에 허용되지 않은 이용 목적입니다.",
+    "ACCESS_OPERATION_NOT_ALLOWED": "요청할 수 없는 권한 종류입니다.",
+    "ACCESS_DURATION_EXCEEDED": "허용된 최대 이용 기간을 초과했습니다.",
+    "ACCESS_NOT_PROJECT_MEMBER": "해당 프로젝트의 활성 멤버가 아닙니다.",
+    "ACCESS_NOT_REVIEWER": "이 요청을 검토할 권한이 없습니다.",
+    "ACCESS_NOT_REQUIRED": "이 데이터는 별도 승인 없이 이용할 수 있습니다.",
+    "ACCESS_GRANT_REQUIRED": "이 프로젝트로 승인된 접근 권한이 없습니다.",
+    "ACCESS_GRANT_EXPIRED": "접근 권한이 만료되었습니다. 다시 요청하세요.",
+    "ACCESS_GRANT_REVOKED": "접근 권한이 회수되었습니다.",
+    "ACCESS_GRANT_NOT_ACTIVE": "이미 만료되었거나 회수된 권한입니다.",
+    "ACCESS_DENIED_BY_POLICY": "보안 정책에 의해 접근이 거부되었습니다.",
+    "POLICY_ENGINE_UNAVAILABLE": "권한 확인 시스템에 일시적인 문제가 있어 접근이 차단되었습니다. 잠시 후 다시 시도하세요.",
+    "READINESS_PROFILE_UNKNOWN": "알 수 없는 검증 프로파일입니다.",
+    "READINESS_VALIDATION_IN_PROGRESS": "이미 검증이 진행 중입니다.",
+    "READINESS_NOT_AVAILABLE": "아직 검증 결과가 없습니다.",
+    "NOTIFICATION_NOT_FOUND": "알림을 찾을 수 없습니다."
+  },
+  "enums": {
+    "ActiveStatus": {
+      "ACTIVE": "활성",
+      "DISABLED": "비활성"
+    },
+    "OrganizationType": {
+      "RESEARCH_INSTITUTE": "연구기관",
+      "UNIVERSITY": "대학",
+      "COMPANY": "기업",
+      "PLATFORM_OPERATOR": "플랫폼 운영기관"
+    },
+    "OrgRole": {
+      "ORG_ADMIN": "기관 관리자",
+      "DATA_STEWARD": "데이터 관리자",
+      "RESOURCE_MANAGER": "자원 관리자"
+    },
+    "PlatformRole": {
+      "PLATFORM_ADMIN": "플랫폼 관리자"
+    },
+    "ProjectRole": {
+      "PROJECT_OWNER": "소유자",
+      "PROJECT_ADMIN": "관리자",
+      "RESEARCHER": "연구자",
+      "VIEWER": "열람자"
+    },
+    "ProjectStatus": {
+      "ACTIVE": "진행 중",
+      "ARCHIVED": "보관됨"
+    },
+    "ProjectVisibility": {
+      "PRIVATE": "비공개",
+      "PUBLIC": "공개"
+    },
+    "AccessLevel": {
+      "PUBLIC": "공개",
+      "INTERNAL": "기관 내부",
+      "CONTROLLED": "통제",
+      "SENSITIVE": "민감"
+    },
+    "Purpose": {
+      "ACADEMIC_RESEARCH": "학술 연구",
+      "AI_TRAINING": "AI 학습",
+      "COMMERCIAL_RESEARCH": "상업 연구",
+      "EDUCATION": "교육",
+      "PUBLIC_INTEREST": "공익"
+    },
+    "Operation": {
+      "READ": "읽기(다운로드)",
+      "COMPUTE": "연산",
+      "WRITE": "쓰기"
+    },
+    "DatasetStatus": {
+      "ACTIVE": "활성",
+      "WITHDRAWN": "철회됨"
+    },
+    "DatasetVersionStatus": {
+      "DRAFT": "초안",
+      "PUBLISHED": "게시됨",
+      "WITHDRAWN": "철회됨"
+    },
+    "FileStatus": {
+      "PENDING": "대기",
+      "UPLOADED": "업로드됨",
+      "VERIFIED": "검증됨",
+      "FAILED": "실패"
+    },
+    "AccessRequestStatus": {
+      "DRAFT": "임시 저장",
+      "SUBMITTED": "제출됨",
+      "UNDER_REVIEW": "검토 중",
+      "CHANGE_REQUESTED": "수정 요청됨",
+      "APPROVED": "승인됨",
+      "REJECTED": "거절됨",
+      "WITHDRAWN": "철회됨"
+    },
+    "AccessGrantStatus": {
+      "ACTIVE": "유효",
+      "EXPIRED": "만료됨",
+      "REVOKED": "회수됨"
+    },
+    "ReadinessRunStatus": {
+      "QUEUED": "대기 중",
+      "RUNNING": "실행 중",
+      "COMPLETED": "완료",
+      "FAILED": "실패"
+    },
+    "ReadinessOverall": {
+      "PASS": "통과",
+      "WARNING": "경고",
+      "FAIL": "실패"
+    },
+    "ReadinessCheckStatus": {
+      "PASS": "통과",
+      "WARNING": "경고",
+      "FAIL": "실패",
+      "NOT_APPLICABLE": "해당 없음"
+    },
+    "ResourceType": {
+      "USER": "사용자",
+      "ORGANIZATION": "기관",
+      "MEMBERSHIP": "기관 멤버십",
+      "PROJECT": "프로젝트",
+      "PROJECT_MEMBER": "프로젝트 멤버",
+      "DATASET": "데이터셋",
+      "DATASET_VERSION": "데이터셋 버전",
+      "DATASET_FILE": "데이터 파일",
+      "ACCESS_REQUEST": "접근 요청",
+      "ACCESS_GRANT": "접근 권한",
+      "READINESS_VALIDATION": "AI-Ready 검증"
+    },
+    "AuditAction": {
+      "LOGIN": "로그인",
+      "USER_CREATED": "사용자 생성",
+      "ORGANIZATION_CREATED": "기관 생성",
+      "ADMIN_ROLE_CHANGED": "관리 역할 변경",
+      "PROJECT_CREATED": "프로젝트 생성",
+      "PROJECT_ARCHIVED": "프로젝트 보관",
+      "PROJECT_MEMBER_ADDED": "프로젝트 멤버 추가",
+      "PROJECT_MEMBER_REMOVED": "프로젝트 멤버 제거",
+      "PROJECT_MEMBER_ROLE_CHANGED": "프로젝트 멤버 역할 변경",
+      "DATASET_CREATED": "데이터셋 등록",
+      "DATASET_VERSION_PUBLISHED": "데이터셋 버전 게시",
+      "POLICY_CHANGED": "정책 변경",
+      "ACCESS_REQUESTED": "접근 요청",
+      "ACCESS_REVIEW_STARTED": "검토 시작",
+      "ACCESS_APPROVED": "접근 승인",
+      "ACCESS_REJECTED": "접근 거절",
+      "ACCESS_CHANGES_REQUESTED": "수정 요청",
+      "ACCESS_WITHDRAWN": "요청 철회",
+      "ACCESS_REVOKED": "권한 회수",
+      "ACCESS_EXPIRED": "권한 만료",
+      "FILE_DOWNLOADED": "파일 다운로드",
+      "DOWNLOAD_DENIED": "다운로드 거부",
+      "READINESS_VALIDATION_COMPLETED": "AI-Ready 검증 완료"
+    },
+    "NotificationType": {
+      "PROJECT_INVITATION": "프로젝트 초대",
+      "ACCESS_SUBMITTED": "접근 요청 접수",
+      "ACCESS_APPROVED": "접근 승인",
+      "ACCESS_REJECTED": "접근 거절",
+      "ACCESS_CHANGES_REQUESTED": "수정 요청",
+      "ACCESS_EXPIRING": "권한 만료 임박",
+      "ACCESS_REVOKED": "권한 회수",
+      "DATASET_PUBLISHED": "데이터셋 게시"
+    }
+  }
+}
