@@ -475,3 +475,94 @@ def test_narrow_span_histogram_edges_stay_distinct() -> None:
     hist = run(data).preview["columns"][0]["histogram"]
     edges = [b["lower"] for b in hist]
     assert len(set(edges)) == len(edges) == 10
+
+
+# ---------------------------------------------------------------- fix round 2: large row groups degrade
+
+
+def _single_row_group_floats(
+    rows: int, columns: int, page_size: int = 1 << 20, dictionary: bool = True
+) -> bytes:
+    import os
+
+    table = pa.table(
+        {
+            f"f{i}": pa.Array.from_buffers(pa.float64(), rows, [None, pa.py_buffer(os.urandom(rows * 8))])
+            for i in range(columns)
+        }
+    )
+    sink = io.BytesIO()
+    pq.write_table(table, sink, row_group_size=rows, data_page_size=page_size, use_dictionary=dictionary)
+    return sink.getvalue()
+
+
+def test_large_single_row_group_streams_and_truncates() -> None:
+    import time
+
+    data = _single_row_group_floats(1_000_000, 12)  # ~94 MB, one row group (pyarrow's default size)
+    assert len(data) > 90 << 20 and pq.ParquetFile(io.BytesIO(data)).metadata.num_row_groups == 1
+    fetched = [0]
+
+    def open_range(start: int, end: int) -> io.BytesIO:
+        fetched[0] += end - start + 1
+        return io.BytesIO(data[start : end + 1])
+
+    start = time.monotonic()
+    result = profile_table(
+        open_range, len(data), path="p.parquet", hints={}, limits=PreviewLimits(), deadline=lambda: None
+    )
+    elapsed = time.monotonic() - start
+    assert result.truncated and result.rows_sampled == 10_000
+    assert fetched[0] < 64 << 20  # pages are streamed, never the whole chunks
+    assert elapsed < 10
+
+
+def test_small_budget_reads_fewer_columns_and_truncates() -> None:
+    data = _single_row_group_floats(400_000, 4, page_size=64 << 10, dictionary=False)  # 3.2 MB chunks
+    result = run(data, path="p.parquet", limits=PreviewLimits(max_rows=400_000, max_bytes=2 << 20))
+    kinds = [c["kind"] for c in result.preview["columns"]]
+    assert result.truncated and 0 < result.rows_sampled < 400_000
+    assert kinds == ["numeric", "other", "other", "other"]
+
+
+def test_fetch_budget_truncates_or_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api.modules.catalog.previews import profile as profile_module
+
+    data = _single_row_group_floats(400_000, 4, page_size=64 << 10, dictionary=False)
+    limits = PreviewLimits(max_rows=400_000, max_bytes=4 << 20)
+    monkeypatch.setattr(profile_module, "PARQUET_FETCH_FACTOR", 0.5)  # fetch cap 2 MiB, decoded budget 4 MiB
+    result = run(data, path="p.parquet", limits=limits)
+    assert result.truncated and 0 < result.rows_sampled < 400_000
+    monkeypatch.setattr(profile_module, "PARQUET_FETCH_FACTOR", 0)  # nothing may be fetched past the footer
+    with pytest.raises(Unparseable):
+        run(data, path="p.parquet", limits=limits)
+
+
+def test_wide_large_row_group_parquet_reads_fewer_columns_instead_of_failing() -> None:
+    import os
+
+    rows, width = 100_000, 60  # 60 columns × 800 KB chunks: first-batch pages exceed an 8 MiB budget
+    table = pa.table(
+        {
+            f"f{i}": pa.Array.from_buffers(pa.float64(), rows, [None, pa.py_buffer(os.urandom(rows * 8))])
+            for i in range(width)
+        }
+    )
+    sink = io.BytesIO()
+    pq.write_table(table, sink, row_group_size=rows, use_dictionary=False)
+    result = run(sink.getvalue(), path="p.parquet", limits=PreviewLimits(max_bytes=8 << 20))
+    kinds = [c["kind"] for c in result.preview["columns"]]
+    assert result.rows_sampled > 0 and kinds.count("numeric") >= 5 and kinds[-1] == "other"
+
+
+def test_skewed_first_batch_retries_row_by_row() -> None:
+    values = ["y" * (3 << 20)] + ["s"] * 999  # average row is tiny, the first row is not
+    sink = io.BytesIO()
+    pq.write_table(pa.table({"s": values}), sink, compression="zstd", use_dictionary=False)
+    with pytest.raises(Unparseable):  # the single first row alone is over the budget
+        run(sink.getvalue(), path="p.parquet", limits=PreviewLimits(max_bytes=2 << 20))
+    values = ["y" * (600 << 10)] * 3 + ["s"] * 997
+    sink = io.BytesIO()
+    pq.write_table(pa.table({"s": values}), sink, compression="zstd", use_dictionary=False)
+    result = run(sink.getvalue(), path="p.parquet", limits=PreviewLimits(max_bytes=1 << 20))
+    assert result.truncated and result.rows_sampled >= 1

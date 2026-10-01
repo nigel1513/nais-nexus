@@ -33,6 +33,12 @@ CATEGORICAL_MAX_DISTINCT = 50
 MAX_TOP_VALUES = 10  # hard caps (ruling P2) whatever PreviewLimits asks for
 MAX_HISTOGRAM_BINS = 20
 PARQUET_BATCH_ROWS = 1024
+PARQUET_STREAM_BUFFER = 1 << 20  # stream column chunks page by page instead of fetching them whole
+# the first batch fetches about one page (plus a dictionary page) per decoded column: estimated per column as
+# min(chunk size, 2 × stream buffer); the decoded columns are limited so these estimates fit max_bytes, and the
+# bytes actually fetched for data pages are capped at PARQUET_FETCH_FACTOR × max_bytes
+PARQUET_FIRST_BATCH_COST = 2 * PARQUET_STREAM_BUFFER
+PARQUET_FETCH_FACTOR = 2
 TYPE_ORDER = ("integer", "number", "boolean", "date", "datetime")
 _PATTERNS = {
     "integer": re.compile(r"[+-]?[0-9]+"),
@@ -52,6 +58,10 @@ class PreviewTimeout(Exception):
 
 class Unparseable(Exception):
     """The file cannot be read as the table its extension claims (preview FAILED / UNPARSEABLE)."""
+
+
+class _FetchBudgetSpent(Exception):
+    """More than max_bytes were fetched from storage for one parquet file: stop reading (truncate)."""
 
 
 @dataclass(frozen=True)
@@ -491,12 +501,31 @@ def _parquet_value(value: Any) -> tuple[str | None, bool]:
     return str(value), False
 
 
+def _fit_first_batch(
+    meta: Any, cols: list[_Column], read_slots: list[int], leaves: list[int], budget: int
+) -> None:
+    """Read fewer columns rather than fail: keep the longest prefix of decodable columns whose estimated
+    first-batch fetch fits `budget`; the rest are profiled as kind "other" (not decoded)."""
+    group = next((meta.row_group(g) for g in range(meta.num_row_groups) if meta.row_group(g).num_rows), None)
+    if group is None:
+        return
+    used = 0
+    for n, k in enumerate(leaves):
+        used += min(group.column(k).total_compressed_size, PARQUET_FIRST_BATCH_COST)
+        if used > budget and n > 0:
+            for slot in read_slots[n:]:
+                cols[slot].decoded = False
+            del read_slots[n:], leaves[n:]
+            return
+
+
 def _profile_parquet(
     source: BinaryIO,
     failure: Callable[[], BaseException | None],
     hints: dict[str, FieldHint],
     limits: PreviewLimits,
     deadline: Deadline,
+    footer_read: Callable[[], None] = lambda: None,
 ) -> ProfileResult:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -505,16 +534,19 @@ def _profile_parquet(
         stored = failure()
         if stored is not None:
             return stored  # the storage source failed: re-raise that, never "corrupt"
+        if isinstance(exc, _FetchBudgetSpent):
+            return Unparseable("fetch budget spent before any row was decoded")
         if isinstance(exc, PreviewTimeout | Unparseable) or not _is_corrupt(exc):
             return exc
         return Unparseable(str(exc))
 
     try:
-        pf = pq.ParquetFile(source)
+        pf = pq.ParquetFile(source, buffer_size=PARQUET_STREAM_BUFFER, pre_buffer=False)
         schema = pf.schema_arrow
         meta = pf.metadata
     except Exception as exc:
         raise classify(exc) from exc
+    footer_read()  # the fetch budget covers data pages; the footer is bounded by pyarrow's thrift size limits
     n_fields = len(schema)
     columns_truncated = n_fields > limits.max_columns
     cols: list[_Column] = []
@@ -538,10 +570,11 @@ def _profile_parquet(
         else:
             cols[-1].decoded = False
         leaf += _leaf_count(f.type)
+    _fit_first_batch(meta, cols, read_slots, leaves, limits.max_bytes)
     rng = random.Random(0)
     rows: list[list[str | None]] = []
     sampled, truncated = 0, False
-    fetched = decoded = 0  # compressed chunk bytes fetched / decoded Arrow bytes, both against max_bytes
+    decoded = 0  # decoded Arrow bytes against max_bytes (fetched bytes are bounded by profile_table's reader)
     try:
         for rg in range(meta.num_row_groups):
             deadline()
@@ -555,38 +588,46 @@ def _profile_parquet(
                 sampled += take
                 rows.extend([None] * len(cols) for _ in range(min(take, limits.preview_rows - len(rows))))
                 continue
-            chunk_bytes = sum(group.column(k).total_compressed_size for k in leaves)
-            raw_bytes = max(1, sum(group.column(k).total_uncompressed_size for k in leaves))
-            if fetched + chunk_bytes > limits.max_bytes:  # the selected chunks are fetched whole
-                if sampled == 0:
-                    raise Unparseable("first row group exceeds the byte budget")
-                truncated = True
-                break
-            fetched += chunk_bytes
-            # one decoded row can never be larger than the uncompressed chunks (a dictionary entry lives in
-            # them too), so this batch size keeps every batch within half the budget when the metadata is honest
-            batch_rows = max(1, min(PARQUET_BATCH_ROWS, limits.max_bytes // (2 * raw_bytes)))
-            for batch in pf.reader.iter_batches(batch_rows, [rg], column_indices=leaves):
-                deadline()
-                if batch.nbytes > limits.max_bytes:  # the metadata lied about the decoded size
-                    raise Unparseable("decoded batch exceeds the byte budget")
-                if sampled and decoded + batch.nbytes > limits.max_bytes:
-                    truncated = True  # sample byte budget spent (like CSV max_bytes)
+            # rows per batch from the average decoded row size; pages are streamed (buffer_size), so a large row
+            # group is read in slices instead of whole column chunks
+            raw_bytes = sum(group.column(k).total_uncompressed_size for k in leaves)
+            per_row = max(1, raw_bytes // group.num_rows)
+            batch_rows = max(1, min(PARQUET_BATCH_ROWS, limits.max_bytes // (8 * per_row)))
+            while True:
+                restart = False
+                for batch in pf.reader.iter_batches(batch_rows, [rg], column_indices=leaves):
+                    deadline()
+                    if batch.nbytes > limits.max_bytes:  # skewed rows (or a lying footer)
+                        if sampled == 0 and batch.num_rows > 1:
+                            batch_rows, restart = 1, True  # retry the first rows one at a time
+                            break
+                        if sampled == 0:
+                            raise Unparseable("a single decoded row exceeds the byte budget")
+                        truncated = True
+                        break
+                    if sampled and decoded + batch.nbytes > limits.max_bytes:
+                        truncated = True  # sample byte budget spent (like CSV max_bytes)
+                        break
+                    decoded += batch.nbytes
+                    take = min(batch.num_rows, limits.max_rows - sampled)
+                    data = [batch.column(k).slice(0, take).to_pylist() for k in range(batch.num_columns)]
+                    for r in range(take):
+                        sampled += 1
+                        values: list[str | None] = [None] * len(cols)
+                        for slot, column in zip(read_slots, data, strict=True):
+                            text, nonfinite = _parquet_value(column[r])
+                            values[slot] = text
+                            _observe(cols[slot], text, limits, rng, nonfinite)
+                        if len(rows) < limits.preview_rows:
+                            rows.append([_cell(v, limits) for v in values])
+                    if sampled >= limits.max_rows:
+                        break
+                if not restart:
                     break
-                decoded += batch.nbytes
-                take = min(batch.num_rows, limits.max_rows - sampled)
-                data = [batch.column(k).slice(0, take).to_pylist() for k in range(batch.num_columns)]
-                for r in range(take):
-                    sampled += 1
-                    values: list[str | None] = [None] * len(cols)
-                    for slot, column in zip(read_slots, data, strict=True):
-                        text, nonfinite = _parquet_value(column[r])
-                        values[slot] = text
-                        _observe(cols[slot], text, limits, rng, nonfinite)
-                    if len(rows) < limits.preview_rows:
-                        rows.append([_cell(v, limits) for v in values])
-                if sampled >= limits.max_rows:
-                    break
+    except _FetchBudgetSpent as exc:
+        if sampled == 0:
+            raise Unparseable("nothing decodable within the fetch budget") from exc
+        truncated = True
     except Exception as exc:
         raise classify(exc) from exc
     if not truncated and meta.num_rows > sampled:
@@ -610,9 +651,31 @@ def profile_table(
     if size == 0:
         raise Unparseable
     if fmt == "parquet":
-        source = open_parquet_range(open_range, size, deadline=deadline)
+        fetched = [0]
+        armed = [False]  # the footer is bounded by pyarrow's thrift limits; the budget covers the data pages
+
+        def arm() -> None:
+            fetched[0], armed[0] = 0, True
+
+        def counted(start: int, end: int) -> BinaryIO:
+            fetched[0] += end - start + 1
+            return open_range(start, end)
+
+        def fetch_deadline() -> None:  # runs before every ranged read
+            deadline()
+            if armed[0] and fetched[0] > PARQUET_FETCH_FACTOR * limits.max_bytes:
+                raise _FetchBudgetSpent
+
+        source = open_parquet_range(counted, size, deadline=fetch_deadline)
         raw = getattr(source, "raw", None)
-        return _profile_parquet(source, lambda: getattr(raw, "failure", None), hints, limits, deadline)
+        return _profile_parquet(
+            source,
+            lambda: getattr(raw, "failure", None),
+            hints,
+            limits,
+            deadline,
+            footer_read=arm,
+        )
     stream = open_range(0, size - 1)
     try:
         return _profile_delimited(stream, fmt, hints, limits, deadline)
