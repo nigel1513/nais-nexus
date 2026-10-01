@@ -48,6 +48,9 @@ export function ErrorState({
                 await navigator.clipboard.writeText(traceId);
                 setCopyState("copied");
               } catch {
+                // Yield so the reset above commits before the failure is set; otherwise React batches them
+                // and a repeated failure is never re-announced.
+                await Promise.resolve();
                 setCopyState("failed");
               }
             }}

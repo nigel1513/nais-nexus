@@ -41,7 +41,10 @@ export function FileDropzone({
         e.preventDefault();
         if (!disabled) setOver(true);
       }}
-      onDragLeave={() => setOver(false)}
+      onDragLeave={(e) => {
+        if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
+        setOver(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
         setOver(false);

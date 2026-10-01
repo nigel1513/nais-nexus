@@ -196,6 +196,28 @@ describe("Dialog focus management", () => {
     await waitFor(() => expect(outerTrigger).toHaveFocus());
   });
 
+  it("returns focus to the opener of the current open, not the first one", async () => {
+    const user = userEvent.setup();
+    function H() {
+      const [open, setOpen] = useState(false);
+      return (
+        <>
+          <button onClick={() => setOpen(true)}>row-A</button>
+          <button onClick={() => setOpen(true)}>row-B</button>
+          <ConfirmDialog open={open} onOpenChange={setOpen} title="t" confirmLabel="확인" cancelLabel="취소" closeLabel="닫기" onConfirm={() => {}} />
+        </>
+      );
+    }
+    render(<H />);
+    for (const name of ["row-A", "row-B"]) {
+      const opener = screen.getByRole("button", { name });
+      await user.click(opener);
+      await user.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+      await waitFor(() => expect(opener).toHaveFocus());
+    }
+  });
+
   it("honours onCloseAutoFocus preventDefault (no refocus of the opener)", async () => {
     const user = userEvent.setup();
     function H() {
@@ -261,5 +283,21 @@ describe("ErrorState clipboard failure", () => {
     await user.click(screen.getByRole("button", { name: "복사" }));
     expect(await screen.findByText("복사 실패")).toBeInTheDocument();
     expect(screen.queryByText("복사됨")).not.toBeInTheDocument();
+  });
+});
+
+describe("ErrorState repeated failure", () => {
+  it("re-announces when the clipboard is missing and copy is clicked twice", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    render(<ErrorState title="오류" message="m" traceId="t-1" traceIdLabel="ID" copyLabel="복사" copiedLabel="복사됨" copyFailedLabel="복사 실패" />);
+    const live = screen.getByText("ID", { exact: false }).parentElement!.querySelector("[aria-live]")!;
+    const seen: string[] = [];
+    new MutationObserver(() => seen.push(live.textContent ?? "")).observe(live, { childList: true, characterData: true, subtree: true });
+    await user.click(screen.getByRole("button", { name: "복사" }));
+    await screen.findByText("복사 실패");
+    await user.click(screen.getByRole("button", { name: "복사" }));
+    await waitFor(() => expect(seen.filter((x) => x === "복사 실패")).toHaveLength(2));
+    expect(seen).toContain("");
   });
 });

@@ -34,9 +34,11 @@ export function DialogContent({
       <DialogPrimitive.Content
         onCloseAutoFocus={(event) => {
           onCloseAutoFocus?.(event);
+          const opener = returnTo.current;
+          // Forget the opener so the next open (possibly from a different button) captures afresh.
+          returnTo.current = null;
           if (event.defaultPrevented) return;
           event.preventDefault();
-          const opener = returnTo.current;
           if (opener?.isConnected) opener.focus();
         }}
         className={cn(
