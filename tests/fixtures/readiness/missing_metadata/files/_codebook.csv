@@ -1,0 +1,4 @@
+path,field,code,label,unit,description
+data/measurements.csv,material,AL,Aluminium,,
+data/measurements.csv,material,CU,Copper,,
+data/measurements.csv,material,FE,Iron,,

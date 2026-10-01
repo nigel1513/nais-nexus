@@ -1,0 +1,16 @@
+{
+  "title": "고분자 전해질 막 온도-압력 측정",
+  "description": "측정 데이터",
+  "keywords": [],
+  "domain": null,
+  "access_level": "CONTROLLED",
+  "license": "CC-BY-4.0",
+  "usage_policy": "학술 연구 및 AI 학습 목적에 한해 사용한다. 재배포 금지. 결과 공개 시 출처를 표기한다.",
+  "allowed_purposes": [
+    "ACADEMIC_RESEARCH",
+    "AI_TRAINING"
+  ],
+  "max_grant_days": 180,
+  "contact_email": null,
+  "provenance": "Institute B 연료전지 실험실의 환경 챔버(모델 EC-200)에서 2026년 1월 1일 1분 간격으로 자동 수집한 측정값."
+}

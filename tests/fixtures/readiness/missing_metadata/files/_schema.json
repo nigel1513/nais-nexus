@@ -1,0 +1,58 @@
+{
+  "resources": [
+    {
+      "path": "data/measurements.csv",
+      "schema": {
+        "fields": [
+          {
+            "name": "sample_id",
+            "type": "string",
+            "description": "시편 식별자",
+            "x-nais-concept": "https://schema.org/identifier"
+          },
+          {
+            "name": "material",
+            "type": "string",
+            "description": "재료 코드",
+            "constraints": {
+              "enum": [
+                "AL",
+                "CU",
+                "FE"
+              ]
+            },
+            "x-nais-concept": "https://w3id.org/emmo#Material"
+          },
+          {
+            "name": "temperature_c",
+            "type": "number",
+            "unit": "Cel",
+            "description": "시편 온도",
+            "constraints": {
+              "required": true
+            },
+            "x-nais-concept": "http://qudt.org/vocab/quantitykind/Temperature"
+          },
+          {
+            "name": "pressure_kpa",
+            "type": "number",
+            "unit": "kPa",
+            "description": "챔버 압력",
+            "x-nais-concept": "http://qudt.org/vocab/quantitykind/Pressure"
+          },
+          {
+            "name": "measured_at",
+            "type": "datetime",
+            "description": "측정 시각",
+            "x-nais-concept": "http://www.w3.org/2006/time#Instant"
+          }
+        ],
+        "primaryKey": "sample_id",
+        "missingValues": [
+          "",
+          "NA"
+        ]
+      }
+    }
+  ]
+}

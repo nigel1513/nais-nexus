@@ -1,0 +1,18 @@
+{
+  "profile_id": "TABULAR_ML_BASIC",
+  "profile_version": "1.0.0",
+  "validator_version": "1.0.0",
+  "overall_status": "FAIL",
+  "checks": {
+    "metadata.completeness": "PASS",
+    "provenance.presence": "FAIL",
+    "policy.license_usage": "PASS",
+    "integrity.file_checksum": "PASS",
+    "schema.presence": "PASS",
+    "schema.datatype_validity": "PASS",
+    "data.missing_values": "PASS",
+    "semantics.units_codebook": "PASS",
+    "semantics.mapping_status": "PASS"
+  },
+  "result_sha256": null
+}

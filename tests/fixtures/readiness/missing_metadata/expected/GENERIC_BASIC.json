@@ -1,0 +1,16 @@
+{
+  "profile_id": "GENERIC_BASIC",
+  "profile_version": "1.0.0",
+  "validator_version": "1.0.0",
+  "overall_status": "FAIL",
+  "checks": {
+    "metadata.completeness": "FAIL",
+    "provenance.presence": "PASS",
+    "policy.license_usage": "PASS",
+    "integrity.file_checksum": "PASS",
+    "schema.presence": "PASS",
+    "semantics.units_codebook": "PASS",
+    "semantics.mapping_status": "PASS"
+  },
+  "result_sha256": null
+}
