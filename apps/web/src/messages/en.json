@@ -105,7 +105,10 @@
       "activity": "{count} versions · last published {date}",
       "activityNone": "{count} versions · not published yet",
       "contactTitle": "Contact",
-      "explorerFiles": "{count} files"
+      "explorerFiles": "{count} files",
+      "explorerTitle": "Data Explorer",
+      "columnsTitle": "Column descriptions",
+      "aiReadyError": "AI-ready check failed"
     },
     "people": {
       "atTheTime": " (at the time)",

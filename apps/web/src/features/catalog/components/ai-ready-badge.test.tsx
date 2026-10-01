@@ -26,4 +26,10 @@ describe("AiReadyBadge", () => {
     expect(await screen.findByRole("button", { name: "AI-ready 확인 중" })).toBeDisabled();
     expect(screen.queryByText(/미검증/)).not.toBeInTheDocument();
   });
+  it("shows an explicit failure state when readiness cannot be loaded", async () => {
+    server.use(http.get("*/dataset-versions/:id/readiness", () => HttpResponse.json({ error: { code: "INTERNAL", message: "x", trace_id: "t" } }, { status: 500 })));
+    renderWithProviders(<AiReadyBadge versionId={VERSION.battery} />, { user: USER.bResearcher });
+    expect(await screen.findByRole("button", { name: "AI-ready 확인 실패" })).toBeDisabled();
+    expect(screen.queryByText(/미검증/)).not.toBeInTheDocument();
+  });
 });

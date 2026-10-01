@@ -190,8 +190,9 @@ export function useGetFilePreview(fileId: string) {
 /** Not a query: fetches the JSON-LD with the shared client and saves it as a file (no secure-context-only APIs). */
 export async function downloadJsonLd(datasetId: string, title: string) {
   const doc = await unwrap(api.GET("/datasets/{dataset_id}/metadata.jsonld", { params: { path: { dataset_id: datasetId } } }));
+  const safe = title.replace(/[^\w.-]+/g, "_");
   const url = URL.createObjectURL(new Blob([JSON.stringify(doc, null, 2)], { type: "application/ld+json" }));
-  const a = Object.assign(document.createElement("a"), { href: url, download: `${title.replace(/[^\w.-]+/g, "_")}.jsonld` });
+  const a = Object.assign(document.createElement("a"), { href: url, download: `${safe && !/^_*$/.test(safe) ? safe : `dataset-${datasetId}`}.jsonld` });
   document.body.append(a);
   a.click();
   a.remove();

@@ -309,7 +309,10 @@
       "activity": "버전 {count}개 · 최근 발행 {date}",
       "activityNone": "버전 {count}개 · 아직 발행되지 않았습니다",
       "contactTitle": "담당자",
-      "explorerFiles": "파일 {count}개"
+      "explorerFiles": "파일 {count}개",
+      "explorerTitle": "Data Explorer",
+      "columnsTitle": "컬럼 설명",
+      "aiReadyError": "AI-ready 확인 실패"
     },
     "people": {
       "atTheTime": " (당시 소속)",

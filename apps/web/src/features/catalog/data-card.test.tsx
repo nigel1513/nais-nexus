@@ -55,6 +55,24 @@ describe("Data Card", () => {
   });
 });
 
+describe("Data Card extras", () => {
+  it("?v= selects that version and changing the select writes ?v", async () => {
+    const ds = DATASET.battery;
+    renderScreen(<DatasetDetailScreen datasetId={ds} />, { user: USER.bSteward, path: `/commons/data/${ds}` });
+    const select = (await screen.findByRole("combobox", { name: "버전" })) as HTMLSelectElement;
+    const other = Array.from(select.options).find((o) => o.value !== select.value);
+    if (!other) return;
+    await userEvent.selectOptions(select, other.value);
+    expect(router.replace).toHaveBeenLastCalledWith(expect.stringContaining(`v=${other.value}`), { scroll: false });
+  });
+  it("has the Metadata JSON-LD button and the column table slot", async () => {
+    renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
+    const meta = await screen.findByRole("region", { name: "메타데이터" });
+    expect(within(meta).getByRole("button", { name: "JSON-LD" })).toBeInTheDocument();
+    expect(screen.getByTestId("column-table-slot")).toBeInTheDocument();
+  });
+});
+
 describe("pickVersion", () => {
   const v = (id: string, status: "DRAFT" | "PUBLISHED", at: string | null) => ({ dataset_version_id: id, status, published_at: at });
   const items = [v("d", "DRAFT", null), v("p1", "PUBLISHED", "2026-01-01T00:00:00Z"), v("p2", "PUBLISHED", "2026-02-01T00:00:00Z")];

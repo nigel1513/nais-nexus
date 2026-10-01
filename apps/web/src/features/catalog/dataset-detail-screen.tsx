@@ -87,9 +87,15 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
               {/* Task 5: <DataExplorer /> fills this region. */}
               <section aria-labelledby="explorer-title">
                 <h2 id="explorer-title" className="mb-2 text-lg font-semibold">
-                  Data Explorer
+                  {t("data.card.explorerTitle")}
                 </h2>
                 <p className="text-sm text-muted-foreground">{t("data.card.explorerFiles", { count: selected?.file_count ?? d.stats?.file_count ?? 0 })}</p>
+              </section>
+              {/* Task 5: column description table fills this region. */}
+              <section aria-labelledby="columns-title" data-testid="column-table-slot" id="column-table-slot">
+                <h2 id="columns-title" className="mb-2 text-lg font-semibold">
+                  {t("data.card.columnsTitle")}
+                </h2>
               </section>
               <MetadataBlock dataset={d} />
               <ActivitySummary versions={versionItems} />

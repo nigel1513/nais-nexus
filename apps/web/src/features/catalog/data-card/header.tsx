@@ -12,10 +12,9 @@ import { formatBytes } from "@/shared/lib/format";
 import { AccessLevelBadge } from "@/shared/ui/badges";
 import { DateTime, ExpiryText } from "@/shared/ui/date-text";
 import { DelayedSkeleton } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
 import { decideAccessCta, type AccessCta as AccessCtaT } from "../access-cta";
-import { downloadJsonLd } from "../api";
 import { AiReadyBadge } from "../components/ai-ready-badge";
+import { JsonLdButton } from "./metadata-block";
 import { PersonLine } from "../components/person-line";
 import { VocabularyTags } from "../components/vocabulary-tags";
 
@@ -92,7 +91,6 @@ export function DataCardHeader({
   onNewVersion: () => void;
 }) {
   const t = useTranslations();
-  const toast = useToast();
   const latestId = d.latest_published_version?.dataset_version_id;
   const pi = d.people?.principal_investigator;
   const sizeOf = (v: DatasetVersion) => (v.dataset_version_id === latestId && d.stats?.total_bytes !== undefined ? ` (${formatBytes(d.stats.total_bytes)})` : "");
@@ -108,14 +106,7 @@ export function DataCardHeader({
           <Button variant="outline" onClick={onInquiry}>
             {t("data.card.inquiry")}
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              downloadJsonLd(d.dataset_id, d.title).catch(() => toast(t("data.card.jsonldFailed")));
-            }}
-          >
-            {t("data.card.jsonld")}
-          </Button>
+          <JsonLdButton dataset={d} />
           {steward ? (
             <>
               <Button variant="outline" onClick={onEdit}>
@@ -151,6 +142,7 @@ export function DataCardHeader({
                 <option key={v.dataset_version_id} value={v.dataset_version_id}>
                   {v.version_label}
                   {sizeOf(v)}
+                  {v.status === "DRAFT" ? ` (${t("enums.DatasetVersionStatus.DRAFT")})` : ""}
                 </option>
               ))}
             </select>

@@ -1,7 +1,10 @@
 "use client";
+import { Button } from "@nais/ui";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 import type { Dataset } from "@/shared/api/types";
+import { useToast } from "@/shared/ui/toast";
+import { downloadJsonLd } from "../api";
 import { PersonLine } from "../components/person-line";
 import { VocabularyTags } from "../components/vocabulary-tags";
 
@@ -11,6 +14,22 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="min-w-0 whitespace-pre-wrap break-words">{children}</dd>
     </>
+  );
+}
+
+export function JsonLdButton({ dataset }: { dataset: Pick<Dataset, "dataset_id" | "title"> }) {
+  const t = useTranslations();
+  const toast = useToast();
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => {
+        downloadJsonLd(dataset.dataset_id, dataset.title).catch(() => toast(t("data.card.jsonldFailed")));
+      }}
+    >
+      {t("data.card.jsonld")}
+    </Button>
   );
 }
 
@@ -25,7 +44,10 @@ export function MetadataBlock({ dataset: d }: { dataset: Dataset }) {
   const period = d.temporal_start ? `${d.temporal_start} – ${d.temporal_end ?? t("data.meta.ongoing")}` : null;
   return (
     <section aria-label={t("data.meta.title")}>
-      <h2 className="mb-2 text-lg font-semibold">{t("data.meta.title")}</h2>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-semibold">{t("data.meta.title")}</h2>
+        <JsonLdButton dataset={d} />
+      </div>
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-[10rem_1fr]">
         {pi ? (
           <Row label={t("data.meta.pi")}>
