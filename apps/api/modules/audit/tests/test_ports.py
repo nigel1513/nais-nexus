@@ -14,6 +14,7 @@ from api.modules.audit.fakes import (
     ORG_B,
     SEED_PROJECT,
     FakeIdentity,
+    FakeProjects,
     FakeUser,
     seed_catalog,
     seed_grants,
@@ -84,9 +85,59 @@ def test_resolver_prefers_provided_adapter() -> None:
     assert audit_ports.identity() is custom
 
 
-def test_resolver_falls_back_to_seed_fake_with_warning(caplog: pytest.LogCaptureFixture) -> None:
+def test_resolver_falls_back_to_seed_fake_with_warning(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("AUDIT_ALLOW_FAKE_PORTS", "true")
     ports.reset()
     audit_ports.reset_fallback_warnings()
     with caplog.at_level("WARNING", logger="nais.audit"):
         assert audit_ports.projects().is_active_member(SEED_PROJECT, A_RESEARCHER) is True
     assert "seed-backed fake" in caplog.text
+
+
+def test_flag_false_unwired_project_port_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AUDIT_ALLOW_FAKE_PORTS", raising=False)
+    ports.reset()
+    for resolver in (audit_ports.identity, audit_ports.projects, audit_ports.catalog):
+        with pytest.raises(ports.PortNotProvided):
+            resolver()
+
+
+def test_flag_false_unwired_grants_is_empty_and_warns_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.delenv("AUDIT_ALLOW_FAKE_PORTS", raising=False)
+    ports.reset()
+    audit_ports.reset_fallback_warnings()
+    with caplog.at_level("WARNING", logger="nais.audit"):
+        assert audit_ports.grants().list_active_grant_subjects(DATASET_BATTERY) == []
+        assert audit_ports.grants().list_active_grant_subjects(DATASET_BATTERY) == []
+    assert len(caplog.records) == 1
+
+
+def test_flag_true_gives_seed_fakes_and_warns_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("AUDIT_ALLOW_FAKE_PORTS", "true")
+    ports.reset()
+    audit_ports.reset_fallback_warnings()
+    with caplog.at_level("WARNING", logger="nais.audit"):
+        assert audit_ports.projects() is seed_projects()
+        assert audit_ports.projects() is seed_projects()
+        assert audit_ports.grants() is seed_grants()
+        assert audit_ports.identity() is seed_identity()
+    assert [r.port for r in caplog.records] == ["ProjectQueryPort", "GrantQueryPort", "IdentityQueryPort"]  # type: ignore[attr-defined]
+
+
+def test_archived_project_semantics() -> None:
+    fake = FakeProjects({SEED_PROJECT: {A_RESEARCHER: "PROJECT_OWNER"}}, archived=[SEED_PROJECT])
+    assert fake.is_active_member(SEED_PROJECT, A_RESEARCHER) is False
+    assert fake.get_member_role(SEED_PROJECT, A_RESEARCHER) == "PROJECT_OWNER"
+    assert fake.list_active_member_ids(SEED_PROJECT) == [A_RESEARCHER]
+    assert fake.list_project_ids_for_member(A_RESEARCHER) == [SEED_PROJECT]
+
+
+def test_disabled_user_has_no_org_role() -> None:
+    users = [FakeUser(B_DISABLED, "D", "d@x", ORG_B, frozenset({"DATA_STEWARD"}), active=False)]
+    assert FakeIdentity(users).has_org_role(B_DISABLED, ORG_B, "DATA_STEWARD") is False

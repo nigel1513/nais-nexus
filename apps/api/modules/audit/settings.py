@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +16,7 @@ class AuditSettings(BaseSettings):
     notification_email_enabled: bool = True
     notification_retention_days: int = 180
     nais_public_base_url: str = "http://localhost:21051"
+    allow_fake_ports: bool = Field(default=False, validation_alias="AUDIT_ALLOW_FAKE_PORTS")
 
 
 @lru_cache(maxsize=1)

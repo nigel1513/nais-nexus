@@ -10,6 +10,7 @@ from typing import Protocol
 from uuid import UUID
 
 from api.modules.audit import fakes
+from api.modules.audit.settings import get_audit_settings
 from api.modules.catalog.public import CatalogQueryPort
 from api.modules.identity.public import IdentityQueryPort
 from api.modules.project.public import ProjectQueryPort
@@ -32,15 +33,28 @@ def reset_fallback_warnings() -> None:
     _warned.clear()
 
 
+def _warn_once(name: str) -> None:
+    if name not in _warned:
+        _warned.add(name)
+        logger.warning("port not provided; using seed-backed fake", extra={"port": name})
+
+
 def _resolve[T](port: type[T], fallback: Callable[[], T]) -> T:
+    """Fail closed: an unwired M01/M02/M03 port raises unless AUDIT_ALLOW_FAKE_PORTS is set."""
     try:
         return ports.get(port)
     except ports.PortNotProvided:
-        name = port.__name__
-        if name not in _warned:
-            _warned.add(name)
-            logger.warning("port not provided; using seed-backed fake", extra={"port": name})
+        if not get_audit_settings().allow_fake_ports:
+            raise
+        _warn_once(port.__name__)
         return fallback()
+
+
+class _NoGrants:
+    """GrantQueryPort used while M04 is absent (Wave 1): no grants, no subjects."""
+
+    def list_active_grant_subjects(self, dataset_id: UUID) -> list[UUID]:
+        return []
 
 
 def identity() -> IdentityQueryPort:
@@ -56,4 +70,16 @@ def catalog() -> CatalogQueryPort:
 
 
 def grants() -> GrantQueryPort:
-    return _resolve(GrantQueryPort, fakes.seed_grants)
+    try:
+        return ports.get(GrantQueryPort)
+    except ports.PortNotProvided:
+        if get_audit_settings().allow_fake_ports:
+            _warn_once("GrantQueryPort")
+            return fakes.seed_grants()
+        if "GrantQueryPort" not in _warned:
+            _warned.add("GrantQueryPort")
+            logger.warning(
+                "GrantQueryPort not provided (M04 absent); using empty grants",
+                extra={"port": "GrantQueryPort"},
+            )
+        return _NoGrants()

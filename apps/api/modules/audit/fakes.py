@@ -136,7 +136,12 @@ class FakeIdentity:
 
     def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool:
         user = self.users.get(user_id)
-        return user is not None and user.organization_id == organization_id and role in user.org_roles
+        return (
+            user is not None
+            and user.active
+            and user.organization_id == organization_id
+            and role in user.org_roles
+        )
 
     def get_email(self, user_id: UUID) -> str | None:
         user = self.users.get(user_id)
@@ -146,11 +151,15 @@ class FakeIdentity:
 class FakeProjects:
     """Implements api.modules.project.public.ProjectQueryPort. members: project -> {user: project role}."""
 
-    def __init__(self, members: Mapping[UUID, Mapping[UUID, str]]) -> None:
+    def __init__(self, members: Mapping[UUID, Mapping[UUID, str]], archived: Iterable[UUID] = ()) -> None:
         self.members = {project: dict(users) for project, users in members.items()}
+        self.archived = set(archived)
+
+    def archive(self, project_id: UUID) -> None:
+        self.archived.add(project_id)
 
     def is_active_member(self, project_id: UUID, user_id: UUID) -> bool:
-        return user_id in self.members.get(project_id, {})
+        return project_id not in self.archived and user_id in self.members.get(project_id, {})
 
     def get_member_role(self, project_id: UUID, user_id: UUID) -> str | None:
         return self.members.get(project_id, {}).get(user_id)
@@ -178,10 +187,12 @@ class FakeCatalog:
         return None  # M09 never reads versions
 
     def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool:
-        return dataset_id in self.datasets  # M09 never asks; visibility is the catalog's decision
+        raise NotImplementedError  # M09 never calls is_visible; visibility is the catalog's decision (D-012)
 
 
 class FakeGrants:
+    """Implements GrantQueryPort (consumer-side, api.modules.audit.ports; M04 arrives in Wave 2)."""
+
     def __init__(self, subjects: Mapping[UUID, Iterable[UUID]]) -> None:
         self.subjects = {dataset: list(users) for dataset, users in subjects.items()}
 
