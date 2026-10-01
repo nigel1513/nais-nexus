@@ -40,7 +40,7 @@ describe("mock profiler (mirror of backend previews/profile.py)", () => {
     const wideCells = Array.from({ length: 200 }, (_, i) => `h${i}${"y".repeat(1200)}`);
     const huge = profileCsv([wideCells.join(","), wideCells.map(() => "1").join(",")].join("\n"), "huge.csv", {});
     expect(bytes(huge.preview)).toBeLessThanOrEqual(256 * 1024);
-    expect(huge.preview.distributions_truncated).toBe(true);
+    expect(huge.preview.rows).toEqual([]);
     expect(huge.preview.columns).toEqual([]);
   });
 });

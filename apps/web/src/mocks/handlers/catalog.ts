@@ -339,7 +339,10 @@ async function manifestSha256(files: { path: string; size_bytes: number; sha256:
 
 export const isTabular = (path: string) => /\.(csv|tsv|parquet)$/i.test(path) && !(path.split("/").pop() ?? "").startsWith("_");
 
-/** Publish-time Data Explorer generation (mirror of the backend preview worker): parquet and missing bodies FAIL, long lines are UNPARSEABLE. */
+/**
+ * Publish-time Data Explorer generation (mirror of the backend preview worker): long lines are UNPARSEABLE.
+ * Parquet, large (>2 MiB) and multipart uploads are marked FAILED/GENERATION_FAILED because the mock does not capture those bodies.
+ */
 function generatePreviews(db: MockDb, v: StoredVersion) {
   const generated_at = nowIso();
   for (const f of v.files.filter((x) => isTabular(x.path))) {

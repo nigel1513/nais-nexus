@@ -634,4 +634,10 @@ describe("Data Explorer mocks (web Task 2)", () => {
     expect((await getJson(USER.aSteward, `/dataset-files/${id("t.csv")}/preview`)).rows).toEqual([["1", "a"], ["2", "b"]]);
     expect(await getJson(USER.aSteward, `/dataset-files/${id("p.parquet")}/profile`)).toMatchObject({ status: "FAILED", failure_code: "GENERATION_FAILED" });
   });
+
+  it("reports a tabular file without a preview row as PENDING", async () => {
+    const data = await dataFile(VERSION.battery);
+    delete getDb().previews[data.file_id];
+    expect((await getJson(USER.aResearcher, `/dataset-files/${data.file_id}/profile`)).status).toBe("PENDING");
+  });
 });

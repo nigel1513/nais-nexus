@@ -26,11 +26,11 @@ function splitCsv(text: string, delimiter: string): string[][] {
 
 export class UnparseableError extends Error {}
 
-export type PreviewBody = Omit<Schemas["FilePreview"], "file_id" | "status"> & { distributions_truncated?: boolean };
+export type PreviewBody = Omit<Schemas["FilePreview"], "file_id" | "status">;
 
 export function profileCsv(text: string, path: string, hints: Record<string, Hint>) {
   // P1: a physical line over 1 MiB is UNPARSEABLE, never "READY with 0 rows".
-  if (text.split(/\r\n|\r|\n/).some((line) => line.length > L.maxLineBytes)) throw new UnparseableError("line exceeds 1 MiB");
+  if (text.split(/\r\n|\r|\n/).some((line) => new TextEncoder().encode(line).length > L.maxLineBytes)) throw new UnparseableError("line exceeds 1 MiB");
   const [header = [], ...body] = splitCsv(text.replace(/^﻿/, ""), path.toLowerCase().endsWith(".tsv") ? "\t" : ",");
   const names = header.slice(0, L.maxColumns);
   const rows = body.filter((r) => r.length === header.length).slice(0, L.maxRows);
@@ -67,7 +67,6 @@ export function profileCsv(text: string, path: string, hints: Record<string, Hin
   // P2: still too large with no rows left — drop the distributions too.
   if (size() > L.previewBytes) {
     preview.columns = [];
-    preview.distributions_truncated = true;
   }
   return { columns, preview, rowsSampled: rows.length, truncated: body.length > L.maxRows, columnsTruncated: header.length > L.maxColumns };
 }
