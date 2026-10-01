@@ -8,7 +8,12 @@ over the sample rows. The preview JSON never exceeds `preview_bytes`: rows are d
 column_profile is bounded too: names/units/descriptions are cut to `cell_chars`, and a profile over `profile_bytes`
 degrades (descriptions, then units/IRIs dropped, then names cut to 64) before it is Unparseable. Non-finite floats: NaN is missing (like the CSV token "NaN"); ±inf is a present
 value that is excluded from min/max/mean/histogram and from top values. Parquet nested and binary columns are never
-decoded: they are profiled as kind "other" with no values."""
+decoded: they are profiled as kind "other" with no values.
+
+Parquet dictionary pages are sized from the page header at the offset the decoder starts the chunk at (never from
+footer sizes); a column whose footer and page headers disagree is profiled as "other". Decompression bombs in
+PLAIN data pages (a small compressed page declaring a huge uncompressed size) are not header-checked here: they are
+bounded by the child-process RLIMIT_AS planned in Task 11 (controller ruling P24)."""
 
 import csv
 import io
@@ -561,17 +566,30 @@ def _footer_uncompressed(group: Any, leaves: list[int]) -> int:
 
 
 def _dictionary_page_size(chunk: Any, peek: Callable[[int, int], bytes]) -> int | None:
-    """Uncompressed size of the chunk's dictionary page from its page header (0: no dictionary page; None:
-    unreadable header). The header, not the footer, is what the decoder allocates from."""
-    has_dict = bool(chunk.has_dictionary_page) and (chunk.dictionary_page_offset or 0) > 0
-    offset = chunk.dictionary_page_offset if has_dict else chunk.data_page_offset
-    if offset is None or offset < 0:
+    """Uncompressed size of the dictionary page the decoder will use, from the page header it actually reads
+    first (0: the chunk starts with a data page and declares no dictionary; None: unreadable or inconsistent, so
+    the column is never decoded). The header, not the footer, is what the decoder allocates from.
+
+    The decoder (parquet-cpp ComputeColumnChunkRange) starts the chunk at data_page_offset, or at
+    dictionary_page_offset when the chunk declares a dictionary page and 0 < dictionary_page_offset <
+    data_page_offset. The header is peeked at that same offset, so a footer that points dictionary_page_offset at
+    a fake tiny header while data_page_offset points at the real dictionary page is sized by the real page."""
+    data_offset = chunk.data_page_offset
+    if data_offset is None or data_offset < 0:
         return None
-    header = page_header_sizes(peek(int(offset), PAGE_HEADER_PEEK))
+    declared = bool(chunk.has_dictionary_page)
+    dict_offset = chunk.dictionary_page_offset if declared else None
+    start = int(data_offset)
+    if dict_offset is not None and 0 < dict_offset < start:
+        start = int(dict_offset)
+    header = page_header_sizes(peek(start, PAGE_HEADER_PEEK))
     if header is None:
         return None
     page_type, size = header
-    return size if page_type == _DICTIONARY_PAGE else 0
+    if page_type == _DICTIONARY_PAGE:
+        return size
+    # a declared dictionary page that is not where the decoder starts: footer and pages disagree
+    return None if declared else 0
 
 
 def _fit_first_batch(
@@ -683,6 +701,10 @@ def _profile_parquet(
             for n, k in enumerate(leaves):
                 size = _dictionary_page_size(group.column(k), peek)
                 if size is None or size > limits.max_bytes // 4:
+                    oversized.append(n)
+                elif size == 0 and read_slots[n] in dense_variable:
+                    # a densified column without a leading dictionary page: a dictionary page after its data
+                    # pages would still be used by the decoder but cannot be sized without walking every page
                     oversized.append(n)
                 elif size and read_slots[n] in dense_variable:
                     cell_bound += size  # a dense cell can be as large as the largest dictionary entry

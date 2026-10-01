@@ -577,14 +577,45 @@ import io, resource, sys
 import pyarrow as pa, pyarrow.parquet as pq
 from api.modules.catalog.previews import profile as P
 
-entry, duplicate, lying = int(sys.argv[1]), sys.argv[2] == "dup", sys.argv[3] == "lying"
+entry, duplicate, mode = int(sys.argv[1]), sys.argv[2] == "dup", sys.argv[3]
+lying, swap = mode == "lying", mode == "swap"
 column = pa.DictionaryArray.from_arrays(pa.array([0] * 200_000, pa.int32()), pa.array(["x" * entry]))
 names = ["s", "s"] if duplicate else ["s"]
-table = pa.Table.from_arrays([column] * len(names), names=names)
+arrays = [column] * len(names)
+if swap:  # a plain, uncompressed binary column carries a fake 2-byte dictionary page header
+    arrays.append(pa.array([b"FAKE\x15\x04\x15\x04"] * 200_000, pa.binary()))
+    names = names + ["f"]
+table = pa.Table.from_arrays(arrays, names=names)
 sink = io.BytesIO()
-pq.write_table(table, sink, store_schema=False, dictionary_pagesize_limit=256 << 20, compression="zstd")
+pq.write_table(table, sink, store_schema=False, dictionary_pagesize_limit=256 << 20, use_dictionary=["s"],
+               compression={"s": "zstd", "f": "none"})
 data = sink.getvalue()
-del table, column
+del table, column, arrays
+if swap:
+    # hostile footer: data_page_offset -> the real (huge) dictionary page, dictionary_page_offset -> the fake
+    # header. The decoder starts at min(data, dictionary) offset, i.e. at the real dictionary page.
+    import struct
+
+    def zigzag(n):
+        n, out = (n << 1) ^ (n >> 63), b""
+        while n >= 0x80:
+            out, n = out + bytes([n & 0x7F | 0x80]), n >> 7
+        return out + bytes([n])
+
+    buf = bytearray(data)
+    fake = data.index(b"FAKE") + 4
+    footer = len(buf) - 8 - struct.unpack("<i", buf[-8:-4])[0]
+    for c in range(len(names) - 1):
+        cm = pq.ParquetFile(io.BytesIO(bytes(buf))).metadata.row_group(0).column(c)
+        dat, dic = cm.data_page_offset, cm.dictionary_page_offset
+        old = b"\x26" + zigzag(dat) + b"\x26" + zigzag(dic)  # ColumnMetaData fields 9 and 11 (i64 delta 2)
+        new = b"\x26" + zigzag(dic) + b"\x26" + zigzag(fake)
+        assert len(old) == len(new)
+        at = bytes(buf).index(old, footer)
+        buf[at : at + len(old)] = new
+    data = bytes(buf)
+    cm = pq.ParquetFile(io.BytesIO(data)).metadata.row_group(0).column(0)
+    assert cm.data_page_offset < cm.dictionary_page_offset == fake
 if lying:
     P._footer_uncompressed = lambda group, leaves: 0  # a footer that claims (almost) nothing per row
 before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -595,7 +626,9 @@ print(r.rows_sampled, int(r.truncated), [c["kind"] for c in r.preview["columns"]
 """
 
 
-def _bomb(entry: int, duplicate: bool = False, lying: bool = False) -> tuple[int, bool, str, int]:
+def _bomb(
+    entry: int, duplicate: bool = False, lying: bool = False, swap: bool = False
+) -> tuple[int, bool, str, int]:
     import os
     import subprocess
     import sys
@@ -603,7 +636,7 @@ def _bomb(entry: int, duplicate: bool = False, lying: bool = False) -> tuple[int
 
     env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
     start = time.monotonic()
-    args = [str(entry), "dup" if duplicate else "one", "lying" if lying else "honest"]
+    args = [str(entry), "dup" if duplicate else "one", "swap" if swap else "lying" if lying else "honest"]
     out = subprocess.run(
         [sys.executable, "-c", _BOMB_SCRIPT, *args],
         env=env,
@@ -641,3 +674,72 @@ def test_page_header_parser() -> None:
     assert page_header_sizes(bytes([0x15, 0x04, 0x15, 0xD8, 0x04, 0x15, 0x02])) == (2, 300)
     assert page_header_sizes(b"") is None and page_header_sizes(b"\x00") is None
     assert page_header_sizes(bytes([0x18, 0x01])) is None  # not an i32 field
+
+
+# ---------------------------------------------------------------- fix round 4: page header at the decoder's start
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+@pytest.mark.parametrize("entry", [4_000_000, 20_000_000])
+def test_swapped_page_offsets_cannot_hide_the_real_dictionary(duplicate: bool, entry: int) -> None:
+    # p7 (dictionary read) / p8 (densified, duplicate names): the footer points dictionary_page_offset at a fake
+    # tiny header and data_page_offset at the real dictionary page, which the decoder reads first. The real page
+    # is what gets sized: 4 MB fits the max_bytes // 4 dictionary budget (decoded, bounded batches; before the fix
+    # the densified case grew to ~10 GB), 20 MB does not (kind "other", never decoded; before: OOM-killed).
+    rows, truncated, kind, grown_mb = _bomb(entry, duplicate=duplicate, swap=True)
+    assert rows > 0 and truncated
+    assert kind == ("other" if entry > PreviewLimits().max_bytes // 4 else "categorical")
+    assert grown_mb < 512
+
+
+def _page(page_type: int, size: int) -> bytes:
+    def zz(n: int) -> bytes:
+        n, out = n << 1, b""
+        while n >= 0x80:
+            out, n = out + bytes([n & 0x7F | 0x80]), n >> 7
+        return out + bytes([n])
+
+    return bytes([0x15]) + zz(page_type) + bytes([0x15]) + zz(size)
+
+
+def test_dictionary_page_is_sized_at_the_decoder_start_offset() -> None:
+    from types import SimpleNamespace
+
+    from api.modules.catalog.previews.profile import _dictionary_page_size
+
+    pages = {100: _page(2, 5_000_000), 200: _page(0, 10), 300: _page(2, 7), 400: _page(0, 10)}
+
+    def peek(offset: int, n: int) -> bytes:
+        return pages.get(offset, b"\xff" * n)[:n]
+
+    def chunk(data: int | None, dic: int | None, has: bool = True) -> SimpleNamespace:
+        return SimpleNamespace(data_page_offset=data, dictionary_page_offset=dic, has_dictionary_page=has)
+
+    assert _dictionary_page_size(chunk(200, 100), peek) == 5_000_000  # normal layout
+    assert _dictionary_page_size(chunk(100, 300), peek) == 5_000_000  # swap: the decoder starts at 100
+    assert _dictionary_page_size(chunk(100, 0), peek) == 5_000_000  # offset 0 is ignored by the decoder
+    assert _dictionary_page_size(chunk(400, None, has=False), peek) == 0  # plain chunk without a dictionary
+    assert (
+        _dictionary_page_size(chunk(300, None, has=False), peek) == 7
+    )  # undeclared but decoded: still sized
+    assert _dictionary_page_size(chunk(400, 300), peek) == 7
+    # declared dictionary, but the decoder's first page is a data page: inconsistent -> never decoded
+    assert _dictionary_page_size(chunk(200, 300), peek) is None
+    assert _dictionary_page_size(chunk(200, 0), peek) is None
+    assert _dictionary_page_size(chunk(150, 100), peek) == 5_000_000
+    assert _dictionary_page_size(chunk(150, None, has=False), peek) is None  # unreadable header
+    assert _dictionary_page_size(chunk(None, None, has=False), peek) is None
+    assert _dictionary_page_size(chunk(-1, None, has=False), peek) is None
+
+
+def test_densified_strings_without_a_leading_dictionary_page_are_other() -> None:
+    # duplicate-name strings are densified; without a leading dictionary page a later one could not be sized
+    table = pa.Table.from_arrays(
+        [pa.array(["a", "b"]), pa.array(["c", "d"]), pa.array(["e", "f"])], ["s", "s", "u"]
+    )
+    for use_dictionary, kind in ((False, "other"), (True, "categorical")):
+        sink = io.BytesIO()
+        pq.write_table(table, sink, use_dictionary=use_dictionary)
+        result = run(sink.getvalue(), path="p.parquet")
+        kinds = [c["kind"] for c in result.preview["columns"]]
+        assert kinds[:2] == [kind, kind] and result.rows_sampled == 2
