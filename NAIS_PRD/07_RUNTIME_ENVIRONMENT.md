@@ -19,7 +19,7 @@ http://localhost:21051
 
 ### Presigned URL 규칙
 - API는 presigned URL을 **public endpoint `NAIS_PUBLIC_BASE_URL`(기본 `http://localhost:21051`)** 기준, **path-style**로 서명한다.
-  - 예: `http://localhost:21051/nais-inst-b/datasets/{dataset_id}/{version_id}/data.csv?X-Amz-...`
+  - 예: `http://localhost:21051/nais-inst-b/datasets/{dataset_id}/{version_id}/{upload_session_id}/data.csv?X-Amz-...` (key 형식은 D-039)
 - Nginx는 bucket 경로를 해당 S3 스토리지(SeaweedFS)로 그대로 전달하며, 서명 검증을 위해 `Host` 헤더를 보존한다 (`proxy_set_header Host $http_host;`).
 - bucket 이름은 전역 유일해야 한다: `nais-inst-a`, `nais-inst-b`, (readiness 산출물) `nais-platform`.
 - 업로드 본문 크기 제한은 bucket 경로에서만 해제한다 (`client_max_body_size 0;`). `/api/`는 `10m`.
