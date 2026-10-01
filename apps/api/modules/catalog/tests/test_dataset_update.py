@@ -69,7 +69,8 @@ def test_noop_and_reordered_purposes_emit_no_policy_events(api: CatalogApi, db: 
         api.patch("b.steward", f"/datasets/{dataset_id}", json={"title": "Renamed dataset"}).status_code
         == 200
     )
-    assert outbox_events(db) == []
+    # A metadata-only rename emits catalog.dataset.metadata_changed.v1 (Wave 1.5) but no policy events.
+    assert [event["event_type"] for event in outbox_events(db)] == ["catalog.dataset.metadata_changed.v1"]
     assert rows(db, "SELECT count(*) AS n FROM catalog.index_queue")[0]["n"] == 1
 
 

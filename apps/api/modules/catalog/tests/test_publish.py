@@ -181,8 +181,16 @@ def test_published_version_becomes_the_latest(api: CatalogApi, db: PgUrls) -> No
     dataset_id, version_id = new_draft(api)
     upload_files(api, db, version_id, FILES)
     publish(api, version_id)
-    body = api.get("a.researcher", f"/datasets/{dataset_id}").json()
+    response = api.get("a.researcher", f"/datasets/{dataset_id}")
+    body = response.json()
+    assert_matches_response("getDataset", 200, body)
     assert body["latest_published_version"]["dataset_version_id"] == version_id
+    total = sum(len(data) for data in FILES.values())
+    media_types = sorted({file_spec(path, data)["media_type"] for path, data in FILES.items()})
+    assert body["stats"] == {"file_count": 3, "total_bytes": total, "media_types": media_types}
+    # People are readable by other organizations after publish; no email unless contact_email_public.
+    assert body["people"]["principal_investigator"]["display_name"] == "B Researcher"
+    assert "email" not in body["people"]["steward_contact"]
     listed = api.get("a.researcher", f"/datasets/{dataset_id}/versions").json()["items"]
     assert [v["dataset_version_id"] for v in listed] == [version_id]
 
