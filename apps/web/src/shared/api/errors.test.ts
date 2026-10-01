@@ -49,4 +49,15 @@ describe("error helpers", () => {
     ).toEqual({ end_date: "before start" });
     expect(fieldErrors(new ApiError(422, "VALIDATION_FAILED", "", null))).toEqual({});
   });
+
+  it("normalises indexed keys to the form field and reads the real {field, reason} shape", () => {
+    const e = new ApiError(422, "VALIDATION_FAILED", "", null, {
+      fields: [
+        { field: "keywords.3", reason: "TOO_LONG" },
+        { field: "keywords[4]", reason: "later" },
+        { field: "members.0.role", reason: "INVALID" },
+      ],
+    });
+    expect(fieldErrors(e)).toEqual({ keywords: "TOO_LONG", members: "INVALID" });
+  });
 });

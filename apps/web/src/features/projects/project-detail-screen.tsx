@@ -147,8 +147,8 @@ export function ProjectDetailScreen({ projectId }: { projectId: string }) {
   const t = useTranslations();
   const q = useGetProject(projectId);
   const [params, setParams] = useUrlQuery();
-  const initial = params.get("tab");
-  const [tab, setTab] = useState<Tab>(TABS.includes(initial as Tab) ? (initial as Tab) : "overview");
+  const requested = params.get("tab");
+  const tab: Tab = TABS.includes(requested as Tab) ? (requested as Tab) : "overview";
   const activity = useListAuditEvents({ project_id: projectId }, { enabled: tab === "activity" });
 
   if (q.isPending) return <DelayedSkeleton lines={5} />;
@@ -177,7 +177,6 @@ export function ProjectDetailScreen({ projectId }: { projectId: string }) {
       <Tabs
         value={tab}
         onValueChange={(v) => {
-          setTab(v as Tab);
           setParams({ tab: v === "overview" ? null : v });
         }}
       >

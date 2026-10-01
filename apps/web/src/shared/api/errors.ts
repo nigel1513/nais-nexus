@@ -60,18 +60,27 @@ export function isBlockedCode(code: string): boolean {
   return (BLOCKED_CODES as readonly string[]).includes(code);
 }
 
-/** VALIDATION_FAILED details.fields → { field: message } for React Hook Form setError. */
+/** "keywords.3" / "keywords[3]" / "members.0.role" → the form field the message belongs to. */
+function formField(key: string): string {
+  return key.split(/[.[]/)[0] || key;
+}
+
+/** VALIDATION_FAILED details.fields ({field, reason|message} list or map) → { field: message } for React Hook Form setError. */
 export function fieldErrors(error: ApiError): Record<string, string> {
   const fields = error.details.fields;
+  const out: Record<string, string> = {};
+  const put = (key: string, message: string) => {
+    const k = formField(key);
+    if (!(k in out)) out[k] = message;
+  };
   if (Array.isArray(fields)) {
-    return Object.fromEntries(
-      fields
-        .filter((f): f is { field: string; message?: string } => !!f && typeof f === "object" && typeof (f as { field?: unknown }).field === "string")
-        .map((f) => [f.field, String(f.message ?? "")]),
-    );
+    for (const f of fields) {
+      if (!f || typeof f !== "object" || typeof (f as { field?: unknown }).field !== "string") continue;
+      const { field, message, reason } = f as { field: string; message?: unknown; reason?: unknown };
+      put(field, String(message ?? reason ?? ""));
+    }
+  } else if (fields && typeof fields === "object") {
+    for (const [k, v] of Object.entries(fields as Record<string, unknown>)) put(k, String(v));
   }
-  if (fields && typeof fields === "object") {
-    return Object.fromEntries(Object.entries(fields as Record<string, unknown>).map(([k, v]) => [k, String(v)]));
-  }
-  return {};
+  return out;
 }

@@ -1,4 +1,11 @@
+import { useSyncExternalStore } from "react";
 import { vi } from "vitest";
+
+const listeners = new Set<() => void>();
+const subscribe = (fn: () => void) => {
+  listeners.add(fn);
+  return () => void listeners.delete(fn);
+};
 
 const state = { pathname: "/", search: new URLSearchParams(), params: {} as Record<string, string> };
 
@@ -7,6 +14,7 @@ export function setLocation(href: string, params: Record<string, string> = {}) {
   state.pathname = u.pathname;
   state.search = new URLSearchParams(u.search);
   state.params = params;
+  listeners.forEach((fn) => fn());
 }
 
 export const router = {
@@ -20,8 +28,9 @@ export const router = {
 
 export const navigationMock = {
   useRouter: () => router,
-  usePathname: () => state.pathname,
-  useSearchParams: () => state.search,
+  usePathname: () => useSyncExternalStore(subscribe, () => state.pathname, () => state.pathname),
+  // Reactive like the real hook, so Back/Forward (setLocation) re-renders subscribed screens.
+  useSearchParams: () => useSyncExternalStore(subscribe, () => state.search, () => state.search),
   useParams: () => state.params,
   redirect: vi.fn(),
   notFound: vi.fn(),

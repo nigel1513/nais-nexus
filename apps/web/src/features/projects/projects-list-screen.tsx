@@ -2,11 +2,10 @@
 import { buttonClass, DataTable, EmptyState, Select, Tabs, TabsContent, TabsList, TabsTrigger } from "@nais/ui";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
 import { useOrgNames } from "@/features/organizations/api";
 import { flattenPages } from "@/shared/api/pagination";
 import type { ProjectStatus, ProjectSummary } from "@/shared/api/types";
-import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
+import { useUrlText } from "@/shared/hooks/use-url-text";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
 import { ProjectStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
@@ -20,15 +19,9 @@ export function ProjectsListScreen() {
   const t = useTranslations();
   const orgNames = useOrgNames();
   const [params, setParams] = useUrlQuery();
-  const [tab, setTab] = useState<Tab>(params.get("tab") === "discover" ? "discover" : "mine");
-  const [q, setQ] = useState(params.get("q") ?? "");
-  const [status, setStatus] = useState(params.get("status") ?? "");
-  const debounced = useDebouncedValue(q.trim(), 300);
-
-  useEffect(() => {
-    if ((params.get("q") ?? "") !== debounced) setParams({ q: debounced || null });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to the debounced value
-  }, [debounced]);
+  const tab: Tab = params.get("tab") === "discover" ? "discover" : "mine";
+  const status = params.get("status") ?? "";
+  const [q, setQ, debounced] = useUrlText("q", params, setParams);
 
   const query = useListProjects({ scope: tab, ...(debounced ? { q: debounced } : {}), ...(status ? { status: status as ProjectStatus } : {}) });
   const rows = flattenPages(query.data);
@@ -95,7 +88,6 @@ export function ProjectsListScreen() {
       <Tabs
         value={tab}
         onValueChange={(v) => {
-          setTab(v as Tab);
           setParams({ tab: v === "mine" ? null : v });
         }}
       >
@@ -125,7 +117,6 @@ export function ProjectsListScreen() {
               id="project-status"
               value={status}
               onChange={(e) => {
-                setStatus(e.target.value);
                 setParams({ status: e.target.value || null });
               }}
             >

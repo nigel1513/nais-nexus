@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -6,6 +6,7 @@ import { getDb } from "@/mocks/db";
 import { ORG, PROJECT, USER } from "@/mocks/fixtures";
 import { server } from "../../../tests/msw";
 import { router } from "../../../tests/navigation";
+import { setLocation } from "../../../tests/navigation";
 import { renderScreen } from "../../../tests/render";
 import { ProjectDetailScreen } from "./project-detail-screen";
 import { ProjectNewScreen } from "./project-new-screen";
@@ -56,7 +57,52 @@ describe("ProjectsListScreen", () => {
   });
 });
 
+describe("ProjectsListScreen URL state (Back/Forward)", () => {
+  it("re-derives tab, search text and status when the URL changes under the screen", async () => {
+    seedPublicProject();
+    renderScreen(<ProjectsListScreen />, { user: USER.aResearcher, path: "/commons/projects?tab=discover&q=Public&status=ACTIVE" });
+    expect(await screen.findByRole("tab", { name: "공개 프로젝트" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("searchbox", { name: "프로젝트 검색" })).toHaveValue("Public");
+    expect(screen.getByLabelText("상태")).toHaveValue("ACTIVE");
+
+    act(() => setLocation("/commons/projects"));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "내 프로젝트" })).toHaveAttribute("aria-selected", "true"));
+    expect(screen.getByRole("searchbox", { name: "프로젝트 검색" })).toHaveValue("");
+    expect(screen.getByLabelText("상태")).toHaveValue("");
+
+    act(() => setLocation("/commons/projects?tab=discover&q=Public"));
+    await waitFor(() => expect(screen.getByRole("searchbox", { name: "프로젝트 검색" })).toHaveValue("Public"));
+    expect(screen.getByRole("tab", { name: "공개 프로젝트" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("does not bounce the URL back after Back clears a typed query", async () => {
+    renderScreen(<ProjectsListScreen />, { user: USER.aResearcher, path: "/commons/projects" });
+    await screen.findAllByRole("link", { name: /Seed/ });
+    await userEvent.type(screen.getByRole("searchbox", { name: "프로젝트 검색" }), "zzz");
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/commons/projects?q=zzz", { scroll: false }));
+    router.replace.mockClear();
+    act(() => setLocation("/commons/projects"));
+    await waitFor(() => expect(screen.getByRole("searchbox", { name: "프로젝트 검색" })).toHaveValue(""));
+    await new Promise((r) => setTimeout(r, 450));
+    expect(router.replace).not.toHaveBeenCalled();
+  });
+});
+
 describe("ProjectNewScreen", () => {
+  it("maps server VALIDATION_FAILED onto the field (indexed keys normalised) and the summary", async () => {
+    server.use(
+      http.post("*/mock-api/v1/projects", () =>
+        HttpResponse.json({ error: { code: "VALIDATION_FAILED", message: "x", trace_id: "t", details: { fields: [{ field: "keywords.3", message: "키워드가 너무 깁니다." }] } } }, { status: 422 }),
+      ),
+    );
+    renderScreen(<ProjectNewScreen />, { user: USER.aResearcher, path: "/commons/projects/new" });
+    await userEvent.type(await screen.findByLabelText(/^이름/), "Server Rejects");
+    await userEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
+    const summary = await screen.findByRole("alert");
+    expect(summary).toHaveTextContent("키워드가 너무 깁니다.");
+    expect(screen.getByLabelText(/^키워드/)).toHaveAttribute("aria-invalid", "true");
+  });
+
   it("focuses the error summary, validates dates, then creates and navigates", async () => {
     renderScreen(<ProjectNewScreen />, { user: USER.aResearcher, path: "/commons/projects/new" });
     const submit = await screen.findByRole("button", { name: "프로젝트 만들기" });
@@ -111,6 +157,35 @@ describe("ProjectDetailScreen", () => {
     await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
     const selects = await screen.findAllByLabelText("A Researcher 역할");
     await userEvent.selectOptions(selects[0]!, "RESEARCHER");
+    expect(await screen.findByText("프로젝트에는 소유자가 최소 1명 있어야 합니다.")).toBeInTheDocument();
+  });
+
+  it("re-derives the active tab when the URL changes (Back/Forward)", async () => {
+    renderScreen(<ProjectDetailScreen projectId={PROJECT.seed} />, { user: USER.aResearcher, path: `/commons/projects/${PROJECT.seed}?tab=members` });
+    expect(await screen.findByRole("tab", { name: "멤버" })).toHaveAttribute("aria-selected", "true");
+    act(() => setLocation(`/commons/projects/${PROJECT.seed}`));
+    await waitFor(() => expect(screen.getByRole("tab", { name: "개요" })).toHaveAttribute("aria-selected", "true"));
+  });
+
+  it("the sole owner leaving gets the server's last-owner message and stays on the page", async () => {
+    open(USER.aResearcher);
+    await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
+    await userEvent.click((await screen.findAllByRole("button", { name: "프로젝트 나가기" }))[0]!);
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "프로젝트 나가기" }));
+    expect(await screen.findByText("프로젝트에는 소유자가 최소 1명 있어야 합니다.")).toBeInTheDocument();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it("removing a member rejected with PROJECT_LAST_OWNER shows the message", async () => {
+    server.use(
+      http.delete("*/mock-api/v1/projects/:project_id/members/:user_id", () =>
+        HttpResponse.json({ error: { code: "PROJECT_LAST_OWNER", message: "x", trace_id: "t" } }, { status: 409 }),
+      ),
+    );
+    open(USER.aResearcher);
+    await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
+    await userEvent.click((await screen.findAllByRole("button", { name: "제거" }))[0]!);
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "제거" }));
     expect(await screen.findByText("프로젝트에는 소유자가 최소 1명 있어야 합니다.")).toBeInTheDocument();
   });
 
