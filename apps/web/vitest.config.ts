@@ -12,5 +12,7 @@ export default defineConfig({
     css: false,
     env: { NEXT_PUBLIC_API_MOCKING: "enabled" },
     testTimeout: 15000,
+    // next-auth/react (pulled in via the shell) imports "next/server" without an extension; let Vite resolve it.
+    server: { deps: { inline: [/next-auth/] } },
   },
 });
