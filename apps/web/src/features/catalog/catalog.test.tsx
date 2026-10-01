@@ -130,7 +130,9 @@ describe("DatasetNewScreen", () => {
     expect(days).toHaveAttribute("max", "30");
     expect(days).toHaveValue(30);
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.click(screen.getByRole("button", { name: "등록" }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "A R");
+    await userEvent.click(await screen.findByRole("option", { name: /A Researcher/ }));
+    await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\/[0-9a-f-]{36}\?created=1$/)));
     expect(getDb().datasets.find((d) => d.title === "Pilot Line Vibration")?.policy).toMatchObject({ access_level: "SENSITIVE", max_grant_days: 30 });
   });
@@ -264,10 +266,10 @@ describe("DatasetDetailScreen", () => {
     server.use(http.patch("*/mock-api/v1/datasets/:id", () => { patches += 1; return HttpResponse.json({}); }));
     open(USER.bSteward, DATASET.battery);
     await userEvent.click(await screen.findByRole("button", { name: "편집" }));
-    await userEvent.clear(screen.getByLabelText(/^분야/));
+    await userEvent.clear(screen.getByLabelText(/^이용 정책/));
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
     expect((await screen.findAllByText(/이 항목은 비울 수 없습니다/)).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText(/^분야/)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText(/^이용 정책/)).toHaveAttribute("aria-invalid", "true");
     expect(patches).toBe(0);
   });
 

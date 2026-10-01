@@ -9,7 +9,7 @@ import { VersionStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { useToast } from "@/shared/ui/toast";
-import { useGetDataset, useListDatasetVersions, useUpdateDataset } from "./api";
+import { useGetDataset, useListDatasetVersions, usePutDatasetContributors, useUpdateDataset } from "./api";
 import { DatasetForm } from "./components/dataset-form";
 import { NewVersionDialog } from "./components/new-version-dialog";
 import { About } from "./data-card/about";
@@ -18,7 +18,7 @@ import { DataCardHeader } from "./data-card/header";
 import { MetadataBlock } from "./data-card/metadata-block";
 import { pickVersion } from "./data-card/pick-version";
 import { SideCard } from "./data-card/side-card";
-import { fromDataset, toDatasetUpdate } from "./schemas";
+import { contributorsChanged, fromDataset, toDatasetUpdate } from "./schemas";
 
 export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const t = useTranslations();
@@ -27,6 +27,7 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const ds = useGetDataset(datasetId);
   const versions = useListDatasetVersions(datasetId);
   const update = useUpdateDataset(datasetId);
+  const putContributors = usePutDatasetContributors(datasetId);
   const [params, setParams] = useUrlQuery();
   const [editing, setEditing] = useState(false);
   const [newVersion, setNewVersion] = useState(false);
@@ -68,9 +69,15 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
           mode="edit"
           defaultValues={fromDataset(d)}
           ownerName={d.owner_organization_name ?? ""}
+          ownerOrganizationId={d.owner_organization_id}
           onCancel={() => setEditing(false)}
           onSubmit={async (values) => {
-            await update.mutateAsync(toDatasetUpdate(values));
+            const before = fromDataset(d);
+            const patch = toDatasetUpdate(values, before);
+            if (Object.keys(patch).length) await update.mutateAsync(patch);
+            if (contributorsChanged(before, values)) {
+              await putContributors.mutateAsync({ contributors: values.contributors.map((c) => ({ user_id: c.user_id, role: c.role })) });
+            }
             toast(t("data.detail.saved"));
             setEditing(false);
           }}
