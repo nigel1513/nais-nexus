@@ -32,6 +32,9 @@ Create `apps/api/modules/<name>/__init__.py` exporting `MODULE = ModuleSpec(...)
 `router` is mounted under `/api/v1`; `migrations_dir` + `db_schema` are migrated by `scripts/nais migrate`
 (new revision, written into your source tree on the host: `scripts/nais new-migration <name> -m "..."`);
 `wire()` provides your ports via `api.platform.ports.provide`; `register_worker(broker, scheduler)` adds periodic jobs;
+**public interface (D-038):** put the Port Protocols + DTOs other modules use in `apps/api/modules/<name>/public.py`
+(no imports from your module internals); that class is the `ports` key — consumers do
+`from api.modules.<provider>.public import XPort` and `ports.get(XPort)`, never their own copy of the Protocol;
 `seed(session)` inserts the `10_SEED_DATA.md` rows (as Python data in your module). Publish events with
 `api.platform.outbox.outbox.write(...)` in the same session as your change; consume with
 `@api.platform.event_bus.subscribe(...)` + `claim_event(session, "<schema>", event)`.
@@ -53,3 +56,5 @@ Test helpers: `api.platform.testing.app.create_test_app`, fixtures `migrated_db`
 - **Never modify `platform.outbox_events` inside a handler:** the relay holds row locks on the batch, so the handler
   would deadlock against itself. Publish follow-up events with `outbox.write(session, ...)` (an INSERT) only.
 - **Seed data:** `seed()` must not read `NAIS_PRD/*.md` at runtime (the docs are not in the image); keep the rows in code.
+- **Extensions:** `pg_trgm` is installed once in schema `public` by the platform (`init.sql`). Migrations never run
+  `CREATE EXTENSION`; reference `public.gin_trgm_ops` / `public.similarity(...)`.
