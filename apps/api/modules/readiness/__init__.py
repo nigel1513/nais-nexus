@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from api.modules.readiness import handlers  # noqa: F401  - registers @subscribe handlers at import
 from api.modules.readiness.jobs import register_worker
 from api.modules.readiness.query import wire
 from api.platform.modules import ModuleSpec
