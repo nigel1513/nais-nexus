@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from api.modules.readiness.profile_registry import PROFILE_ORDER, PROFILES, load_profiles
 from api.modules.readiness.settings import ReadinessSettings
@@ -76,3 +77,75 @@ def test_env_only_tunes_operations_not_verdicts(monkeypatch: pytest.MonkeyPatch)
     assert settings.run_timeout_seconds == 60
     assert not hasattr(settings, "sample_max_rows")
     assert (settings.file_timeout_seconds, settings.worker_concurrency) == (600, 2)
+
+
+def _write_variant(tmp_path: Path, edit) -> None:  # type: ignore[no-untyped-def]
+    import yaml
+
+    raw = yaml.safe_load((Path(__file__).parents[1] / "profiles" / "GENERIC_BASIC.yaml").read_text("utf-8"))
+    edit(raw)
+    (tmp_path / "GENERIC_BASIC.yaml").write_text(
+        yaml.safe_dump(raw, allow_unicode=True) if isinstance(raw, dict) else "- just\n- a list\n",
+        encoding="utf-8",
+    )
+
+
+def _not_mapping(raw: dict) -> None:  # type: ignore[type-arg]
+    raw.clear()
+    raw["__list__"] = 1
+
+
+MALFORMED = {
+    "not_mapping": lambda raw: _not_mapping(raw),
+    "missing_version": lambda raw: raw.pop("version"),
+    "missing_name": lambda raw: raw.pop("name"),
+    "missing_description": lambda raw: raw.pop("description"),
+    "missing_checks": lambda raw: raw.pop("checks"),
+    "missing_parameters": lambda raw: raw.pop("parameters"),
+    "missing_param": lambda raw: raw["parameters"].pop("sample_max_rows"),
+    "extra_param": lambda raw: raw["parameters"].update(bogus=1),
+    "int_param_is_float": lambda raw: raw["parameters"].update(sample_max_rows=1.5),
+    "int_param_is_bool": lambda raw: raw["parameters"].update(sample_max_rows=True),
+    "int_param_is_string": lambda raw: raw["parameters"].update(max_tabular_files="50"),
+    "ratio_above_one": lambda raw: raw["parameters"].update(missing_fail_ratio=1.5),
+    "ratio_negative": lambda raw: raw["parameters"].update(mapping_pass_ratio=-0.1),
+    "ratio_is_bool": lambda raw: raw["parameters"].update(mapping_pass_ratio=True),
+    "ratio_is_string": lambda raw: raw["parameters"].update(mapping_pass_ratio="0.8"),
+    "duplicate_check_id": lambda raw: raw["checks"].append(dict(raw["checks"][0])),
+}
+
+
+@pytest.mark.parametrize("case", sorted(MALFORMED))
+def test_malformed_profile_raises_value_error_naming_file(tmp_path: Path, case: str) -> None:
+    _write_variant(tmp_path, MALFORMED[case])
+    if case == "not_mapping":
+        (tmp_path / "GENERIC_BASIC.yaml").write_text("- just\n- a list\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="GENERIC_BASIC.yaml"):
+        load_profiles(tmp_path)
+
+
+def test_invalid_severity_has_its_own_message(tmp_path: Path) -> None:
+    _write_variant(tmp_path, lambda raw: raw["checks"][0].update(severity="MANDATORY"))
+    with pytest.raises(ValueError, match=r"GENERIC_BASIC.yaml.*invalid severity"):
+        load_profiles(tmp_path)
+
+
+def test_duplicate_profile_id_across_files_is_rejected(tmp_path: Path) -> None:
+    source = (Path(__file__).parents[1] / "profiles" / "GENERIC_BASIC.yaml").read_text(encoding="utf-8")
+    (tmp_path / "GENERIC_BASIC.yaml").write_text(source, encoding="utf-8")
+    other = Path(__file__).parents[1] / "profiles" / "TABULAR_ML_BASIC.yaml"
+    (tmp_path / "TABULAR_ML_BASIC.yaml").write_text(
+        other.read_text(encoding="utf-8").replace(
+            "profile_id: TABULAR_ML_BASIC", "profile_id: GENERIC_BASIC"
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="TABULAR_ML_BASIC.yaml"):
+        load_profiles(tmp_path)
+
+
+@pytest.mark.parametrize("name", ["RUN_TIMEOUT_SECONDS", "FILE_TIMEOUT_SECONDS", "WORKER_CONCURRENCY"])
+def test_invalid_settings_value_is_rejected(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+    monkeypatch.setenv(f"READINESS_{name}", "0")
+    with pytest.raises(ValidationError):
+        ReadinessSettings()
