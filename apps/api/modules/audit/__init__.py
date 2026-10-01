@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from api.modules.audit import handlers  # noqa: F401  (registers event subscriptions at import)
 from api.platform.modules import ModuleSpec
 
 MODULE = ModuleSpec(

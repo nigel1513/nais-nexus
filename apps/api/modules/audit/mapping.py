@@ -204,8 +204,9 @@ def to_audit_record(event: EventEnvelope) -> AuditRecord | None:
     if rule is None:
         return None
     payload = event.payload
-    resource_id = _uuid(payload[rule.resource_key])
-    assert resource_id is not None  # schema requires every resource key
+    resource_id = _uuid(payload.get(rule.resource_key))
+    if resource_id is None:  # explicit (assert is stripped under -O); the schema requires every resource key
+        raise ValueError(f"{event.event_type}: payload.{rule.resource_key} is required")
     reason_value = payload.get(rule.reason_key) if rule.reason_key else None
     return AuditRecord(
         occurred_at=event.occurred_at,
