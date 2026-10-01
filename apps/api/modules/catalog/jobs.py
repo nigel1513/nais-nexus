@@ -92,8 +92,12 @@ def _cleanup_partial_upload(deps: CatalogDeps, f: Mapping[Any, Any]) -> None:
         )
 
 
-def _expire_one(deps: CatalogDeps, upload_session_id: UUID, version_id: UUID) -> bool:
-    """Lock order matches completeUploadSession: version -> session -> files (all SKIP LOCKED, then re-check)."""
+def _expire_one(
+    deps: CatalogDeps, upload_session_id: UUID, version_id: UUID
+) -> list[Mapping[Any, Any]] | None:
+    """Lock order matches completeUploadSession: version -> session -> files (all SKIP LOCKED, then re-check).
+
+    Only DB state changes inside the transaction; the caller cleans storage after commit."""
     now = clock.now()
     with deps.session_factory() as session, session.begin():
         locked_version = session.execute(
@@ -102,7 +106,7 @@ def _expire_one(deps: CatalogDeps, upload_session_id: UUID, version_id: UUID) ->
             .with_for_update(skip_locked=True)
         ).first()
         if locked_version is None:
-            return False  # a writer holds the version; retry on the next sweep
+            return None  # a writer holds the version; retry on the next sweep
         sess = session.execute(
             select(upload_sessions.c.upload_session_id)
             .where(
@@ -113,7 +117,7 @@ def _expire_one(deps: CatalogDeps, upload_session_id: UUID, version_id: UUID) ->
             .with_for_update(skip_locked=True)
         ).first()
         if sess is None:
-            return False  # completed or expired meanwhile
+            return None  # completed or expired meanwhile
         pending = (
             session.execute(
                 select(dataset_files)
@@ -126,8 +130,6 @@ def _expire_one(deps: CatalogDeps, upload_session_id: UUID, version_id: UUID) ->
             .mappings()
             .all()
         )
-        for f in pending:
-            _cleanup_partial_upload(deps, f)
         if pending:
             session.execute(
                 update(dataset_files)
@@ -139,7 +141,7 @@ def _expire_one(deps: CatalogDeps, upload_session_id: UUID, version_id: UUID) ->
             .where(upload_sessions.c.upload_session_id == upload_session_id)
             .values(status="EXPIRED")
         )
-    return True
+    return list(pending)
 
 
 def expire_upload_sessions(deps: CatalogDeps, *, limit: int = 100) -> int:
@@ -151,7 +153,14 @@ def expire_upload_sessions(deps: CatalogDeps, *, limit: int = 100) -> int:
             .order_by(upload_sessions.c.expires_at)
             .limit(limit)
         ).all()
-    expired = sum(1 for sid, vid in candidates if _expire_one(deps, sid, vid))
+    expired = 0
+    for sid, vid in candidates:
+        pending = _expire_one(deps, sid, vid)
+        if pending is None:
+            continue
+        expired += 1
+        for f in pending:  # after commit: a slow store never holds DB locks
+            _cleanup_partial_upload(deps, f)
     if expired:
         logger.info("expired upload sessions", extra={"count": expired})
     return expired
@@ -176,6 +185,7 @@ def requeue_stale_uploads(
                 update(dataset_files).where(dataset_files.c.file_id.in_(file_ids)).values(updated_at=now)
             )
     if file_ids:
+        # updated_at was bumped above; if enqueue fails the retry is deferred to the next older_than window.
         deps.verification.enqueue(file_ids)
         logger.warning("re-queued stale file verifications", extra={"count": len(file_ids)})
     return len(file_ids)
@@ -191,8 +201,14 @@ def _drain() -> None:
 
 def _sweep() -> None:
     deps = _deps()
-    expire_upload_sessions(deps)
-    requeue_stale_uploads(deps)
+    try:
+        expire_upload_sessions(deps)
+    except Exception:
+        logger.exception("expire_upload_sessions failed")
+    try:
+        requeue_stale_uploads(deps)
+    except Exception:
+        logger.exception("requeue_stale_uploads failed")
 
 
 def register_worker(broker: dramatiq.Broker, scheduler: Scheduler) -> None:

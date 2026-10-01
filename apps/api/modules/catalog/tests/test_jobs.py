@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from dramatiq.brokers.stub import StubBroker
+from sqlalchemy import text
 
 from api.modules.catalog import MODULE
 from api.modules.catalog.jobs import expire_upload_sessions, register_worker, requeue_stale_uploads
@@ -12,6 +13,7 @@ from api.modules.catalog.tests.support import execute, rows
 from api.modules.catalog.tests.support_api import CatalogApi, new_draft
 from api.modules.catalog.tests.support_upload import file_row, start_upload
 from api.platform import clock
+from api.platform.db import session_factory
 from api.platform.scheduler import Scheduler
 from api.platform.settings import Settings
 from api.platform.testing.fixtures import PgUrls
@@ -79,8 +81,66 @@ def test_register_worker_schedules_the_catalog_jobs() -> None:
     scheduler = Scheduler()
     register_worker(StubBroker(), scheduler)
     assert scheduler.job_names == ["catalog.index_drain", "catalog.expire_upload_sessions"]
+    assert [job.interval_s for job in scheduler._jobs] == [2.0, 300.0]
 
 
 def test_worker_boots_with_the_catalog_module() -> None:
     runtime = build_worker(modules=[MODULE], broker=StubBroker(), settings=Settings())
     assert "catalog.index_drain" in runtime.scheduler.job_names
+
+
+def test_sweep_skips_a_version_locked_by_a_writer_then_expires_it(api: CatalogApi, db: PgUrls) -> None:
+    _, version_id = new_draft(api)
+    started = datetime.now(UTC)
+    with clock.frozen(started):
+        start_upload(api, version_id, {"a.csv": b"a\n"})
+    with clock.frozen(started + timedelta(minutes=61)):
+        with session_factory(db.app)() as other, other.begin():
+            other.execute(
+                text("SELECT 1 FROM catalog.dataset_versions WHERE dataset_version_id = :v FOR UPDATE"),
+                {"v": version_id},
+            )
+            assert expire_upload_sessions(api.deps) == 0
+            assert rows(db, "SELECT status FROM catalog.upload_sessions") == [{"status": "OPEN"}]
+        assert expire_upload_sessions(api.deps) == 1
+    assert rows(db, "SELECT status FROM catalog.upload_sessions") == [{"status": "EXPIRED"}]
+
+
+def test_storage_failure_during_cleanup_does_not_block_the_db_update(api: CatalogApi, db: PgUrls) -> None:
+    api.use(
+        replace(
+            api.deps,
+            settings=CatalogSettings(
+                storage_multipart_threshold_bytes=1024, catalog_multipart_part_size_bytes=1024
+            ),
+        )
+    )
+    _, version_id = new_draft(api)
+    started = datetime.now(UTC)
+    with clock.frozen(started):
+        body = start_upload(api, version_id, {"big.csv": CSV, "small.csv": b"a\n"})
+    store = memory_store(api.deps.storage, "inst-b")
+
+    def boom(*_: object) -> None:
+        raise RuntimeError("storage down")
+
+    store.abort_multipart = boom  # type: ignore[method-assign]
+    store.delete = boom  # type: ignore[method-assign]
+    with clock.frozen(started + timedelta(minutes=61)):
+        assert expire_upload_sessions(api.deps) == 1
+    assert rows(db, "SELECT status FROM catalog.upload_sessions") == [{"status": "EXPIRED"}]
+    for f in body["files"]:
+        after = file_row(db, f["file_id"])
+        assert (after["status"], after["failure_code"]) == ("FAILED", "SESSION_EXPIRED")
+
+
+def test_fresh_uploaded_files_are_not_requeued(api: CatalogApi, db: PgUrls) -> None:
+    queue = RecordingVerificationQueue()
+    api.use(replace(api.deps, verification=queue))
+    _, version_id = new_draft(api)
+    start_upload(api, version_id, {"a.csv": b"a\n"})
+    execute(
+        db, "UPDATE catalog.dataset_files SET status = 'UPLOADED', updated_at = now() - interval '10 minutes'"
+    )
+    assert requeue_stale_uploads(api.deps) == 0
+    assert queue.enqueued == []
