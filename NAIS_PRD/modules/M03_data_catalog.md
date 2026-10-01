@@ -156,7 +156,7 @@ class MalwareScannerPort(Protocol):  # M03 내부 extension point, P0 구현 = N
 | sha256 | char(64) | N | | `^[a-f0-9]{64}$` (클라이언트 선언값) |
 | media_type | text | N | | allow list (§6.6) |
 | storage_bucket | text | N | | |
-| storage_key | text | N | | `datasets/{dataset_id}/{dataset_version_id}/{path}` |
+| storage_key | text | N | | `datasets/{dataset_id}/{dataset_version_id}/{upload_session_id}/{path}` (D-039) |
 | multipart_upload_id | text | Y | | multipart일 때 |
 | part_size_bytes | bigint | Y | | |
 | status | text | N | `'PENDING'` | IN (`PENDING`,`UPLOADED`,`VERIFIED`,`FAILED`) |
@@ -224,7 +224,7 @@ class MalwareScannerPort(Protocol):  # M03 내부 extension point, P0 구현 = N
 ### 4.8 Storage 배치
 
 - Bucket: owner organization `code` → env `STORAGE_<CODE>_BUCKET` (code를 대문자화, `-`→`_`. 예: `inst-b` → `STORAGE_INST_B_BUCKET=nais-inst-b`).
-- Key: `datasets/{dataset_id}/{dataset_version_id}/{path}`
+- Key: `datasets/{dataset_id}/{dataset_version_id}/{upload_session_id}/{path}` (D-039: 업로드 세션마다 고유 key)
 - 기관 스토리지 설정이 없는 기관으로 Dataset 생성 시 `422 VALIDATION_FAILED` (`details.fields=[{"field":"owner_organization_id","reason":"STORAGE_NOT_CONFIGURED"}]`).
 - 모든 bucket은 private. 서비스 자격증명은 API/worker만 가진다.
 
@@ -349,7 +349,7 @@ manifest_sha256 = sha256(text.encode("utf-8")).hexdigest()
     서명 헤더 `Content-Type`, `x-amz-checksum-sha256`(선언 sha256의 base64) 포함 → 스토리지가 불일치 본문을 거부.
   - 초과: S3 multipart. `part_size_bytes = 64 MiB`, part별 presigned `UploadPart` URL (part 수 ≤ 10,000).
   - presign은 **public endpoint `NAIS_PUBLIC_BASE_URL`, path-style**, SigV4, region `us-east-1`, URL TTL `UPLOAD_URL_TTL_SECONDS`(3600).
-    예: `http://localhost:21051/nais-inst-b/datasets/{dataset_id}/{version_id}/data/a.csv?X-Amz-...`
+    예: `http://localhost:21051/nais-inst-b/datasets/{dataset_id}/{version_id}/{upload_session_id}/data/a.csv?X-Amz-...` (URL TTL은 세션 잔여 시간으로 제한, D-039)
 - session `expires_at = now + 1h`.
 
 **Allow list (P0)**

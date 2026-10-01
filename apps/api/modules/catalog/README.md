@@ -10,6 +10,10 @@ deleteDraftFile, publishDatasetVersion. No endpoint returns a download URL, buck
 ## Upload flow
 1. `POST /dataset-versions/{id}/upload-session` → per file either `PUT` (sign `Content-Type` and
    `x-amz-checksum-sha256`; send both headers exactly as returned) or `MULTIPART` (64 MiB parts, one URL each).
+   Each upload session writes to its own keys, `datasets/{dataset_id}/{version_id}/{upload_session_id}/{path}`
+   (D-039), and presigned URLs never outlive the session (`ttl = min(UPLOAD_URL_TTL_SECONDS, seconds to expires_at)`;
+   an expired session shows `status: EXPIRED` and no URLs). A re-used FAILED/expired path gets the new session's key;
+   the old object is removed after commit. Seed rows created earlier keep their stored keys (the key is stored per row).
 2. Upload through `http://localhost:21051/<bucket>/...` (gateway → SeaweedFS). Keep each part's `ETag`.
 3. `POST /upload-sessions/{id}/complete` with `{"parts": [{"file_id", "etags": [{"part_number", "etag"}]}]}`.
    Sessions ≤ 256 MiB are verified synchronously; larger ones return `UPLOADED` — poll `GET /upload-sessions/{id}`.
@@ -48,14 +52,24 @@ analyzer is rebuilt with `python -m api.modules.catalog.reindex`.
 ## Visibility (ruling M03-R3)
 Search returns ACTIVE datasets only. A direct `GET /datasets/{id}` of a WITHDRAWN dataset succeeds only for the owner
 organization and platform admins; everyone else gets 404 (never 403, so existence is not disclosed). Datasets the caller
-cannot see by access level and organization are 404 as well.
+cannot see by access level and organization are 404 as well. Non-owners (other organizations, not platform admins) also
+need a published version (`has_published_version`): a dataset with no or only draft versions is 404 for them, and
+INTERNAL datasets are never visible outside the owner organization. Platform admin search shows all ACTIVE datasets (D-040).
 
 ## Public port trust rules
-- `CatalogReadPort.open_stream` re-verifies the `FileRef` against the catalog (version, path, size, sha256, VERIFIED)
-  before streaming; a forged or stale ref is rejected.
+- `CatalogReadPort.open_stream` checks exactly: the `file_id` exists, its status is VERIFIED, its version is PUBLISHED,
+  and `(storage_bucket, storage_key)` equal the stored values. It does not check `path`, `size_bytes` or `sha256` of the
+  `FileRef`; a ref with a wrong location is rejected, the bytes always come from the stored location.
 - `StoragePort.presign_get` only signs for files of PUBLISHED versions in status VERIFIED.
+- M04 must still do these checks itself: `presign_get` does not check that the dataset is WITHDRAWN (M04 step 1 must);
+  `CatalogQueryPort.is_visible` returns true for the owner organization and platform admins on WITHDRAWN datasets
+  (check `DatasetPolicyView.status`); `get_version` also returns DRAFT versions (check `VersionView.status`).
 
 ## Known limitations (P0)
 Archive (zip) checks are header-only and archives are never extracted (ruling M03-R4); nested archives are therefore not
 inspected. Malware scan is a no-op; the server re-hashes every file; facet counts are not disjunctive; `total` is capped
 at 10,000; organization renames need `reindex`.
+- Zip checks read only the central directory (header-only, see above); nothing is decompressed.
+- Withdrawing a version through operator SQL does not enqueue an index update; run `reindex` afterwards.
+- Synchronous verification (sessions ≤ 256 MiB) holds the upload-session and version locks while hashing.
+- PUBLISHED versions reject every update, including `updated_at`-only ones (stricter than spec §4.2).
