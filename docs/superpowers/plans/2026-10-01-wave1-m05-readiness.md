@@ -4,13 +4,17 @@
 
 **Goal:** Build the `readiness` module: deterministic validation of PUBLISHED dataset versions against `GENERIC_BASIC@1.0.0` and `TABULAR_ML_BASIC@1.0.0` (9 validators, evidence without raw values), run by a Dramatiq actor that is auto-queued by `catalog.dataset.version_published.v1` or by a steward through the API, with 4 golden fixtures.
 
-**Architecture:** A pure engine (`engine/` + `validators/`, no DB, no clock, no network) turns `(metadata snapshot, file manifest, file bytes, profile, VALIDATOR_VERSION)` into a canonical, hashed `ValidationResult`. Around it: a Postgres state machine (`readiness.validations` / `check_results`), a Dramatiq actor `readiness.run_validation` on queue `readiness`, an outbox-published `started`/`completed` event pair, a per-handler idempotent publish consumer, a stale-job sweeper, and three HTTP operations. M03 is reached only through a local mirror of its ports (`catalog_port.py`), faked in tests by `FixtureCatalog`, which serves the committed fixtures from disk.
+**Architecture:** A pure engine (`engine/` + `validators/`, no DB, no clock, no network) turns `(metadata snapshot, file manifest, file bytes, profile, VALIDATOR_VERSION)` into a canonical, hashed `ValidationResult`. Around it: a Postgres state machine (`readiness.validations` / `check_results`), a Dramatiq actor `readiness.run_validation` on queue `readiness`, an outbox-published `started`/`completed` event pair, a per-handler idempotent publish consumer, a stale-job sweeper, and three HTTP operations. M03 is reached only through its public ports (`api.modules.catalog.public`, re-exported by `catalog_port.py`), faked in tests by `FixtureCatalog`, which serves the committed fixtures from disk.
 
 **Tech Stack:** Python 3.13, FastAPI (`SessionDep`, `CurrentUserDep`), SQLAlchemy 2 Core + Alembic (platform runner), Dramatiq (StubBroker in tests), stdlib `csv`, `pyarrow` (parquet, new dependency), `jsonschema`, `pyyaml`, pytest + testcontainers Postgres.
 
 **Spec:** `NAIS_PRD/modules/M05_ai_ready.md` (binding) and `NAIS_PRD/09_AI_READY_RULES.md` (rules, thresholds, fixtures). Cross-cutting: `NAIS_PRD/11_DECISION_LOG.md` (D-005, D-006, D-012, D-018, D-028, D-029, D-036), `NAIS_PRD/contracts/openapi.yaml` (readiness tag), `NAIS_PRD/contracts/events/p0_events.schema.json`, `NAIS_PRD/contracts/error_codes.json`, `NAIS_PRD/10_SEED_DATA.md` §1 step 4.
 
 > Every code block in this plan was run: all 16 tasks were applied in order on a copy of `feat/wave1` and each task's tests plus `ruff check`/`ruff format --check` passed at that point; the final full suite was `343 passed, 1 skipped`. Copy code verbatim.
+>
+> **Harmonized with the Wave 1 controller decisions (W1-D1…D6)** after that run: `catalog_port.py` now re-exports `api.modules.catalog.public` (D-038), `FixtureCatalog` gained `get_policy_view`, `generate.py` takes the fixture file bytes from M03's `seed_files.fixture_files` (W1-D5), and the 401/404 tests contract-check against openapi 1.2.0. These edits were not re-run in scratch.
+
+**Execution order (W1):** M00 kickoff → M01 → M02 → M03 → M05 → M09 → M10. Prerequisites from M00: pg_trgm in `public`, openapi 1.2.0, mypy covers `apps/api/modules`, `.env.example` keys (incl. `READINESS_*`). M03 must be merged first (catalog public ports and the `seed_files` generator).
 
 ## Global Constraints
 
@@ -45,7 +49,7 @@
 - **input_fingerprint**: D-029 and openapi include `metadata_snapshot_sha256`; 09 §4 omits it. Decision log wins: `sha256("|".join([manifest_sha256, sha256(canonical_json(snapshot)), profile_id, profile_version, validator_version]))` (09's `|` form).
 - **Missing object (storage 404)**: M05 §5 (run FAILED) vs 09 §3.8 (check FAIL). The state machine wins: `ObjectMissing` -> run `FAILED` with `FILE_NOT_FOUND: <path> ...`; `integrity.file_checksum` keeps `"missing": []` for evidence-shape compatibility.
 - **Actor of `completed` for manual runs**: §4.1 stores only `requested_by`; added nullable `requester_organization_id` so `actor.organization_id` is right for PLATFORM_ADMIN requesters (M09 audit).
-- **Port keys**: readiness defines a mirror of M03 §8 types/ports in `catalog_port.py` and looks ports up under those classes; `is_visible` takes the platform `CurrentUser` (has every AuthContext field readiness needs).
+- **Port keys** (W1-D1 / D-038): `catalog_port.py` re-exports M03's `api.modules.catalog.public` types/ports and readiness looks ports up under those classes; `is_visible` takes the platform `CurrentUser` (has every AuthContext field readiness needs).
 - **schema.presence extra FAILs**: a `resources[].path` that is not a file of the version, and duplicate header columns (spec silent; both make "field set exactly matches" unverifiable).
 - **Undecodable parquet** = `encoding_error` (FAIL), same as an undecodable CSV. **CSV byte budget** counts UTF-8 value bytes + 1 separator per value (independent of I/O buffering). Blank CSV lines are not data rows.
 - **Worker concurrency**: the platform worker has one thread pool for every queue, so `READINESS_WORKER_CONCURRENCY` is a per-process `BoundedSemaphore` around the actor body.
@@ -60,7 +64,7 @@ apps/api/modules/readiness/
   __init__.py                                  MODULE = ModuleSpec(...); imports handlers (registers @subscribe)
   README.md                                    rules link, version policy, integration notes (§13.1, §13.7)
   settings.py                                  READINESS_* operational env (never verdict thresholds)
-  catalog_port.py                              mirror of M03 §8: FileRef, VersionView, CatalogQueryPort, CatalogReadPort, errors
+  catalog_port.py                              re-export of api.modules.catalog.public: FileRef, VersionView, ports, errors
   profile_registry.py                          loads profiles/*.yaml -> PROFILES, PROFILE_ORDER
   profiles/GENERIC_BASIC.yaml, TABULAR_ML_BASIC.yaml
   dictionaries/ucum_atoms_v1.txt, ucum_prefixes_v1.txt, unit_aliases_v1.csv, spdx_license_ids_v1.txt
@@ -105,11 +109,11 @@ Profiles are code (M05 §4), loaded once and validated at import. Env knobs are 
 - Create: `apps/api/modules/readiness/profile_registry.py`
 - Create: `apps/api/modules/readiness/__init__.py`
 - Create: `apps/api/modules/readiness/tests/__init__.py`
-- Test: `apps/api/modules/readiness/tests/test_profiles.py`
+- Test: `apps/api/modules/readiness/tests/test_profiles.py`, `apps/api/modules/readiness/tests/test_catalog_port.py`
 
 **Interfaces:**
-- Consumes: `api.platform.modules.ModuleSpec`, `api.platform.auth.CurrentUser`.
-- Produces: `profile_registry.PROFILES: dict[str, Profile]` (keys in `PROFILE_ORDER = ("GENERIC_BASIC", "TABULAR_ML_BASIC")`), `Profile(profile_id, version, name, description, checks: tuple[CheckSpec], params: ProfileParams)`, `Profile.to_api() -> dict`, `CheckSpec(check_id, severity, ordinal)`, `ProfileParams` (15 fields of 09 §2.3), `Severity = Literal["REQUIRED","RECOMMENDED"]`, `load_profiles(directory) -> dict[str, Profile]`; `settings.ReadinessSettings` / `get_readiness_settings()` (`run_timeout_seconds`, `file_timeout_seconds`, `worker_concurrency`); `catalog_port.FileRef`, `VersionView`, `CatalogQueryPort`, `CatalogReadPort`, `StorageUnavailable`, `ObjectMissing`; `MODULE` (grows in later tasks).
+- Consumes: `api.platform.modules.ModuleSpec`; M03 `api.modules.catalog.public` (`CatalogQueryPort`, `CatalogReadPort`, `FileRef`, `VersionView`, `ObjectMissing(LookupError)`, `StorageUnavailable(RuntimeError)`, `DatasetPolicyView`).
+- Produces: `profile_registry.PROFILES: dict[str, Profile]` (keys in `PROFILE_ORDER = ("GENERIC_BASIC", "TABULAR_ML_BASIC")`), `Profile(profile_id, version, name, description, checks: tuple[CheckSpec], params: ProfileParams)`, `Profile.to_api() -> dict`, `CheckSpec(check_id, severity, ordinal)`, `ProfileParams` (15 fields of 09 §2.3), `Severity = Literal["REQUIRED","RECOMMENDED"]`, `load_profiles(directory) -> dict[str, Profile]`; `settings.ReadinessSettings` / `get_readiness_settings()` (`run_timeout_seconds`, `file_timeout_seconds`, `worker_concurrency`); `catalog_port.FileRef`, `VersionView`, `CatalogQueryPort`, `CatalogReadPort`, `StorageUnavailable`, `ObjectMissing` (re-exports of `api.modules.catalog.public`); `MODULE` (grows in later tasks).
 
 - [ ] **Step 1: Add pyarrow (shared file change, Agent 0 approved)**
 
@@ -217,9 +221,9 @@ def test_env_only_tunes_operations_not_verdicts(monkeypatch: pytest.MonkeyPatch)
 - [ ] **Step 3: Run the tests to verify they fail**
 
 ```bash
-uv run pytest apps/api/modules/readiness/tests/test_profiles.py -q
+uv run pytest apps/api/modules/readiness/tests/test_profiles.py apps/api/modules/readiness/tests/test_catalog_port.py -q
 ```
-Expected: collection error, `ModuleNotFoundError: No module named 'api.modules.readiness.profile_registry'` (and `...settings`).
+Expected: collection error, `ModuleNotFoundError: No module named 'api.modules.readiness.profile_registry'` (and `...settings`, `...catalog_port`).
 
 - [ ] **Step 4: Implement**
 
@@ -249,66 +253,47 @@ def get_readiness_settings() -> ReadinessSettings:
 `apps/api/modules/readiness/catalog_port.py` (create):
 
 ```python
-"""Mirror of the M03 public types readiness consumes (M03 §8, D-024: M03 owns the canonical definitions).
+"""M03 public types readiness consumes (W1-D1 / D-038: M03 owns them in api.modules.catalog.public).
 
-Wave 1: M03 does not exist yet, so readiness looks these ports up under the classes defined HERE and tests
-provide `api.modules.readiness.fakes.FixtureCatalog`. At integration, M03 provides its adapters under these
-keys (or this file becomes `from api.modules.catalog.public import ...`). Nothing else in readiness may
-import catalog code.
+This file only re-exports them so the rest of readiness keeps one import path. The Protocol classes ARE the
+`api.platform.ports` registry keys M03 provides in its wiring; tests provide `fakes.FixtureCatalog` under the
+same keys. Nothing else in readiness may import catalog code.
 """
 
-from dataclasses import dataclass
-from typing import Any, BinaryIO, Literal, Protocol
-from uuid import UUID
+from api.modules.catalog.public import (
+    CatalogQueryPort,
+    CatalogReadPort,
+    FileRef,
+    ObjectMissing,
+    StorageUnavailable,
+    VersionView,
+)
 
-from api.platform.auth import CurrentUser
+__all__ = [
+    "CatalogQueryPort",
+    "CatalogReadPort",
+    "FileRef",
+    "ObjectMissing",
+    "StorageUnavailable",
+    "VersionView",
+]
+```
 
-FileStatus = Literal["PENDING", "UPLOADED", "VERIFIED", "FAILED"]
-VersionStatus = Literal["DRAFT", "PUBLISHED", "WITHDRAWN"]
+`apps/api/modules/readiness/tests/test_catalog_port.py` (create):
 
-
-@dataclass(frozen=True)
-class FileRef:
-    file_id: UUID
-    path: str
-    size_bytes: int
-    sha256: str
-    media_type: str
-    status: FileStatus
-    storage_bucket: str  # internal only: never in API responses, events, evidence or logs
-    storage_key: str
-
-
-@dataclass(frozen=True)
-class VersionView:
-    dataset_version_id: UUID
-    dataset_id: UUID
-    owner_organization_id: UUID
-    version_label: str
-    status: VersionStatus
-    manifest_sha256: str | None
-    metadata_snapshot: dict[str, Any] | None  # not None only when PUBLISHED
-    files: tuple[FileRef, ...]  # path ascending
+```python
+import api.modules.catalog.public as catalog_public
+from api.modules.readiness import catalog_port
 
 
-class CatalogQueryPort(Protocol):
-    def get_version(self, dataset_version_id: UUID) -> VersionView | None: ...
-
-    def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool: ...
-
-
-class CatalogReadPort(Protocol):
-    """Worker-only, service credentials (D-018). Raises ObjectMissing / StorageUnavailable (below)."""
-
-    def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
-
-
-class StorageUnavailable(Exception):
-    """Infrastructure error (connection refused, timeout, 5xx). The run is retried (M05 §5)."""
-
-
-class ObjectMissing(Exception):
-    """The object is not in storage (404). The run fails with FILE_NOT_FOUND (M05 §5)."""
+def test_catalog_port_reexports_the_m03_public_classes() -> None:
+    """W1-D1: the registry key is the provider's public.py class, never a readiness-side copy."""
+    assert catalog_port.CatalogQueryPort is catalog_public.CatalogQueryPort
+    assert catalog_port.CatalogReadPort is catalog_public.CatalogReadPort
+    assert catalog_port.FileRef is catalog_public.FileRef
+    assert catalog_port.VersionView is catalog_public.VersionView
+    assert catalog_port.ObjectMissing is catalog_public.ObjectMissing
+    assert catalog_port.StorageUnavailable is catalog_public.StorageUnavailable
 ```
 
 `apps/api/modules/readiness/profiles/GENERIC_BASIC.yaml` (create):
@@ -497,16 +482,16 @@ MODULE = ModuleSpec(name="readiness", db_schema="readiness")
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-uv run pytest apps/api/modules/readiness/tests/test_profiles.py -q
+uv run pytest apps/api/modules/readiness/tests/test_profiles.py apps/api/modules/readiness/tests/test_catalog_port.py -q
 uv run ruff check apps/api/modules/readiness tests/fixtures && uv run ruff format --check apps/api/modules/readiness tests/fixtures
 ```
-Expected: `7 passed`; ruff clean.
+Expected: `8 passed`; ruff clean.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add apps/api/modules/readiness/__init__.py apps/api/modules/readiness/catalog_port.py apps/api/modules/readiness/profile_registry.py apps/api/modules/readiness/profiles/GENERIC_BASIC.yaml apps/api/modules/readiness/profiles/TABULAR_ML_BASIC.yaml apps/api/modules/readiness/settings.py apps/api/modules/readiness/tests/__init__.py apps/api/modules/readiness/tests/test_profiles.py pyproject.toml uv.lock
-git commit -m "feat(readiness): module skeleton, profiles and catalog port mirror" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+git add apps/api/modules/readiness/__init__.py apps/api/modules/readiness/catalog_port.py apps/api/modules/readiness/profile_registry.py apps/api/modules/readiness/profiles/GENERIC_BASIC.yaml apps/api/modules/readiness/profiles/TABULAR_ML_BASIC.yaml apps/api/modules/readiness/settings.py apps/api/modules/readiness/tests/__init__.py apps/api/modules/readiness/tests/test_profiles.py apps/api/modules/readiness/tests/test_catalog_port.py pyproject.toml uv.lock
+git commit -m "feat(readiness): module skeleton, profiles and catalog port re-export" -m "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 
@@ -713,7 +698,7 @@ git commit -m "feat(readiness): canonical json, evidence bound, manifest and fin
 
 ### Task 3: Golden fixtures (generate.py, fixtures.lock) and the FixtureCatalog fake
 
-09 §5 fixtures are owned by M05 and generated once by a deterministic script, then committed. `FixtureCatalog` is the in-module fake of M03's `CatalogQueryPort` + `CatalogReadPort` (M05 §3.1): it serves versions from fixture files on disk or from in-memory bytes.
+09 §5 fixtures are owned by M05 and generated once by a deterministic script, then committed. Their `files/**` bytes come from M03's `api.modules.catalog.seed_files.fixture_files(fixture)` (W1-D5: M03 is the single source; `fixtures.lock` pins the 09-conformant bytes). `FixtureCatalog` is the in-module fake of M03's `CatalogQueryPort` + `CatalogReadPort` (M05 §3.1): it serves versions from fixture files on disk or from in-memory bytes.
 
 **Files:**
 - Create: `tests/fixtures/readiness/generate.py`
@@ -722,7 +707,7 @@ git commit -m "feat(readiness): canonical json, evidence bound, manifest and fin
 - Test: `apps/api/modules/readiness/tests/test_fixtures.py`
 
 **Interfaces:**
-- Consumes: `engine.canonical.manifest_sha256` (Task 2), `catalog_port` types (Task 1).
+- Consumes: `engine.canonical.manifest_sha256` (Task 2), `catalog_port` types (Task 1), M03 `api.modules.catalog.seed_files.fixture_files(fixture: str) -> dict[str, bytes]`, M03 `api.modules.catalog.public.DatasetPolicyView`.
 - Produces: `fakes.FIXTURES_ROOT`, `fakes.FixtureCatalog` with `add_version(files: dict[str, Path | bytes], snapshot, *, owner_organization_id, status="PUBLISHED", dataset_id=None, dataset_version_id=None, access_level=None) -> VersionView`, `add_fixture(name, *, owner_organization_id, **kw) -> VersionView`, `replace_view(view)`, `delete_object(version_id, path)`, `get_version`, `is_visible` (D-012), `open_stream` (raises `fail_reads` if set, `ObjectMissing` when deleted), attributes `reads: list[str]`, `live_metadata: dict[UUID, dict]`; `tests/helpers.py`: `ORG_NAIS/ORG_A/ORG_B`, `USERS` (seed ids), `FIXTURE_NAMES`, `clean_snapshot()`, `fixture_files(name) -> dict[str, bytes]`; fixture tree under `tests/fixtures/readiness/` with `expected/*.json` (`result_sha256: null` until Task 10).
 
 - [ ] **Step 1: Write the failing test**
@@ -784,6 +769,7 @@ import importlib.util
 import json
 from types import ModuleType
 
+from api.modules.catalog.seed_files import fixture_files as catalog_fixture_files
 from api.modules.readiness.engine import VALIDATOR_VERSION
 from api.modules.readiness.engine.canonical import manifest_sha256
 from api.modules.readiness.fakes import FIXTURES_ROOT, FixtureCatalog
@@ -814,6 +800,17 @@ def test_generator_reproduces_committed_inputs() -> None:
         assert json.loads((FIXTURES_ROOT / name / "dataset.json").read_text(encoding="utf-8")) == dataset
         for rel, data in files.items():
             assert (FIXTURES_ROOT / name / "files" / rel).read_bytes() == data, f"{name}/{rel}"
+
+
+def test_committed_files_equal_catalog_seed_files() -> None:
+    """W1-D5: M03's seed_files generator is the single source of the fixture bytes (catalog seed == golden)."""
+    for name in FIXTURE_NAMES:
+        committed = {
+            p.relative_to(FIXTURES_ROOT / name / "files").as_posix(): p.read_bytes()
+            for p in sorted((FIXTURES_ROOT / name / "files").rglob("*"))
+            if p.is_file()
+        }
+        assert committed == catalog_fixture_files(name), name
 
 
 def test_measurements_csv_follows_the_formula() -> None:
@@ -853,6 +850,16 @@ def test_fake_catalog_visibility_follows_d012() -> None:
     assert catalog.is_visible(USERS["a_researcher"], controlled.dataset_id)
     draft = catalog.add_version({}, None, owner_organization_id=ORG_A, status="DRAFT")
     assert draft.metadata_snapshot is None and draft.manifest_sha256 is None
+
+
+def test_fake_catalog_policy_view_satisfies_the_m03_port() -> None:
+    catalog = FixtureCatalog()
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    policy = catalog.get_policy_view(view.dataset_id)
+    assert policy is not None and policy.owner_organization_id == ORG_B
+    assert (policy.access_level, policy.status) == ("CONTROLLED", "ACTIVE")
+    assert policy.title == "고분자 전해질 막 온도-압력 측정"
+    assert catalog.get_policy_view(ORG_A) is None
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -872,17 +879,23 @@ Expected: collection error, `ModuleNotFoundError: No module named 'api.modules.r
 Run from the repo root:  uv run python tests/fixtures/readiness/generate.py
 Writes <fixture>/dataset.json, <fixture>/files/**, <fixture>/expected/*.json (keeps an already recorded
 result_sha256) and fixtures.lock (sha256 of every input file). Commit the output.
+
+W1-D5: the files/** bytes are NOT built here. They come from M03's `api.modules.catalog.seed_files.fixture_files`
+(the catalog seed uploads the same files), so the golden fixtures and the seeded datasets are byte-identical by
+construction. fixtures.lock pins the 09 §1.2/§5-conformant bytes; if M03's generator drifts, the lock test fails.
 """
 
 import copy
-import csv
 import hashlib
-import io
 import json
-from datetime import UTC, datetime, timedelta
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT.parents[2] / "apps"))  # script run from the repo root; pytest already has `apps`
+
+from api.modules.catalog.seed_files import fixture_files  # noqa: E402
+
 FIXTURES = ("clean_tabular", "missing_metadata", "invalid_units", "missing_provenance")
 VALIDATOR_VERSION = "1.0.0"  # must equal api.modules.readiness.engine.VALIDATOR_VERSION
 
@@ -906,104 +919,13 @@ CLEAN_DATASET = {
     ),
 }
 
-README_OVERVIEW = (
-    "# 고분자 전해질 막 온도-압력 측정\n"
-    "\n"
-    "연료전지용 고분자 전해질 막 시편 1,000개의 온도와 압력 측정값을 담은 표 형식 데이터셋이다.\n"
-    "파일 구성: `data/measurements.csv`, 스키마 `_schema.json`, 코드북 `_codebook.csv`.\n"
-)
-README_PROVENANCE = (
-    "\n"
-    "## Provenance\n"
-    "\n"
-    "Institute B 연료전지 실험실의 환경 챔버(모델 EC-200)에서 2026년 1월 1일 00:01부터 1분 간격으로 "
-    "자동 수집한 원시 측정값이며, 보정이나 후처리를 하지 않았다.\n"
-)
-
-CONCEPTS = {
-    "sample_id": "https://schema.org/identifier",
-    "material": "https://w3id.org/emmo#Material",
-    "temperature_c": "http://qudt.org/vocab/quantitykind/Temperature",
-    "pressure_kpa": "http://qudt.org/vocab/quantitykind/Pressure",
-    "measured_at": "http://www.w3.org/2006/time#Instant",
-}
-
-
-def measurements_csv() -> bytes:
-    out = io.StringIO()
-    writer = csv.writer(out, lineterminator="\n")
-    writer.writerow(["sample_id", "material", "temperature_c", "pressure_kpa", "measured_at"])
-    start = datetime(2026, 1, 1, tzinfo=UTC)
-    for i in range(1, 1001):
-        pressure = "" if i % 100 == 0 else f"{101.325 + (i % 10):.3f}"
-        measured = (start + timedelta(minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        material = ["AL", "CU", "FE"][i % 3]
-        writer.writerow([f"S{i:04d}", material, f"{20.0 + (i % 50) * 0.5:.1f}", pressure, measured])
-    return out.getvalue().encode("utf-8")
-
-
-def schema_json(temperature_unit: str, pressure_unit: str) -> bytes:
-    fields: list[dict[str, object]] = [
-        {"name": "sample_id", "type": "string", "description": "시편 식별자"},
-        {
-            "name": "material",
-            "type": "string",
-            "description": "재료 코드",
-            "constraints": {"enum": ["AL", "CU", "FE"]},
-        },
-        {
-            "name": "temperature_c",
-            "type": "number",
-            "unit": temperature_unit,
-            "description": "시편 온도",
-            "constraints": {"required": True},
-        },
-        {"name": "pressure_kpa", "type": "number", "unit": pressure_unit, "description": "챔버 압력"},
-        {"name": "measured_at", "type": "datetime", "description": "측정 시각"},
-    ]
-    for field in fields:
-        field["x-nais-concept"] = CONCEPTS[str(field["name"])]
-    doc = {
-        "resources": [
-            {
-                "path": "data/measurements.csv",
-                "schema": {"fields": fields, "primaryKey": "sample_id", "missingValues": ["", "NA"]},
-            }
-        ]
-    }
-    return (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
-
-
-def codebook_csv() -> bytes:
-    rows = [
-        ["path", "field", "code", "label", "unit", "description"],
-        ["data/measurements.csv", "material", "AL", "Aluminium", "", ""],
-        ["data/measurements.csv", "material", "CU", "Copper", "", ""],
-        ["data/measurements.csv", "material", "FE", "Iron", "", ""],
-    ]
-    out = io.StringIO()
-    csv.writer(out, lineterminator="\n").writerows(rows)
-    return out.getvalue().encode("utf-8")
-
-
 def fixture_inputs(name: str) -> tuple[dict[str, object], dict[str, bytes]]:
     dataset: dict[str, object] = copy.deepcopy(CLEAN_DATASET)
-    temperature_unit, pressure_unit = "Cel", "kPa"
-    readme = README_OVERVIEW + README_PROVENANCE
     if name == "missing_metadata":
         dataset.update(description="측정 데이터", keywords=[], domain=None, contact_email=None)
-    elif name == "invalid_units":
-        temperature_unit, pressure_unit = "degC", "kilopascal"
     elif name == "missing_provenance":
         dataset["provenance"] = None
-        readme = README_OVERVIEW
-    files = {
-        "README.md": readme.encode("utf-8"),
-        "_codebook.csv": codebook_csv(),
-        "_schema.json": schema_json(temperature_unit, pressure_unit),
-        "data/measurements.csv": measurements_csv(),
-    }
-    return dataset, files
+    return dataset, fixture_files(name)
 
 
 # 09_AI_READY_RULES.md §5.6 (GENERIC_BASIC has no datatype_validity / missing_values).
@@ -1090,7 +1012,7 @@ if __name__ == "__main__":
 `apps/api/modules/readiness/fakes.py` (create):
 
 ```python
-"""In-module fake of M03's CatalogQueryPort + CatalogReadPort (mock-first, 02 §4).
+"""In-module fake of M03's CatalogQueryPort + CatalogReadPort (api.modules.catalog.public; mock-first, 02 §4).
 
 Serves versions built from files on disk (tests/fixtures/readiness/<fixture>/files) or from in-memory bytes.
 Used by the readiness tests and by `python -m api.modules.readiness.selfcheck`. Never wired in production.
@@ -1105,6 +1027,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 from uuid import UUID
 
+from api.modules.catalog.public import DatasetPolicyView
 from api.modules.readiness.catalog_port import FileRef, ObjectMissing, VersionView
 from api.modules.readiness.engine.canonical import manifest_sha256
 from api.platform.auth import CurrentUser
@@ -1213,7 +1136,24 @@ class FixtureCatalog:
         [ref] = [f for f in entry.view.files if f.path == path]
         del entry.sources[ref.storage_key]
 
-    # ---- CatalogQueryPort
+    # ---- CatalogQueryPort (full M03 Protocol, so it can be provided under the M03 key)
+    def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None:
+        for entry in self._versions.values():
+            if entry.view.dataset_id != dataset_id:
+                continue
+            meta = self.live_metadata.get(dataset_id, {})
+            return DatasetPolicyView(
+                dataset_id=dataset_id,
+                owner_organization_id=entry.view.owner_organization_id,
+                access_level=entry.access_level,  # type: ignore[arg-type]
+                allowed_purposes=tuple(meta.get("allowed_purposes") or ()),
+                approval_required=entry.access_level in ("CONTROLLED", "SENSITIVE"),
+                max_grant_days=int(meta.get("max_grant_days") or 180),
+                status="ACTIVE",
+                title=str(meta.get("title") or ""),
+            )
+        return None
+
     def get_version(self, dataset_version_id: UUID) -> VersionView | None:
         entry = self._versions.get(dataset_version_id)
         return entry.view if entry else None
@@ -1281,7 +1221,7 @@ Re-running the script must leave `git status` clean (it is deterministic).
 uv run pytest apps/api/modules/readiness/tests/test_fixtures.py -q
 uv run ruff check apps/api/modules/readiness tests/fixtures && uv run ruff format --check apps/api/modules/readiness tests/fixtures
 ```
-Expected: `5 passed`; ruff clean.
+Expected: `7 passed`; ruff clean. If `fixtures.lock` differs from the listing above or `test_committed_files_equal_catalog_seed_files` fails, M03's `seed_files.py` is not 09 §1.2/§5-conformant: stop and report to the controller (do not edit catalog code from this plan).
 
 - [ ] **Step 6: Commit**
 
@@ -6539,6 +6479,7 @@ def test_list_profiles_for_any_authenticated_user(client: TestClient) -> None:
 def test_list_profiles_requires_a_token(client: TestClient) -> None:
     response = client.get("/api/v1/readiness-profiles")
     assert (response.status_code, error_code(response)) == (401, "UNAUTHENTICATED")
+    assert_matches_response("listReadinessProfiles", 401, response.json())  # declared since contract 1.2.0 (M00)
 
 
 # ---------------------------------------------------------------- startReadinessValidation
@@ -6629,8 +6570,12 @@ def test_extra_body_fields_are_rejected(client: TestClient, catalog: FixtureCata
 
 def test_unknown_or_invisible_version_is_404(client: TestClient, catalog: FixtureCatalog) -> None:
     internal = catalog.add_fixture("invalid_units", owner_organization_id=ORG_B, access_level="INTERNAL")
-    assert start(client, internal.dataset_version_id, "a_steward").status_code == 404
-    assert start(client, "0199a000-0000-7000-8000-000000000000", "b_steward").status_code == 404
+    for response in (
+        start(client, internal.dataset_version_id, "a_steward"),
+        start(client, "0199a000-0000-7000-8000-000000000000", "b_steward"),
+    ):
+        assert (response.status_code, error_code(response)) == (404, "NOT_FOUND")
+        assert_matches_response("startReadinessValidation", 404, response.json())  # declared since 1.2.0 (M00)
 
 
 def test_tabular_profile_on_non_tabular_version_is_allowed(
@@ -6923,7 +6868,7 @@ verdict (M05-AT-14 checks the imports).
 | `schemas/table_schema_subset_v1.json` | the `_schema.json` subset (09 §1.2) |
 | `service.py`, `router.py` | queueing rules and the 3 operations of the `readiness` tag |
 | `handlers.py`, `jobs.py` | `catalog.dataset.version_published.v1` consumer, Dramatiq actor `readiness.run_validation` (queue `readiness`), `readiness.sweep_stale` (10 min) |
-| `catalog_port.py`, `fakes.py` | mirror of M03's `VersionView`/`FileRef`/ports; `FixtureCatalog` fake for tests and `selfcheck` |
+| `catalog_port.py`, `fakes.py` | re-export of M03's `api.modules.catalog.public` (`VersionView`/`FileRef`/ports/errors); `FixtureCatalog` fake for tests and `selfcheck` |
 | `tests/fixtures/readiness/` (repo root) | 4 fixtures, `generate.py`, `fixtures.lock`, golden `expected/*.json` |
 
 ## Version policy (09 §4)
@@ -6941,15 +6886,15 @@ verdict (M05-AT-14 checks the imports).
 A check `FAIL` means the data does not meet the rule; the run is `COMPLETED`.
 
 ## Integration notes
-- **M03**: provide `CatalogQueryPort` and `CatalogReadPort` under the classes in `catalog_port.py` (or replace that file
-  with imports from `api.modules.catalog.public`). `open_stream` must raise `ObjectMissing` on 404 and
-  `StorageUnavailable` on connection errors. `readiness_overall` = latest COMPLETED `TABULAR_ML_BASIC`, else
+- **M03**: readiness looks up `CatalogQueryPort` and `CatalogReadPort` from `api.modules.catalog.public` (D-038; M03's
+  wiring provides them in api and worker). `open_stream` raises the public `ObjectMissing` on 404 and
+  `StorageUnavailable` on connection errors. Fixture `files/**` bytes come from `api.modules.catalog.seed_files` (W1-D5). `readiness_overall` = latest COMPLETED `TABULAR_ML_BASIC`, else
   `GENERIC_BASIC` (D-028); FAILED runs never count.
 - **M09**: `readiness.validation.completed.v1` -> audit `READINESS_VALIDATION_COMPLETED`; actor is `USER` for manual runs
   (requester id + org), `SYSTEM` for auto runs; `correlation_id` is the request trace or the publish event's.
 - **M10**: show `checks[]` in profile order with `status`, `severity`, `message`; render `evidence` as key/value
   tables (counts, ratios, paths, field names, declared units, row numbers only - never cell values, D-018).
-- Env (07 §5 list for `.env.example`): `READINESS_RUN_TIMEOUT_SECONDS=1800`, `READINESS_FILE_TIMEOUT_SECONDS=600`,
+- Env (07 §5; listed in `.env.example` by the M00 kickoff): `READINESS_RUN_TIMEOUT_SECONDS=1800`, `READINESS_FILE_TIMEOUT_SECONDS=600`,
   `READINESS_WORKER_CONCURRENCY=2`.
 ```
 
@@ -7025,7 +6970,7 @@ uv run pytest -q
 uv run ruff check apps/api/modules/readiness tests/fixtures && uv run ruff format --check apps/api/modules/readiness tests/fixtures
 scripts/nais contracts-check
 ```
-Expected: all platform + readiness tests pass (`343 passed, 1 skipped` when only platform and readiness exist), ruff clean, contracts unchanged (readiness does not touch `NAIS_PRD/contracts`).
+Expected: all tests pass (the planner's scratch run with only platform + readiness was `343 passed, 1 skipped`; M01-M03 tests are now also present, so the total is higher), ruff clean, contracts unchanged (readiness does not touch `NAIS_PRD/contracts`; contract 1.2.0 comes from M00).
 
 - [ ] **Step 5: Commit**
 
@@ -7058,7 +7003,7 @@ Expected:
   (readiness contributes no rows).
 - `\dt readiness.*` lists `alembic_version`, `check_results`, `processed_events`, `validations`; version `readiness_0001`.
 - `curl .../readiness-profiles` without a token prints `401` (UNAUTHENTICATED envelope). With a Keycloak token it
-  answers `503 DEPENDENCY_UNAVAILABLE` until M01's `PrincipalResolver` is merged - expected in Wave 1.
+  answers `200` (M01's `PrincipalResolver` is merged before M05 per the execution order).
 - openapi paths: `['/api/v1/dataset-versions/{version_id}/readiness', '/api/v1/dataset-versions/{version_id}/readiness-validations', '/api/v1/readiness-profiles']`.
 - The worker's `event subscriptions` log line maps `catalog.dataset.version_published.v1` to
   `api.modules.readiness.handlers.on_version_published`, and the worker stays up (`docker compose ps worker`).
@@ -7102,7 +7047,9 @@ Other sections: §4 data model and trigger -> Task 11; §5 state machine -> Task
 
 ## Contract/shared changes needed
 
-1. **openapi.yaml `startReadinessValidation`**: add `"404"` (M05 §6.2 step 1: unknown or invisible version -> `NOT_FOUND`); add `"401"` to all three readiness operations (and optionally `"503"` `DEPENDENCY_UNAVAILABLE`). Until then the 404/401 tests assert status and error code only (`assert_matches_response` would reject an undeclared status).
-2. **`.env.example`** (Agent 0 collects module env, 07 §5): `READINESS_RUN_TIMEOUT_SECONDS=1800`, `READINESS_FILE_TIMEOUT_SECONDS=600`, `READINESS_WORKER_CONCURRENCY=2` (code defaults are identical, so nothing breaks meanwhile).
-3. **M03 integration**: provide `CatalogQueryPort` / `CatalogReadPort` under the classes in `apps/api/modules/readiness/catalog_port.py` (or move the canonical types to `api.modules.catalog.public` and switch that one file to imports); `open_stream` must raise `ObjectMissing` on 404 and `StorageUnavailable` on connection/5xx errors; the worker process must wire both ports. The M03 plan defines its own `catalog.objects.ObjectMissing/StorageUnavailable`: with the pending D-038 (`apps/api/platform/interfaces/catalog.py`) these two exception types and the M03 §8 dataclasses/Protocols should live there, and `readiness/catalog_port.py` becomes a re-export of that file (no other readiness change).
+Items formerly listed here are resolved by the controller decisions:
+
+1. ~~openapi 404/401/503 for readiness operations~~ — added by M00 kickoff (contract 1.2.0, W1-D3); the 401/404 tests call `assert_matches_response`.
+2. ~~`.env.example` `READINESS_*` keys~~ — added by M00 kickoff (W1-D4) with the code defaults `1800` / `600` / `2`; this plan does not touch `.env.example`.
+3. ~~M03 port location~~ — W1-D1/D-038: M03 owns `ObjectMissing`, `StorageUnavailable`, `FileRef`, `VersionView`, `CatalogQueryPort`, `CatalogReadPort` in `api.modules.catalog.public`; `readiness/catalog_port.py` is a re-export. Fixture bytes: W1-D5, M03 `seed_files.fixture_files` is the single source and `fixtures.lock` pins the 09-conformant bytes.
 4. **Doc alignment**: 09 §4 `input_fingerprint` formula should include `metadata_snapshot_sha256` (D-029); M05 §4.1 should list `requester_organization_id`; M05 §4.2 evidence DB backstop is 128 KiB of `jsonb::text` (64 KiB canonical rule unchanged).

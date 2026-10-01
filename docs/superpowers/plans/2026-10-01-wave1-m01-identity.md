@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.13, FastAPI ≥0.121, SQLAlchemy 2 Core + psycopg 3, Alembic, PostgreSQL 16 (`pg_trgm`), PyJWT (platform), Keycloak 26.0, pytest + testcontainers, httpx.
 
+**Execution order (W1):** M00 kickoff → M01 → M02 → M03 → M05 → M09 → M10. Prerequisites from M00 (`2026-10-01-wave1-m00-kickoff.md`): pg_trgm in schema public, openapi 1.2.0 (all statuses below declared), mypy covers `apps/api/modules`, `.env.example` module keys. Binding decisions: `wave1-controller-decisions.md` (W1-D1…D6).
+
 **Spec:** `NAIS_PRD/modules/M01_identity_org.md` (binding). Also `NAIS_PRD/10_SEED_DATA.md` §2–3, `NAIS_PRD/11_DECISION_LOG.md` (D-019, D-020, D-021, D-027, D-036, D-037), `NAIS_PRD/contracts/openapi.yaml` (tag `identity`), `NAIS_PRD/contracts/events/p0_events.schema.json`, `NAIS_PRD/contracts/error_codes.json`, and the platform code under `apps/api/platform/`.
 
 ## Global Constraints
@@ -24,6 +26,8 @@
 - Realm `nais`: `nais-web` public + PKCE S256, direct grants off; `nais-api` bearer-only audience; `nais-e2e` confidential + direct grants (dev/test only). Access token 300 s, SSO idle 1800 s, SSO max 36000 s. `org_code` user attribute → token claim.
 - Env (already in `.env.example`/`Settings`): `OIDC_ISSUER`, `OIDC_INTERNAL_JWKS_URL`, `OIDC_AUDIENCE=nais-api`, `OIDC_CLOCK_SKEW_SECONDS=30`. The running stack's issuer is `${NAIS_PUBLIC_BASE_URL}/auth/realms/nais` (currently `http://<NAIS_EXTERNAL_HOST>:21051/...` in `.env`) — never hard-code `localhost` as the issuer in live checks.
 - Other modules use only `CurrentUser` and `IdentityQueryPort`; they never read `identity.*` tables.
+- W1-D1 (D-038): `api/modules/identity/public.py` is the provider-owned public module (Protocol + DTOs; imports only stdlib/pydantic/typing/api.platform). The `IdentityQueryPort` class object there is THE `ports` registry key; consumers (M02, M03, M09) import it from `api.modules.identity.public`.
+- W1-D6: the realm owns the `nais-web` client M10 needs (public, PKCE S256, both callback hosts, post-logout `/`, `org_code` + audience `nais-api` mappers).
 - Stack rules: ports 21051–21058; never `docker compose down` or delete volumes; restarting/recreating `api`, `worker`, `keycloak` is fine.
 - ruff: line length 110, rules E,F,I,B,UP,SIM; run `uv run ruff check --fix` and `uv run ruff format` on touched files before each commit.
 - Every commit message ends with the trailer line `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -45,7 +49,7 @@
 | `pyproject.toml`, `uv.lock` | **shared file change (Agent 0 approved)**: `fastapi>=0.121` floor (SessionDep uses `Depends(scope=)`) |
 | `apps/api/modules/identity/__init__.py` | `MODULE = ModuleSpec(...)`, `wire()`, `wire_ports(sessions)` |
 | `apps/api/modules/identity/tables.py` | SQLAlchemy Core `Table`s for `identity.*` (no DDL) |
-| `apps/api/modules/identity/migrations/identity_0001_initial.py` | Alembic revision: `pg_trgm` (in schema identity), 4 tables, constraints, indexes |
+| `apps/api/modules/identity/migrations/identity_0001_initial.py` | Alembic revision: 4 tables, constraints, indexes (trigram index uses `public.gin_trgm_ops`; the extension comes from M00) |
 | `apps/api/modules/identity/seed_data.py` | Fixed seed orgs/users (Python data), `ORGS_BY_CODE`, `USERS_BY_EMAIL` |
 | `apps/api/modules/identity/seed.py` | Idempotent `seed(session)` with outbox events |
 | `apps/api/modules/identity/resolver.py` | `IdentityPrincipalResolver`, `SessionFactory`, `session_id_for` |
@@ -439,9 +443,8 @@ def _timestamps() -> list[sa.Column[sa.DateTime]]:
 
 
 def upgrade() -> None:
-    # pg_trgm is a trusted extension (PG13+), so the schema owner nais_migrator may create it.
-    # It is installed INTO schema identity: nais_migrator cannot create objects in public (PG15+).
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA identity")
+    # pg_trgm is installed once in schema public by the platform (init.sql, M00 kickoff, W1-D2).
+    # Modules never create extensions; they reference public.gin_trgm_ops.
     op.create_table(
         "organizations",
         sa.Column("organization_id", UUID(as_uuid=True), primary_key=True),
@@ -509,7 +512,7 @@ def upgrade() -> None:
     )
     op.execute(
         "CREATE INDEX ix_users_display_name_trgm ON identity.users "
-        "USING gin (display_name identity.gin_trgm_ops)"
+        "USING gin (display_name public.gin_trgm_ops)"
     )
     op.create_index(
         "ix_users_email_prefix", "users", ["email"], schema=SCHEMA, postgresql_ops={"email": "text_pattern_ops"}
@@ -530,7 +533,6 @@ def downgrade() -> None:
     op.drop_table("organization_memberships", schema=SCHEMA)
     op.drop_table("users", schema=SCHEMA)
     op.drop_table("organizations", schema=SCHEMA)
-    op.execute("DROP EXTENSION IF EXISTS pg_trgm")
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**
@@ -2013,6 +2015,7 @@ def test_one_character_query_is_rejected(client: TestClient) -> None:
     response = get(client, "/api/v1/users", q="b")
     assert response.status_code == 422
     assert response.json()["error"]["code"] == "VALIDATION_FAILED"
+    assert_matches_response("listUsers", 422, response.json())
 
 
 def test_padded_short_query_is_rejected(client: TestClient) -> None:
@@ -2377,6 +2380,7 @@ def test_platform_admin_lists_disabled_members_too(client: TestClient) -> None:
 def test_unknown_org_members_is_404(client: TestClient) -> None:
     response = members(client, "admin@nais.local", UUID("00000000-0000-7000-8000-00000000ffff"))
     assert response.status_code == 404 and error_code(response) == "NOT_FOUND"
+    assert_matches_response("listOrganizationMembers", 404, response.json())
 
 
 def test_admin_of_other_org_cannot_patch(client: TestClient) -> None:  # M01-AT-09
@@ -3237,6 +3241,9 @@ def test_nais_web_is_public_pkce_without_direct_grants() -> None:
     assert web["directAccessGrantsEnabled"] is False
     assert web["attributes"]["pkce.code.challenge.method"] == "S256"
     assert "http://localhost:21051/web-auth/callback/keycloak" in web["redirectUris"]
+    assert "http://<NAIS_EXTERNAL_HOST>:21051/web-auth/callback/keycloak" in web["redirectUris"]
+    # M10 (W1-D6): post-logout redirect to "/" on both hosts
+    assert web["attributes"]["post.logout.redirect.uris"] == "http://localhost:21051/*##http://<NAIS_EXTERNAL_HOST>:21051/*"
     assert all(uri.endswith("/web-auth/callback/keycloak") for uri in web["redirectUris"])
     assert "http://localhost:21051" in web["webOrigins"]
     assert "basic" in web["defaultClientScopes"]  # KC 25+: the sub claim comes from the basic scope
@@ -4044,9 +4051,9 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## Contract/shared changes needed (not planned here; Agent 0)
 
-1. `openapi.yaml`: undeclared statuses the implementation returns — `getOrganization` 401; `listOrganizationMembers` 401 and 404 (unknown org); `listUsers` 422 (`q` < 2 chars); `updateOrganizationMember` 401. Tests do not contract-assert these until declared.
+1. Resolved by W1-D3 (M00 kickoff): `getOrganization`/`updateOrganizationMember` 401, `listOrganizationMembers` 401/404, `listUsers` 422 are declared in openapi 1.2.0; tests contract-assert them.
 2. `packages/contracts` generator: `format: email` → `EmailStr` rejects the seed `.local` addresses, and `Id` is a `RootModel`; M01 therefore uses field-identical local DTOs (`api.modules.identity.public`). Mapping email to `str` and `Id` to `UUID` would let modules share generated types.
-3. `pg_trgm` is installed into schema `identity` (the migrator cannot create in `public`). A second module needing trigram search would hit "extension already exists"; Agent 0 may prefer creating it once in `init.sql`/platform migration.
+3. Resolved by W1-D2 (M00 kickoff): `pg_trgm` lives in schema public (init.sql); the migration only references `public.gin_trgm_ops`.
 4. Prod realm: `docker-compose.prod.yml` reuses the dev import mount, so the prod stack would import `nais-e2e` (direct grants) and the dev users. Needs a prod realm file/mount without them (spec §11: "prod realm import에서 제외").
-5. `IdentityQueryPort` Protocol lives in `api.modules.identity.public`; other modules must import that exact type as the `ports` registry key (or Agent 0 moves the Protocol to a shared package).
+5. Resolved by W1-D1 (D-038): `IdentityQueryPort` lives in `api.modules.identity.public` and is the registry key for every consumer.
 6. Spec text alignment: M01 §11 seed table gives `admin@nais.local` no org roles; `10_SEED_DATA.md` §3 gives `ORG_ADMIN` — this plan follows 10_SEED_DATA. M01 §11 names `infra/keycloak/realm-nais.json`; the compose mount requires `infra/keycloak/import/realm-nais.json`.

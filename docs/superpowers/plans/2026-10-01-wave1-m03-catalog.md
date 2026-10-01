@@ -8,11 +8,13 @@
 
 **Tech Stack:** Python 3.13, FastAPI, SQLAlchemy 2 Core + Alembic, psycopg 3, boto3 (SeaweedFS S3), httpx (OpenSearch REST, no extra client library), Dramatiq (verify actor), pytest + testcontainers (Postgres, OpenSearch).
 
-**Spec:** `NAIS_PRD/modules/M03_data_catalog.md` (binding), with `NAIS_PRD/contracts/openapi.yaml`, `NAIS_PRD/contracts/events/p0_events.schema.json`, `NAIS_PRD/contracts/error_codes.json`, `NAIS_PRD/11_DECISION_LOG.md` (D-011, D-012, D-013, D-014, D-018, D-024, D-028, D-029), `NAIS_PRD/07_RUNTIME_ENVIRONMENT.md`, `NAIS_PRD/10_SEED_DATA.md`, `NAIS_PRD/09_AI_READY_RULES.md` §5. When they disagree, `contracts/` wins.
+**Spec:** `NAIS_PRD/modules/M03_data_catalog.md` (binding), with `NAIS_PRD/contracts/openapi.yaml`, `NAIS_PRD/contracts/events/p0_events.schema.json`, `NAIS_PRD/contracts/error_codes.json`, `NAIS_PRD/11_DECISION_LOG.md` (D-011, D-012, D-013, D-014, D-018, D-024, D-028, D-029), `NAIS_PRD/07_RUNTIME_ENVIRONMENT.md`, `NAIS_PRD/10_SEED_DATA.md`, `NAIS_PRD/09_AI_READY_RULES.md` §5. When they disagree, `contracts/` wins. Binding overrides: `docs/superpowers/plans/wave1-controller-decisions.md` (W1-D1…W1-D6).
+
+**Execution order (W1):** M00 kickoff → M01 → M02 → M03 → M05 → M09 → M10. Prerequisites from M00: pg_trgm in public, openapi 1.2.0, mypy covers apps/api/modules, .env.example keys.
 
 ## Global Constraints
 
-- Owned paths only: `apps/api/modules/catalog/**`, `infra/opensearch/**`. No other file is changed by this plan (no `pyproject.toml` change is needed: httpx, boto3, testcontainers are already dependencies).
+- Owned paths only: `apps/api/modules/catalog/**`, `infra/opensearch/**`, plus the approved shared change (W1-D4) of the `opensearch` service in `docker-compose.yml` (Task 4). No other file is changed by this plan (no `pyproject.toml` or `.env.example` change: httpx, boto3, testcontainers are already dependencies; M00 adds the catalog env keys and the mypy scope).
 - Every table, index and constraint lives in schema `catalog`; every `op.*` call passes `schema="catalog"`; no FK to another schema (`owner_organization_id`, `created_by` are plain uuid).
 - Alembic version table `catalog.alembic_version` (platform does this via `ModuleSpec.migrations_dir` + `db_schema`).
 - IDs: `api.platform.ids.new_id()` (UUIDv7). Time: `api.platform.clock.now()` (UTC, freezable in tests). All timestamps `timestamptz`.
@@ -49,20 +51,20 @@
 - **AT-21: changing CONTROLLED → PUBLIC also emits `policy_changed.v1`** because `approval_required` flips true → false (§6.4 lists approval_required changes as policy changes). The test asserts exactly one `access_level_changed.v1`.
 - **`processed_events` uses `per_handler=True`** (Wave 1 brief) instead of the spec's single-PK table; two handlers, two claim names.
 - **`getUploadSession` for a non-steward returns 404** (openapi declares only 404 for it); other visible-but-forbidden writes return 403 as §9 says.
-- **Closed upload sessions omit `files[].upload`** (openapi operation description + §6.6). The schema still marks `upload` required; tests validate closed-session bodies with a documented bridging helper until the contract is fixed (see "Contract/shared changes needed").
+- **Closed upload sessions omit `files[].upload`** (openapi operation description + §6.6). Contract 1.2.0 (M00 kickoff, W1-D3) makes `upload` optional, so closed-session bodies are checked with `assert_matches_response` directly.
 - **`api.modules.catalog.ports` re-exports `public.py`** because M04 §3 imports `from api.modules.catalog.ports import ...` while M03 §8 names `public.py`.
-- **Identity mock-first:** `wire()` uses M01's `IdentityQueryPort` from `api.modules.identity.public` when that module exists, else `FakeIdentityPort` (NAIS / Institute A / Institute B with the seed UUIDs and codes).
+- **Identity mock-first:** the registry key is `IdentityQueryPort` from `api.modules.identity.public` (W1-D1; M01 is built first), looked up per call. Identity installed but the port not provided → `503 DEPENDENCY_UNAVAILABLE` (fail closed); identity package not installed → `FakeIdentityPort` (NAIS / Institute A / Institute B with the seed UUIDs and codes) with a warning.
 - **Plan code was executed while planning** (scratch copy of the repo, not committed): all catalog tests plus the
   platform and contract suites passed (375 passed, incl. SeaweedFS e2e through the gateway, `NAIS_PERF=1` AT-20 and
   `NAIS_TEST_NORI=1`), `ruff check --fix` + `ruff format` clean, `mypy` clean. Two facts found that way are baked in:
   PostgreSQL regexes cap `{m,n}` at 255 (the path CHECK uses `char_length`), and FastAPI 0.142 mounts included routers
   lazily (the AT-18 test reads `app.openapi()`, not `app.routes`).
-- **Seed files are generated in code** (`seed_files.py`, formulas of 09 §5) because `tests/fixtures/readiness` (M05) is neither available yet nor inside the api image.
+- **Seed files are generated in code** (`seed_files.py`, formulas of 09 §1.2/§5) because `tests/fixtures/readiness` is not inside the api image. Per W1-D5 this module is the single source of those bytes; M05's fixture generator imports `seed_files.fixture_files`.
 
 ---
 ## File Structure
 
-All paths are owned by M03 (`module_ownership.json`). There is **no** shared-file change in this plan.
+All paths are owned by M03 (`module_ownership.json`). The only shared-file change is the approved (W1-D4) `opensearch` service `build: infra/opensearch` in `docker-compose.yml` (Task 4).
 
 ```text
 apps/api/modules/catalog/
@@ -125,7 +127,7 @@ apps/api/modules/catalog/
   tests/fixtures_api.py    deps, api, search_api
   tests/support.py         constants + raw SQL helpers
   tests/support_api.py     users, FakePrincipalResolver, CatalogApi client, assert_error, dataset helpers
-  tests/support_upload.py  upload helpers, closed-session contract bridge
+  tests/support_upload.py  upload helpers
   tests/test_*.py          one file per task (named in each task)
 infra/opensearch/
   Dockerfile               opensearch 2.19.1 + analysis-nori
@@ -1962,6 +1964,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `apps/api/modules/catalog/search/opensearch.py`
 - Create: `infra/opensearch/Dockerfile`
 - Create (generated): `infra/opensearch/nais-datasets-v1.json`, `infra/opensearch/nais-datasets-v1.fallback.json`
+- Modify: `docker-compose.yml` (`opensearch` service builds `infra/opensearch`; approved shared change W1-D4)
 - Create: `apps/api/modules/catalog/tests/fixtures_search.py`
 - Modify: `apps/api/modules/catalog/tests/conftest.py` (import search fixtures)
 - Test: `apps/api/modules/catalog/tests/test_opensearch_index.py`
@@ -2426,6 +2429,16 @@ for name, nori in (("nais-datasets-v1.json", True), ("nais-datasets-v1.fallback.
 PY
 ```
 
+In `docker-compose.yml`, service `opensearch`, replace the line `    image: opensearchproject/opensearch:2.19.1` with:
+
+```yaml
+    build: infra/opensearch
+    image: nais-opensearch:2.19.1-nori
+```
+
+Validate without touching the running stack: `docker compose config --services | grep -x opensearch` (prints `opensearch`).
+The running container is rebuilt in Task 18 Step 6.
+
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest apps/api/modules/catalog/tests/test_opensearch_index.py -v`
@@ -2435,7 +2448,7 @@ Expected: all PASS except `test_nori_image_uses_the_nori_analyzer` (SKIPPED unle
 
 ```bash
 uv run ruff check --fix apps/api/modules/catalog && uv run ruff format apps/api/modules/catalog
-git add apps/api/modules/catalog infra/opensearch
+git add apps/api/modules/catalog infra/opensearch docker-compose.yml
 git commit -m "feat(catalog): nais-datasets-v1 index definition, OpenSearch client, nori image
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -2458,15 +2471,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `apps/api/modules/catalog/tests/test_wiring.py`
 
 **Interfaces:**
-- Consumes: `StorageRegistry` (Task 3), `OpenSearchIndex`, `SearchUnavailable` (Task 4), `CatalogSettings`, `get_catalog_settings` (Task 1), `api.platform.ports`, `api.platform.db.session_factory`, `api.platform.auth.{CurrentUser, PrincipalResolver, TokenVerifier, get_token_verifier}`, `api.platform.testing.{app.create_test_app, tokens.FakeIssuer}`.
+- Consumes: `StorageRegistry` (Task 3), `OpenSearchIndex`, `SearchUnavailable` (Task 4), `CatalogSettings`, `get_catalog_settings` (Task 1), `api.platform.ports`, `api.platform.db.session_factory`, `api.platform.auth.{CurrentUser, PrincipalResolver, TokenVerifier, get_token_verifier}`, `api.platform.testing.{app.create_test_app, tokens.FakeIssuer}`, M01 `api.modules.identity.public.{IdentityQueryPort, OrganizationSummary}` (`get_organization_summary(organization_id: UUID) -> OrganizationSummary | None`; fields `organization_id: UUID, code: str, name: str, type: Literal[...]`).
 - Produces:
   - `interfaces.OrganizationSummary(organization_id: UUID, code: str, name: str, type: str)`; Protocols `OrganizationLookup` (`get_organization_summary(id) -> OrganizationSummary | None`, `get_organization_summaries(ids) -> dict[UUID, OrganizationSummary]`), `MalwareScannerPort` (`scan(bucket, key) -> ScanResult`), `ScanResult(status: Literal["CLEAN","INFECTED","SKIPPED"], detail: str | None = None)`, `VerificationQueue` (`enqueue(file_ids: Sequence[UUID]) -> None`), `SearchIndex` (same methods as `OpenSearchIndex`: `alias`, `ensure`, `bulk`, `search`, `refresh`, `create_index`, `next_index_name`, `swap_alias`).
-  - `adapters.identity.FakeIdentityPort`, `adapters.identity.IdentityQueryAdapter(port_type)`, `adapters.identity.SEED_ORGANIZATIONS`; `adapters.malware.NoopScanner`, `adapters.malware.build_scanner(name) -> MalwareScannerPort`; `adapters.queue.DramatiqVerificationQueue` (sends `api.modules.catalog.jobs.verify_file_actor`, created in Task 11).
+  - `adapters.identity.FakeIdentityPort`, `adapters.identity.IdentityQueryAdapter()` (looks up `api.modules.identity.public.IdentityQueryPort` per call; `ApiError(DEPENDENCY_UNAVAILABLE)` while it is not provided); `wiring.default_organization_lookup()` returns `FakeIdentityPort` (with a warning) only when the `api.modules.identity` package is not installed, `adapters.identity.SEED_ORGANIZATIONS`; `adapters.malware.NoopScanner`, `adapters.malware.build_scanner(name) -> MalwareScannerPort`; `adapters.queue.DramatiqVerificationQueue` (sends `api.modules.catalog.jobs.verify_file_actor`, created in Task 11).
   - `deps.CatalogDeps` (frozen dataclass: `settings`, `session_factory: Callable[[], Session]`, `storage: StorageRegistry`, `organizations: OrganizationLookup`, `scanner: MalwareScannerPort`, `verification: VerificationQueue`, `search: SearchIndex`); `deps.get_deps() -> CatalogDeps` (raises `ApiError(DEPENDENCY_UNAVAILABLE)` if not wired); `deps.CatalogDepsDep` (FastAPI `Annotated` dependency).
   - `wiring.build_default_deps(settings=None) -> CatalogDeps`, `wiring.install(deps) -> None` (Task 16 extends it to the public ports), `wiring.wire() -> None`, `wiring.default_organization_lookup() -> OrganizationLookup`.
   - `router.router` (aggregating `APIRouter`; later tasks add `routes/*`).
   - `testing.RecordingVerificationQueue` (`.enqueued: list[UUID]`), `testing.RecordingSearchIndex` (`.docs: dict[str, dict]`, `.bulk_calls: int`; `search()` raises `SearchUnavailable`).
-  - Test harness `support_api`: `USERS: dict[str, CurrentUser]` with keys `platform.admin`, `a.admin`, `a.researcher`, `a.steward`, `b.admin`, `b.researcher`, `b.steward` (seed UUIDs); `FakePrincipalResolver`; `CatalogApi` with `.deps`, `.use(deps)`, `.get/.post/.patch/.delete(user: str | None, path: str, **kw) -> httpx.Response` (path without `/api/v1`); `make_api(urls, deps) -> CatalogApi`; `assert_error(response, status, code) -> dict`; `dataset_body(owner=ORG_B, **overrides) -> dict`; `create_dataset(api, user="b.steward", **overrides) -> dict`.
+  - Test harness `support_api`: `USERS: dict[str, CurrentUser]` with keys `platform.admin`, `a.admin`, `a.researcher`, `a.steward`, `b.admin`, `b.researcher`, `b.steward` (seed UUIDs); `FakePrincipalResolver`; `CatalogApi` with `.deps`, `.use(deps)`, `.get/.post/.patch/.delete(user: str | None, path: str, **kw) -> httpx.Response` (path without `/api/v1`); `make_api(urls, deps) -> CatalogApi`; `assert_error(operation_id, response, status, code) -> dict` (also runs `assert_matches_response`); `dataset_body(owner=ORG_B, **overrides) -> dict`; `create_dataset(api, user="b.steward", **overrides) -> dict`.
   - Fixtures `deps` (memory storage, FakeIdentityPort, NoopScanner, recording queue and search), `api`, `search_api` (api whose `deps.search` is the real `search_index`).
 
 - [ ] **Step 1: Write the failing tests**
@@ -2480,14 +2493,13 @@ from api.modules.catalog.tests.fixtures_api import api, deps, search_api  # noqa
 `apps/api/modules/catalog/tests/test_wiring.py`:
 
 ```python
-import types
-from typing import Any, Protocol
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
 
 from api.modules.catalog import MODULE, wiring
-from api.modules.catalog.adapters.identity import FakeIdentityPort
+from api.modules.catalog.adapters.identity import FakeIdentityPort, IdentityQueryAdapter
 from api.modules.catalog.adapters.malware import NoopScanner, build_scanner
 from api.modules.catalog.adapters.queue import DramatiqVerificationQueue
 from api.modules.catalog.deps import CatalogDeps, get_deps
@@ -2495,6 +2507,8 @@ from api.modules.catalog.interfaces import OrganizationSummary
 from api.modules.catalog.objects import StorageRegistry
 from api.modules.catalog.search.opensearch import OpenSearchIndex
 from api.modules.catalog.tests.support import ORG_A, ORG_B, ORG_NAIS
+from api.modules.identity import public as identity_public
+from api.modules.identity.public import IdentityQueryPort
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
@@ -2533,29 +2547,34 @@ def test_lookup_falls_back_to_the_fake_without_identity_module(monkeypatch: pyte
     def missing(name: str) -> Any:
         raise ModuleNotFoundError(f"No module named {name!r}", name="api.modules.identity")
 
-    monkeypatch.setattr(wiring, "_import", missing)
+    monkeypatch.setattr(wiring.importlib, "import_module", missing)
     assert isinstance(wiring.default_organization_lookup(), FakeIdentityPort)
 
 
-def test_lookup_uses_the_identity_public_port_when_installed(monkeypatch: pytest.MonkeyPatch) -> None:
-    class IdentityQueryPort(Protocol):
-        def get_organization_summary(self, organization_id: UUID) -> Any: ...
+def test_installed_but_unwired_identity_is_dependency_unavailable() -> None:
+    ports.reset()
+    lookup = wiring.default_organization_lookup()
+    assert isinstance(lookup, IdentityQueryAdapter)
+    with pytest.raises(ApiError) as caught:
+        lookup.get_organization_summary(ORG_B)
+    assert caught.value.code == ErrorCode.DEPENDENCY_UNAVAILABLE
 
-    class Impl:
-        def get_organization_summary(self, organization_id: UUID) -> Any:
+
+def test_lookup_uses_the_identity_public_port_when_provided() -> None:
+    class Impl:  # only the method the catalog calls; cast because the test fake is partial
+        def get_organization_summary(self, organization_id: UUID) -> identity_public.OrganizationSummary | None:
             if organization_id != ORG_B:
                 return None
-            return types.SimpleNamespace(
-                organization_id=ORG_B, code="inst-b", name="Institute B", type=types.SimpleNamespace(value="RESEARCH_INSTITUTE")
+            return identity_public.OrganizationSummary(
+                organization_id=ORG_B, code="inst-b", name="Institute B (M01)", type="RESEARCH_INSTITUTE"
             )
 
-    public = types.ModuleType("api.modules.identity.public")
-    public.IdentityQueryPort = IdentityQueryPort  # type: ignore[attr-defined]
-    monkeypatch.setattr(wiring, "_import", lambda name: public)
-    ports.provide(IdentityQueryPort, Impl())
+    ports.reset()
+    ports.provide(IdentityQueryPort, cast(IdentityQueryPort, Impl()))
     lookup = wiring.default_organization_lookup()
-    expected = OrganizationSummary(ORG_B, "inst-b", "Institute B", "RESEARCH_INSTITUTE")
+    expected = OrganizationSummary(ORG_B, "inst-b", "Institute B (M01)", "RESEARCH_INSTITUTE")
     assert lookup.get_organization_summary(ORG_B) == expected
+    assert lookup.get_organization_summary(ORG_A) is None  # the real port answers, not the fake
     assert lookup.get_organization_summaries([ORG_B, ORG_A, ORG_B]) == {ORG_B: expected}
 
 
@@ -2634,13 +2653,15 @@ class SearchIndex(Protocol):
 `apps/api/modules/catalog/adapters/identity.py`:
 
 ```python
-"""Organization lookup: M01's public IdentityQueryPort when installed, else a fixed fake (Wave 1 mock-first)."""
+"""Organization lookup: M01's public IdentityQueryPort (W1-D1 key: api.modules.identity.public.IdentityQueryPort).
+wiring.default_organization_lookup() picks FakeIdentityPort only when the identity package is not installed."""
 
 from collections.abc import Sequence
-from typing import Any
 from uuid import UUID
 
 from api.modules.catalog.interfaces import OrganizationSummary
+from api.modules.identity import public as identity_public
+from api.modules.identity.public import IdentityQueryPort
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
@@ -2663,25 +2684,19 @@ class FakeIdentityPort:
         return {org_id: self._by_id[org_id] for org_id in ids if org_id in self._by_id}
 
 
-def _convert(summary: Any) -> OrganizationSummary:
-    kind = getattr(summary, "type", "")
+def _convert(summary: identity_public.OrganizationSummary) -> OrganizationSummary:
     return OrganizationSummary(
-        organization_id=UUID(str(summary.organization_id)),
-        code=str(summary.code),
-        name=str(summary.name),
-        type=str(getattr(kind, "value", kind)),
+        organization_id=summary.organization_id, code=summary.code, name=summary.name, type=summary.type
     )
 
 
 class IdentityQueryAdapter:
-    """Wraps M01's IdentityQueryPort (looked up per call, so wiring order does not matter)."""
+    """Wraps M01's IdentityQueryPort, looked up per call (wiring order does not matter).
+    Identity installed but its port not provided -> 503 DEPENDENCY_UNAVAILABLE (fail closed)."""
 
-    def __init__(self, port_type: type[Any]) -> None:
-        self._port_type = port_type
-
-    def _port(self) -> Any:
+    def _port(self) -> IdentityQueryPort:
         try:
-            return ports.get(self._port_type)
+            return ports.get(IdentityQueryPort)
         except ports.PortNotProvided as exc:
             raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "Identity module is not wired.") from exc
 
@@ -2796,7 +2811,6 @@ CatalogDepsDep = Annotated[CatalogDeps, Depends(get_deps)]
 import importlib
 import logging
 import os
-from types import ModuleType
 
 from api.modules.catalog.adapters.identity import FakeIdentityPort, IdentityQueryAdapter
 from api.modules.catalog.adapters.malware import build_scanner
@@ -2810,22 +2824,19 @@ from api.platform import ports
 from api.platform.db import session_factory
 
 logger = logging.getLogger("nais.catalog")
-IDENTITY_PUBLIC = "api.modules.identity.public"
-
-
-def _import(name: str) -> ModuleType:
-    return importlib.import_module(name)
 
 
 def default_organization_lookup() -> OrganizationLookup:
+    """Identity installed (Wave 1: always, M01 is built first) -> IdentityQueryAdapter (503 while unwired);
+    identity package absent -> FakeIdentityPort with a warning (original mock-first rule)."""
     try:
-        public = _import(IDENTITY_PUBLIC)
+        importlib.import_module("api.modules.identity.public")
     except ModuleNotFoundError as exc:
-        if exc.name not in {"api.modules.identity", IDENTITY_PUBLIC}:
+        if exc.name not in {"api.modules.identity", "api.modules.identity.public"}:
             raise
         logger.warning("identity module not installed; catalog uses FakeIdentityPort (Wave 1 mock-first)")
         return FakeIdentityPort()
-    return IdentityQueryAdapter(public.IdentityQueryPort)
+    return IdentityQueryAdapter()
 
 
 def build_default_deps(settings: CatalogSettings | None = None) -> CatalogDeps:
@@ -2968,6 +2979,7 @@ from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
 from api.platform.settings import Settings
 from api.platform.testing.app import create_test_app
+from api.platform.testing.contracts import assert_matches_response
 from api.platform.testing.fixtures import PgUrls
 from api.platform.testing.tokens import FakeIssuer
 
@@ -3041,10 +3053,11 @@ def make_api(urls: PgUrls, deps: CatalogDeps) -> CatalogApi:
     return CatalogApi(TestClient(app, raise_server_exceptions=False), issuer, deps)
 
 
-def assert_error(response: httpx.Response, status: int, code: str) -> dict[str, Any]:
-    """For statuses openapi does not declare for the operation (see plan: Contract/shared changes needed)."""
+def assert_error(operation_id: str, response: httpx.Response, status: int, code: str) -> dict[str, Any]:
+    """Status + error code + contract check (openapi 1.2.0 declares every error status the catalog returns)."""
     assert response.status_code == status, response.text
     body = response.json()
+    assert_matches_response(operation_id, status, body)
     assert set(body) == {"error"}, body
     assert body["error"]["code"] == code, body
     assert body["error"]["trace_id"]
@@ -3263,7 +3276,7 @@ def test_invalid_bodies_are_validation_failed(api: CatalogApi, overrides: dict[s
 
 
 def test_missing_token_is_unauthenticated(api: CatalogApi) -> None:
-    assert_error(api.post(None, "/datasets", json=dataset_body()), 401, "UNAUTHENTICATED")
+    assert_error("createDataset", api.post(None, "/datasets", json=dataset_body()), 401, "UNAUTHENTICATED")
 
 
 def test_at15_internal_dataset_is_visible_to_owner_org_only(api: CatalogApi) -> None:  # M03-AT-15 (GET)
@@ -4020,16 +4033,19 @@ def test_non_steward_gets_403_and_invisible_dataset_404(api: CatalogApi) -> None
     response = api.patch("b.researcher", f"/datasets/{dataset_id}", json={"title": "Nope nope"})
     assert response.status_code == 403
     assert_matches_response("updateDataset", 403, response.json())
-    assert_error(api.patch("a.steward", f"/datasets/{dataset_id}", json={"title": "Nope nope"}), 404, "NOT_FOUND")
+    assert_error("updateDataset", api.patch("a.steward", f"/datasets/{dataset_id}", json={"title": "Nope nope"}), 404, "NOT_FOUND")
 
 
 def test_withdrawn_dataset_can_only_be_reactivated(api: CatalogApi, db: PgUrls) -> None:
     dataset_id = create_dataset(api)["dataset_id"]
     response = api.patch("b.steward", f"/datasets/{dataset_id}", json={"status": "WITHDRAWN"})
     assert response.status_code == 200 and response.json()["status"] == "WITHDRAWN"
-    assert_error(api.patch("b.steward", f"/datasets/{dataset_id}", json={"title": "Edited while withdrawn"}), 409, "CONFLICT")
+    assert_error("updateDataset", api.patch("b.steward", f"/datasets/{dataset_id}", json={"title": "Edited while withdrawn"}), 409, "CONFLICT")
     assert_error(
-        api.patch("b.steward", f"/datasets/{dataset_id}", json={"status": "ACTIVE", "title": "Both at once"}), 409, "CONFLICT"
+        "updateDataset",
+        api.patch("b.steward", f"/datasets/{dataset_id}", json={"status": "ACTIVE", "title": "Both at once"}),
+        409,
+        "CONFLICT",
     )
     response = api.patch("b.steward", f"/datasets/{dataset_id}", json={"status": "ACTIVE"})
     assert response.status_code == 200 and response.json()["status"] == "ACTIVE"
@@ -4053,7 +4069,7 @@ def test_concurrent_modification_is_a_conflict(api: CatalogApi, db: PgUrls, monk
         return row
 
     monkeypatch.setattr(dataset_update, "visible_dataset", racing)
-    assert_error(api.patch("b.steward", f"/datasets/{dataset_id}", json={"title": "Lost update"}), 409, "CONFLICT")
+    assert_error("updateDataset", api.patch("b.steward", f"/datasets/{dataset_id}", json={"title": "Lost update"}), 409, "CONFLICT")
     title = rows(db, "SELECT title FROM catalog.datasets WHERE dataset_id = :id", id=dataset_id)[0]["title"]
     assert title == "Battery Cycling Measurements"
 ```
@@ -4304,7 +4320,7 @@ def test_version_creation_permissions(api: CatalogApi) -> None:
     response = api.post("b.researcher", f"/datasets/{dataset_id}/versions", json={"version_label": "v1"})
     assert response.status_code == 403
     assert_matches_response("createDatasetVersion", 403, response.json())
-    assert_error(api.post("a.steward", f"/datasets/{dataset_id}/versions", json={"version_label": "v1"}), 404, "NOT_FOUND")
+    assert_error("createDatasetVersion", api.post("a.steward", f"/datasets/{dataset_id}/versions", json={"version_label": "v1"}), 404, "NOT_FOUND")
 
 
 def test_list_versions_by_role(api: CatalogApi, db: PgUrls) -> None:
@@ -4326,7 +4342,7 @@ def test_list_versions_by_role(api: CatalogApi, db: PgUrls) -> None:
 
 def test_list_versions_of_invisible_dataset_is_404(api: CatalogApi) -> None:
     dataset_id, _ = new_draft(api)
-    assert_error(api.get("a.researcher", f"/datasets/{dataset_id}/versions"), 404, "NOT_FOUND")
+    assert_error("listDatasetVersions", api.get("a.researcher", f"/datasets/{dataset_id}/versions"), 404, "NOT_FOUND")
 
 
 def test_at17_draft_version_is_404_for_non_stewards(api: CatalogApi) -> None:  # M03-AT-17 (GET v-draft)
@@ -4550,7 +4566,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `errors.dependency_errors()` context manager: `StorageUnavailable`/`StorageNotConfigured` → `ApiError(DEPENDENCY_UNAVAILABLE)`.
   - `service.uploads.create_upload_session(session, deps, user, version_id, body) -> dict` (201 body), `get_upload_session(session, deps, user, upload_session_id) -> dict`, `upload_session_response(session, deps, upload_session_id) -> dict` (URLs only while the session is OPEN and unexpired and the file is PENDING), `upload_instructions(store, file_row, ttl) -> dict`, `org_store(deps, ds) -> ObjectStore`, `abort_quietly(store, key, upload_id) -> None`.
   - Routes `POST /dataset-versions/{version_id}/upload-session` (201), `GET /upload-sessions/{upload_session_id}`.
-  - `support_upload`: `sha(data) -> str`, `file_spec(path, data) -> dict`, `start_upload(api, version_id, files: dict[str, bytes], user="b.steward") -> dict`, `file_row(db, file_id) -> dict`, `put_uploaded(api, db, session_body, contents: dict[str, bytes], org="inst-b") -> dict` (stores bytes in the memory store; returns the `completeUploadSession` body with multipart ETags), `complete(api, upload_session_id, body=None, user="b.steward") -> httpx.Response`, `upload_files(api, db, version_id, files, user="b.steward", org="inst-b") -> dict`, `assert_upload_session_matches(operation_id, status, body)` (contract bridge for closed sessions).
+  - `support_upload`: `sha(data) -> str`, `file_spec(path, data) -> dict`, `start_upload(api, version_id, files: dict[str, bytes], user="b.steward") -> dict`, `file_row(db, file_id) -> dict`, `put_uploaded(api, db, session_body, contents: dict[str, bytes], org="inst-b") -> dict` (stores bytes in the memory store; returns the `completeUploadSession` body with multipart ETags), `complete(api, upload_session_id, body=None, user="b.steward") -> httpx.Response`, `upload_files(api, db, version_id, files, user="b.steward", org="inst-b") -> dict`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -4569,11 +4585,7 @@ from api.modules.catalog.domain import ALLOWED_MEDIA_TYPES, extension
 from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import rows
 from api.modules.catalog.tests.support_api import CatalogApi
-from api.platform.testing.contracts import assert_matches_response
 from api.platform.testing.fixtures import PgUrls
-
-CLOSED_UPLOAD_PLACEHOLDER = {"method": "PUT", "url": "http://omitted.invalid/"}
-
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -4638,18 +4650,6 @@ def upload_files(
     assert response.status_code == 200, response.text
     result: dict[str, Any] = response.json()
     return result
-
-
-def assert_upload_session_matches(operation_id: str, status: int, body: dict[str, Any]) -> None:
-    """openapi marks files[].upload as required, yet the same contract says URLs are omitted once a session is
-    COMPLETED/EXPIRED. Until the contract change lands (plan: Contract/shared changes needed), closed sessions are
-    validated with a placeholder in place of the omitted upload instructions."""
-    if body["status"] == "OPEN":
-        assert_matches_response(operation_id, status, body)
-        return
-    assert all("upload" not in item for item in body["files"]), body
-    patched = {**body, "files": [{**item, "upload": CLOSED_UPLOAD_PLACEHOLDER} for item in body["files"]]}
-    assert_matches_response(operation_id, status, patched)
 ```
 
 `apps/api/modules/catalog/tests/test_upload_sessions_api.py`:
@@ -4668,7 +4668,7 @@ from api.modules.catalog.settings import CatalogSettings
 from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import SHA_A, execute, insert_file, insert_version, rows
 from api.modules.catalog.tests.support_api import CatalogApi, assert_error, create_dataset, new_draft
-from api.modules.catalog.tests.support_upload import assert_upload_session_matches, file_row, file_spec, sha, start_upload
+from api.modules.catalog.tests.support_upload import file_row, file_spec, sha, start_upload
 from api.platform import clock
 from api.platform.testing.contracts import assert_matches_response
 from api.platform.testing.fixtures import PgUrls
@@ -4817,8 +4817,8 @@ def test_upload_session_permissions(api: CatalogApi) -> None:
     response = api.post("b.admin", f"/dataset-versions/{version_id}/upload-session", json=body)
     assert response.status_code == 403
     assert_matches_response("createUploadSession", 403, response.json())
-    assert_error(api.post("a.steward", f"/dataset-versions/{version_id}/upload-session", json=body), 404, "NOT_FOUND")
-    assert_error(api.post("b.steward", f"/dataset-versions/{uuid4()}/upload-session", json=body), 404, "NOT_FOUND")
+    assert_error("createUploadSession", api.post("a.steward", f"/dataset-versions/{version_id}/upload-session", json=body), 404, "NOT_FOUND")
+    assert_error("createUploadSession", api.post("b.steward", f"/dataset-versions/{uuid4()}/upload-session", json=body), 404, "NOT_FOUND")
 
 
 def test_get_upload_session_renews_urls_only_while_open(api: CatalogApi, db: PgUrls) -> None:
@@ -4826,11 +4826,11 @@ def test_get_upload_session_renews_urls_only_while_open(api: CatalogApi, db: PgU
     created = start_upload(api, version_id, {"data/a.csv": KIB_CSV})
     response = api.get("b.steward", f"/upload-sessions/{created['upload_session_id']}")
     assert response.status_code == 200
-    assert_upload_session_matches("getUploadSession", 200, response.json())
+    assert_matches_response("getUploadSession", 200, response.json())
     assert response.json()["files"][0]["upload"]["method"] == "PUT"
     execute(db, "UPDATE catalog.upload_sessions SET status = 'COMPLETED' WHERE upload_session_id = :id", id=created["upload_session_id"])
     closed = api.get("b.steward", f"/upload-sessions/{created['upload_session_id']}").json()
-    assert_upload_session_matches("getUploadSession", 200, closed)
+    assert_matches_response("getUploadSession", 200, closed)
     assert "upload" not in closed["files"][0]
 
 
@@ -4855,7 +4855,7 @@ def test_storage_outage_is_dependency_unavailable(api: CatalogApi) -> None:
 
     store.create_multipart = broken  # type: ignore[method-assign]
     response = api.post("b.steward", f"/dataset-versions/{version_id}/upload-session", json={"files": [file_spec("a.csv", b"xy")]})
-    assert_error(response, 503, "DEPENDENCY_UNAVAILABLE")
+    assert_error("createUploadSession", response, 503, "DEPENDENCY_UNAVAILABLE")
 
 
 def test_uploaded_path_conflicts(api: CatalogApi, db: PgUrls) -> None:
@@ -5666,7 +5666,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `apps/api/modules/catalog/tests/test_complete_upload.py`, `apps/api/modules/catalog/tests/test_s3_e2e.py`
 
 **Interfaces:**
-- Consumes: `upload_session_response`, `abort_quietly` (Task 9), `dependency_errors` (Task 9), `verify_in_session`, `evaluate_object`, `apply_outcome` (Task 10), `steward_version`, `require_draft`, `is_steward`, `can_see_dataset`, `not_found` (Task 6), `MultipartFailed`, `StorageUnavailable` (Task 3), `UploadCompleteIn`, support helpers `start_upload`, `put_uploaded`, `complete`, `upload_files`, `file_row`, `assert_upload_session_matches` (Task 9), `new_draft` (Task 8).
+- Consumes: `upload_session_response`, `abort_quietly` (Task 9), `dependency_errors` (Task 9), `verify_in_session`, `evaluate_object`, `apply_outcome` (Task 10), `steward_version`, `require_draft`, `is_steward`, `can_see_dataset`, `not_found` (Task 6), `MultipartFailed`, `StorageUnavailable` (Task 3), `UploadCompleteIn`, support helpers `start_upload`, `put_uploaded`, `complete`, `upload_files`, `file_row` (Task 9), `new_draft` (Task 8).
 - Produces:
   - `service.completion.complete_upload_session(session, deps, user, upload_session_id, body) -> tuple[dict, list[UUID]]` (response body, file ids to verify asynchronously after commit); `service.completion.delete_draft_file(session, deps, user, version_id, file_id) -> None`.
   - Routes `POST /upload-sessions/{upload_session_id}/complete` (`completeUploadSession`; enqueues async verification through FastAPI `BackgroundTasks`, i.e. after `SessionDep` committed), `DELETE /dataset-versions/{version_id}/files/{file_id}` (`deleteDraftFile`, 204).
@@ -5691,7 +5691,6 @@ from api.modules.catalog.testing import RecordingVerificationQueue, memory_store
 from api.modules.catalog.tests.support import SHA_A, insert_version, rows
 from api.modules.catalog.tests.support_api import CatalogApi, assert_error, create_dataset, new_draft
 from api.modules.catalog.tests.support_upload import (
-    assert_upload_session_matches,
     complete,
     file_row,
     file_spec,
@@ -5712,7 +5711,7 @@ SMALL_MULTIPART = CatalogSettings(storage_multipart_threshold_bytes=1024, catalo
 def test_small_session_is_verified_synchronously(api: CatalogApi, db: PgUrls) -> None:
     _, version_id = new_draft(api)
     result = upload_files(api, db, version_id, {"data/a.csv": CSV})
-    assert_upload_session_matches("completeUploadSession", 200, result)
+    assert_matches_response("completeUploadSession", 200, result)
     assert result["status"] == "COMPLETED"
     assert [(f["status"], f["failure_code"]) for f in result["files"]] == [("VERIFIED", None)]
     row = file_row(db, result["files"][0]["file_id"])
@@ -5814,9 +5813,9 @@ def test_expired_session_cannot_be_completed(api: CatalogApi) -> None:
 def test_only_creator_or_owner_steward_can_complete(api: CatalogApi) -> None:
     _, version_id = new_draft(api)
     body = start_upload(api, version_id, {"a.csv": CSV})
-    assert_error(complete(api, body["upload_session_id"], user="b.admin"), 403, "FORBIDDEN")
-    assert_error(complete(api, body["upload_session_id"], user="a.steward"), 404, "NOT_FOUND")
-    assert_error(complete(api, str(uuid4())), 404, "NOT_FOUND")
+    assert_error("completeUploadSession", complete(api, body["upload_session_id"], user="b.admin"), 403, "FORBIDDEN")
+    assert_error("completeUploadSession", complete(api, body["upload_session_id"], user="a.steward"), 404, "NOT_FOUND")
+    assert_error("completeUploadSession", complete(api, str(uuid4())), 404, "NOT_FOUND")
 
 
 def test_large_sessions_are_verified_by_the_worker(api: CatalogApi, db: PgUrls) -> None:
@@ -7122,23 +7121,23 @@ def test_cursor_from_another_sort_is_rejected(search_api: CatalogApi, db: PgUrls
     published(search_api, db)
     index_now(search_api)
     cursor = search(search_api, "a.researcher", limit=1, sort="title_asc")["page"]["next_cursor"]
-    assert_error(search_api.get("a.researcher", "/datasets", params={"cursor": cursor, "sort": "updated_desc"}), 422, "VALIDATION_FAILED")
+    assert_error("searchDatasets", search_api.get("a.researcher", "/datasets", params={"cursor": cursor, "sort": "updated_desc"}), 422, "VALIDATION_FAILED")
 
 
 @pytest.mark.parametrize("cursor", ["%%%", "bm90LWpzb24", encode_cursor(["title_asc", "x", "y", "z"]), encode_cursor(["title_asc", {"a": 1}, "b"])])
 def test_garbage_cursor_is_rejected(search_api: CatalogApi, cursor: str) -> None:  # Review Focus 2
     response = search_api.get("a.researcher", "/datasets", params={"cursor": cursor, "sort": "title_asc"})
-    error = assert_error(response, 422, "VALIDATION_FAILED")
+    error = assert_error("searchDatasets", response, 422, "VALIDATION_FAILED")
     assert error["details"]["fields"] == [{"field": "cursor", "reason": "INVALID_CURSOR"}]
 
 
 def test_opensearch_outage_is_503(api: CatalogApi) -> None:
     api.use(replace(api.deps, search=OpenSearchIndex("http://127.0.0.1:9", "nais-datasets", timeout=0.5)))
-    assert_error(api.get("a.researcher", "/datasets"), 503, "DEPENDENCY_UNAVAILABLE")
+    assert_error("searchDatasets", api.get("a.researcher", "/datasets"), 503, "DEPENDENCY_UNAVAILABLE")
 
 
 def test_search_requires_authentication(api: CatalogApi) -> None:
-    assert_error(api.get(None, "/datasets"), 401, "UNAUTHENTICATED")
+    assert_error("searchDatasets", api.get(None, "/datasets"), 401, "UNAUTHENTICATED")
 
 
 def test_total_is_capped_at_10000() -> None:
@@ -7788,7 +7787,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `CatalogDeps` (Task 5), `load_dataset`, `load_version`, `files_of_versions` (Task 6), `can_see_dataset` (Task 6), `basename` (Task 1), `ObjectStore.presign_get`/`open_stream` (Task 3), `CurrentUser`.
 - Produces (M03 §8, the only catalog code other modules may import; `api.modules.catalog.ports` re-exports it):
-  - frozen dataclasses `DatasetPolicyView(dataset_id, owner_organization_id, access_level, allowed_purposes: tuple[str, ...], approval_required, max_grant_days, status, title)`, `FileRef(file_id, path, size_bytes, sha256, media_type, status, storage_bucket, storage_key)`, `VersionView(dataset_version_id, dataset_id, owner_organization_id, version_label, status, manifest_sha256, metadata_snapshot, files: tuple[FileRef, ...])`, `PresignedGet(file_id, path, url, size_bytes, sha256, expires_at)`; `CatalogNotFound(ValueError)` (message `NOT_FOUND`).
+  - frozen dataclasses `DatasetPolicyView(dataset_id, owner_organization_id, access_level, allowed_purposes: tuple[str, ...], approval_required, max_grant_days, status, title)`, `FileRef(file_id, path, size_bytes, sha256, media_type, status, storage_bucket, storage_key)`, `VersionView(dataset_version_id, dataset_id, owner_organization_id, version_label, status, manifest_sha256, metadata_snapshot, files: tuple[FileRef, ...])`, `PresignedGet(file_id, path, url, size_bytes, sha256, expires_at)`; `CatalogNotFound(ValueError)` (message `NOT_FOUND`); `ObjectMissing(LookupError)` and `StorageUnavailable(RuntimeError)` (raised by `CatalogReadPort.open_stream` and by reads of the stream it returns; `public_impl.CatalogReader` translates the internal `objects.ObjectMissing`/`objects.StorageUnavailable` and mid-read botocore/urllib3 errors into these via a read-only `BinaryIO` wrapper; `ObjectMissing.args == (file.path,)`). `public.py` imports nothing from catalog internals (only stdlib/typing and `api.platform.auth`). M05 re-exports exactly `FileRef`, `VersionView`, `CatalogQueryPort`, `CatalogReadPort`, `ObjectMissing`, `StorageUnavailable`, `DatasetPolicyView`.
   - Protocols `CatalogQueryPort` (`get_policy_view(dataset_id)`, `get_version(dataset_version_id)`, `is_visible(ctx: CurrentUser, dataset_id) -> bool`), `StoragePort` (`presign_get(dataset_version_id, file_ids: Sequence[UUID] | None, ttl_seconds: int) -> list[PresignedGet]`), `CatalogReadPort` (`open_stream(file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO`).
   - `public_impl.CatalogQueryService(deps)`, `public_impl.CatalogStorageService(deps)`, `public_impl.CatalogReader(deps)`; `wiring.install(deps)` registers them under the three Protocol classes (`ports.get(CatalogQueryPort)` etc.).
 
@@ -7797,18 +7796,25 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 `apps/api/modules/catalog/tests/test_public_ports.py`:
 
 ```python
+import io
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import BinaryIO
 from uuid import UUID, uuid4
 
 import pytest
 
+from api.modules.catalog import objects
 from api.modules.catalog.ports import CatalogNotFound as AliasNotFound
+from api.modules.catalog.ports import ObjectMissing as AliasObjectMissing
 from api.modules.catalog.public import (
     CatalogNotFound,
     CatalogQueryPort,
     CatalogReadPort,
     DatasetPolicyView,
+    ObjectMissing,
     StoragePort,
+    StorageUnavailable,
 )
 from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import ORG_B, SHA_A, insert_version, rows
@@ -7920,6 +7926,55 @@ def test_open_stream_reads_bytes_with_the_service_credentials(api: CatalogApi, d
     assert reader.open_stream(ref).read() == FILES["data/a.csv"]
     assert reader.open_stream(ref, (2, 4)).read() == FILES["data/a.csv"][2:5]
     assert rows(db, "SELECT count(*) AS n FROM catalog.dataset_files")[0]["n"] == 3
+
+
+def test_open_stream_raises_the_public_object_missing(api: CatalogApi, db: PgUrls) -> None:
+    """M05 maps this to FILE_NOT_FOUND; it must not need catalog internals (W1-D1)."""
+    _, version_id = published_version(api, db)
+    view = ports.get(CatalogQueryPort).get_version(UUID(version_id))
+    assert view is not None
+    gone = replace(view.files[0], storage_key=view.files[0].storage_key + ".gone")
+    with pytest.raises(ObjectMissing) as caught:
+        ports.get(CatalogReadPort).open_stream(gone)
+    assert AliasObjectMissing is ObjectMissing
+    assert caught.value.args == (gone.path,)  # the path, never the storage key
+    assert isinstance(caught.value, LookupError) and not isinstance(caught.value, objects.ObjectMissing)
+
+
+def test_open_stream_raises_the_public_storage_unavailable(api: CatalogApi, db: PgUrls) -> None:
+    """M05 retries the run on this (M05 §5)."""
+    _, version_id = published_version(api, db)
+    view = ports.get(CatalogQueryPort).get_version(UUID(version_id))
+    assert view is not None
+    store = memory_store(api.deps.storage, "inst-b")
+
+    def down(key: str, byte_range: tuple[int, int] | None = None) -> BinaryIO:
+        raise objects.StorageUnavailable("storage-b down")
+
+    store.open_stream = down  # type: ignore[method-assign]
+    with pytest.raises(StorageUnavailable) as caught:
+        ports.get(CatalogReadPort).open_stream(view.files[0])
+    assert isinstance(caught.value, RuntimeError) and not isinstance(caught.value, objects.StorageUnavailable)
+
+
+def test_mid_read_storage_errors_surface_as_public_storage_unavailable(api: CatalogApi, db: PgUrls) -> None:
+    """The body can fail after open_stream returned (connection reset while streaming)."""
+    _, version_id = published_version(api, db)
+    view = ports.get(CatalogQueryPort).get_version(UUID(version_id))
+    assert view is not None
+    store = memory_store(api.deps.storage, "inst-b")
+
+    class Breaking(io.BytesIO):
+        def read(self, size: int | None = -1) -> bytes:
+            raise objects.StorageUnavailable("connection reset mid-read")
+
+    store.open_stream = lambda key, byte_range=None: Breaking(b"x")  # type: ignore[method-assign, assignment]
+    stream = ports.get(CatalogReadPort).open_stream(view.files[0])
+    with pytest.raises(StorageUnavailable):
+        stream.read()
+    with pytest.raises(StorageUnavailable):
+        stream.readinto(bytearray(4))  # type: ignore[attr-defined]
+    stream.close()
 ```
 
 `apps/api/modules/catalog/tests/test_routes_contract.py`:
@@ -8114,6 +8169,14 @@ class CatalogNotFound(ValueError):  # noqa: N818  (spec: "ValueError(NOT_FOUND)"
         super().__init__(f"NOT_FOUND: {detail}" if detail else "NOT_FOUND")
 
 
+class ObjectMissing(LookupError):  # noqa: N818
+    """CatalogReadPort.open_stream: the object is not in storage (404). M05 fails the run with FILE_NOT_FOUND."""
+
+
+class StorageUnavailable(RuntimeError):  # noqa: N818
+    """CatalogReadPort.open_stream: connection refused, timeout or 5xx. Retryable (M05 retries the run)."""
+
+
 class CatalogQueryPort(Protocol):
     """For Governance (M04) and Readiness (M05). Makes no access decision except is_visible (D-012)."""
 
@@ -8132,7 +8195,8 @@ class StoragePort(Protocol):
 
 
 class CatalogReadPort(Protocol):
-    """Readiness worker only (D-018): reads bytes with the service credentials, independent of user grants."""
+    """Readiness worker only (D-018): reads bytes with the service credentials, independent of user grants.
+    Raises ObjectMissing (404) or StorageUnavailable (connection/timeout/5xx), both defined above."""
 
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
 
@@ -8144,8 +8208,10 @@ __all__ = [
     "CatalogReadPort",
     "DatasetPolicyView",
     "FileRef",
+    "ObjectMissing",
     "PresignedGet",
     "StoragePort",
+    "StorageUnavailable",
     "VersionView",
 ]
 ```
@@ -8162,8 +8228,10 @@ from api.modules.catalog.public import (
     CatalogReadPort,
     DatasetPolicyView,
     FileRef,
+    ObjectMissing,
     PresignedGet,
     StoragePort,
+    StorageUnavailable,
     VersionView,
 )
 
@@ -8174,8 +8242,10 @@ __all__ = [
     "CatalogReadPort",
     "DatasetPolicyView",
     "FileRef",
+    "ObjectMissing",
     "PresignedGet",
     "StoragePort",
+    "StorageUnavailable",
     "VersionView",
 ]
 ```
@@ -8185,15 +8255,30 @@ __all__ = [
 ```python
 """Implementations of the catalog public ports (registered by wiring.install)."""
 
-from collections.abc import Mapping, Sequence
+import io
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from datetime import timedelta
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, TypeVar, cast
 from uuid import UUID
+
+from botocore.exceptions import BotoCoreError
+from urllib3.exceptions import HTTPError as Urllib3Error
 
 from api.modules.catalog.access import can_see_dataset
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.domain import basename
-from api.modules.catalog.public import CatalogNotFound, DatasetPolicyView, FileRef, PresignedGet, VersionView
+from api.modules.catalog.objects import ObjectMissing as InternalObjectMissing
+from api.modules.catalog.objects import StorageUnavailable as InternalStorageUnavailable
+from api.modules.catalog.public import (
+    CatalogNotFound,
+    DatasetPolicyView,
+    FileRef,
+    ObjectMissing,
+    PresignedGet,
+    StorageUnavailable,
+    VersionView,
+)
 from api.modules.catalog.repo import files_of_versions, load_dataset, load_version, must
 from api.platform import clock
 from api.platform.auth import CurrentUser
@@ -8296,12 +8381,65 @@ class CatalogStorageService:
         return signed
 
 
+_T = TypeVar("_T")
+
+
+@contextmanager
+def _public_errors(path: str) -> Iterator[None]:
+    """Internal storage errors -> public ones (consumers never import catalog.objects). Mid-read failures of a
+    botocore StreamingBody surface as BotoCoreError (ReadTimeout, IncompleteRead, ResponseStreamingError) or raw
+    urllib3 errors; both are infrastructure errors, i.e. StorageUnavailable."""
+    try:
+        yield
+    except InternalObjectMissing as exc:
+        raise ObjectMissing(path) from exc  # the path, never the storage key (M05 echoes args[0])
+    except (InternalStorageUnavailable, BotoCoreError, Urllib3Error) as exc:
+        raise StorageUnavailable(str(exc)) from exc
+
+
+class _PublicErrorStream(io.BufferedIOBase):
+    """Read-only BinaryIO over a storage stream that raises only the public exceptions, also mid-read."""
+
+    def __init__(self, inner: BinaryIO, path: str) -> None:
+        self._inner = inner
+        self._path = path
+
+    def _call(self, fn: Callable[[], _T]) -> _T:
+        with _public_errors(self._path):
+            return fn()
+
+    def readable(self) -> bool:
+        return True
+
+    def read(self, size: int | None = -1) -> bytes:
+        return self._call(lambda: self._inner.read(-1 if size is None else size))
+
+    def read1(self, size: int = -1) -> bytes:
+        return self.read(size)
+
+    def readinto(self, buffer: Any) -> int:
+        data = self.read(len(memoryview(buffer)))
+        memoryview(buffer)[: len(data)] = data
+        return len(data)
+
+    def readline(self, size: int | None = -1) -> bytes:
+        return self._call(lambda: self._inner.readline(-1 if size is None else size))
+
+    def close(self) -> None:
+        try:
+            self._call(self._inner.close)
+        finally:
+            super().close()
+
+
 class CatalogReader:
     def __init__(self, deps: CatalogDeps) -> None:
         self._deps = deps
 
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO:
-        return self._deps.storage.for_bucket(file.storage_bucket).open_stream(file.storage_key, byte_range)
+        with _public_errors(file.path):
+            inner = self._deps.storage.for_bucket(file.storage_bucket).open_stream(file.storage_key, byte_range)
+        return cast(BinaryIO, _PublicErrorStream(inner, file.path))
 ```
 
 In `apps/api/modules/catalog/wiring.py`, add to the imports:
@@ -8611,7 +8749,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes: `insert_dataset`, `policy_or_error` (Task 6), `finalize_publish` (Task 12), `build_policy`, `storage_key`, `ALLOWED_MEDIA_TYPES`, `extension` (Task 1), `load_dataset`, `load_version`, `must` (Task 6), `CatalogDeps`, `build_default_deps` (Task 5), `ports.get(CatalogQueryPort)` (Task 16).
 - Produces:
-  - `seed_files.fixture_files(fixture: str) -> dict[str, bytes]` for `clean_tabular`, `missing_metadata`, `invalid_units`, `missing_provenance` (files `README.md`, `_codebook.csv`, `_schema.json`, `data/measurements.csv` per 09_AI_READY_RULES §5); `seed_files.measurements_csv() -> bytes`.
+  - `seed_files.FIXTURES: tuple[str, ...]`; `seed_files.fixture_files(fixture: str) -> dict[str, bytes]` (ValueError for an unknown name) for `clean_tabular`, `missing_metadata`, `invalid_units`, `missing_provenance` (files `README.md`, `_codebook.csv`, `_schema.json`, `data/measurements.csv` per 09_AI_READY_RULES §5); `seed_files.measurements_csv() -> bytes`, `schema_json(temperature_unit: str, pressure_unit: str) -> bytes` (09 §1.2 `{"resources":[{"path","schema"}]}` form), `codebook_csv() -> bytes` (header `path,field,code,label,unit,description`), `readme_md(fixture) -> bytes`; bytes are exactly those of M05's original 09 §5 generator (which pinned `fixtures.lock`). **W1-D5:** this module is the single source of the 09 §5 fixture bytes; M05 imports `fixture_files`/`FIXTURES` (never re-implements them), so keep these names and signatures stable.
   - `seed_data.SeedDataset` + `seed_data.SEED_DATASETS` (fixed ids `...2001`–`...2005`, versions `...2101`–`...2105`, sessions `...2201`–`...2204`), `seed_data.metadata_for(fixture) -> dict`, `seed_data.file_id(version_id, path) -> UUID` (uuid5, stable).
   - `seed.seed(session) -> None` (idempotent: skips datasets that exist).
 
@@ -8655,8 +8793,11 @@ def test_measurements_follow_the_fixture_formula() -> None:
 def test_fixture_variants() -> None:
     clean = fixture_files("clean_tabular")
     assert sorted(clean) == ["README.md", "_codebook.csv", "_schema.json", "data/measurements.csv"]
-    units = {f["name"]: f.get("unit") for f in json.loads(fixture_files("invalid_units")["_schema.json"])["fields"]}
+    schema = json.loads(fixture_files("invalid_units")["_schema.json"])["resources"][0]
+    assert schema["path"] == "data/measurements.csv"
+    units = {f["name"]: f.get("unit") for f in schema["schema"]["fields"]}
     assert (units["temperature_c"], units["pressure_kpa"]) == ("degC", "kilopascal")
+    assert clean["_codebook.csv"].decode().splitlines()[0] == "path,field,code,label,unit,description"
     assert "## Provenance" in clean["README.md"].decode()
     assert "## Provenance" not in fixture_files("missing_provenance")["README.md"].decode()
 
@@ -8716,88 +8857,114 @@ Expected: collection error `No module named 'api.modules.catalog.seed'`.
 `apps/api/modules/catalog/seed_files.py`:
 
 ```python
-"""Readiness fixture files generated from the 09_AI_READY_RULES §5 formulas (no randomness).
+"""Readiness fixture files generated from the 09_AI_READY_RULES §1.2/§5 formulas (no randomness, no clock).
 
-M05 owns tests/fixtures/readiness (not in the api image); the catalog seed rebuilds the same files in code.
-Keep this byte-identical with tests/fixtures/readiness/generate.py (see README "Integration notes").
+Source of truth for the 09 §5 fixture bytes (W1-D5): M05's tests/fixtures/readiness/generate.py imports
+fixture_files() from here, so the catalog seed and the readiness golden fixtures are byte-identical by construction.
+Public, deterministic API: FIXTURES, fixture_files(), measurements_csv(), schema_json(), codebook_csv(), readme_md().
 """
 
+import csv
+import io
 import json
 from datetime import UTC, datetime, timedelta
 
-MATERIALS = ("AL", "CU", "FE")
-START = datetime(2026, 1, 1, tzinfo=UTC)
+FIXTURES: tuple[str, ...] = ("clean_tabular", "missing_metadata", "invalid_units", "missing_provenance")
+
+README_OVERVIEW = (
+    "# 고분자 전해질 막 온도-압력 측정\n"
+    "\n"
+    "연료전지용 고분자 전해질 막 시편 1,000개의 온도와 압력 측정값을 담은 표 형식 데이터셋이다.\n"
+    "파일 구성: `data/measurements.csv`, 스키마 `_schema.json`, 코드북 `_codebook.csv`.\n"
+)
+README_PROVENANCE = (
+    "\n"
+    "## Provenance\n"
+    "\n"
+    "Institute B 연료전지 실험실의 환경 챔버(모델 EC-200)에서 2026년 1월 1일 00:01부터 1분 간격으로 "
+    "자동 수집한 원시 측정값이며, 보정이나 후처리를 하지 않았다.\n"
+)
+
+CONCEPTS = {
+    "sample_id": "https://schema.org/identifier",
+    "material": "https://w3id.org/emmo#Material",
+    "temperature_c": "http://qudt.org/vocab/quantitykind/Temperature",
+    "pressure_kpa": "http://qudt.org/vocab/quantitykind/Pressure",
+    "measured_at": "http://www.w3.org/2006/time#Instant",
+}
 
 
 def measurements_csv() -> bytes:
-    lines = ["sample_id,material,temperature_c,pressure_kpa,measured_at"]
+    out = io.StringIO()
+    writer = csv.writer(out, lineterminator="\n")
+    writer.writerow(["sample_id", "material", "temperature_c", "pressure_kpa", "measured_at"])
+    start = datetime(2026, 1, 1, tzinfo=UTC)
     for i in range(1, 1001):
         pressure = "" if i % 100 == 0 else f"{101.325 + (i % 10):.3f}"
-        measured_at = (START + timedelta(minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        lines.append(f"S{i:04d},{MATERIALS[i % 3]},{20.0 + (i % 50) * 0.5:.1f},{pressure},{measured_at}")
-    return ("\n".join(lines) + "\n").encode("utf-8")
+        measured = (start + timedelta(minutes=i)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        material = ["AL", "CU", "FE"][i % 3]
+        writer.writerow([f"S{i:04d}", material, f"{20.0 + (i % 50) * 0.5:.1f}", pressure, measured])
+    return out.getvalue().encode("utf-8")
 
 
-def schema_json(fixture: str) -> bytes:
-    temperature_unit, pressure_unit = ("degC", "kilopascal") if fixture == "invalid_units" else ("Cel", "kPa")
-    schema = {
-        "fields": [
-            {"name": "sample_id", "type": "string", "x-nais-concept": "https://schema.org/identifier"},
+def schema_json(temperature_unit: str, pressure_unit: str) -> bytes:
+    fields: list[dict[str, object]] = [
+        {"name": "sample_id", "type": "string", "description": "시편 식별자"},
+        {
+            "name": "material",
+            "type": "string",
+            "description": "재료 코드",
+            "constraints": {"enum": ["AL", "CU", "FE"]},
+        },
+        {
+            "name": "temperature_c",
+            "type": "number",
+            "unit": temperature_unit,
+            "description": "시편 온도",
+            "constraints": {"required": True},
+        },
+        {"name": "pressure_kpa", "type": "number", "unit": pressure_unit, "description": "챔버 압력"},
+        {"name": "measured_at", "type": "datetime", "description": "측정 시각"},
+    ]
+    for field in fields:
+        field["x-nais-concept"] = CONCEPTS[str(field["name"])]
+    doc = {
+        "resources": [
             {
-                "name": "material",
-                "type": "string",
-                "constraints": {"enum": list(MATERIALS)},
-                "x-nais-concept": "https://w3id.org/emmo#Material",
-            },
-            {
-                "name": "temperature_c",
-                "type": "number",
-                "unit": temperature_unit,
-                "x-nais-concept": "http://qudt.org/vocab/quantitykind/Temperature",
-            },
-            {
-                "name": "pressure_kpa",
-                "type": "number",
-                "unit": pressure_unit,
-                "x-nais-concept": "http://qudt.org/vocab/quantitykind/Pressure",
-            },
-            {"name": "measured_at", "type": "datetime", "x-nais-concept": "http://www.w3.org/2006/time#Instant"},
-        ],
-        "primaryKey": "sample_id",
+                "path": "data/measurements.csv",
+                "schema": {"fields": fields, "primaryKey": "sample_id", "missingValues": ["", "NA"]},
+            }
+        ]
     }
-    return (json.dumps(schema, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    return (json.dumps(doc, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
 def codebook_csv() -> bytes:
     rows = [
-        "file,field,code,label,description,unit",
-        "data/measurements.csv,material,AL,Aluminium,,",
-        "data/measurements.csv,material,CU,Copper,,",
-        "data/measurements.csv,material,FE,Iron,,",
+        ["path", "field", "code", "label", "unit", "description"],
+        ["data/measurements.csv", "material", "AL", "Aluminium", "", ""],
+        ["data/measurements.csv", "material", "CU", "Copper", "", ""],
+        ["data/measurements.csv", "material", "FE", "Iron", "", ""],
     ]
-    return ("\n".join(rows) + "\n").encode("utf-8")
+    out = io.StringIO()
+    csv.writer(out, lineterminator="\n").writerows(rows)
+    return out.getvalue().encode("utf-8")
 
 
 def readme_md(fixture: str) -> bytes:
-    text = (
-        "# 고분자 전해질 막 온도-압력 측정\n\n"
-        "연료전지용 고분자 전해질 막 시편 1,000개의 온도와 압력 측정값. 데이터 파일은 data/measurements.csv,"
-        " 필드 정의는 _schema.json, 재료 코드는 _codebook.csv에 있다.\n"
-    )
-    if fixture != "missing_provenance":
-        text += (
-            "\n## Provenance\n\n"
-            "Institute B 연료전지 실험실의 환경 챔버(모델 EC-200)에서 2026년 1월 1일부터 1분 간격으로 자동 수집한"
-            " 측정값이며, 수집 후 단위 변환 외의 가공은 하지 않았다.\n"
-        )
+    text = README_OVERVIEW if fixture == "missing_provenance" else README_OVERVIEW + README_PROVENANCE
     return text.encode("utf-8")
 
 
 def fixture_files(fixture: str) -> dict[str, bytes]:
+    """path -> bytes of one 09 §5 fixture (README.md, _codebook.csv, _schema.json, data/measurements.csv)."""
+    if fixture not in FIXTURES:
+        raise ValueError(f"unknown readiness fixture {fixture!r}")
+    temperature_unit, pressure_unit = ("degC", "kilopascal") if fixture == "invalid_units" else ("Cel", "kPa")
     return {
         "README.md": readme_md(fixture),
         "_codebook.csv": codebook_csv(),
-        "_schema.json": schema_json(fixture),
+        "_schema.json": schema_json(temperature_unit, pressure_unit),
         "data/measurements.csv": measurements_csv(),
     }
 ```
@@ -9059,7 +9226,8 @@ Dramatiq actor `catalog.verify_file` (queue `catalog`). Full rebuild: `python -m
 ## Search
 Index `nais-datasets-v1` behind alias `nais-datasets` (`infra/opensearch`). Without the `analysis-nori`
 plugin the catalog creates the index with the fallback analyzer (`standard` + `cjk_bigram`). The compose
-`opensearch` service must build `infra/opensearch/Dockerfile` to get nori.
+`opensearch` service builds `infra/opensearch/Dockerfile` (nori); an index created earlier with the fallback
+analyzer is rebuilt with `python -m api.modules.catalog.reindex`.
 
 ## Integration notes
 - **M04 Governance:** use `api.platform.ports.get(CatalogQueryPort)` and `ports.get(StoragePort)` with the Protocol
@@ -9068,10 +9236,12 @@ plugin the catalog creates the index with the fallback analyzer (`standard` + `c
   versions and for file ids that are not VERIFIED files of that version.
 - **M05 Readiness:** `CatalogQueryPort.get_version()` gives `VersionView.metadata_snapshot` (frozen at publish; evaluate
   it, not the live dataset) and `files` in path order; read bytes with `ports.get(CatalogReadPort).open_stream(file_ref,
-  byte_range)`. Seed files come from `seed_files.py` (09 §5 formulas) and must stay byte-identical with
-  `tests/fixtures/readiness/generate.py`.
-- **M01 Identity:** the catalog calls `IdentityQueryPort.get_organization_summary` from
-  `api.modules.identity.public`; until that module exists it uses `FakeIdentityPort` (seed organizations).
+  byte_range)`; it raises `api.modules.catalog.public.ObjectMissing` (404) or `StorageUnavailable` (retryable).
+  Seed files come from `seed_files.py` (09 §5 formulas); M05's `tests/fixtures/readiness/generate.py` imports
+  `seed_files.fixture_files`, so both are byte-identical (W1-D5).
+- **M01 Identity:** the catalog calls `IdentityQueryPort.get_organization_summary` imported from
+  `api.modules.identity.public`; installed but unwired → 503 `DEPENDENCY_UNAVAILABLE`; without the identity package it
+  uses `FakeIdentityPort` (seed organizations).
 - The ports registry cannot restrict which module reads `StoragePort`/`CatalogReadPort`; only M04/M05 may use them.
 
 ## Known limitations (P0)
@@ -9105,7 +9275,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - [ ] **Step 6: Deploy to the running stack (no `down`, no volume deletion)**
 
 ```bash
-docker compose build api
+docker compose build opensearch api
+docker compose up -d opensearch   # same osdata volume; recreated with the nori image (W1-D4)
 docker compose up -d api worker
 scripts/nais migrate          # expect: "migrated platform" then "migrated catalog"
 scripts/nais storage-init     # buckets already exist: prints nothing or "created bucket ..."
@@ -9201,23 +9372,13 @@ expect the same dataset sets as Step 7; before M01 is merged, authenticated call
 | 22 | Task 17 `test_jobs.py::test_at22_*` |
 | 23 | Task 16 `test_public_ports.py::test_at23_*` |
 
-## Contract/shared changes needed (not planned here; for Agent 0 / the controller)
+## Contract/shared changes needed
 
-1. `NAIS_PRD/contracts/openapi.yaml` — `UploadSession.files[].upload` must not be `required` (the same contract says
-   presigned URLs are omitted once a session is COMPLETED/EXPIRED). Tests bridge this with
-   `support_upload.assert_upload_session_matches` until it lands.
-2. `openapi.yaml` — error responses the catalog returns but the contract does not declare (tests use `assert_error`
-   for them): `401` on every catalog operation; `searchDatasets` 422/503; `updateDataset` 404/409;
-   `listDatasetVersions` 404; `createDatasetVersion` 404; `createUploadSession` 404/503; `completeUploadSession`
-   403/404/503; `deleteDraftFile` 503; `publishDatasetVersion` 404.
-3. `docker-compose.yml` — the `opensearch` service should build `infra/opensearch` (analysis-nori) instead of the stock
-   `opensearchproject/opensearch:2.19.1`. Until then the catalog creates `nais-datasets-v1` with the fallback analyzer
-   automatically (an existing fallback index needs `python -m api.modules.catalog.reindex` after the switch).
-4. `.env.example` — optional catalog keys (code defaults are identical): `UPLOAD_URL_TTL_SECONDS=3600`,
-   `UPLOAD_SESSION_TTL_SECONDS=3600`, `CATALOG_SYNC_VERIFY_MAX_BYTES=268435456`, `CATALOG_INDEX_ALIAS=nais-datasets`,
-   `MALWARE_SCANNER=noop`.
-5. Cross-module integration: M04 must use the Protocol classes from `api.modules.catalog.public`/`.ports` as
-   `api.platform.ports` keys; M01 must export `IdentityQueryPort` from `api.modules.identity.public`; M05's
-   `tests/fixtures/readiness/generate.py` and `catalog/seed_files.py` must produce byte-identical files (codebook
-   header and README wording are catalog guesses) for the 10_SEED_DATA §7 golden readiness check.
-6. `pyproject.toml` `[tool.mypy] files` covers only the platform; add `apps/api/modules` so CI type-checks modules.
+Resolved by the controller decisions (`wave1-controller-decisions.md`) and the M00 kickoff plan:
+- openapi 1.2.0 (`UploadSession.files[].upload` optional; 401 everywhere; the catalog's 403/404/409/422/503 statuses) —
+  W1-D3. Tests assert them with `assert_matches_response` (via `assert_error`); no bridging helper remains.
+- `.env.example` catalog keys and mypy scope `apps/api/modules` — W1-D4 (M00).
+- Port location — W1-D1 (D-038): consumers import the Protocols from `api.modules.catalog.public` (alias `.ports`);
+  the catalog imports `IdentityQueryPort` from `api.modules.identity.public`.
+- M05 fixture byte-equality — W1-D5: M05 imports `seed_files.fixture_files`.
+- `opensearch` compose build (nori) — W1-D4, done in Task 4 / Task 18 of this plan.

@@ -4,7 +4,7 @@
 
 **Goal:** Build the `project` module: inter-institution research projects with members, project roles, derived partner organizations, visibility, archive, the five `project.*` events and the `ProjectQueryPort` other modules use.
 
-**Architecture:** One plug-in package `apps/api/modules/project` (D-036) with its own Alembic migration in schema `project`, SQLAlchemy Core tables, a thin FastAPI router over a service layer that enforces the M02 role rules, and a pure `roles.py` for the authorization matrix. Every mutation locks the `project.projects` row (`SELECT ... FOR UPDATE`) before reading membership, which serializes membership changes per project and guarantees "at least one ACTIVE PROJECT_OWNER". M01 is reached only through `IdentityQueryPort` (resolved via `api.platform.ports`, with the seed-user `FakeIdentityQueryPort` as the Wave 1 fallback); M02 publishes `ProjectQueryPort` through `wire()`.
+**Architecture:** One plug-in package `apps/api/modules/project` (D-036) with its own Alembic migration in schema `project`, SQLAlchemy Core tables, a thin FastAPI router over a service layer that enforces the M02 role rules, and a pure `roles.py` for the authorization matrix. Every mutation locks the `project.projects` row (`SELECT ... FOR UPDATE`) before reading membership, which serializes membership changes per project and guarantees "at least one ACTIVE PROJECT_OWNER". M01 is reached only through `IdentityQueryPort` imported from `api.modules.identity.public` (resolved via `api.platform.ports`; seed-user `FakeIdentityQueryPort` only when the identity module is not installed); M02 publishes `ProjectQueryPort` (`api.modules.project.public`) through `wire()`.
 
 **Tech Stack:** Python 3.13, FastAPI (installed 0.142, `SessionDep` needs `Depends(scope=)`), SQLAlchemy 2 Core + psycopg 3, Alembic, pydantic v2 / pydantic-settings, PostgreSQL 16 (`pg_trgm`), pytest + testcontainers.
 
@@ -12,6 +12,9 @@
 
 ## Global Constraints
 
+- Execution order (W1): M00 kickoff → M01 → M02 → M03 → M05 → M09 → M10. Prerequisites from M00: pg_trgm in public, openapi 1.2.0, mypy covers apps/api/modules, .env.example keys.
+- pg_trgm is provided by the platform (M00 kickoff, W1-D2: `init.sql` installs it in schema `public`); module migrations never `CREATE EXTENSION`; use `public.gin_trgm_ops`.
+- Ports (W1-D1 / D-038): consume `IdentityQueryPort` + DTOs from `api.modules.identity.public`; publish `ProjectQueryPort` in `api.modules.project.public`.
 - Owned path only: `apps/api/modules/project` (module_ownership.json M02). No shared-file changes in this plan.
 - DB schema `project`; migrations in `apps/api/modules/project/migrations`, version table `project.alembic_version` (platform runner does this); every `op.*` call passes `schema="project"`; no FK to other schemas (`lead_organization_id`, `user_id`, `organization_id` are plain uuids).
 - IDs are UUIDv7 generated in the app with `api.platform.ids.new_id()`; "now" comes from `api.platform.clock.now()`.
@@ -21,7 +24,7 @@
 - `VALIDATION_FAILED` details use the platform shape `{"fields": [{"field": "<name>", "reason": "<REASON>"}]}`.
 - Project roles `PROJECT_OWNER`, `PROJECT_ADMIN`, `RESEARCHER`, `VIEWER`; visibility `PRIVATE` (default) / `PUBLIC`; status `ACTIVE` / `ARCHIVED`; organization role `LEAD` / `PARTNER`.
 - Config: `PROJECT_MAX_MEMBERS` default `200` (over the limit → 422 `VALIDATION_FAILED`).
-- Every API response in tests is checked with `api.platform.testing.contracts.assert_matches_response` when openapi.yaml declares that status; every emitted event with `assert_valid_event`.
+- Every API response in tests (success and error) is checked with `api.platform.testing.contracts.assert_matches_response` against openapi.yaml 1.2.0 (all M02 error statuses are declared after M00); every emitted event with `assert_valid_event`.
 - Dev environment: ports 21051-21058, every login `nais`/`nais` (D-037); seed password `nais`. Never run `docker compose down` or delete volumes; rebuilding/restarting `api`/`worker` is fine.
 - Every commit message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Before each commit: `uv run ruff check --fix apps/api/modules/project && uv run ruff format apps/api/modules/project`.
@@ -48,14 +51,15 @@ All paths under `apps/api/modules/project/` (owned by M02):
 | `tables.py` | SQLAlchemy Core `Table`s for `project.*` |
 | `migrations/0001_project_initial.py` | Alembic revision `project_0001` |
 | `roles.py` | Pure role rules (authorization matrix, last-owner predicate) |
-| `identity.py` | Consumed `IdentityQueryPort` Protocol, `as_uuid`, `get_identity_port()` resolution/fallback |
+| `identity.py` | Re-exports M01's `IdentityQueryPort`/DTOs from `api.modules.identity.public`; `get_identity_port()` resolution/fallback |
 | `identity_fake.py` | `FakeIdentityQueryPort` with seed users (tests + Wave 1 runtime fallback) |
 | `schemas.py` | Request bodies (`ProjectCreateIn`, `ProjectUpdateIn`, `MemberAddIn`, `MemberRoleIn`) |
 | `repository.py` | All SQL (Core) for projects, members, organizations |
 | `service.py` | Use cases: access checks, row lock, invariants, outbox writes |
 | `views.py` | Response dict builders matching openapi `Project`, `ProjectSummary`, `ProjectMember` |
 | `router.py` | FastAPI endpoints for the 9 `projects` operations |
-| `ports.py` | Public `ProjectQueryPort` Protocol (consumers: `ports.get(ProjectQueryPort)`) |
+| `public.py` | Public `ProjectQueryPort` Protocol (D-038 registry key; consumers import it from here and call `ports.get(ProjectQueryPort)`) |
+| `ports.py` | Re-export of `public.py` (spec compatibility) |
 | `query.py` | `SqlProjectQueryPort` implementation + `wire()` |
 | `seed.py` | Idempotent `seed(session)` for project `...1001` |
 | `README.md` | Module overview + integration notes (spec §13 deliverable) |
@@ -399,7 +403,7 @@ Revises:
 """
 
 import sqlalchemy as sa
-from alembic import context, op
+from alembic import op
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 revision = "project_0001"
@@ -409,23 +413,6 @@ depends_on = None
 
 SCHEMA = "project"
 NOW = sa.text("now()")
-
-
-def _trgm_schema() -> str:
-    """pg_trgm is database-wide and M01 needs it too: install once, then use whichever schema holds it."""
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public")
-    if context.is_offline_mode():
-        return "public"
-    return str(
-        op.get_bind()
-        .execute(
-            sa.text(
-                "SELECT n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace "
-                "WHERE e.extname = 'pg_trgm'"
-            )
-        )
-        .scalar_one()
-    )
 
 
 def upgrade() -> None:
@@ -455,8 +442,8 @@ def upgrade() -> None:
         schema=SCHEMA,
     )
     op.create_index("ix_projects_visibility_status", "projects", ["visibility", "status"], schema=SCHEMA)
-    trgm = _trgm_schema()
-    op.execute(f'CREATE INDEX ix_projects_name_trgm ON {SCHEMA}.projects USING gin (name "{trgm}".gin_trgm_ops)')
+    # pg_trgm lives in schema public, installed once by the platform (M00 kickoff, W1-D2); never CREATE EXTENSION here.
+    op.execute(f"CREATE INDEX ix_projects_name_trgm ON {SCHEMA}.projects USING gin (name public.gin_trgm_ops)")
 
     op.create_table(
         "project_members",
@@ -674,30 +661,28 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `apps/api/modules/project/tests/test_identity_port.py`
 
 **Interfaces:**
-- Consumes: `SEED_USERS`, `SEED_ORGANIZATIONS`, `SeedUser`, `SeedOrganization` (Task 1).
-- Produces: `IdentityQueryPort` Protocol (`get_public_profile`, `get_public_profiles`, `get_organization_summary`, `is_active_user`, typed with `nais_contracts.api_models.IdentityPublicProfile` / `OrganizationSummary`); `as_uuid(value: Any) -> UUID`; `identity_module_installed() -> bool`; `get_identity_port() -> IdentityQueryPort` (FastAPI-dependency-compatible); constants `IDENTITY_PACKAGE = "api.modules.identity"`, `IDENTITY_PORTS_MODULE = "api.modules.identity.ports"`; `FakeIdentityQueryPort(users, organizations)` with `.with_seed_users()` and `.disable(user_id)`.
+- Consumes: `SEED_USERS`, `SEED_ORGANIZATIONS`, `SeedUser`, `SeedOrganization` (Task 1); from M01 (built before M02; W1-D1 / D-038) `api.modules.identity.public`: `IdentityQueryPort` (Protocol: `get_public_profile(user_id: UUID) -> IdentityPublicProfile | None`, `get_public_profiles(user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]`, `get_organization_summary(organization_id: UUID) -> OrganizationSummary | None`, `is_active_user(user_id: UUID) -> bool`, `has_org_role(user_id: UUID, organization_id: UUID, role: str) -> bool`, `list_users_with_org_role(organization_id: UUID, role: str) -> list[UUID]`, `get_email(user_id: UUID) -> str | None`), `IdentityPublicProfile` (frozen pydantic: `user_id: UUID`, `display_name: str`, `organization_id: UUID`, `organization_name: str | None`, `status: Literal["ACTIVE", "DISABLED"]`), `OrganizationSummary` (frozen pydantic: `organization_id: UUID`, `code: str`, `name: str`, `type: Literal["RESEARCH_INSTITUTE", "UNIVERSITY", "COMPANY", "PLATFORM_OPERATOR"]`).
+- Produces: `api.modules.project.identity` re-exports `IdentityQueryPort`, `IdentityPublicProfile`, `OrganizationSummary` (the SAME class objects as `api.modules.identity.public`, so `ports.provide(IdentityQueryPort, ...)` anywhere uses M01's registry key); `identity_module_installed() -> bool`; `get_identity_port() -> IdentityQueryPort` (FastAPI-dependency-compatible); constant `IDENTITY_PACKAGE = "api.modules.identity"`; `FakeIdentityQueryPort(users, organizations)` implementing all 7 Protocol methods, with `.with_seed_users()` and `.disable(user_id)`.
 
-Resolution order of `get_identity_port()` (decision, see "Contract/shared changes needed" #1):
-1. `ports.get(api.modules.project.identity.IdentityQueryPort)` — tests and any adapter registered under M02's key.
-2. If `api.modules.identity` is a real package: `ports.get(api.modules.identity.ports.IdentityQueryPort)`; on import error or missing registration → 503 `DEPENDENCY_UNAVAILABLE` (fail closed; never silently use fake data next to a real M01).
-3. If M01 is not installed at all (Wave 1): the seed-user `FakeIdentityQueryPort` (M02 §3), with one warning log.
+Resolution order of `get_identity_port()` (W1-D1 / D-038: the registry key is M01's `public.IdentityQueryPort`):
+1. `ports.get(IdentityQueryPort)` — M01's `wire_ports` registers `SqlIdentityQuery`; tests register `FakeIdentityQueryPort` under the same key.
+2. Not registered while the identity module is installed (`api.modules.identity` defines `MODULE = ModuleSpec(...)`) → 503 `DEPENDENCY_UNAVAILABLE` (fail closed; never silently use fake data next to a real M01).
+3. Identity module not installed (`identity_module_installed()` is false, e.g. a stripped deployment) → the seed-user `FakeIdentityQueryPort` (M02 §3), with one warning log.
 
 - [ ] **Step 1: Write the failing test**
 
 `apps/api/modules/project/tests/test_identity_port.py`:
 
 ```python
-import sys
-import types
 import uuid
-from typing import Protocol
 
 import pytest
 
+from api.modules.identity import public as identity_public
 from api.modules.project import identity as identity_mod
-from api.modules.project.identity import IdentityQueryPort, as_uuid, get_identity_port
+from api.modules.project.identity import IdentityQueryPort, get_identity_port
 from api.modules.project.identity_fake import FakeIdentityQueryPort
-from api.modules.project.seed_data import ORG_B, USERS_BY_KEY
+from api.modules.project.seed_data import ORG_A, ORG_B, USERS_BY_KEY
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
@@ -706,12 +691,21 @@ B_RESEARCHER = USERS_BY_KEY["b.researcher"].user_id
 B_DISABLED = USERS_BY_KEY["b.disabled"].user_id
 
 
+@pytest.fixture(autouse=True)
+def _clean_ports() -> None:
+    ports.reset()
+
+
+def test_registry_key_is_m01_public_protocol() -> None:
+    assert IdentityQueryPort is identity_public.IdentityQueryPort
+
+
 def test_fake_serves_seed_users() -> None:
     fake = FakeIdentityQueryPort.with_seed_users()
     profile = fake.get_public_profile(B_RESEARCHER)
-    assert profile is not None
+    assert isinstance(profile, identity_public.IdentityPublicProfile)
     assert profile.display_name == "B Researcher"
-    assert as_uuid(profile.organization_id) == ORG_B
+    assert profile.organization_id == ORG_B
     assert profile.organization_name == "Institute B"
     assert fake.is_active_user(B_RESEARCHER)
     assert not fake.is_active_user(B_DISABLED)
@@ -720,8 +714,19 @@ def test_fake_serves_seed_users() -> None:
     assert not fake.is_active_user(unknown)
     assert set(fake.get_public_profiles([B_RESEARCHER, unknown])) == {B_RESEARCHER}
     summary = fake.get_organization_summary(ORG_B)
-    assert summary is not None and summary.code == "inst-b" and summary.name == "Institute B"
+    assert isinstance(summary, identity_public.OrganizationSummary)
+    assert summary.code == "inst-b" and summary.name == "Institute B"
     assert fake.get_organization_summary(uuid.uuid4()) is None
+
+
+def test_fake_org_roles_and_email() -> None:
+    fake = FakeIdentityQueryPort.with_seed_users()
+    a_admin = USERS_BY_KEY["a.admin"]
+    assert fake.has_org_role(a_admin.user_id, ORG_A, "ORG_ADMIN")
+    assert not fake.has_org_role(a_admin.user_id, ORG_B, "ORG_ADMIN")
+    assert fake.list_users_with_org_role(ORG_B, "DATA_STEWARD") == [USERS_BY_KEY["b.steward"].user_id]
+    assert fake.get_email(B_RESEARCHER) == USERS_BY_KEY["b.researcher"].email
+    assert fake.get_email(uuid.uuid4()) is None
 
 
 def test_fake_disable_marks_user_inactive() -> None:
@@ -729,17 +734,10 @@ def test_fake_disable_marks_user_inactive() -> None:
     fake.disable(B_RESEARCHER)
     assert not fake.is_active_user(B_RESEARCHER)
     profile = fake.get_public_profile(B_RESEARCHER)
-    assert profile is not None and profile.status.value == "DISABLED"
+    assert profile is not None and profile.status == "DISABLED"
 
 
-def test_as_uuid_accepts_root_models_and_plain_values() -> None:
-    value = uuid.uuid4()
-    assert as_uuid(value) == value
-    assert as_uuid(str(value)) == value
-    assert as_uuid(types.SimpleNamespace(root=value)) == value
-
-
-def test_port_registered_under_m02_key_wins() -> None:
+def test_registered_port_wins() -> None:
     fake = FakeIdentityQueryPort.with_seed_users()
     ports.provide(IdentityQueryPort, fake)
     assert get_identity_port() is fake
@@ -752,24 +750,8 @@ def test_seed_fake_when_identity_module_is_not_installed(monkeypatch: pytest.Mon
     assert port.is_active_user(B_RESEARCHER)
 
 
-def test_m01_port_is_used_when_identity_module_provides_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    class M01IdentityQueryPort(Protocol):
-        def is_active_user(self, user_id: uuid.UUID) -> bool: ...
-
-    fake_m01 = types.ModuleType(identity_mod.IDENTITY_PORTS_MODULE)
-    fake_m01.IdentityQueryPort = M01IdentityQueryPort  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, identity_mod.IDENTITY_PORTS_MODULE, fake_m01)
-    monkeypatch.setattr(identity_mod, "identity_module_installed", lambda: True)
-    real = FakeIdentityQueryPort.with_seed_users()
-    ports.provide(M01IdentityQueryPort, real)
-    assert get_identity_port() is real
-
-
-def test_installed_but_unwired_identity_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_m01 = types.ModuleType(identity_mod.IDENTITY_PORTS_MODULE)
-    fake_m01.IdentityQueryPort = type("Unregistered", (), {})  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, identity_mod.IDENTITY_PORTS_MODULE, fake_m01)
-    monkeypatch.setattr(identity_mod, "identity_module_installed", lambda: True)
+def test_installed_but_unwired_identity_fails_closed() -> None:
+    assert identity_mod.identity_module_installed()  # M01 is built before M02
     with pytest.raises(ApiError) as exc:
         get_identity_port()
     assert exc.value.code == ErrorCode.DEPENDENCY_UNAVAILABLE
@@ -790,12 +772,13 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'api.modules.project.i
 from collections.abc import Iterable
 from uuid import UUID
 
-from nais_contracts.api_models import IdentityPublicProfile, OrganizationSummary
-
+from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary
 from api.modules.project.seed_data import SEED_ORGANIZATIONS, SEED_USERS, SeedOrganization, SeedUser
 
 
 class FakeIdentityQueryPort:
+    """Implements every method of api.modules.identity.public.IdentityQueryPort."""
+
     def __init__(self, users: Iterable[SeedUser], organizations: Iterable[SeedOrganization]) -> None:
         self._users = {user.user_id: user for user in users}
         self._organizations = {org.organization_id: org for org in organizations}
@@ -833,64 +816,70 @@ class FakeIdentityQueryPort:
         organization = self._organizations.get(organization_id)
         if organization is None:
             return None
-        return OrganizationSummary(
-            organization_id=organization.organization_id,
-            code=organization.code,
-            name=organization.name,
-            type=organization.type,
+        return OrganizationSummary.model_validate(
+            {
+                "organization_id": organization.organization_id,
+                "code": organization.code,
+                "name": organization.name,
+                "type": organization.type,
+            }
         )
 
     def is_active_user(self, user_id: UUID) -> bool:
         return user_id in self._users and user_id not in self._disabled
+
+    def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool:
+        user = self._users.get(user_id)
+        return (
+            user is not None
+            and user_id not in self._disabled
+            and user.organization_id == organization_id
+            and role in user.org_roles
+        )
+
+    def list_users_with_org_role(self, organization_id: UUID, role: str) -> list[UUID]:
+        return [
+            user.user_id for user in self._users.values() if self.has_org_role(user.user_id, organization_id, role)
+        ]
+
+    def get_email(self, user_id: UUID) -> str | None:
+        user = self._users.get(user_id)
+        return user.email if user else None
 ```
 
 `apps/api/modules/project/identity.py`:
 
 ```python
-"""IdentityQueryPort (M01 §8) as M02 consumes it, and how M02 finds an implementation at runtime."""
+"""IdentityQueryPort (M01 §8, api.modules.identity.public) as M02 consumes it, and runtime resolution."""
 
-import importlib
-import importlib.util
 import logging
 from functools import lru_cache
-from typing import Any, Protocol
-from uuid import UUID
 
-from nais_contracts.api_models import IdentityPublicProfile, OrganizationSummary
-
+from api.modules import identity as identity_package
+from api.modules.identity.public import IdentityPublicProfile, IdentityQueryPort, OrganizationSummary
 from api.modules.project.identity_fake import FakeIdentityQueryPort
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
+from api.platform.modules import ModuleSpec
 
 logger = logging.getLogger("nais.project")
 
 IDENTITY_PACKAGE = "api.modules.identity"
-IDENTITY_PORTS_MODULE = "api.modules.identity.ports"
 
-
-class IdentityQueryPort(Protocol):
-    """The subset of M01's read port that M02 uses (M02 §3)."""
-
-    def get_public_profile(self, user_id: UUID) -> IdentityPublicProfile | None: ...
-
-    def get_public_profiles(self, user_ids: list[UUID]) -> dict[UUID, IdentityPublicProfile]: ...
-
-    def get_organization_summary(self, organization_id: UUID) -> OrganizationSummary | None: ...
-
-    def is_active_user(self, user_id: UUID) -> bool: ...
-
-
-def as_uuid(value: Any) -> UUID:
-    """Generated contract models wrap ids in a RootModel (`Id`); accept that, a UUID or a string."""
-    raw = getattr(value, "root", value)
-    return raw if isinstance(raw, UUID) else UUID(str(raw))
+__all__ = [
+    "IDENTITY_PACKAGE",
+    "IdentityPublicProfile",
+    "IdentityQueryPort",
+    "OrganizationSummary",
+    "get_identity_port",
+    "identity_module_installed",
+]
 
 
 def identity_module_installed() -> bool:
-    """True when api.modules.identity is a real package (an empty namespace dir does not count)."""
-    spec = importlib.util.find_spec(IDENTITY_PACKAGE)
-    return spec is not None and spec.origin is not None
+    """True when api.modules.identity is a real module package (defines MODULE = ModuleSpec)."""
+    return isinstance(getattr(identity_package, "MODULE", None), ModuleSpec)
 
 
 @lru_cache(maxsize=1)
@@ -907,12 +896,7 @@ def get_identity_port() -> IdentityQueryPort:
         pass
     if not identity_module_installed():
         return _seed_fallback()
-    try:
-        m01_key = importlib.import_module(IDENTITY_PORTS_MODULE).IdentityQueryPort
-        port: IdentityQueryPort = ports.get(m01_key)
-        return port
-    except (ImportError, AttributeError, ports.PortNotProvided) as exc:
-        raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "Identity directory is not available.") from exc
+    raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "Identity directory is not available.")
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -1486,11 +1470,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `apps/api/modules/project/tests/test_projects_create_get.py`
 
 **Interfaces:**
-- Consumes: repository (Task 4), `ProjectCreateIn` (Task 4), `roles` (Task 2), `IdentityQueryPort`, `get_identity_port`, `as_uuid` (Task 3).
+- Consumes: repository (Task 4), `ProjectCreateIn` (Task 4), `roles` (Task 2), `IdentityQueryPort`, `IdentityPublicProfile`, `get_identity_port` (Task 3).
 - Produces (service): `ProjectAccess(project: RowMapping, my_role: str | None)` (frozen dataclass); `create_project(session, user: CurrentUser, data: ProjectCreateIn) -> UUID`; `read_project(session, user, project_id) -> ProjectAccess`; private `_validation_error(field, reason, message=...) -> ApiError`, `_check_dates(start, end) -> None`, `_access(session, user, project_id, *, lock) -> ProjectAccess`, `_mutable(session, user, project_id, *, allow_archived=False) -> ProjectAccess`.
 - Produces (views): `summary_view(project: RowMapping, *, my_role: str | None, member_count: int) -> dict[str, Any]`; `detail_view(session, identity, access: ProjectAccess) -> dict[str, Any]`; `member_view(member, profile, org_names) -> dict[str, Any]`; `members_view(identity, members: Sequence[RowMapping]) -> list[dict[str, Any]]`.
 - Produces (router): `router: APIRouter`; `IdentityDep = Annotated[IdentityQueryPort, Depends(get_identity_port)]`.
-- Produces (test helpers): `ISSUER: FakeIssuer`; `current_user_for(key: str) -> CurrentUser`; `SeedPrincipalResolver`; `ProjectApi(client)` with `.request/.get/.post/.patch/.delete(user_key | None, path, **kw)` and `.create_project(user="a.researcher", **fields) -> dict`; `uid(key) -> str`; `sql(urls, statement, **params) -> list[dict]`; `project_events(urls) -> list[dict]` (validated); `assert_error(response, status, code, operation_id=None)`; `seed_member(urls, project_id: str, key: str, role: str) -> None`. Fixtures `identity` (FakeIdentityQueryPort registered under M02's key), `app`, `api`.
+- Produces (test helpers): `ISSUER: FakeIssuer`; `current_user_for(key: str) -> CurrentUser`; `SeedPrincipalResolver`; `ProjectApi(client)` with `.request/.get/.post/.patch/.delete(user_key | None, path, **kw)` and `.create_project(user="a.researcher", **fields) -> dict`; `uid(key) -> str`; `sql(urls, statement, **params) -> list[dict]`; `project_events(urls) -> list[dict]` (validated); `assert_error(response, status, code, operation_id: str)` (always contract-checks); `seed_member(urls, project_id: str, key: str, role: str) -> None`. Fixtures `identity` (FakeIdentityQueryPort registered under M01's `IdentityQueryPort` key), `app`, `api`.
 
 Access rules implemented here (M02 §6, §9): unknown project → 404 `NOT_FOUND`; non-member, non-PLATFORM_ADMIN → 404 on PRIVATE, 403 `FORBIDDEN` on PUBLIC; PLATFORM_ADMIN reads with `my_role = null`. Mutations (`_mutable`) lock the projects row first, then do the same visibility check, then 403 for a PLATFORM_ADMIN non-member, then 409 `PROJECT_ARCHIVED` unless `allow_archived`.
 
@@ -1593,13 +1577,12 @@ def project_events(urls: PgUrls) -> list[dict[str, Any]]:
     return envelopes
 
 
-def assert_error(response: httpx.Response, status: int, code: str, operation_id: str | None = None) -> None:
-    """operation_id: pass it when openapi.yaml declares this status for the operation."""
+def assert_error(response: httpx.Response, status: int, code: str, operation_id: str) -> None:
+    """Every error status the module returns is declared in openapi.yaml 1.2.0 (M00 kickoff, W1-D3)."""
     assert response.status_code == status, response.text
     body = response.json()
     assert body["error"]["code"] == code, body
-    if operation_id is not None:
-        assert_matches_response(operation_id, status, body)
+    assert_matches_response(operation_id, status, body)
 
 
 def seed_member(urls: PgUrls, project_id: str, key: str, role: str) -> None:
@@ -1755,7 +1738,7 @@ def test_create_rejects_unknown_fields(api: ProjectApi) -> None:
 
 
 def test_create_requires_a_token(api: ProjectApi) -> None:
-    assert_error(api.post(None, "/projects", json={"name": "Study", "description": ""}), 401, "UNAUTHENTICATED")
+    assert_error(api.post(None, "/projects", json={"name": "Study", "description": ""}), 401, "UNAUTHENTICATED", "createProject")
 
 
 def test_member_reads_project(api: ProjectApi) -> None:
@@ -1921,12 +1904,11 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 from uuid import UUID
 
-from nais_contracts.api_models import IdentityPublicProfile
 from sqlalchemy import RowMapping
 from sqlalchemy.orm import Session
 
 from api.modules.project import repository as repo
-from api.modules.project.identity import IdentityQueryPort, as_uuid
+from api.modules.project.identity import IdentityPublicProfile, IdentityQueryPort
 from api.modules.project.service import ProjectAccess
 
 
@@ -1969,7 +1951,7 @@ def detail_view(session: Session, identity: IdentityQueryPort, access: ProjectAc
 def _organization_names(
     identity: IdentityQueryPort, organization_ids: set[UUID], profiles: Iterable[IdentityPublicProfile]
 ) -> dict[UUID, str]:
-    names = {as_uuid(p.organization_id): p.organization_name for p in profiles if p.organization_name}
+    names = {p.organization_id: p.organization_name for p in profiles if p.organization_name}
     for organization_id in organization_ids - names.keys():
         summary = identity.get_organization_summary(organization_id)
         if summary is not None:
@@ -2169,17 +2151,17 @@ def test_cursor_pages_through_identical_timestamps(api: ProjectApi) -> None:
 def test_tampered_cursor_is_422(api: ProjectApi) -> None:
     api.create_project()
     garbage = api.get("a.researcher", "/projects", params={"cursor": "not-a-cursor!!"})
-    assert_error(garbage, 422, "VALIDATION_FAILED")
+    assert_error(garbage, 422, "VALIDATION_FAILED", "listProjects")
     foreign = api.get("a.researcher", "/projects", params={"cursor": encode_cursor(["x"])})
-    assert_error(foreign, 422, "VALIDATION_FAILED")
+    assert_error(foreign, 422, "VALIDATION_FAILED", "listProjects")
     assert foreign.json()["error"]["details"]["fields"][0] == {"field": "cursor", "reason": "INVALID_CURSOR"}
     naive = api.get("a.researcher", "/projects", params={"cursor": encode_cursor(["2026-10-01T00:00:00", "00000000-0000-7000-8000-000000000001"])})
-    assert_error(naive, 422, "VALIDATION_FAILED")
+    assert_error(naive, 422, "VALIDATION_FAILED", "listProjects")
 
 
 def test_invalid_scope_is_422_and_token_required(api: ProjectApi) -> None:
-    assert_error(api.get("a.researcher", "/projects", params={"scope": "all"}), 422, "VALIDATION_FAILED")
-    assert_error(api.get(None, "/projects"), 401, "UNAUTHENTICATED")
+    assert_error(api.get("a.researcher", "/projects", params={"scope": "all"}), 422, "VALIDATION_FAILED", "listProjects")
+    assert_error(api.get(None, "/projects"), 401, "UNAUTHENTICATED", "listProjects")
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -2344,23 +2326,23 @@ def test_researcher_and_viewer_cannot_edit(api: ProjectApi, db: PgUrls) -> None:
 def test_non_member_update_is_404_on_private_and_admin_cannot_write(api: ProjectApi) -> None:
     project = api.create_project()
     path = f"/projects/{project['project_id']}"
-    assert_error(api.patch("b.steward", path, json={"description": "x"}), 404, "NOT_FOUND")
+    assert_error(api.patch("b.steward", path, json={"description": "x"}), 404, "NOT_FOUND", "updateProject")
     assert_error(api.patch("admin", path, json={"description": "x"}), 403, "FORBIDDEN", "updateProject")
 
 
 def test_patch_rejects_empty_body_and_nulls(api: ProjectApi) -> None:
     project = api.create_project()
     path = f"/projects/{project['project_id']}"
-    assert_error(api.patch("a.researcher", path, json={}), 422, "VALIDATION_FAILED")
+    assert_error(api.patch("a.researcher", path, json={}), 422, "VALIDATION_FAILED", "updateProject")
     for field in ("name", "description", "visibility", "keywords"):
-        assert_error(api.patch("a.researcher", path, json={field: None}), 422, "VALIDATION_FAILED")
+        assert_error(api.patch("a.researcher", path, json={field: None}), 422, "VALIDATION_FAILED", "updateProject")
 
 
 def test_patch_dates_are_checked_against_stored_values(api: ProjectApi) -> None:
     project = api.create_project(start_date="2026-10-10")
     path = f"/projects/{project['project_id']}"
     response = api.patch("a.researcher", path, json={"end_date": "2026-10-01"})
-    assert_error(response, 422, "VALIDATION_FAILED")
+    assert_error(response, 422, "VALIDATION_FAILED", "updateProject")
     assert response.json()["error"]["details"]["fields"][0]["field"] == "end_date"
     cleared = api.patch("a.researcher", path, json={"start_date": None, "end_date": "2026-10-01"})
     assert cleared.status_code == 200
@@ -2478,7 +2460,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Test: `apps/api/modules/project/tests/test_members_add_list.py`
 
 **Interfaces:**
-- Consumes: `IdentityQueryPort` (`get_public_profile`, `is_active_user`), `as_uuid`, `MemberAddIn`, `ProjectSettings`/`get_project_settings`, `views.members_view`.
+- Consumes: `IdentityQueryPort` (`get_public_profile`, `is_active_user`), `MemberAddIn`, `ProjectSettings`/`get_project_settings`, `views.members_view`.
 - Produces: `service.read_members(session, user, project_id) -> Sequence[RowMapping]`; `service.add_member(session, user, identity, project_id, data: MemberAddIn, *, max_members: int) -> RowMapping`; endpoints `GET /projects/{project_id}/members` (`listProjectMembers`), `POST /projects/{project_id}/members` (`addProjectMember`, 201).
 
 Rules: members list is ACTIVE members only; caller must be an ACTIVE member or PLATFORM_ADMIN, otherwise 404 regardless of visibility. Add: OWNER any role, ADMIN only RESEARCHER/VIEWER (else 403); already ACTIVE → 409 `PROJECT_MEMBER_EXISTS`; unknown or not `is_active_user` → 422 (`fields[0] = {"field": "user_id", "reason": "USER_NOT_ACTIVE"}`); ACTIVE members already `>= PROJECT_MAX_MEMBERS` → 422 (`reason "PROJECT_MAX_MEMBERS"`); member `organization_id` is copied from the identity profile; organizations table updated in the same transaction; `project.member.added.v1` emitted.
@@ -2633,7 +2615,7 @@ Expected: FAIL — `/members` routes return 404.
 In `apps/api/modules/project/service.py`:
 - add `from collections.abc import Sequence` to the imports;
 - change the schemas import to `from api.modules.project.schemas import MemberAddIn, ProjectCreateIn, ProjectUpdateIn`;
-- add `from api.modules.project.identity import IdentityQueryPort, as_uuid`;
+- add `from api.modules.project.identity import IdentityQueryPort`;
 
 and append:
 
@@ -2666,7 +2648,7 @@ def add_member(
         raise _validation_error("user_id", "USER_NOT_ACTIVE", "User does not exist or is not active.")
     if repo.count_active_members(session, project_id) >= max_members:
         raise _validation_error("user_id", "PROJECT_MAX_MEMBERS", f"A project can have at most {max_members} members.")
-    organization_id = as_uuid(profile.organization_id)
+    organization_id = profile.organization_id
     now = clock.now()
     member = repo.insert_member(
         session,
@@ -2831,7 +2813,7 @@ def test_researcher_cannot_change_roles(api: ProjectApi, db: PgUrls) -> None:
 
 def test_unknown_member_is_404(api: ProjectApi) -> None:
     project = api.create_project()
-    assert_error(_set_role(api, project["project_id"], "b.steward", "VIEWER"), 404, "PROJECT_MEMBER_NOT_FOUND")
+    assert_error(_set_role(api, project["project_id"], "b.steward", "VIEWER"), 404, "PROJECT_MEMBER_NOT_FOUND", "updateProjectMemberRole")
 
 
 def test_archived_project_rejects_role_change(api: ProjectApi, db: PgUrls) -> None:
@@ -2845,7 +2827,7 @@ def test_archived_project_rejects_role_change(api: ProjectApi, db: PgUrls) -> No
 def test_invalid_role_body_is_422(api: ProjectApi, db: PgUrls) -> None:
     project = api.create_project()
     seed_member(db, project["project_id"], "b.researcher", "RESEARCHER")
-    assert_error(_set_role(api, project["project_id"], "b.researcher", "ADMIN"), 422, "VALIDATION_FAILED")
+    assert_error(_set_role(api, project["project_id"], "b.researcher", "ADMIN"), 422, "VALIDATION_FAILED", "updateProjectMemberRole")
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -3245,14 +3227,15 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 12: ProjectQueryPort and wire() (AT-13 part 3, AT-15)
 
 **Files:**
-- Create: `apps/api/modules/project/ports.py`
+- Create: `apps/api/modules/project/public.py` (the Protocol; W1-D1 / D-038 registry key)
+- Create: `apps/api/modules/project/ports.py` (re-export of `public.py` for spec compatibility)
 - Create: `apps/api/modules/project/query.py`
 - Modify: `apps/api/modules/project/__init__.py` (add `wire`)
 - Test: `apps/api/modules/project/tests/test_query_port.py`
 
 **Interfaces:**
 - Consumes: `repo.is_active_member/member_role/get_project/count_active_members/list_active_members/project_ids_for_member`, `views.summary_view`, `session_factory`.
-- Produces: `ProjectQueryPort` Protocol in `api.modules.project.ports` with `is_active_member(project_id, user_id) -> bool`, `get_member_role(project_id, user_id) -> str | None`, `get_summary(project_id) -> nais_contracts.api_models.ProjectSummary | None` (`my_role=None`), `list_active_member_ids(project_id) -> list[UUID]`, `list_project_ids_for_member(user_id) -> list[UUID]`; `SqlProjectQueryPort(database_url: str | None = None)`; `wire() -> None` (registers `SqlProjectQueryPort()` under `ProjectQueryPort`).
+- Produces: `ProjectQueryPort` Protocol in `api.modules.project.public` (re-exported unchanged by `api.modules.project.ports`; consumers import it from `public`) with `is_active_member(project_id, user_id) -> bool`, `get_member_role(project_id, user_id) -> str | None`, `get_summary(project_id) -> nais_contracts.api_models.ProjectSummary | None` (`my_role=None`), `list_active_member_ids(project_id) -> list[UUID]`, `list_project_ids_for_member(user_id) -> list[UUID]`; `SqlProjectQueryPort(database_url: str | None = None)`; `wire() -> None` (registers `SqlProjectQueryPort()` under `ProjectQueryPort`).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -3262,7 +3245,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 import uuid
 
 from api.modules.project import MODULE
-from api.modules.project.ports import ProjectQueryPort
+from api.modules.project import ports as project_ports
+from api.modules.project.public import ProjectQueryPort
 from api.modules.project.query import SqlProjectQueryPort
 from api.modules.project.seed_data import ORG_A, USERS_BY_KEY
 from api.modules.project.tests.helpers import ProjectApi, seed_member, sql, uid
@@ -3273,6 +3257,10 @@ from api.platform.testing.fixtures import PgUrls
 
 A = USERS_BY_KEY["a.researcher"].user_id
 B = USERS_BY_KEY["b.researcher"].user_id
+
+
+def test_ports_module_re_exports_the_public_protocol() -> None:
+    assert project_ports.ProjectQueryPort is ProjectQueryPort
 
 
 def test_wire_registers_the_port_and_module_is_discoverable() -> None:
@@ -3336,15 +3324,16 @@ def test_at15_membership_grants_no_data_access(api: ProjectApi, db: PgUrls) -> N
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `uv run pytest apps/api/modules/project/tests/test_query_port.py -v`
-Expected: FAIL with `ModuleNotFoundError: No module named 'api.modules.project.ports'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'api.modules.project.public'`.
 
 - [ ] **Step 3: Implement**
 
-`apps/api/modules/project/ports.py`:
+`apps/api/modules/project/public.py`:
 
 ```python
-"""M02 public port (M02 §8). Consumers: `from api.modules.project.ports import ProjectQueryPort` then
-`api.platform.ports.get(ProjectQueryPort)`. Never query project.* tables directly."""
+"""M02 public port (M02 §8, D-038). Consumers: `from api.modules.project.public import ProjectQueryPort` then
+`api.platform.ports.get(ProjectQueryPort)`. Never query project.* tables directly.
+Imports nothing from project internals (only stdlib/typing and the generated contract models)."""
 
 from typing import Protocol
 from uuid import UUID
@@ -3371,6 +3360,16 @@ class ProjectQueryPort(Protocol):
         ...
 ```
 
+`apps/api/modules/project/ports.py`:
+
+```python
+"""Spec-compatible alias of public.py (D-038). New code imports from api.modules.project.public."""
+
+from api.modules.project.public import ProjectQueryPort
+
+__all__ = ["ProjectQueryPort"]
+```
+
 `apps/api/modules/project/query.py`:
 
 ```python
@@ -3382,7 +3381,7 @@ from nais_contracts.api_models import ProjectSummary
 from sqlalchemy.orm import Session
 
 from api.modules.project import repository as repo
-from api.modules.project.ports import ProjectQueryPort
+from api.modules.project.public import ProjectQueryPort
 from api.modules.project.views import summary_view
 from api.platform import ports
 from api.platform.db import session_factory
@@ -3652,10 +3651,11 @@ Spec: `NAIS_PRD/modules/M02_project_collaboration.md`. Schema `project`, migrati
   `project.member.role_changed.v1` (outbox, same transaction).
 
 ## Integration notes
-- Other modules use `ports.get(ProjectQueryPort)` (`api.modules.project.ports`), never `project.*` tables.
+- Other modules import `ProjectQueryPort` from `api.modules.project.public` (D-038; `api.modules.project.ports` is an
+  alias) and call `ports.get(ProjectQueryPort)`, never `project.*` tables.
 - `is_active_member()` is False for ARCHIVED projects; governance must trust only this value.
 - Project membership never implies dataset access (grants are M04).
-- Identity: M02 resolves `IdentityQueryPort` from `ports` (its own key, then `api.modules.identity.ports.IdentityQueryPort`).
+- Identity: M02 resolves `ports.get(IdentityQueryPort)` with the class from `api.modules.identity.public` (D-038).
   If the identity module is not installed it uses the seed-user fake (Wave 1); if it is installed but not wired,
   requests fail with 503 `DEPENDENCY_UNAVAILABLE`.
 - Every mutation locks the project row (`SELECT ... FOR UPDATE`): at least one ACTIVE PROJECT_OWNER always remains.
@@ -3759,7 +3759,8 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 ## Contract/shared changes needed
 
-1. **Port location convention (Agent 0 + M01):** M02 looks up M01's implementation under `api.modules.identity.ports.IdentityQueryPort` (and publishes its own at `api.modules.project.ports.ProjectQueryPort`). M01 must define/register its Protocol there, or Agent 0 must hoist shared Protocols to one platform location; otherwise M02 returns 503 once identity is installed.
-2. **openapi.yaml missing statuses** that the spec requires (tests check the error code but cannot contract-check these): `updateProject` 404/422, `archiveProject` 404, `addProjectMember` 404, `updateProjectMemberRole` 404 (`PROJECT_MEMBER_NOT_FOUND`)/422, `listProjects` 422 (bad cursor/scope), 401 on every operation.
-3. **pg_trgm:** M02's migration runs `CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public` (M01 also needs it). Recommend Agent 0 install it once in `infra/docker/postgres/init.sql` / the platform migration; M02's migration keeps working either way.
-4. **`.env.example`:** add `PROJECT_MAX_MEMBERS=200` (optional; code default is 200).
+All resolved by the Wave 1 controller decisions (`wave1-controller-decisions.md`); nothing left for this plan:
+1. Port location (W1-D1 / D-038): M02 consumes `api.modules.identity.public.IdentityQueryPort` and publishes `api.modules.project.public.ProjectQueryPort` (`ports.py` re-exports it).
+2. openapi.yaml statuses (W1-D3): `updateProject` 404/422, `archiveProject` 404, `addProjectMember` 404, `updateProjectMemberRole` 404/422, `listProjects` 422 and 401 on every operation are added by the M00 kickoff (contract 1.2.0); every error test contract-checks.
+3. pg_trgm (W1-D2): installed in schema `public` by `init.sql` / M00 kickoff; M02's migration only uses `public.gin_trgm_ops`.
+4. `.env.example` (W1-D4): `PROJECT_MAX_MEMBERS=200` is added by the M00 kickoff; this plan does not touch it.
