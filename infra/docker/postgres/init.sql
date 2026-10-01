@@ -19,3 +19,7 @@ BEGIN
                    'GRANT USAGE, SELECT ON SEQUENCES TO nais_app', s);
   END LOOP;
 END $$;
+
+-- W1-D2: trigram search for module migrations (public.gin_trgm_ops, public.similarity). Installed once here, as
+-- superuser; module migrations never CREATE EXTENSION.
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
