@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.platform.context import trace_id
@@ -19,6 +20,12 @@ _STATUS_TO_CODE: dict[int, ErrorCode] = {
     409: ErrorCode.CONFLICT,
     429: ErrorCode.RATE_LIMITED,
 }
+
+
+def _is_nul_character_error(exc: DataError) -> bool:
+    """psycopg refuses NUL in text parameters client-side; PostgreSQL itself rejects it as UntranslatableCharacter."""
+    text = str(exc.orig)
+    return type(exc.orig).__name__ == "UntranslatableCharacter" or "NUL (0x00)" in text
 
 
 class ApiError(Exception):
@@ -44,6 +51,11 @@ def error_body(code: ErrorCode, message: str, details: dict[str, Any] | None = N
     return {"error": error}
 
 
+async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
+    logger.error("unhandled error", exc_info=exc)
+    return JSONResponse(error_body(ErrorCode.INTERNAL_ERROR, "Unexpected server error."), status_code=500)
+
+
 def install_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(ApiError)
     async def _api_error(_: Request, exc: ApiError) -> JSONResponse:
@@ -61,12 +73,20 @@ def install_error_handlers(app: FastAPI) -> None:
         body = error_body(ErrorCode.VALIDATION_FAILED, "Request validation failed.", {"fields": fields})
         return JSONResponse(body, status_code=422)
 
+    @app.exception_handler(DataError)
+    async def _data_error(_: Request, exc: DataError) -> JSONResponse:
+        if not _is_nul_character_error(exc):  # any other DataError is a server bug: stays a 500
+            return await _unhandled(_, exc)
+        body = error_body(
+            ErrorCode.VALIDATION_FAILED,
+            "Request validation failed.",
+            {"fields": [{"field": "(request)", "reason": "INVALID_CHARACTER"}]},
+        )
+        return JSONResponse(body, status_code=422)
+
     @app.exception_handler(StarletteHTTPException)
     async def _http(_: Request, exc: StarletteHTTPException) -> JSONResponse:
         code = _STATUS_TO_CODE.get(exc.status_code, ErrorCode.INTERNAL_ERROR)
         return JSONResponse(error_body(code, DESCRIPTION[code]), status_code=HTTP_STATUS[code])
 
-    @app.exception_handler(Exception)
-    async def _unhandled(_: Request, exc: Exception) -> JSONResponse:
-        logger.error("unhandled error", exc_info=exc)
-        return JSONResponse(error_body(ErrorCode.INTERNAL_ERROR, "Unexpected server error."), status_code=500)
+    app.add_exception_handler(Exception, _unhandled)

@@ -1,7 +1,9 @@
 import re
 
+import psycopg
 from fastapi import FastAPI, Query
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import DataError
 
 from api.platform.errors import ApiError, install_error_handlers
 from api.platform.generated.error_codes import ErrorCode
@@ -62,3 +64,35 @@ def test_unhandled_exception_is_internal_error_without_leaking_details() -> None
 
 def test_api_error_accepts_plain_string_codes() -> None:
     assert ApiError("USER_DISABLED").status_code == 403
+
+
+def _data_error_client(orig: Exception) -> TestClient:
+    app = FastAPI()
+    install_error_handlers(app)
+
+    @app.get("/db")
+    def db() -> None:
+        raise DataError("SELECT 1", {}, orig)
+
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_nul_character_data_error_becomes_validation_failed() -> None:
+    orig = psycopg.DataError("PostgreSQL text fields cannot contain NUL (0x00) bytes")
+    response = _data_error_client(orig).get("/db")
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "VALIDATION_FAILED"
+    assert error["details"] == {"fields": [{"field": "(request)", "reason": "INVALID_CHARACTER"}]}
+    assert HEX32.match(error["trace_id"])
+
+
+def test_untranslatable_character_data_error_becomes_validation_failed() -> None:
+    response = _data_error_client(psycopg.errors.UntranslatableCharacter("invalid byte sequence")).get("/db")
+    assert response.status_code == 422
+
+
+def test_other_data_errors_stay_500() -> None:
+    response = _data_error_client(psycopg.errors.NumericValueOutOfRange("integer out of range")).get("/db")
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL_ERROR"

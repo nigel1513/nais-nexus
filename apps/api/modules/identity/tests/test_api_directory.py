@@ -135,3 +135,12 @@ def test_bad_cursor_is_422(client: TestClient, cursor: str) -> None:
         error = response.json()["error"]
         assert error["code"] == "VALIDATION_FAILED"
         assert error["details"]["fields"][0]["field"] == "cursor"
+
+
+def test_user_search_with_nul_character_is_422(client: TestClient) -> None:
+    response = get(client, "/api/v1/users", q="ab\x00c")
+    assert response.status_code == 422
+    error = response.json()["error"]
+    assert error["code"] == "VALIDATION_FAILED"
+    assert error["details"]["fields"] == [{"field": "(request)", "reason": "INVALID_CHARACTER"}]
+    assert_matches_response("listUsers", 422, response.json())
