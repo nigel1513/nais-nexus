@@ -2,8 +2,10 @@
 
     python -m api.modules.readiness.selfcheck [FIXTURES_DIR] [--record]
 
---record writes result_sha256 into expected/*.json when the statuses match (first approved run, or after a
-reviewed change that also bumped VALIDATOR_VERSION or a profile version, 09 §5.6). Exit 1 on any mismatch.
+--record writes result_sha256 + validator_version + profile_version into expected/*.json when the statuses match
+(first approved run, or after a reviewed change that also bumped VALIDATOR_VERSION or the profile version, 09 §5.6).
+It refuses to replace a recorded hash that changed while both versions are unchanged. Exit 1 on any mismatch.
+Run from apps/ (or with PYTHONPATH=apps).
 """
 
 import argparse
@@ -13,6 +15,7 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
+from api.modules.readiness.engine import VALIDATOR_VERSION
 from api.modules.readiness.engine.evaluate import ValidationResult, evaluate
 from api.modules.readiness.fakes import FIXTURES_ROOT, FixtureCatalog
 from api.modules.readiness.profile_registry import PROFILES
@@ -47,7 +50,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             statuses = {c.check_id: c.status for c in result.checks}
             ok = statuses == expected["checks"] and result.overall_status == expected["overall_status"]
             if args.record and ok:
+                recorded = expected.get("result_sha256")
+                versions_same = (
+                    expected.get("validator_version") == VALIDATOR_VERSION
+                    and expected.get("profile_version") == PROFILES[profile_id].version
+                )
+                if recorded is not None and recorded != result.result_sha256 and versions_same:
+                    print(
+                        f"REFUSED {name} {profile_id}: result_sha256 changed but VALIDATOR_VERSION and the "
+                        "profile version did not; bump one before --record",
+                        file=sys.stderr,
+                    )
+                    failures += 1
+                    continue
                 expected["result_sha256"] = result.result_sha256
+                expected["validator_version"] = VALIDATOR_VERSION
+                expected["profile_version"] = PROFILES[profile_id].version
                 target.write_text(json.dumps(expected, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             ok = ok and expected["result_sha256"] == result.result_sha256
             failures += not ok

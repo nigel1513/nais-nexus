@@ -274,3 +274,64 @@ def test_result_independent_of_file_and_key_order() -> None:
         b = evaluate(shuffled, profile, catalog)
         assert a == b
         assert a.result_sha256 == b.result_sha256
+
+
+# ---------------------------------------------------------------- selfcheck CLI: exit codes and --record guard
+
+
+def _fixtures_copy(tmp_path: Path) -> Path:
+    import shutil
+
+    dest = tmp_path / "readiness"
+    shutil.copytree(FIXTURES_ROOT, dest)
+    return dest
+
+
+def _edit(root: Path, name: str, profile_id: str, **changes: Any) -> Path:
+    path = root / name / "expected" / f"{profile_id}.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data.update(changes)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
+def test_selfcheck_exit_code_is_0_on_match_and_1_on_hash_mismatch(tmp_path: Path) -> None:
+    from api.modules.readiness.selfcheck import main
+
+    root = _fixtures_copy(tmp_path)
+    assert main([str(root)]) == 0
+    _edit(root, "clean_tabular", "GENERIC_BASIC", result_sha256="0" * 64)
+    assert main([str(root)]) == 1
+
+
+def test_selfcheck_exit_code_is_1_on_status_mismatch(tmp_path: Path) -> None:
+    from api.modules.readiness.selfcheck import main
+
+    root = _fixtures_copy(tmp_path)
+    _edit(root, "clean_tabular", "GENERIC_BASIC", overall_status="FAIL")
+    assert main([str(root)]) == 1
+
+
+def test_record_refuses_to_overwrite_changed_hash_without_a_version_bump(tmp_path: Path) -> None:
+    from api.modules.readiness.selfcheck import main
+
+    root = _fixtures_copy(tmp_path)
+    path = _edit(root, "clean_tabular", "GENERIC_BASIC", result_sha256="0" * 64)
+    assert main([str(root), "--record"]) == 1
+    assert json.loads(path.read_text(encoding="utf-8"))["result_sha256"] == "0" * 64
+
+
+@pytest.mark.parametrize("bumped", ["validator_version", "profile_version"])
+def test_record_overwrites_when_a_version_differs_and_records_both_versions(
+    tmp_path: Path, bumped: str
+) -> None:
+    from api.modules.readiness.selfcheck import main
+
+    root = _fixtures_copy(tmp_path)
+    path = _edit(root, "clean_tabular", "GENERIC_BASIC", result_sha256="0" * 64, **{bumped: "0.0.1"})
+    assert main([str(root), "--record"]) == 0
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["result_sha256"] != "0" * 64
+    assert data["validator_version"] == VALIDATOR_VERSION
+    assert data["profile_version"] == PROFILES["GENERIC_BASIC"].version
+    assert main([str(root)]) == 0

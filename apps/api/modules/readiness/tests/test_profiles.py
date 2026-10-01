@@ -149,3 +149,24 @@ def test_invalid_settings_value_is_rejected(monkeypatch: pytest.MonkeyPatch, nam
     monkeypatch.setenv(f"READINESS_{name}", "0")
     with pytest.raises(ValidationError):
         ReadinessSettings()
+
+
+# {profile_id: {version: sha256 of the canonical JSON of the parsed YAML}}. Changing a profile's parameters or checks
+# requires a version bump (reuse key includes the version) and a new entry here.
+PROFILE_SHA256 = {
+    "GENERIC_BASIC": {"1.0.0": "c061856d03d82b52df4bc4ac4ed8dc61bdf7b2603e1c412d295fa01adaee01f9"},
+    "TABULAR_ML_BASIC": {"1.0.0": "101945462aaea99d14c2ba60830fda10317a6de0f86becfb0f95261f4f6a9cc1"},
+}
+
+
+def test_profile_yaml_content_is_pinned_per_version() -> None:
+    import yaml
+
+    from api.modules.readiness.engine.canonical import canonical_json, sha256_hex
+    from api.modules.readiness.profile_registry import PROFILES_DIR
+
+    actual: dict[str, dict[str, str]] = {}
+    for profile_id, profile in PROFILES.items():
+        doc = yaml.safe_load((PROFILES_DIR / f"{profile_id}.yaml").read_text(encoding="utf-8"))
+        actual[profile_id] = {profile.version: sha256_hex(canonical_json(doc))}
+    assert actual == PROFILE_SHA256, "profile content changed without a version bump (or pin not updated)"
