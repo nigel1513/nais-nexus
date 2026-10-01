@@ -3,11 +3,13 @@
 import hashlib
 import io
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import BinaryIO
+from typing import Any, BinaryIO
+from uuid import UUID
 
 from api.modules.catalog.objects import MultipartFailed, ObjectMissing, StorageRegistry
+from api.modules.catalog.search.opensearch import SearchUnavailable
 
 MEMORY_PUBLIC_BASE_URL = "http://localhost:21051"
 MEMORY_BUCKETS = {"nais": "nais-platform", "inst-a": "nais-inst-a", "inst-b": "nais-inst-b"}
@@ -134,3 +136,48 @@ def memory_store(registry: StorageRegistry, org_code: str) -> MemoryObjectStore:
     store = registry.for_org(org_code)
     assert isinstance(store, MemoryObjectStore)
     return store
+
+
+class RecordingVerificationQueue:
+    def __init__(self) -> None:
+        self.enqueued: list[UUID] = []
+
+    def enqueue(self, file_ids: Sequence[UUID]) -> None:
+        self.enqueued.extend(file_ids)
+
+
+class RecordingSearchIndex:
+    """SearchIndex double for tests that do not exercise OpenSearch semantics."""
+
+    alias = "recording"
+
+    def __init__(self) -> None:
+        self.docs: dict[str, dict[str, Any]] = {}
+        self.bulk_calls = 0
+
+    def ensure(self) -> None:
+        return None
+
+    def bulk(
+        self, upserts: Sequence[Mapping[Any, Any]], deletes: Sequence[str], *, index: str | None = None
+    ) -> None:
+        self.bulk_calls += 1
+        for doc in upserts:
+            self.docs[str(doc["dataset_id"])] = dict(doc)
+        for dataset_id in deletes:
+            self.docs.pop(str(dataset_id), None)
+
+    def search(self, body: Mapping[Any, Any]) -> dict[str, Any]:
+        raise SearchUnavailable("RecordingSearchIndex does not search; use the search_index fixture")
+
+    def refresh(self) -> None:
+        return None
+
+    def create_index(self, name: str) -> None:
+        return None
+
+    def next_index_name(self) -> str:
+        return "recording-v2"
+
+    def swap_alias(self, new_index: str) -> list[str]:
+        return []
