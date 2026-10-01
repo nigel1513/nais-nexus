@@ -133,6 +133,27 @@
   - 화면: 버전 목록에서 두 버전을 골라 비교(기본은 직전 버전), 요약 배지 + 파일 표(필터: 변경된 것만) + 열 변화 + 메타데이터 변경 목록. 버전 목록 각 행에도 직전 대비 요약("+2 −1 ~3")을 표시.
   - 데이터 행 단위 비교는 계속 범위 밖이다.
 
+### 3.3b lakeFS형 버전 모델 (사용자 결정 2026-10-01: lakeFS를 설치하지 않고 같은 사용감을 직접 구현)
+| lakeFS | NAIS |
+|---|---|
+| main + 태그 | 발행된 버전의 연속(본선). 버전 목록 = 커밋 이력 |
+| 브랜치(zero-copy) | **초안 = 기준 버전(`base_version_id`)에서 분기**. 기준 버전의 파일 행을 **같은 객체를 가리키는 참조로 복사**(재업로드 없음) |
+| diff | 초안↔기준, 임의 두 버전 비교(§3.3 세 층) |
+| commit/merge | 발행(`change_note` 필수, 발행 전 변경 요약 확인) |
+| 동시 브랜치 | 데이터셋당 **초안 여러 개 동시 허용** (생성자별). 각 초안은 독립 |
+| 충돌 | 초안의 `base_version_id`가 최신 PUBLISHED가 아니면 발행 거부(409 `DATASET_VERSION_STALE_BASE`, 신규 코드) → **rebase**: 최신 발행본 기준으로 초안의 변경(추가/변경/삭제 경로 집합)을 다시 적용. 같은 경로를 양쪽이 바꿨으면 충돌 목록을 반환하고 사용자가 경로별로 `MINE`/`THEIRS` 선택 |
+| revert | 옛 버전을 기준으로 새 초안 생성 후, 최신본 기준으로 rebase하면 "옛 상태로 되돌리는 변경"이 된다. 이력은 삭제하지 않음 |
+| 파일 이력 | 경로별로 각 발행 버전에서의 상태(추가·변경·삭제·동일)와 sha256 |
+| (제외) | 초안 내부 중간 커밋, 브랜치 간 merge(초안↔초안), 브랜치 보호 규칙 |
+
+데이터 모델 변경:
+- `catalog.dataset_versions`: `base_version_id uuid null` (FK, 같은 데이터셋의 PUBLISHED 버전; 첫 버전은 null), `created_by`가 초안 소유자. 발행 시 `previous_version_id`는 발행 시점 직전 PUBLISHED(= rebase 후 `base_version_id`와 같아야 함).
+- `catalog.dataset_files`: `inherited_from_file_id uuid null`(기준 버전에서 이어받은 행), 이어받은 행은 `status=VERIFIED`, 같은 `storage_bucket/storage_key/sha256` 공유. 같은 경로에 새로 업로드하면 이어받은 행을 대체(새 키, D-039 유지).
+- **객체 공유와 삭제**: 객체는 여러 버전의 파일 행이 공유할 수 있다. 초안 파일 삭제·업로드 실패 정리·대체 시 객체 삭제는 **같은 (bucket, key)를 참조하는 다른 행이 없을 때만** 커밋 후 수행(참조 확인은 같은 트랜잭션에서 키 단위 advisory lock으로 직렬화). 기존 `delete_draft_file`, 재업로드 고아 정리(D-039 F1) 로직을 이 규칙으로 변경.
+- readiness(M05): 이어받은 파일은 sha256이 같으므로 지문(D-029) 재사용 규칙이 그대로 적용된다(재검증 비용 없음).
+- API(신규·변경): `createDatasetVersion`에 `base_version_id`(생략 시 최신 PUBLISHED에서 분기, `empty:true`면 빈 초안), `rebaseDatasetVersion`(`POST /dataset-versions/{vid}/rebase`, body `{resolutions?: {path: MINE|THEIRS}}`), `getFileHistory`(`GET /datasets/{id}/file-history?path=`), `discardDatasetVersion`(초안 삭제, 공유 객체 규칙 적용).
+- 화면: 버전 목록(커밋 이력형: 변경 메모·발행자·날짜·`+2 −1 ~3`), "이 버전에서 새 초안", "이 버전으로 되돌리기", 초안 상단 배너(기준 버전, 최신 여부, "최신 기준으로 갱신"), 충돌 해결 다이얼로그, 파일 이력 패널.
+
 ### 3.4 원본/정제 계보
 `catalog.dataset_files` 추가: `role text not null default 'RAW'` IN (`RAW`,`PROCESSED`,`DOCUMENTATION`,`CODE`).
 - 발행 규칙: `PROCESSED` 파일이 하나라도 있으면 해당 버전에 **정제 기록**이 1건 이상 있어야 한다.
@@ -228,7 +249,7 @@
 | 단계 | 범위 | 완료 기준 |
 |---|---|---|
 | 1 연구 메타데이터 | 연구자 식별번호(M01), 어휘, datasets 추가 컬럼, 공동연구자, 스냅샷 확장, metadata_changed 이벤트, JSON-LD(데이터셋), 검색 v2, 상세·폼·검색 화면 | seed 5개 데이터셋에 PI·기간 등 표시, 기간/분야 검색 동작, JSON-LD가 schema.org 검증기 통과 |
-| 2 버전 이력 | change_note 필수, previous_version, diff API·화면, 인용(text/bibtex/datacite), 이전 버전 다운로드 동선 | 두 버전 비교 화면, 인용 복사 |
+| 2 버전 이력(lakeFS형) | 기준 버전 분기(zero-copy), 동시 초안, rebase·충돌 해결, 되돌리기, 공유 객체 삭제 규칙, 파일 이력, change_note 필수, previous_version, diff API·화면(세 층), 인용(text/bibtex/datacite), 이전 버전 다운로드 동선 | 두 버전 비교 화면, 인용 복사 |
 | 3 원본/정제 계보 | 파일 role, processing_steps, raw 규칙, lineage, 발행 검증, 계보 탭, JSON-LD에 PROV 포함 | 원본+정제 / 정제본만 / 별도 데이터셋 유래 3가지 시나리오 동작 |
 | 4 문의 | 문의 테이블·API·이벤트, M09 알림 유형, 문의함·상세 문의 탭, 이메일 공개 토글 | 문의→알림·메일→답변→알림 흐름, 권한 밖 사용자 404 |
 
