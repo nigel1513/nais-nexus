@@ -34,3 +34,23 @@ def seed_all(urls: PgUrls) -> None:
 
     with session_scope(urls.app) as session:
         seed(session)
+
+
+def claims_for(email: str, *, sid: str | None = "s-1", **overrides: Any) -> dict[str, Any]:
+    """Verified-token claims for a seed user, as the platform hands them to the resolver."""
+    import time
+
+    from api.modules.identity.seed_data import USERS_BY_EMAIL
+
+    user = USERS_BY_EMAIL[email]
+    claims: dict[str, Any] = {
+        "sub": user.keycloak_sub,
+        "email": user.email,
+        "name": user.display_name,
+        "org_code": user.org_code,
+        "iat": int(time.time()),
+    }
+    if sid is not None:
+        claims["sid"] = sid
+    claims.update(overrides)
+    return claims
