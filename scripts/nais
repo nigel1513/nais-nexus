@@ -14,10 +14,10 @@ ensure_env() {
 cli() { docker compose run --rm --no-deps api python -m api.platform.cli "$@"; }
 
 credentials() {
-  local host="<NAIS_EXTERNAL_HOST>"
+  local host="localhost"
   if [[ -f .env ]]; then
     host="$(grep -E '^NAIS_EXTERNAL_HOST=' .env | tail -1 | cut -d= -f2- || true)"
-    host="${host:-<NAIS_EXTERNAL_HOST>}"
+    host="${host:-localhost}"
   fi
   cat <<TXT
 gateway     http://$host:21051            (api docs /api/v1/docs, keycloak /auth/ admin nais/nais)

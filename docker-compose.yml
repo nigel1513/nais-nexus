@@ -87,6 +87,7 @@ services:
     environment:
       KC_HTTP_RELATIVE_PATH: /auth
       KC_HOSTNAME: ${NAIS_PUBLIC_BASE_URL:-http://localhost:21051}/auth
+      NAIS_EXTERNAL_HOST: ${NAIS_EXTERNAL_HOST:-localhost}  # substituted into realm-nais.json at import
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_PROXY_HEADERS: xforwarded
       KC_HTTP_ENABLED: "true"

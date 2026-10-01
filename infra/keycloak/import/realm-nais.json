@@ -39,15 +39,15 @@
       "serviceAccountsEnabled": false,
       "redirectUris": [
         "http://localhost:21051/web-auth/callback/keycloak",
-        "http://<NAIS_EXTERNAL_HOST>:21051/web-auth/callback/keycloak"
+        "http://${NAIS_EXTERNAL_HOST:localhost}:21051/web-auth/callback/keycloak"
       ],
       "webOrigins": [
         "http://localhost:21051",
-        "http://<NAIS_EXTERNAL_HOST>:21051"
+        "http://${NAIS_EXTERNAL_HOST:localhost}:21051"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256",
-        "post.logout.redirect.uris": "http://localhost:21051/*##http://<NAIS_EXTERNAL_HOST>:21051/*"
+        "post.logout.redirect.uris": "http://localhost:21051/*##http://${NAIS_EXTERNAL_HOST:localhost}:21051/*"
       },
       "defaultClientScopes": [
         "web-origins",

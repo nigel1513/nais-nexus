@@ -16,7 +16,7 @@ scripts/nais gate-a        # boot + readiness + storage smoke
 ```
 
 ### External access
-Dev server <NAIS_EXTERNAL_HOST> (LAN 192.168.0.3). The router must forward TCP 21051-21058 to it.
+Dev server: the public host is set as NAIS_EXTERNAL_HOST in your local `.env` (not committed). The router must forward TCP 21051-21058 to it.
 All ports 21051-21058 are externally reachable and every login is `nais` / `nais` (D-037).
 
 ## Develop

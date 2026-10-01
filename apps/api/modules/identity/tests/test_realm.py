@@ -36,11 +36,11 @@ def test_nais_web_is_public_pkce_without_direct_grants() -> None:
     assert web["directAccessGrantsEnabled"] is False
     assert web["attributes"]["pkce.code.challenge.method"] == "S256"
     assert "http://localhost:21051/web-auth/callback/keycloak" in web["redirectUris"]
-    assert "http://<NAIS_EXTERNAL_HOST>:21051/web-auth/callback/keycloak" in web["redirectUris"]
+    assert "http://${NAIS_EXTERNAL_HOST:localhost}:21051/web-auth/callback/keycloak" in web["redirectUris"]
     # M10 (W1-D6): post-logout redirect to "/" on both hosts
     assert (
         web["attributes"]["post.logout.redirect.uris"]
-        == "http://localhost:21051/*##http://<NAIS_EXTERNAL_HOST>:21051/*"
+        == "http://localhost:21051/*##http://${NAIS_EXTERNAL_HOST:localhost}:21051/*"
     )
     assert all(uri.endswith("/web-auth/callback/keycloak") for uri in web["redirectUris"])
     assert "http://localhost:21051" in web["webOrigins"]
