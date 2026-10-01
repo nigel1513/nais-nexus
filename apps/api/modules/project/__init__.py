@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from api.modules.project.query import wire
 from api.modules.project.router import router
 from api.platform.modules import ModuleSpec
 
@@ -10,4 +11,5 @@ MODULE = ModuleSpec(
     db_schema="project",
     router=router,
     migrations_dir=Path(__file__).parent / "migrations",
+    wire=wire,
 )
