@@ -59,8 +59,13 @@ ignore = ["E501"]  # ruff format owns line length
 python_version = "3.13"
 mypy_path = "apps:packages/contracts/python"
 explicit_package_bases = true
-files = ["apps/api/platform", "apps/api/main.py", "apps/api/worker.py"]
-exclude = ["apps/api/platform/tests/", "apps/api/platform/migrations/"]
+files = ["apps/api/platform", "apps/api/modules", "apps/api/main.py", "apps/api/worker.py"]
+exclude = [
+    "apps/api/platform/tests/",
+    "apps/api/platform/migrations/",
+    "apps/api/modules/[^/]+/tests/",
+    "apps/api/modules/[^/]+/migrations/",
+]
 strict = true
 ignore_missing_imports = true
 disable_error_code = ["type-abstract"]
