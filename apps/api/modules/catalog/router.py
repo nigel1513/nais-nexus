@@ -2,10 +2,19 @@
 
 from fastapi import APIRouter
 
-from api.modules.catalog.routes import completion, dataset_update, datasets, publish, uploads, versions
+from api.modules.catalog.routes import (
+    completion,
+    dataset_update,
+    datasets,
+    publish,
+    search,
+    uploads,
+    versions,
+)
 
 router = APIRouter()
 for sub in (
+    search.router,
     datasets.router,
     dataset_update.router,
     versions.router,
