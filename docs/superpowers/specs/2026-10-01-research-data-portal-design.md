@@ -126,6 +126,12 @@
 - `raw_included boolean not null default true`, `raw_absence_reason text null`, `raw_location text null`,
   `raw_custodian_id uuid null`: 원본 미포함 시(`raw_included=false`) 사유·보관 위치·담당자 **필수**(발행 검증).
 - 파일 비교는 저장하지 않고 조회 시 계산: 직전 버전과 `path` 기준으로 ADDED / REMOVED / CHANGED(sha256 다름) / UNCHANGED.
+- **변경 내역 보기(DVC `dvc diff`처럼, 사용자 결정 2026-10-01)**: DVC 도구는 쓰지 않고 플랫폼 자체 버전 관리로 충분하다. 대신 "무엇이 바뀌었는지"가 한눈에 보여야 한다. 비교 결과(`compareDatasetVersions`)는 세 층으로 구성한다.
+  1. **파일**: ADDED / REMOVED / CHANGED / UNCHANGED, 파일별 크기 변화(bytes Δ), 역할 변화(Stage 3 이후), 요약 카운트("추가 2 · 삭제 1 · 변경 3").
+  2. **구조(스키마)**: 같은 경로의 표 형식 파일(CSV/Parquet)에 대해 M05 readiness profile을 비교 — 행 수 Δ, 열 추가·삭제, 열 타입·단위 변화, 결측률 변화(±%p). readiness 결과가 없으면 이 층은 "검증 결과 없음"으로 표시.
+  3. **메타데이터**: 두 버전의 `metadata_snapshot` 필드 단위 비교(라이선스, 기간, 연구책임자, 키워드 등 변경 전→후).
+  - 화면: 버전 목록에서 두 버전을 골라 비교(기본은 직전 버전), 요약 배지 + 파일 표(필터: 변경된 것만) + 열 변화 + 메타데이터 변경 목록. 버전 목록 각 행에도 직전 대비 요약("+2 −1 ~3")을 표시.
+  - 데이터 행 단위 비교는 계속 범위 밖이다.
 
 ### 3.4 원본/정제 계보
 `catalog.dataset_files` 추가: `role text not null default 'RAW'` IN (`RAW`,`PROCESSED`,`DOCUMENTATION`,`CODE`).
