@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from api.modules.audit import MODULE
+from api.modules.audit.fakes import provide_seed_ports
 from api.modules.audit.settings import get_audit_settings
 from api.platform.migrate import upgrade_all
 from api.platform.testing.fixtures import PgUrls
@@ -42,3 +43,9 @@ def _fresh_audit_settings() -> Iterator[None]:
     get_audit_settings.cache_clear()
     yield
     get_audit_settings.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def seed_ports() -> None:
+    """Every test starts with the seed fakes provided; the platform's autouse fixture resets ports after."""
+    provide_seed_ports()
