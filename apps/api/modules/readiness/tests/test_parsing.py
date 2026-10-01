@@ -1,3 +1,4 @@
+import errno
 import io
 import itertools
 import re
@@ -207,7 +208,6 @@ def test_number_language_is_unchanged() -> None:
 def test_hostile_long_values_are_rejected_fast(declared: str) -> None:
     started = time.perf_counter()
     assert is_valid_value(declared, "9" * 100_000 + "x") is False
-    assert is_valid_value(declared, "1" * 600) is False  # over the value-length cap
     assert time.perf_counter() - started < 0.5
 
 
@@ -223,7 +223,7 @@ def test_blank_lines_honor_the_deadline() -> None:
     started = time.perf_counter()
     with pytest.raises(FileTimeout):
         profile_csv(
-            io.BytesIO(b"a\n" + b"\n" * 2_000_000),
+            io.BytesIO(b"a,b\n" + b"\n" * 2_000_000),
             path="d.csv",
             delimiter=",",
             plan=FilePlan(),
@@ -495,3 +495,87 @@ def test_parquet_duplicate_column_names_are_reported() -> None:
     )
     assert stats.header == ("a", "b", "a") and stats.duplicate_columns == ["a"]
     assert stats.sampled_rows == 2
+
+
+def test_long_valid_integer_is_valid() -> None:
+    assert is_valid_value("integer", "1" * 600) is True
+    assert is_valid_value("number", "1" * 600 + "." + "5" * 600) is True
+
+
+def test_single_column_blank_lines_respect_max_rows() -> None:
+    stats = _csv(b"a\n1\n2\n" + b"\n" * 1000, max_rows=2)
+    assert (stats.sampled_rows, stats.truncated) == (2, True)
+    stats = _csv(b"a\n1\n2\n3\n4\n5\n\n\n\n", max_rows=5)
+    assert (stats.sampled_rows, stats.truncated) == (5, True)
+    assert _csv(b"a,b\n1,2\n\n\n", max_rows=1).truncated is False  # multi-column blanks stay skipped
+
+
+class _StorageDown(io.BytesIO):
+    def __init__(self) -> None:
+        super().__init__(b"PAR1" + b"\x00" * 100)
+
+    def read(self, size: int | None = -1) -> bytes:
+        raise OSError("storage down")
+
+    def readinto(self, b: Any) -> int:
+        raise OSError("storage down")
+
+
+def test_bare_oserror_from_the_source_propagates() -> None:
+    with pytest.raises(OSError, match="storage down"):
+        profile_parquet(
+            _StorageDown(),
+            path="t.parquet",
+            plan=FilePlan(),
+            max_rows=10,
+            max_bytes=100,
+            deadline=no_deadline,
+        )
+    with pytest.raises(OSError, match="storage down"):
+        profile_csv(
+            _StorageDown(),
+            path="d.csv",
+            delimiter=",",
+            plan=FilePlan(),
+            max_rows=10,
+            max_bytes=100,
+            deadline=no_deadline,
+        )
+
+
+def test_truncated_range_read_is_an_io_error() -> None:
+    data = _parquet(pa.table({"n": pa.array(range(50), pa.int64())})).getvalue()
+
+    def empty(start: int, end: int) -> io.BytesIO:
+        return io.BytesIO(b"")
+
+    reader = RangeReader(empty, len(data), deadline=no_deadline)
+    with pytest.raises(OSError, match="short read") as info:
+        reader.readinto(bytearray(10))
+    assert info.value.errno == errno.EIO
+    with pytest.raises(OSError):
+        profile_parquet(
+            open_parquet_range(empty, len(data), deadline=no_deadline),
+            path="t.parquet",
+            plan=FilePlan(),
+            max_rows=10,
+            max_bytes=100,
+            deadline=no_deadline,
+        )
+
+
+def test_genuinely_corrupt_parquet_is_still_an_encoding_error() -> None:
+    data = b"PAR1" + b"\x00" * 64 + b"PAR1"
+    stats = profile_parquet(
+        io.BytesIO(data), path="t.parquet", plan=FilePlan(), max_rows=10, max_bytes=100, deadline=no_deadline
+    )
+    assert stats.encoding_error is True
+
+
+def test_range_reader_seek_validates() -> None:
+    reader = RangeReader(_Ranges(b"abc"), 3, deadline=no_deadline)
+    with pytest.raises(ValueError):
+        reader.seek(-1)
+    with pytest.raises(ValueError):
+        reader.seek(0, 7)
+    assert reader.seek(-1, io.SEEK_END) == 2

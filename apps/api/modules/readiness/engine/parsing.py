@@ -5,6 +5,7 @@ iter_batches in row-group order. Sample = first `sample_max_rows` data rows with
 """
 
 import csv
+import errno
 import io
 import re
 import tempfile
@@ -16,7 +17,6 @@ from typing import IO, Any, BinaryIO
 
 DEFAULT_MISSING = frozenset({"", "NA", "N/A", "null", "NULL", "NaN"})
 FIRST_ROWS_LIMIT = 10
-MAX_TYPED_VALUE_LENGTH = 512  # longer non-string values are invalid without matching (no hostile regex input)
 MAX_LINE_BYTES = 1 << 20  # one physical CSV line; longer => the file is not parseable (encoding_error)
 READ_CHUNK = 1 << 16  # every single read of a stream is at most this
 PARQUET_BATCH_ROWS = 1024
@@ -53,8 +53,6 @@ def _real_date(y: str, m: str, d: str) -> bool:
 
 def is_valid_value(declared_type: str, value: str) -> bool:
     """09 §3.3 type rules on a non-missing CSV string (ASCII digits only)."""
-    if declared_type != "string" and len(value) > MAX_TYPED_VALUE_LENGTH:
-        return False
     if declared_type == "integer":
         return _INTEGER.fullmatch(value) is not None
     if declared_type == "number":
@@ -136,13 +134,18 @@ class _Raw(io.RawIOBase):
     def __init__(self, source: BinaryIO, deadline: Deadline) -> None:
         self._source = source
         self._deadline = deadline
+        self.failure: BaseException | None = None
 
     def readable(self) -> bool:
         return True
 
     def readinto(self, b: Any) -> int:
         self._deadline()
-        chunk = self._source.read(min(len(b), READ_CHUNK))
+        try:
+            chunk = self._source.read(min(len(b), READ_CHUNK))
+        except Exception as exc:
+            self.failure = exc
+            raise
         n = len(chunk)
         b[:n] = chunk
         return n
@@ -227,6 +230,8 @@ def profile_csv(
             if lines.overflow:
                 stats.encoding_error = True
                 break
+            if row == [] and width == 1:
+                row = [""]  # single column: a blank line is one empty cell
             before, prev = prev, lines.bytes
             if before >= max_bytes or (row != [] and stats.rows_read >= max_rows):
                 stats.truncated = True
@@ -236,9 +241,7 @@ def profile_csv(
                 stats.malformed_rows += 1
                 continue
             if not row:
-                if width != 1:
-                    continue  # blank line: not a data row
-                row = [""]  # single column: a blank line is one empty cell
+                continue  # blank line (multi-column): not a data row
             stats.rows_read += 1
             if len(row) != width:
                 stats.malformed_rows += 1
@@ -277,6 +280,7 @@ class RangeReader(io.RawIOBase):
         self._deadline = deadline
         self._max_read = max_read
         self._pos = 0
+        self.failure: BaseException | None = None
 
     def readable(self) -> bool:
         return True
@@ -288,8 +292,12 @@ class RangeReader(io.RawIOBase):
         return self._pos
 
     def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        if whence not in (io.SEEK_SET, io.SEEK_CUR, io.SEEK_END):
+            raise ValueError(f"invalid whence: {whence}")
         base = {io.SEEK_SET: 0, io.SEEK_CUR: self._pos, io.SEEK_END: self._size}[whence]
-        self._pos = max(0, base + offset)
+        if base + offset < 0:
+            raise ValueError("negative seek position")
+        self._pos = base + offset
         return self._pos
 
     def readinto(self, b: Any) -> int:
@@ -297,11 +305,17 @@ class RangeReader(io.RawIOBase):
         if n <= 0:
             return 0
         self._deadline()
-        source = self._open_range(self._pos, self._pos + n - 1)
         try:
-            data = source.read(n)
-        finally:
-            source.close()
+            source = self._open_range(self._pos, self._pos + n - 1)
+            try:
+                data = source.read(n)
+            finally:
+                source.close()
+            if not data:  # the object ended before its recorded size
+                raise OSError(errno.EIO, "short read: range returned no bytes before end of file")
+        except Exception as exc:
+            self.failure = exc
+            raise
         got = len(data[:n])
         b[:got] = data[:got]
         self._pos += got
@@ -348,8 +362,48 @@ def _is_corrupt(exc: Exception) -> bool:
 
     if isinstance(exc, pa.ArrowInvalid | pa.ArrowNotImplementedError):
         return True
-    # pyarrow raises a bare OSError (no errno) for corrupt pages; real I/O failures carry an errno.
+    # Source failures were already re-raised by the guard; a bare OSError (no errno) here is pyarrow's
+    # report about bytes that were read successfully.
     return type(exc) is OSError and exc.errno is None
+
+
+class _Guard(io.RawIOBase):
+    """Wraps the parquet source: any exception the source raises is recorded and later re-raised as such,
+    so a storage failure can never be mistaken for corrupt content."""
+
+    def __init__(self, source: Any) -> None:
+        self._source = source
+        self.failure: BaseException | None = None
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        try:
+            return int(self._source.tell())
+        except Exception as exc:
+            self.failure = exc
+            raise
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        try:
+            return int(self._source.seek(offset, whence))
+        except Exception as exc:
+            self.failure = exc
+            raise
+
+    def readinto(self, b: Any) -> int:
+        try:
+            chunk = self._source.read(len(b))
+        except Exception as exc:
+            self.failure = exc
+            raise
+        n = len(chunk)
+        b[:n] = chunk
+        return n
 
 
 def _spool(stream: BinaryIO, cap: int, deadline: Deadline) -> IO[bytes]:
@@ -399,7 +453,8 @@ def profile_parquet(
         source: Any = stream
         if not stream.seekable():
             spool = source = _spool(stream, max_spool_bytes, deadline)
-        return _profile_parquet(pq, source, path, plan, max_rows, max_bytes, deadline)
+        guard = _Guard(source)
+        return _profile_parquet(pq, guard, path, plan, max_rows, max_bytes, deadline)
     finally:
         if spool is not None:
             spool.close()
@@ -412,6 +467,8 @@ def _profile_parquet(
     try:
         parquet = pq.ParquetFile(source)
     except Exception as exc:
+        if source.failure is not None:
+            raise source.failure from None
         if not _is_corrupt(exc):
             raise
         stats.encoding_error = True
@@ -470,6 +527,8 @@ def _profile_parquet(
                         if value is not None and _codes_value(value) not in col_plan.codes:
                             col_stats.undefined_codes += 1
     except Exception as exc:
+        if source.failure is not None:
+            raise source.failure from None
         if not _is_corrupt(exc):
             raise
         stats.encoding_error = True  # corrupt row group: keep the partial stats gathered so far
