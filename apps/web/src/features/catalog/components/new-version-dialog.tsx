@@ -43,7 +43,7 @@ export function NewVersionDialog({ datasetId, open, onOpenChange }: { datasetId:
             {(a11y) => <Textarea {...a11y} rows={3} value={note} onChange={(e) => setNote(e.target.value)} />}
           </FormField>
           <DialogFooter>
-            <Button type="submit" disabled={create.isPending}>
+            <Button variant="primary" type="submit" disabled={create.isPending}>
               {t("data.version.create")}
             </Button>
           </DialogFooter>

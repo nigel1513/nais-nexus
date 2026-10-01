@@ -19,7 +19,7 @@
   --color-border-strong: #cdced6; /* slate-7 */
   --color-fg: #1c2024;          /* slate-12 */
   --color-fg-muted: #60646c;    /* slate-11 */
-  --color-fg-subtle: #80838d;   /* slate-10 */
+  --color-fg-subtle: #80838d;   /* slate-10 — placeholder, disabled and decorative only: 3.7:1 on bg, below AA for text */
   --color-accent: #3e63dd;      /* indigo-9 */
   --color-accent-fg: #3a5bc7;   /* indigo-11 */
   --color-accent-soft: #edf2fe; /* indigo-3 */
@@ -31,8 +31,13 @@
   --color-success-soft: #e9f6e9; --color-success-line: #b2ddb5; --color-success-solid: #46a758; --color-success: #2a7e3b;
   --color-warning-soft: #fff7c2; --color-warning-line: #f3d673; --color-warning-solid: #ffc53d; --color-warning: #9e5c00; /* amber-11 #ab6400 darkened: 4.49:1 on bg fails AA */
   --color-danger-soft: #feebec;  --color-danger-line: #fdbdbe;  --color-danger-solid: #e5484d;  --color-danger: #ce2c31;
+  /* Filled danger button. danger-solid (red-9) carries white text at only 3.9:1, so the fill is red-11 (white 5.2:1). */
+  --color-danger-fill: #ce2c31; --color-danger-fill-hover: #b8262b; --color-danger-fill-fg: #ffffff;
   --color-info-soft: #e0f8f3;    --color-info-line: #a1ded2;    --color-info-solid: #12a594;    --color-info: #007c6b; /* teal-11 #008573 darkened: 4.45:1 on bg fails AA */
   --color-chart-1: #3e63dd; --color-chart-2: #12a594; --color-chart-muted: #b9bbc6;
+  --color-bg-raised: #ffffff;   /* selected segment of a SegmentedControl */
+  --color-switch-thumb: #ffffff; /* thumb of an off Switch (an on Switch uses primary-fg) */
+  --color-scrim: rgb(0 0 0 / 0.4); /* behind dialogs and sheets */
 
   /* Legacy aliases so unmigrated screens keep rendering. Task 13 removes them once grep finds no uses. */
   --color-background: var(--color-bg);
@@ -41,14 +46,15 @@
   --color-muted-foreground: var(--color-fg-muted);
   --color-secondary: var(--color-bg-hover);
   --color-secondary-foreground: var(--color-fg);
-  --color-destructive: var(--color-danger-solid);
-  --color-destructive-foreground: #ffffff;
+  --color-destructive: var(--color-danger-fill);
+  --color-destructive-foreground: var(--color-danger-fill-fg);
   --color-ring: var(--color-focus);
   --color-primary-foreground: var(--color-primary-fg);
 
   --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
   --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(0 0 0 / 0.16);
   --shadow-dialog: 0 1px 2px rgb(0 0 0 / 0.06), 0 24px 48px -12px rgb(0 0 0 / 0.28);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04); /* one step: selected segment only */
 
   --text-display: 28px; --text-display--line-height: 34px; --text-display--letter-spacing: -0.02em; --text-display--font-weight: 650;
   --text-title: 20px; --text-title--line-height: 28px; --text-title--letter-spacing: -0.015em; --text-title--font-weight: 600;
@@ -61,9 +67,30 @@
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
-  --dur-press: 120ms; --dur-fast: 150ms; --dur-base: 200ms; --dur-sheet: 280ms;
+  --dur-exit: 100ms; --dur-press: 120ms; --dur-fast: 150ms; --dur-base: 200ms; --dur-sheet: 280ms; /* exit: popovers leave faster than they enter (spec §2.6) */
 }
 
+
+/* Light values again under `.light`, so a subtree can be forced light inside a dark page (the /commons/_ui gallery
+   shows both themes side by side). next-themes also puts `.light` on <html>, where this is a no-op.
+   tokens.test.ts checks that it matches @theme. */
+.light {
+  --color-bg: #fcfcfd; --color-bg-subtle: #f9f9fb; --color-bg-panel: #ffffff; --color-bg-hover: #f0f0f3;
+  --color-bg-active: #e8e8ec; --color-border: #d9d9e0; --color-border-strong: #cdced6; --color-fg: #1c2024;
+  --color-fg-muted: #60646c; --color-fg-subtle: #80838d; --color-accent: #3e63dd; --color-accent-fg: #3a5bc7;
+  --color-accent-soft: #edf2fe; --color-primary: #1c2024; --color-primary-hover: #2b3036; --color-primary-fg: #ffffff;
+  --color-focus: #8da4ef; --color-focus-ring: #e1e9ff; --color-success-soft: #e9f6e9; --color-success-line: #b2ddb5;
+  --color-success-solid: #46a758; --color-success: #2a7e3b; --color-warning-soft: #fff7c2; --color-warning-line: #f3d673;
+  --color-warning-solid: #ffc53d; --color-warning: #9e5c00; --color-danger-soft: #feebec; --color-danger-line: #fdbdbe;
+  --color-danger-solid: #e5484d; --color-danger: #ce2c31; --color-danger-fill: #ce2c31; --color-danger-fill-hover: #b8262b;
+  --color-danger-fill-fg: #ffffff; --color-info-soft: #e0f8f3; --color-info-line: #a1ded2; --color-info-solid: #12a594;
+  --color-info: #007c6b; --color-chart-1: #3e63dd; --color-chart-2: #12a594; --color-chart-muted: #b9bbc6;
+  --color-bg-raised: #ffffff; --color-switch-thumb: #ffffff; --color-scrim: rgb(0 0 0 / 0.4);
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
+  --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(0 0 0 / 0.16);
+  --shadow-dialog: 0 1px 2px rgb(0 0 0 / 0.06), 0 24px 48px -12px rgb(0 0 0 / 0.28);
+  color-scheme: light;
+}
 .dark {
   --color-bg: #111113; --color-bg-subtle: #18191b; --color-bg-panel: #18191b; --color-bg-hover: #212225; --color-bg-active: #272a2d;
   --color-border: #363a3f; --color-border-strong: #43484e;
@@ -76,7 +103,9 @@
   --color-danger-soft: #3b1219;  --color-danger-line: #72232d;  --color-danger-solid: #e5484d;  --color-danger: #ff9592;
   --color-info-soft: #0d2d2a;    --color-info-line: #145750;    --color-info-solid: #12a594;    --color-info: #0bd8b6;
   --color-chart-1: #5472e4; --color-chart-2: #0eb39e; --color-chart-muted: #5a6169;
-  --color-destructive-foreground: #ffffff;
+  --color-bg-raised: #2e3135; --color-switch-thumb: #b0b4ba; --color-scrim: rgb(0 0 0 / 0.6); /* slate-5: lighter than the slate-3 track */
+  --shadow-raised: 0 0 0 1px #43484e;
+  --color-danger-fill: #c62a2f; --color-danger-fill-hover: #ce2c31; --color-danger-fill-fg: #ffffff; /* white 5.6:1 / 5.2:1 */
   --shadow-popover: 0 0 0 1px #363a3f, 0 8px 24px -6px rgb(0 0 0 / 0.5);
   --shadow-dialog: 0 0 0 1px #363a3f, 0 24px 48px -12px rgb(0 0 0 / 0.6);
   color-scheme: dark;
@@ -84,7 +113,7 @@
 
 @layer base {
   html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; scroll-padding-top: 4rem; }
-  body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-feature-settings: "ss06"; }
+  body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-feature-settings: "ss06"; } /* Pretendard ss06 "High legibility": tells l / I / 1 apart in IDs and paths */
   :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
   button, a, [role="button"] { touch-action: manipulation; }
   @media (max-width: 767px) { input, textarea, select { font-size: 16px; } }
@@ -93,6 +122,9 @@
 @utility num { font-variant-numeric: tabular-nums; }
 @utility press { transition: transform var(--dur-press) var(--ease-out); &:active { transform: scale(0.97); } }
 
+/* Spec §2.6: transforms removed, only a 120ms opacity change remains. Covers press feedback and the
+   scale/translate that Base UI popups and sheets use for their starting/ending styles. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-property: opacity !important; transition-duration: 120ms !important; animation: none !important; }
+  .press:active, [data-starting-style], [data-ending-style] { transform: none !important; scale: none !important; translate: none !important; }
 }

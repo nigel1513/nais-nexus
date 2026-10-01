@@ -53,7 +53,7 @@ export function PeriodFilter({
         </p>
       ) : null}
       <div className="flex gap-2">
-        <Button type="button" size="sm" onClick={apply}>
+        <Button variant="primary" type="button" size="sm" onClick={apply}>
           {t("data.search.period.apply")}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={() => onApply("", "")}>

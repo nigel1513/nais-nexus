@@ -78,7 +78,7 @@ export function MemberRow({ member, isSelf, organizationId }: { member: Organiza
           {t(selfLocked ? "org.selfLocked" : "org.selfStatusLocked")}
         </p>
       ) : null}
-      <Button size="sm" disabled={!dirty || update.isPending} onClick={() => setStep(1)}>
+      <Button variant="primary" size="sm" disabled={!dirty || update.isPending} onClick={() => setStep(1)}>
         {t("org.saveChanges")}
       </Button>
       <ConfirmDialog

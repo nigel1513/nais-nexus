@@ -1,6 +1,9 @@
 "use client";
+import { Toaster, TooltipProvider } from "@nais/ui";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { getSession, SessionProvider, signIn, useSession } from "next-auth/react";
+import { useTranslations } from "next-intl";
+import { useTheme } from "next-themes";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createApiErrorHandler, sessionGuardStorage } from "@/features/auth/on-api-error";
@@ -11,6 +14,13 @@ import { getAccessToken } from "@/shared/api/client";
 import { isMocking } from "@/shared/config";
 import { ThemeProvider } from "@/shared/ui/theme";
 import { ToastProvider } from "@/shared/ui/toast";
+
+/** The one Sonner toaster (notify.* from @nais/ui), following the resolved theme. */
+function AppToaster() {
+  const t = useTranslations();
+  const { resolvedTheme } = useTheme();
+  return <Toaster theme={resolvedTheme === "dark" ? "dark" : "light"} closeLabel={t("common.close")} />;
+}
 
 type Handler = ReturnType<typeof createApiErrorHandler>;
 
@@ -50,10 +60,13 @@ function ApiProviders({ children }: { children: ReactNode }) {
   });
   return (
     <QueryClientProvider client={client}>
-      <ToastProvider>
-        {isMocking() ? null : <SessionWatcher handler={handler} />}
-        {children}
-      </ToastProvider>
+      <TooltipProvider>
+        <ToastProvider>
+          {isMocking() ? null : <SessionWatcher handler={handler} />}
+          {children}
+          <AppToaster />
+        </ToastProvider>
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }

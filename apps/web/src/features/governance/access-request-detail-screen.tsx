@@ -107,7 +107,7 @@ export function AccessRequestDetailScreen({ accessRequestId }: { accessRequestId
                 </p>
               ) : null}
               {!grant || grant.status === "ACTIVE" ? (
-                <Link href={`/commons/data/${req.dataset_id}`} className={buttonClass()}>
+                <Link href={`/commons/data/${req.dataset_id}`} className={buttonClass("primary")}>
                   {t("data.detail.download")}
                 </Link>
               ) : null}

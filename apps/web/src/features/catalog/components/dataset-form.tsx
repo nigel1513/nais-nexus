@@ -381,7 +381,7 @@ export function DatasetForm({
         </fieldset>
       </fieldset>
       <div className="flex gap-2">
-        <Button type="submit" disabled={isSubmitting}>
+        <Button variant="primary" type="submit" disabled={isSubmitting}>
           {mode === "create" ? t("data.new.submit") : t("common.save")}
         </Button>
         {onCancel ? (

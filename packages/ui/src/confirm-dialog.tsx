@@ -3,6 +3,7 @@ import * as React from "react";
 import { Button } from "./button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "./dialog";
 
+/** Confirmation for destructive or irreversible actions only (spec §4 Dialog). */
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -32,15 +33,13 @@ export function ConfirmDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent closeLabel={closeLabel} {...(description ? {} : { "aria-describedby": undefined })}>
+      <DialogContent closeLabel={closeLabel}>
         <DialogTitle>{title}</DialogTitle>
         {description ? <DialogDescription>{description}</DialogDescription> : null}
         {children ? <div className="mt-4 flex flex-col gap-3">{children}</div> : null}
         <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">{cancelLabel}</Button>
-          </DialogClose>
-          <Button variant={destructive ? "destructive" : "default"} disabled={pending || confirmDisabled} onClick={onConfirm}>
+          <DialogClose render={<Button variant="secondary" />}>{cancelLabel}</DialogClose>
+          <Button variant={destructive ? "danger" : "primary"} loading={pending} disabled={confirmDisabled} onClick={onConfirm}>
             {confirmLabel}
           </Button>
         </DialogFooter>

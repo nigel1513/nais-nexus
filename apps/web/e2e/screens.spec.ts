@@ -38,4 +38,13 @@ test.describe("screens", () => {
     await expect(page.getByRole("heading", { level: 1 })).toContainText("Battery Cycling Measurements");
     await shoot(page, "baseline-dataset", [[1440, 900]]);
   });
+
+  test("ui gallery (Task 2 primitives)", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/_ui");
+    await expect(page.getByRole("heading", { level: 1, name: "UI 부품" })).toBeVisible();
+    // Capture only: the pre-Task-3 sticky header would be stamped mid-page by fullPage screenshots.
+    await page.addStyleTag({ content: "header { position: static !important; }" });
+    await shoot(page, "task2-ui-gallery");
+  });
 });

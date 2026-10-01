@@ -80,7 +80,7 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
               </Select>
             )}
           </FormField>
-          <Button type="submit" disabled={!picked || add.isPending}>
+          <Button variant="primary" type="submit" disabled={!picked || add.isPending}>
             {t("projects.members.add")}
           </Button>
         </form>

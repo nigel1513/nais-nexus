@@ -87,7 +87,7 @@ export function DashboardScreen() {
             <EmptyState
               title={t("dashboard.noProjects")}
               action={
-                <Link href="/commons/projects/new" className={buttonClass()}>
+                <Link href="/commons/projects/new" className={buttonClass("primary")}>
                   {t("dashboard.createFirstProject")}
                 </Link>
               }

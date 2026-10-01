@@ -258,7 +258,7 @@ export function UploadPanel({ versionId }: { versionId: string }) {
       ) : null}
       {error ? <ErrorView error={error} params={limits} /> : null}
       <div className="flex flex-wrap gap-2">
-        <Button disabled={busy || blocking || pending.length === 0} onClick={() => void run(pending)}>
+        <Button variant="primary" disabled={busy || blocking || pending.length === 0} onClick={() => void run(pending)}>
           {expired ? t("upload.restartExpired") : t("upload.start")}
         </Button>
         {busy ? (

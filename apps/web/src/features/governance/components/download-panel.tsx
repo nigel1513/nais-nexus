@@ -96,7 +96,7 @@ export function DownloadPanel({ dataset, versionId, focus = false }: { dataset: 
       ) : null}
       {!session || expired ? (
         <div>
-          <Button onClick={request} disabled={create.isPending || (needsProject && !chosenProject)}>
+          <Button variant="primary" onClick={request} disabled={create.isPending || (needsProject && !chosenProject)}>
             {expired ? t("download.renew") : t("download.request")}
           </Button>
         </div>

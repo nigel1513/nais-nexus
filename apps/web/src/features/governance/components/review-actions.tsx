@@ -53,7 +53,7 @@ export function ReviewActions({ request, maxGrantDays }: { request: AccessReques
 
   return (
     <div className="flex flex-wrap gap-2">
-      <Button onClick={() => openDialog("approve")}>{t("access.detail.approve")}</Button>
+      <Button variant="primary" onClick={() => openDialog("approve")}>{t("access.detail.approve")}</Button>
       <Button variant="outline" onClick={() => openDialog("changes")}>
         {t("access.detail.requestChanges")}
       </Button>

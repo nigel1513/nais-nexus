@@ -56,9 +56,11 @@
 | 상태 | light 3 / 6 / 9 / 11 | dark 3 / 6 / 9 / 11 |
 |---|---|---|
 | grass | #e9f6e9 / #b2ddb5 / #46a758 / #2a7e3b | #1b2a1e / #2d5736 / #46a758 / #71d083 |
-| amber | #fff7c2 / #f3d673 / #ffc53d / #ab6400 | #302008 / #5c3d05 / #ffc53d / #ffca16 |
+| amber | #fff7c2 / #f3d673 / #ffc53d / **#9e5c00** | #302008 / #5c3d05 / #ffc53d / #ffca16 |
 | red | #feebec / #fdbdbe / #e5484d / #ce2c31 | #3b1219 / #72232d / #e5484d / #ff9592 |
-| teal | #e0f8f3 / #a1ded2 / #12a594 / #008573 | #0d2d2a / #145750 / #12a594 / #0bd8b6 |
+| teal | #e0f8f3 / #a1ded2 / #12a594 / **#007c6b** | #0d2d2a / #145750 / #12a594 / #0bd8b6 |
+
+light 경고·정보 글자색은 Radix 11단계(#ab6400 4.49:1, #008573 4.45:1)가 `--bg`에서 AA에 못 미쳐 한 단계 어둡게 출시했다(굵게 표시, `tokens.test.ts` 대비 검사).
 
 단계 역할(Radix): 1–2 앱·패널 배경, 3–5 부품 배경(기본/hover/선택), 6–8 경계(장식/상호작용/강한·포커스), 9–10 단색 면(기본/hover), 11 보조 텍스트, 12 본문 텍스트. 11·12단계는 같은 스케일 2단계 배경 위에서 APCA Lc 60 / 90 보장.
 
@@ -110,10 +112,12 @@
 
 ### 2.5 반경·경계·그림자·z-index
 
-- 반경 3단계만: `--radius-sm: 6px`(버튼·입력·배지·메뉴 항목), `--radius-md: 10px`(카드·패널·팝오버·표 외곽), `--radius-lg: 14px`(다이얼로그·시트). 아바타는 원.
+- 반경 3단계만: `--radius-sm: 6px`(버튼·입력·배지·메뉴 항목), `--radius-md: 10px`(카드·패널·팝오버·표 외곽), `--radius-lg: 14px`(다이얼로그·시트). 원(아바타·라디오·스위치·상태 점)은 반경 단계가 아니다. 예외는 4px 하나: 키캡(Kbd), 16px 체크박스, 6px 틀 안 2px 여백에 놓인 SegmentedControl 칸(동심 반경 6−2), Tag 제거 버튼.
 - 경계: 1px `--border`. 입력·체크박스는 `--border-strong`. 구분은 그림자 대신 경계로.
 - 그림자(떠 있는 레이어 전용): `--shadow-popover: 0 1px 2px rgb(0 0 0 / .04), 0 8px 24px -6px rgb(0 0 0 / .16)`; `--shadow-dialog: 0 1px 2px rgb(0 0 0 / .06), 0 24px 48px -12px rgb(0 0 0 / .28)`. dark에서는 그림자 대신 `--bg-panel` + 1px `--border` 위주.
-- z-index: `base 0, sticky 10, sidebar 20, header 30, popover 40, dialog 50, toast 60, tooltip 70`.
+- z-index: `base 0, sticky 10, sidebar 20, header 30, popover 50, dialog 50, toast 60, tooltip 70`. 팝오버는 대화상자와 같은 층(50)이다: 대화상자 안에서 연 Select·메뉴가 DOM에서 뒤에 오므로 위에 그려진다(40이면 대화상자 아래로 숨는다).
+- 추가 토큰(Task 2): `--color-danger-fill/-hover/-fg`(채운 위험 버튼, 흰 글자 light 5.2:1·dark 5.6:1 — red-9 위 흰 글자는 3.9:1이라 쓰지 않음), `--color-bg-raised` + `--shadow-raised`(SegmentedControl 선택 칸), `--color-switch-thumb`, `--color-scrim`(대화상자·시트 배경, light 40%·dark 60%), `--dur-exit: 100ms`(팝오버 퇴장). `.light` 블록은 다크 페이지 안에서 하위 트리를 라이트로 고정한다(갤러리용, `@theme`과 같은 값을 테스트로 확인).
+- `--fg-subtle`(slate-10)은 자리표시자·비활성·장식 전용(light 3.7:1).
 
 ### 2.6 움직임
 

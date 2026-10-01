@@ -100,3 +100,34 @@ test("Settings: NTIS number saves, rejects a duplicate and can be cleared", asyn
   await expect(page.getByRole("button", { name: "번호 삭제" })).toHaveCount(0);
   await expect(input).toHaveValue("");
 });
+
+test("ui gallery: primitives pass axe in both themes, menus work by keyboard, copy works on plain http", async ({ page }) => {
+  await page.goto("/commons/_ui");
+  await page.getByLabel("사용자").selectOption(A_RESEARCHER);
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "UI 부품" })).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+
+  const light = page.locator('section[aria-labelledby="overlays-h"] .light');
+  const trigger = light.getByRole("button", { name: "작업" });
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  const select = page.locator('section[aria-labelledby="forms-h"] .light').getByRole("combobox", { name: "집계 단위 (SelectMenu)" });
+  await select.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("option", { name: "월" })).toBeVisible();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  await expect(select).toHaveText("월");
+
+  await page.locator('section[aria-labelledby="data-h"] .light').getByRole("button", { name: "경로 복사" }).click();
+  await expect(page.locator('section[aria-labelledby="data-h"] .light').getByText("복사했습니다")).toBeAttached();
+
+  await page.emulateMedia({ colorScheme: "dark" });
+  expect(await seriousViolations(page)).toEqual([]);
+});

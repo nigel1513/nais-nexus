@@ -72,7 +72,7 @@ function RequestForm({ dataset, onNotRequired }: { dataset: Dataset; onNotRequir
     return (
       <div className="mt-4 flex flex-col gap-3">
         <p>{t("access.request.noProject")}</p>
-        <Link href="/commons/projects/new" className={buttonClass()}>
+        <Link href="/commons/projects/new" className={buttonClass("primary")}>
           {t("projects.new.title")}
         </Link>
       </div>
@@ -176,7 +176,7 @@ function RequestForm({ dataset, onNotRequired }: { dataset: Dataset; onNotRequir
         {(a11y) => <Input {...a11y} type="number" min={1} max={maxDays} {...form.register("requested_days", { valueAsNumber: true })} />}
       </FormField>
       <DialogFooter>
-        <Button type="submit" disabled={isSubmitting}>
+        <Button variant="primary" type="submit" disabled={isSubmitting}>
           {t("access.request.submit")}
         </Button>
       </DialogFooter>

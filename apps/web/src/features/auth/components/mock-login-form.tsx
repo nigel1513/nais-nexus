@@ -30,7 +30,7 @@ export function MockLoginForm({ callbackUrl, users }: { callbackUrl: string; use
           </Select>
         )}
       </FormField>
-      <Button type="submit">{t("auth.signIn")}</Button>
+      <Button variant="primary" type="submit">{t("auth.signIn")}</Button>
     </form>
   );
 }

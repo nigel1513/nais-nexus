@@ -44,7 +44,7 @@ export function AccessCta({ dataset }: { dataset: Dataset }) {
       return (
         <div className="flex flex-col items-start gap-1">
           {downloadHref ? (
-            <Link href={downloadHref} className={buttonClass()}>
+            <Link href={downloadHref} className={buttonClass("primary")}>
               {t("data.detail.download")}
             </Link>
           ) : (
@@ -62,7 +62,7 @@ export function AccessCta({ dataset }: { dataset: Dataset }) {
     case "request":
       return (
         <>
-          <Button onClick={() => setRequesting(true)}>{t("access.request.title")}</Button>
+          <Button variant="primary" onClick={() => setRequesting(true)}>{t("access.request.title")}</Button>
           <AccessRequestDialog dataset={dataset} open={requesting} onOpenChange={setRequesting} onNotRequired={() => setNotRequired(true)} />
         </>
       );

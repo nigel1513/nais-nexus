@@ -29,7 +29,7 @@ describe("design tokens", () => {
     const darkStart = css.search(/^\.dark\s*\{/m);
     expect(darkStart).toBeGreaterThan(-1);
     const darkBlock = css.slice(darkStart);
-    const theme = css.slice(0, darkStart);
+    const theme = css.slice(0, css.search(/^\.light\s*\{/m));
     // Legacy aliases that point at another token (`var(--color-...)`) inherit the dark value.
     const light = [...theme.matchAll(/--color-([a-z0-9-]+):(?!\s*var\()/g)].map((m) => m[1]);
     expect(light.length).toBeGreaterThan(20);
@@ -55,5 +55,26 @@ describe("design tokens", () => {
         expect(contrast(t[fg]!, t[bg]!), `${mode} ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
       }
     }
+  });
+  it("repeats the light values under .light (forced-light subtrees)", () => {
+    const lightStart = css.search(/^\.light\s*\{/m);
+    const darkStart = css.search(/^\.dark\s*\{/m);
+    expect(lightStart).toBeGreaterThan(-1);
+    expect(tokens(css.slice(lightStart, darkStart))).toEqual(tokens(css.slice(0, lightStart)));
+  });
+  it.each(["light", "dark"] as const)("%s: filled buttons keep their label at 4.5:1 on the fill and its hover", (mode) => {
+    const darkStart = css.search(/^\.dark\s*\{/m);
+    const light = tokens(css.slice(0, darkStart));
+    const t = mode === "light" ? light : { ...light, ...tokens(css.slice(darkStart)) };
+    const pairs: Array<[string, string]> = [
+      ["primary-fg", "primary"], ["primary-fg", "primary-hover"],
+      ["danger-fill-fg", "danger-fill"], ["danger-fill-fg", "danger-fill-hover"],
+    ];
+    for (const [fg, bg] of pairs) expect(contrast(t[fg]!, t[bg]!), `${mode} ${fg} on ${bg}`).toBeGreaterThanOrEqual(4.5);
+  });
+  it("reduced motion removes transforms, including press feedback", () => {
+    const block = css.slice(css.indexOf("@media (prefers-reduced-motion: reduce)"));
+    expect(block).toMatch(/\.press:active[^{]*\{[^}]*transform:\s*none/);
+    expect(block).toMatch(/\[data-starting-style\][^{]*\{[^}]*scale:\s*none/);
   });
 });

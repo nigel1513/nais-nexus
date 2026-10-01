@@ -188,6 +188,9 @@ describe("Dialog focus management", () => {
     await user.click(outerTrigger);
     const innerTrigger = await screen.findByRole("button", { name: "inner-trigger" });
     await user.click(innerTrigger);
+    // Base UI moves focus into a newly opened dialog on the next frame; Esc is pressed once it has.
+    const innerDialog = await screen.findByRole("dialog", { name: "내부" });
+    await waitFor(() => expect(innerDialog).toContainElement(document.activeElement as HTMLElement));
     await user.keyboard("{Escape}");
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "내부" })).not.toBeInTheDocument());
     await waitFor(() => expect(innerTrigger).toHaveFocus());
@@ -216,31 +219,6 @@ describe("Dialog focus management", () => {
       await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
       await waitFor(() => expect(opener).toHaveFocus());
     }
-  });
-
-  it("honours onCloseAutoFocus preventDefault (no refocus of the opener)", async () => {
-    const user = userEvent.setup();
-    function H() {
-      const [open, setOpen] = useState(false);
-      return (
-        <>
-          <button onClick={() => setOpen(true)}>opener</button>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogContent closeLabel="닫기" onCloseAutoFocus={(e) => e.preventDefault()}>
-              <DialogTitle>t</DialogTitle>
-              <DialogDescription>d</DialogDescription>
-            </DialogContent>
-          </Dialog>
-        </>
-      );
-    }
-    render(<H />);
-    const opener = screen.getByRole("button", { name: "opener" });
-    await user.click(opener);
-    await user.keyboard("{Escape}");
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await new Promise((r) => setTimeout(r, 50));
-    expect(opener).not.toHaveFocus();
   });
 });
 

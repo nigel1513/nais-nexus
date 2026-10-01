@@ -71,7 +71,7 @@ function NtisForm({ current }: { current: string | null }) {
             setError(null);
           }}
         />
-        <Button size="sm" type="submit" disabled={update.isPending}>
+        <Button variant="primary" size="sm" type="submit" disabled={update.isPending}>
           {t("settings.ntis.save")}
         </Button>
         {current ? (

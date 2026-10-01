@@ -61,7 +61,7 @@ export function TransferCard() {
           </div>
         </div>
         <div>
-          <Button size="sm" disabled={!user || !orgId || transfer.isPending} onClick={() => setConfirming(true)}>
+          <Button variant="primary" size="sm" disabled={!user || !orgId || transfer.isPending} onClick={() => setConfirming(true)}>
             {t("org.transfer.submit")}
           </Button>
         </div>

@@ -98,7 +98,7 @@ export function ProjectForm({
         </FormField>
       </div>
       <div className="flex gap-2">
-        <Button type="submit" disabled={isSubmitting}>
+        <Button variant="primary" type="submit" disabled={isSubmitting}>
           {submitLabel}
         </Button>
         {onCancel ? (

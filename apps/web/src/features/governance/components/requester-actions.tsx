@@ -77,7 +77,7 @@ export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { r
             {(a11y) => <Input {...a11y} type="number" min={1} max={maxGrantDays} {...form.register("requested_days", { valueAsNumber: true })} />}
           </FormField>
           <div>
-            <Button type="submit" disabled={isSubmitting}>
+            <Button variant="primary" type="submit" disabled={isSubmitting}>
               {t("access.detail.resubmit")}
             </Button>
           </div>

@@ -25,9 +25,9 @@ describe("DelayedSkeleton", () => {
   it("does not flash for loads under 300ms", () => {
     vi.useFakeTimers();
     const { container } = renderWithProviders(<DelayedSkeleton lines={2} />);
-    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-skeleton]")).toHaveLength(0);
     act(() => vi.advanceTimersByTime(300));
-    expect(container.querySelectorAll(".animate-pulse")).toHaveLength(2);
+    expect(container.querySelectorAll("[data-skeleton]")).toHaveLength(2);
     vi.useRealTimers();
   });
 });

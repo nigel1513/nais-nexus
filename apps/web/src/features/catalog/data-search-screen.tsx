@@ -67,7 +67,7 @@ export function DataSearchScreen() {
         title={t("data.search.title")}
         actions={
           hasOrgRole(me, "DATA_STEWARD") ? (
-            <Link href="/commons/data/new" className={buttonClass()}>
+            <Link href="/commons/data/new" className={buttonClass("primary")}>
               {t("data.new.title")}
             </Link>
           ) : null

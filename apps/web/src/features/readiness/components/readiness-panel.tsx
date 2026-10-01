@@ -137,7 +137,7 @@ export function ReadinessPanel({ versionId, published, steward, pollMs = 5000 }:
               </Select>
             )}
           </FormField>
-          <Button type="submit" disabled={start.isPending || !profile}>
+          <Button variant="primary" type="submit" disabled={start.isPending || !profile}>
             {t("readiness.run")}
           </Button>
         </form>

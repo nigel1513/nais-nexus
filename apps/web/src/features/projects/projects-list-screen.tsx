@@ -44,7 +44,7 @@ export function ProjectsListScreen() {
               <EmptyState
                 title={t("projects.list.emptyMine")}
                 action={
-                  <Link href="/commons/projects/new" className={buttonClass()}>
+                  <Link href="/commons/projects/new" className={buttonClass("primary")}>
                     {t("projects.new.title")}
                   </Link>
                 }
@@ -80,7 +80,7 @@ export function ProjectsListScreen() {
       <PageHeader
         title={t("projects.list.title")}
         actions={
-          <Link href="/commons/projects/new" className={buttonClass()}>
+          <Link href="/commons/projects/new" className={buttonClass("primary")}>
             {t("projects.new.title")}
           </Link>
         }

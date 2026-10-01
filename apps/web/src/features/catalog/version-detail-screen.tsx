@@ -84,7 +84,7 @@ export function VersionDetailScreen({
         title={t("version.title", { label: version.version_label })}
         actions={
           steward && draft ? (
-            <Button disabled={!canPublish} onClick={() => setConfirming(true)}>
+            <Button variant="primary" disabled={!canPublish} onClick={() => setConfirming(true)}>
               {t("version.publish")}
             </Button>
           ) : null
