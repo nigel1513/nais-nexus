@@ -240,7 +240,7 @@ def create_upload_session(
                     )
                 )
                 continue
-            if old["status"] == "PENDING" and old["multipart_upload_id"]:
+            if old["status"] in ("PENDING", "FAILED") and old["multipart_upload_id"]:
                 abort_quietly(store, old["storage_key"], old["multipart_upload_id"])
             session.execute(
                 update(dataset_files).where(dataset_files.c.file_id == old["file_id"]).values(**values)

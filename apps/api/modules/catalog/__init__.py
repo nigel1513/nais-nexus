@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from api.modules.catalog import jobs  # noqa: F401  (declares the catalog.verify_file actor at import time)
 from api.modules.catalog.router import router
 from api.modules.catalog.wiring import wire
 from api.platform.modules import ModuleSpec
