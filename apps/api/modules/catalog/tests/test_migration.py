@@ -1,4 +1,8 @@
+import threading
+from uuid import UUID
+
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
 from api.modules.catalog.tests.support import (
@@ -9,6 +13,8 @@ from api.modules.catalog.tests.support import (
     insert_version,
     rows,
 )
+from api.platform.db import session_factory
+from api.platform.ids import new_id
 from api.platform.testing.fixtures import PgUrls
 
 
@@ -110,3 +116,83 @@ def test_unsafe_file_paths_are_rejected_by_the_database(db: PgUrls, path: str) -
     version_id = insert_version(db, insert_dataset(db))
     with pytest.raises(DBAPIError, match="ck_files_path"):
         insert_file(db, version_id, path=path)
+
+
+def test_draft_file_cannot_be_reparented_into_a_published_version(db: PgUrls) -> None:
+    dataset_id = insert_dataset(db)
+    published = insert_version(db, dataset_id, label="v1", published=True, files=[("data/a.csv", 10, SHA_A)])
+    draft = insert_version(db, dataset_id, label="v2")
+    insert_file(db, draft, path="data/b.csv", status="PENDING")
+    with pytest.raises(DBAPIError, match="immutable"):
+        execute(
+            db,
+            "UPDATE catalog.dataset_files SET dataset_version_id = :p WHERE dataset_version_id = :d",
+            p=published,
+            d=draft,
+        )
+
+
+def test_file_cannot_move_between_draft_versions(db: PgUrls) -> None:
+    dataset_id = insert_dataset(db)
+    first = insert_version(db, dataset_id, label="v1")
+    second = insert_version(db, dataset_id, label="v2")
+    insert_file(db, first, path="data/a.csv", status="PENDING")
+    with pytest.raises(DBAPIError, match="immutable"):
+        execute(
+            db,
+            "UPDATE catalog.dataset_files SET dataset_version_id = :b WHERE dataset_version_id = :a",
+            a=first,
+            b=second,
+        )
+
+
+def test_file_insert_waits_for_a_concurrent_publish_then_fails(db: PgUrls) -> None:
+    dataset_id = insert_dataset(db)
+    version_id = insert_version(db, dataset_id)
+    session_id = _open_session(db, version_id)
+    outcome: list[BaseException | None] = []
+
+    def insert_in_session_2() -> None:
+        try:
+            with session_factory(db.app)() as session, session.begin():
+                session.execute(
+                    text(
+                        "INSERT INTO catalog.dataset_files (file_id, dataset_version_id, upload_session_id, path,"
+                        " size_bytes, sha256, media_type, storage_bucket, storage_key)"
+                        " VALUES (gen_random_uuid(), :v, :s, 'data/late.csv', 10, :sha, 'text/csv', 'b', 'k')"
+                    ),
+                    {"v": version_id, "s": session_id, "sha": SHA_A},
+                )
+            outcome.append(None)
+        except Exception as exc:  # noqa: BLE001 - surfaced by the assertion below
+            outcome.append(exc)
+
+    with session_factory(db.app)() as session1, session1.begin():
+        session1.execute(
+            text(
+                "UPDATE catalog.dataset_versions SET status = 'PUBLISHED', manifest_sha256 = :m,"
+                " metadata_snapshot = '{}'::jsonb, published_at = now() WHERE dataset_version_id = :v"
+            ),
+            {"m": SHA_A, "v": version_id},
+        )
+        thread = threading.Thread(target=insert_in_session_2, daemon=True)
+        thread.start()
+        thread.join(0.5)
+        assert thread.is_alive(), f"insert was not blocked by the uncommitted publish: {outcome}"
+    thread.join(10)
+    assert not thread.is_alive()
+    assert len(outcome) == 1 and isinstance(outcome[0], DBAPIError), outcome
+    assert "immutable" in str(outcome[0])
+    assert rows(db, "SELECT 1 FROM catalog.dataset_files WHERE dataset_version_id = :v", v=version_id) == []
+
+
+def _open_session(urls: PgUrls, version_id: UUID) -> UUID:
+    session_id = new_id()
+    execute(
+        urls,
+        "INSERT INTO catalog.upload_sessions (upload_session_id, dataset_version_id, status, created_by, expires_at)"
+        " VALUES (:id, :v, 'OPEN', :v, now() + interval '1 hour')",
+        id=session_id,
+        v=version_id,
+    )
+    return session_id

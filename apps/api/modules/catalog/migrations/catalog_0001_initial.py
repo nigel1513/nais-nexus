@@ -76,12 +76,17 @@ DECLARE
   version_status text;
   target uuid;
 BEGIN
+  IF TG_OP = 'UPDATE' AND NEW.dataset_version_id IS DISTINCT FROM OLD.dataset_version_id THEN
+    RAISE EXCEPTION 'files of dataset version % are immutable (cannot be moved)', OLD.dataset_version_id
+      USING ERRCODE = 'integrity_constraint_violation';
+  END IF;
   IF TG_OP = 'INSERT' THEN
     target = NEW.dataset_version_id;
   ELSE
     target = OLD.dataset_version_id;
   END IF;
-  SELECT status INTO version_status FROM catalog.dataset_versions WHERE dataset_version_id = target;
+  -- FOR SHARE: wait for a concurrent publish (row lock) to finish, then see its committed status.
+  SELECT status INTO version_status FROM catalog.dataset_versions WHERE dataset_version_id = target FOR SHARE;
   IF version_status IS NOT NULL AND version_status <> 'DRAFT' THEN
     RAISE EXCEPTION 'files of dataset version % are immutable (%)', target, version_status
       USING ERRCODE = 'integrity_constraint_violation';
