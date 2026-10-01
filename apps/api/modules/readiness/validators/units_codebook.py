@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from api.modules.readiness.engine.canonical import ratio
+from api.modules.readiness.engine.canonical import exceeds, fraction, ratio
 from api.modules.readiness.engine.context import CheckOutcome, EvaluationContext
 from api.modules.readiness.engine.units import suggestion, unit_error
 
@@ -77,10 +77,11 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
     if invalid:
         first = invalid[0]
         hint = suggestion(first["unit"])
-        example = f"{first['field']}: {first['unit']}" + (f" → {hint}" if hint else "")
+        shown = first["unit"] if len(first["unit"]) <= 64 else first["unit"][:64] + "…"
+        example = f"{first['field']}: {shown}" + (f" → {hint}" if hint else "")
         message = f"UCUM 단위로 해석할 수 없는 값이 {len(invalid)}개 있습니다 (예: {example})."
         return CheckOutcome("FAIL", message, evidence)
-    if missing_ratio > ctx.params.unit_missing_fail_ratio:
+    if exceeds(fraction(len(missing), len(fields)), ctx.params.unit_missing_fail_ratio):
         return CheckOutcome(
             "FAIL", f"단위가 없는 숫자형 필드가 {len(missing)}개로 허용 한도를 넘습니다.", evidence
         )

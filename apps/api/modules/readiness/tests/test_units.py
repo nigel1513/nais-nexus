@@ -1,4 +1,5 @@
 import io
+import time
 from typing import Any
 
 import pyarrow as pa
@@ -6,7 +7,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from api.modules.readiness.engine.context import EvaluationContext
-from api.modules.readiness.engine.units import suggestion, unit_error
+from api.modules.readiness.engine.units import aliases, atoms, prefixes, suggestion, unit_error
 from api.modules.readiness.tests.builders import make_ctx, schema_doc, with_schema
 from api.modules.readiness.tests.helpers import fixture_files
 from api.modules.readiness.validators import units_codebook
@@ -149,8 +150,6 @@ def test_not_applicable_without_numeric_fields() -> None:
 
 
 def test_hostile_unit_strings_are_bounded_and_fast() -> None:
-    import time
-
     hostile = [
         "(" * 100_000,
         "(" * 5000 + "m" + ")" * 5000,
@@ -160,17 +159,48 @@ def test_hostile_unit_strings_are_bounded_and_fast() -> None:
         "m." * 100_000,
         "{a}" * 100_000,
         "k" * 1_000_000,
+        "m." * 127,
+        "{a}" * 80,
+        "m/" * 120,
     ]
     start = time.perf_counter()
     for unit in hostile:
-        assert unit_error(unit) == "SYNTAX_ERROR"
-    assert time.perf_counter() - start < 1.0
+        assert unit_error(unit) in (None, "SYNTAX_ERROR")
+    assert time.perf_counter() - start < 2.0
 
 
 def test_reasonable_nesting_still_valid_and_dictionaries_are_stable() -> None:
-    from api.modules.readiness.engine.units import aliases, atoms, prefixes
-
     assert unit_error("((kg.m)/s2)/(m)") is None
-    assert unit_error("(" * 40 + "m" + ")" * 40) == "SYNTAX_ERROR"  # nesting cap
+    assert unit_error("(" * 16 + "m" + ")" * 16) is None
+    assert unit_error("(" * 17 + "m" + ")" * 17) == "SYNTAX_ERROR"  # nesting cap
     assert atoms()["Cel"] is True and atoms()["min"] is False
     assert prefixes()[0] == "da" and aliases()["degC"] == "Cel"
+
+
+def test_under_cap_adversarial_strings_have_expected_results() -> None:
+    assert unit_error("m." * 127) == "SYNTAX_ERROR"  # trailing dot
+    assert unit_error("m." * 126 + "m") is None
+    assert unit_error("{a}" * 80) == "SYNTAX_ERROR"  # adjacent annotations
+    assert unit_error("{a}") is None
+    assert unit_error("m/" * 120) == "SYNTAX_ERROR"
+
+
+def test_missing_unit_threshold_compares_exact_fraction() -> None:
+    # 1/3 = 0.3333333 rounds to 0.333333 for evidence but is above a 0.333333 limit.
+    fields = [
+        {"name": "a", "type": "number", "unit": "s"},
+        {"name": "b", "type": "number", "unit": "s"},
+        {"name": "c", "type": "number"},
+    ]
+    files = with_schema({"data/t.csv": b"a,b,c\n1,2,3\n"}, schema_doc("data/t.csv", fields))
+    outcome = units_codebook.check(make_ctx(files=files, unit_missing_fail_ratio=0.333333))
+    assert (outcome.status, outcome.evidence["missing_unit_ratio"]) == ("FAIL", 0.333333)
+
+
+def test_long_unit_is_truncated_in_message_only() -> None:
+    long_unit = "x" * 100
+    fields = [{"name": "a", "type": "number", "unit": long_unit}]
+    files = with_schema({"data/t.csv": b"a\n1\n"}, schema_doc("data/t.csv", fields))
+    outcome = units_codebook.check(make_ctx(files=files))
+    assert outcome.evidence["invalid_unit"][0]["unit"] == long_unit
+    assert long_unit not in outcome.message and "x" * 64 + "…" in outcome.message

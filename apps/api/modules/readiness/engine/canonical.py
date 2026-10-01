@@ -31,6 +31,11 @@ def exceeds(value: Fraction, threshold: float) -> bool:
     return value > Fraction(repr(threshold))
 
 
+def at_least(value: Fraction, threshold: float) -> bool:
+    """value >= threshold, exact (see `exceeds`)."""
+    return value >= Fraction(repr(threshold))
+
+
 def _check_keys(obj: Any) -> None:
     if isinstance(obj, dict):
         for key, value in obj.items():

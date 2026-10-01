@@ -3,7 +3,7 @@
 import re
 from typing import Any
 
-from api.modules.readiness.engine.canonical import ratio
+from api.modules.readiness.engine.canonical import at_least, fraction, ratio
 from api.modules.readiness.engine.context import CheckOutcome, EvaluationContext
 
 _IRI = re.compile(r"https?://\S+")
@@ -36,7 +36,7 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
         "unmapped": sorted(unmapped, key=lambda e: (e["path"], e["field"])),
         "malformed_iri": sorted(malformed, key=lambda e: (e["path"], e["field"])),
     }
-    if share >= ctx.params.mapping_pass_ratio:
+    if at_least(fraction(mapped, declared), ctx.params.mapping_pass_ratio):
         return CheckOutcome(
             "PASS", f"필드 {declared}개 중 {mapped}개가 개념 IRI에 매핑되어 있습니다.", evidence
         )

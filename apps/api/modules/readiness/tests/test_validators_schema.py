@@ -136,6 +136,18 @@ def test_mapping_boundary_and_malformed_iri() -> None:
     assert outcome.status == "WARNING"
 
 
+def test_mapping_threshold_compares_exact_fraction() -> None:
+    # 2/3 = 0.6666667 rounds up to 0.666667 for evidence but is below a 0.666667 threshold.
+    fields = [{"name": f"f{i}", "type": "string", "x-nais-concept": f"https://e.org/{i}"} for i in range(2)]
+    fields.append({"name": "f2", "type": "string"})
+    csv = b"f0,f1,f2\nx,x,x\n"
+    ctx = make_ctx(
+        files=with_schema({"data/t.csv": csv}, schema_doc("data/t.csv", fields)), mapping_pass_ratio=0.666667
+    )
+    outcome = mapping_status.check(ctx)
+    assert (outcome.status, outcome.evidence["ratio"]) == ("WARNING", 0.666667)
+
+
 def test_mapping_counts_only_resources_in_tabular_set() -> None:
     doc = {
         "resources": [
