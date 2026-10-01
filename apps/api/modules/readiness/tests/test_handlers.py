@@ -2,9 +2,11 @@
 
 M05-AT-01 (4 fixtures x 2 profiles vs golden), M05-AT-11 (duplicate delivery), M05-AT-13 (T empty)."""
 
+import dataclasses
 import json
 
-from sqlalchemy import func, select, table, update
+from sqlalchemy import column, func, select, table, update
+from sqlalchemy.orm import Session
 
 from api.modules.readiness.catalog_port import VersionView
 from api.modules.readiness.fakes import FIXTURES_ROOT, FixtureCatalog
@@ -13,13 +15,13 @@ from api.modules.readiness.tables import check_results, validations
 from api.modules.readiness.tests.dbutil import drain_jobs, events
 from api.modules.readiness.tests.helpers import FIXTURE_NAMES, ORG_B, clean_snapshot
 from api.platform.db import session_factory
-from api.platform.event_bus import registry
-from api.platform.events import EventActor
+from api.platform.event_bus import HandlerRegistry, claim_event, registry
+from api.platform.events import EventActor, EventEnvelope
 from api.platform.outbox import outbox, outbox_events
 from api.platform.relay import dispatch_batch
 from api.platform.testing.fixtures import PgUrls
 
-processed_events = table("processed_events", schema="readiness")
+processed_events = table("processed_events", column("handler"), schema="readiness")
 
 
 def publish(db: PgUrls, view: VersionView) -> None:
@@ -134,12 +136,56 @@ def test_version_without_tabular_files_runs_generic_only(db: PgUrls, catalog: Fi
     ] == ["NOT_APPLICABLE"] * 3
 
 
+def _claims(db: PgUrls) -> list[str]:
+    with session_factory(db.app)() as session:
+        return sorted(session.execute(select(processed_events.c.handler)).scalars())
+
+
 def test_unknown_version_is_ignored(db: PgUrls, catalog: FixtureCatalog) -> None:
     ghost = FixtureCatalog().add_fixture("clean_tabular", owner_organization_id=ORG_B)
     publish(db, ghost)
-    relay(db)
+    assert dispatch_batch(session_factory(db.app), registry).dispatched == 1
+    result = dispatch_batch(session_factory(db.app), registry)
+    assert (result.dispatched, result.retried) == (0, 0)  # settled, not retried
     with session_factory(db.app)() as session:
         assert session.execute(select(func.count()).select_from(validations)).scalar_one() == 0
+    assert _claims(db) == ["on_version_published"]
+
+
+def test_withdrawn_version_is_skipped(db: PgUrls, catalog: FixtureCatalog) -> None:
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    catalog.replace_view(dataclasses.replace(view, status="WITHDRAWN"))
+    publish(db, view)
+    result = dispatch_batch(session_factory(db.app), registry)
+    assert (result.dispatched, result.retried, result.dead) == (1, 0, 0)
+    with session_factory(db.app)() as session:
+        assert session.execute(select(func.count()).select_from(validations)).scalar_one() == 0
+    assert _claims(db) == ["on_version_published"]
+
+
+def test_handler_coexists_with_other_subscribers_of_the_publish_event(
+    db: PgUrls, catalog: FixtureCatalog
+) -> None:
+    """Per-handler claims (D-006): audit_writer / notifier style handlers do not swallow ours or vice versa."""
+    seen: list[str] = []
+
+    def audit_writer(session: Session, event: EventEnvelope) -> None:
+        if claim_event(session, "readiness", event, handler="audit_writer"):
+            seen.append("audit_writer")
+
+    def notifier(session: Session, event: EventEnvelope) -> None:
+        if claim_event(session, "readiness", event, handler="notifier"):
+            seen.append("notifier")
+
+    local = HandlerRegistry()
+    for handler in (audit_writer, on_version_published, notifier):
+        local.subscribe("catalog.dataset.version_published.v1")(handler)
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    publish(db, view)
+    assert dispatch_batch(session_factory(db.app), local).dispatched == 1
+    assert sorted(seen) == ["audit_writer", "notifier"]
+    assert _claims(db) == ["audit_writer", "notifier", "on_version_published"]
+    assert set(results(db, view)) == {"GENERIC_BASIC", "TABULAR_ML_BASIC"}
 
 
 def test_missing_catalog_port_retries_the_event_instead_of_dropping_it(db: PgUrls) -> None:

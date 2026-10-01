@@ -22,7 +22,11 @@ def on_version_published(session: Session, event: EventEnvelope) -> None:
         return
     version = ports.get(CatalogQueryPort).get_version(UUID(event.payload["dataset_version_id"]))
     if version is None or version.status != "PUBLISHED":
-        logger.warning("published version not found; nothing queued", extra={"event_id": str(event.event_id)})
+        logger.warning(
+            "published version not found or not PUBLISHED (status=%s); nothing queued",
+            None if version is None else version.status,
+            extra={"event_id": str(event.event_id)},
+        )
         return
     for profile in auto_profiles(version):
         request_validation(
