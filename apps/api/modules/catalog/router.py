@@ -2,4 +2,7 @@
 
 from fastapi import APIRouter
 
+from api.modules.catalog.routes import datasets
+
 router = APIRouter()
+router.include_router(datasets.router)
