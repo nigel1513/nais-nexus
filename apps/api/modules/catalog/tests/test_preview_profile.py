@@ -427,15 +427,17 @@ def test_parquet_binary_is_other_and_byte_budgets() -> None:
     assert run(sink.getvalue(), path="p.parquet").preview["columns"][0]["kind"] == "other"
     small = PreviewLimits(max_bytes=1 << 20)
     sink = io.BytesIO()
-    pq.write_table(
-        pa.table({"s": pa.array([f"{i}" + "y" * 100_000 for i in range(64)])}), sink, compression="zstd"
-    )
-    result = run(
-        sink.getvalue(), path="p.parquet", limits=small
-    )  # 6.4 MB decoded: sample stops at the budget
+    strings = pa.table({"s": pa.array([f"{i}" + "y" * 100_000 for i in range(64)])})
+    pq.write_table(strings, sink, compression="zstd", use_dictionary=False)
+    result = run(sink.getvalue(), path="p.parquet", limits=small)  # 6.4 MB decoded: stops at the budget
     assert result.truncated and 0 < result.rows_sampled < 64
     sink = io.BytesIO()
-    pq.write_table(pa.table({"s": pa.array(["y" * (2 << 20)])}), sink, compression="zstd")
+    pq.write_table(strings, sink, compression="zstd")  # a 6.4 MB dictionary page > max_bytes / 4
+    assert run(sink.getvalue(), path="p.parquet", limits=small).preview["columns"][0]["kind"] == "other"
+    sink = io.BytesIO()
+    pq.write_table(
+        pa.table({"s": pa.array(["y" * (2 << 20)])}), sink, compression="zstd", use_dictionary=False
+    )
     with pytest.raises(Unparseable):  # a single row over the budget
         run(sink.getvalue(), path="p.parquet", limits=small)
 
@@ -566,3 +568,76 @@ def test_skewed_first_batch_retries_row_by_row() -> None:
     pq.write_table(pa.table({"s": values}), sink, compression="zstd", use_dictionary=False)
     result = run(sink.getvalue(), path="p.parquet", limits=PreviewLimits(max_bytes=1 << 20))
     assert result.truncated and result.rows_sampled >= 1
+
+
+# ---------------------------------------------------------------- fix round 3: dictionary-expansion bombs
+
+_BOMB_SCRIPT = """
+import io, resource, sys
+import pyarrow as pa, pyarrow.parquet as pq
+from api.modules.catalog.previews import profile as P
+
+entry, duplicate, lying = int(sys.argv[1]), sys.argv[2] == "dup", sys.argv[3] == "lying"
+column = pa.DictionaryArray.from_arrays(pa.array([0] * 200_000, pa.int32()), pa.array(["x" * entry]))
+names = ["s", "s"] if duplicate else ["s"]
+table = pa.Table.from_arrays([column] * len(names), names=names)
+sink = io.BytesIO()
+pq.write_table(table, sink, store_schema=False, dictionary_pagesize_limit=256 << 20, compression="zstd")
+data = sink.getvalue()
+del table, column
+if lying:
+    P._footer_uncompressed = lambda group, leaves: 0  # a footer that claims (almost) nothing per row
+before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+r = P.profile_table(lambda s, e: io.BytesIO(data[s : e + 1]), len(data), path="m.parquet", hints={},
+                    limits=P.PreviewLimits(), deadline=P.make_deadline(60))
+grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) // 1024
+print(r.rows_sampled, int(r.truncated), [c["kind"] for c in r.preview["columns"]][0], grown)
+"""
+
+
+def _bomb(entry: int, duplicate: bool = False, lying: bool = False) -> tuple[int, bool, str, int]:
+    import os
+    import subprocess
+    import sys
+    import time
+
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
+    start = time.monotonic()
+    args = [str(entry), "dup" if duplicate else "one", "lying" if lying else "honest"]
+    out = subprocess.run(
+        [sys.executable, "-c", _BOMB_SCRIPT, *args],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    ).stdout.split()
+    assert time.monotonic() - start < 30
+    return int(out[0]), out[1] == "1", out[2], int(out[3])
+
+
+@pytest.mark.parametrize("entry", [1_000_000, 4_000_000])
+def test_dictionary_expansion_bomb_stays_bounded(entry: int) -> None:
+    rows, truncated, kind, grown_mb = _bomb(entry)
+    assert rows > 0 and truncated and kind == "categorical"
+    assert grown_mb < 512
+
+
+def test_dictionary_bomb_with_duplicate_names_is_bounded_by_page_headers() -> None:
+    rows, truncated, _, grown_mb = _bomb(4_000_000, duplicate=True)
+    assert rows > 0 and truncated and grown_mb < 512
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_lying_footer_cannot_size_the_batches(duplicate: bool) -> None:
+    rows, truncated, _, grown_mb = _bomb(4_000_000, duplicate=duplicate, lying=True)
+    assert rows > 0 and truncated and grown_mb < 512
+
+
+def test_page_header_parser() -> None:
+    from api.modules.catalog.previews.profile import page_header_sizes
+
+    # compact protocol: field 1 i32 (0x15) zigzag(2)=4, field 2 i32 (0x15) zigzag(300)=600 -> varint 0xd8 0x04
+    assert page_header_sizes(bytes([0x15, 0x04, 0x15, 0xD8, 0x04, 0x15, 0x02])) == (2, 300)
+    assert page_header_sizes(b"") is None and page_header_sizes(b"\x00") is None
+    assert page_header_sizes(bytes([0x18, 0x01])) is None  # not an i32 field

@@ -492,6 +492,17 @@ def _readable(arrow_type: Any) -> bool:
     )
 
 
+def _column_values(column: Any) -> list[Any]:
+    """Python values of one batch column. Dictionary columns are expanded by reference: every row shares the
+    dictionary's Python object, so a huge entry exists once (its str hash is cached too)."""
+    import pyarrow as pa
+
+    if pa.types.is_dictionary(column.type):
+        dictionary = column.dictionary.to_pylist()
+        return [None if i is None else dictionary[i] for i in column.indices.to_pylist()]
+    return list(column.to_pylist())
+
+
 def _parquet_value(value: Any) -> tuple[str | None, bool]:
     """(text, non-finite). NaN is missing; ±inf is present but non-finite."""
     if value is None:
@@ -499,6 +510,68 @@ def _parquet_value(value: Any) -> tuple[str | None, bool]:
     if isinstance(value, float) and not math.isfinite(value):
         return (None, False) if math.isnan(value) else (str(value), True)
     return str(value), False
+
+
+_DICTIONARY_PAGE = 2  # parquet PageType.DICTIONARY_PAGE
+PAGE_HEADER_PEEK = 64  # the first fields of a thrift-compact PageHeader fit easily
+
+
+def _varint(buf: bytes, pos: int) -> tuple[int, int]:
+    shift = result = 0
+    while True:
+        if pos >= len(buf) or shift > 63:
+            raise ValueError("truncated varint")
+        b = buf[pos]
+        pos += 1
+        result |= (b & 0x7F) << shift
+        if not b & 0x80:
+            return result, pos
+        shift += 7
+
+
+def page_header_sizes(buf: bytes) -> tuple[int, int] | None:
+    """(page type, uncompressed page size) from the start of a thrift-compact PageHeader, or None if the bytes
+    do not look like one. Only fields 1 (type, i32) and 2 (uncompressed_page_size, i32) are needed."""
+    try:
+        pos, field_id = 0, 0
+        found: dict[int, int] = {}
+        while len(found) < 2:
+            head = buf[pos]
+            pos += 1
+            if head == 0 or head & 0x0F != 5:  # stop, or not an i32 before both fields were seen
+                return None
+            delta = head >> 4
+            if delta == 0:
+                raw, pos = _varint(buf, pos)
+                field_id = (raw >> 1) ^ -(raw & 1)
+            else:
+                field_id += delta
+            raw, pos = _varint(buf, pos)
+            found[field_id] = (raw >> 1) ^ -(raw & 1)
+        if set(found) != {1, 2} or found[2] < 0:
+            return None
+        return found[1], found[2]
+    except (IndexError, ValueError):
+        return None
+
+
+def _footer_uncompressed(group: Any, leaves: list[int]) -> int:
+    """Footer-declared uncompressed bytes of the selected chunks: only an average hint, never a memory bound."""
+    return int(sum(group.column(k).total_uncompressed_size for k in leaves))
+
+
+def _dictionary_page_size(chunk: Any, peek: Callable[[int, int], bytes]) -> int | None:
+    """Uncompressed size of the chunk's dictionary page from its page header (0: no dictionary page; None:
+    unreadable header). The header, not the footer, is what the decoder allocates from."""
+    has_dict = bool(chunk.has_dictionary_page) and (chunk.dictionary_page_offset or 0) > 0
+    offset = chunk.dictionary_page_offset if has_dict else chunk.data_page_offset
+    if offset is None or offset < 0:
+        return None
+    header = page_header_sizes(peek(int(offset), PAGE_HEADER_PEEK))
+    if header is None:
+        return None
+    page_type, size = header
+    return size if page_type == _DICTIONARY_PAGE else 0
 
 
 def _fit_first_batch(
@@ -526,6 +599,7 @@ def _profile_parquet(
     limits: PreviewLimits,
     deadline: Deadline,
     footer_read: Callable[[], None] = lambda: None,
+    peek: Callable[[int, int], bytes] = lambda offset, n: b"",
 ) -> ProfileResult:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -571,6 +645,27 @@ def _profile_parquet(
             cols[-1].decoded = False
         leaf += _leaf_count(f.type)
     _fit_first_batch(meta, cols, read_slots, leaves, limits.max_bytes)
+    # variable-width columns are read dictionary-encoded where possible, so one huge dictionary entry referenced
+    # by every row is never densified (dictionary-expansion bomb); duplicate names cannot be selected by name
+    names = list(schema.names)
+    variable = {
+        slot
+        for slot in read_slots
+        if pa.types.is_string(schema.field(slot).type) or pa.types.is_large_string(schema.field(slot).type)
+    }
+    as_dictionary = sorted({names[slot] for slot in variable if names.count(names[slot]) == 1})
+    dense_variable = {slot for slot in variable if names[slot] not in as_dictionary}
+    try:
+        if as_dictionary:
+            pf = pq.ParquetFile(
+                source,
+                metadata=meta,
+                read_dictionary=as_dictionary,
+                buffer_size=PARQUET_STREAM_BUFFER,
+                pre_buffer=False,
+            )
+    except Exception as exc:
+        raise classify(exc) from exc
     rng = random.Random(0)
     rows: list[list[str | None]] = []
     sampled, truncated = 0, False
@@ -583,6 +678,20 @@ def _profile_parquet(
             group = meta.row_group(rg)
             if group.num_rows == 0:
                 continue
+            # dictionary pages are sized from their page headers before anything is decoded
+            cell_bound, oversized = 0, []
+            for n, k in enumerate(leaves):
+                size = _dictionary_page_size(group.column(k), peek)
+                if size is None or size > limits.max_bytes // 4:
+                    oversized.append(n)
+                elif size and read_slots[n] in dense_variable:
+                    cell_bound += size  # a dense cell can be as large as the largest dictionary entry
+            if oversized and sampled:
+                truncated = True
+                break
+            for n in reversed(oversized):  # nothing sampled yet: profile these as "other" instead of failing
+                cols[read_slots[n]].decoded = False
+                del read_slots[n], leaves[n]
             if not leaves:  # nothing decodable: count rows from the metadata only
                 take = min(group.num_rows, limits.max_rows - sampled)
                 sampled += take
@@ -590,9 +699,10 @@ def _profile_parquet(
                 continue
             # rows per batch from the average decoded row size; pages are streamed (buffer_size), so a large row
             # group is read in slices instead of whole column chunks
-            raw_bytes = sum(group.column(k).total_uncompressed_size for k in leaves)
-            per_row = max(1, raw_bytes // group.num_rows)
+            per_row = max(1, _footer_uncompressed(group, leaves) // group.num_rows)
             batch_rows = max(1, min(PARQUET_BATCH_ROWS, limits.max_bytes // (8 * per_row)))
+            if cell_bound:  # densified dictionary columns: bound by the page headers, not the footer average
+                batch_rows = max(1, min(batch_rows, limits.max_bytes // (2 * cell_bound)))
             while True:
                 restart = False
                 for batch in pf.reader.iter_batches(batch_rows, [rg], column_indices=leaves):
@@ -610,7 +720,7 @@ def _profile_parquet(
                         break
                     decoded += batch.nbytes
                     take = min(batch.num_rows, limits.max_rows - sampled)
-                    data = [batch.column(k).slice(0, take).to_pylist() for k in range(batch.num_columns)]
+                    data = [_column_values(batch.column(k).slice(0, take)) for k in range(batch.num_columns)]
                     for r in range(take):
                         sampled += 1
                         values: list[str | None] = [None] * len(cols)
@@ -668,6 +778,18 @@ def profile_table(
 
         source = open_parquet_range(counted, size, deadline=fetch_deadline)
         raw = getattr(source, "raw", None)
+
+        def peek(offset: int, n: int) -> bytes:  # page headers: tiny reads outside the data-page budget
+            deadline()
+            end = min(size, offset + n) - 1
+            if offset >= size or end < offset:
+                return b""
+            stream = open_range(offset, end)
+            try:
+                return bytes(stream.read(end - offset + 1))
+            finally:
+                stream.close()
+
         return _profile_parquet(
             source,
             lambda: getattr(raw, "failure", None),
@@ -675,6 +797,7 @@ def profile_table(
             limits,
             deadline,
             footer_read=arm,
+            peek=peek,
         )
     stream = open_range(0, size - 1)
     try:
