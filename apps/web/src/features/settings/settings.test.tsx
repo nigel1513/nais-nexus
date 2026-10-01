@@ -199,6 +199,13 @@ describe("NTIS number and institute transfer (Wave 1.5)", () => {
     expect(await within(card).findByRole("alert")).toHaveTextContent("다시 시도하세요");
   });
 
+  it("a PLATFORM_ADMIN without ORG_ADMIN still sees the transfer card", async () => {
+    getDb().users.find((u) => u.user_id === USER.admin)!.org_roles = [];
+    renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
+    expect(await screen.findByRole("region", { name: "기관 이동" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "멤버" })).not.toBeInTheDocument();
+  });
+
   it("non-platform-admins do not see the transfer card", async () => {
     renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
     await screen.findByRole("heading", { name: "멤버" });

@@ -40,33 +40,33 @@ export function TransferCard() {
 
   return (
     <Card aria-labelledby={headingId}>
-        <CardHeader>
-          <CardTitle id={headingId}>{t("org.transfer.title")}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-start gap-3">
-            <UserPicker key={pickerKey} label={t("org.transfer.user")} onChange={setUser} />
-            <div className="flex min-w-48 flex-col gap-1">
-              <Label htmlFor={selectId}>{t("org.transfer.target")}</Label>
-              <Select id={selectId} value={orgId} onChange={(e) => setOrgId(e.target.value)}>
-                <option value="">{t("org.transfer.choose")}</option>
-                {(orgs.data?.items ?? [])
-                  .filter((o) => o.organization_id !== user?.organization_id)
-                  .map((o) => (
-                    <option key={o.organization_id} value={o.organization_id}>
-                      {o.name}
-                    </option>
-                  ))}
-              </Select>
-            </div>
+      <CardHeader>
+        <CardTitle id={headingId}>{t("org.transfer.title")}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-start gap-3">
+          <UserPicker key={pickerKey} label={t("org.transfer.user")} onChange={setUser} />
+          <div className="flex min-w-48 flex-col gap-1">
+            <Label htmlFor={selectId}>{t("org.transfer.target")}</Label>
+            <Select id={selectId} value={orgId} onChange={(e) => setOrgId(e.target.value)}>
+              <option value="">{t("org.transfer.choose")}</option>
+              {(orgs.data?.items ?? [])
+                .filter((o) => o.organization_id !== user?.organization_id)
+                .map((o) => (
+                  <option key={o.organization_id} value={o.organization_id}>
+                    {o.name}
+                  </option>
+                ))}
+            </Select>
           </div>
-          <div>
-            <Button size="sm" disabled={!user || !orgId || transfer.isPending} onClick={() => setConfirming(true)}>
-              {t("org.transfer.submit")}
-            </Button>
-          </div>
-          {transfer.isError ? <ErrorView error={transfer.error} onRetry={() => setConfirming(true)} /> : null}
-        </CardContent>
+        </div>
+        <div>
+          <Button size="sm" disabled={!user || !orgId || transfer.isPending} onClick={() => setConfirming(true)}>
+            {t("org.transfer.submit")}
+          </Button>
+        </div>
+        {transfer.isError ? <ErrorView error={transfer.error} onRetry={() => setConfirming(true)} /> : null}
+      </CardContent>
       <ConfirmDialog
         open={confirming}
         onOpenChange={(o) => !o && setConfirming(false)}

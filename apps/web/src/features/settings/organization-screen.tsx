@@ -47,13 +47,17 @@ function Members() {
 export function OrganizationScreen() {
   const t = useTranslations();
   const me = useMeData();
+  const orgAdmin = me.org_roles.includes("ORG_ADMIN");
+  const platformAdmin = me.platform_roles.includes("PLATFORM_ADMIN");
   return (
     <>
       <PageHeader title={t("org.title", { name: me.organization.name })} description={t("org.description")} />
-      <RequireRole anyOf={["ORG_ADMIN"]}>
-        <Members />
-        {me.platform_roles.includes("PLATFORM_ADMIN") ? <TransferCard /> : null}
-      </RequireRole>
+      {orgAdmin || !platformAdmin ? (
+        <RequireRole anyOf={["ORG_ADMIN"]}>
+          <Members />
+        </RequireRole>
+      ) : null}
+      {platformAdmin ? <TransferCard /> : null}
     </>
   );
 }
