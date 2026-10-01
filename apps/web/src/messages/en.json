@@ -9,6 +9,7 @@
     "traceId": "Trace ID",
     "copyTraceId": "Copy trace ID",
     "copied": "Copied",
+    "copyFailed": "Copy failed. Please select and copy it manually.",
     "required": "(required)",
     "cancel": "Cancel",
     "close": "Close",

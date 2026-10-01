@@ -9,6 +9,7 @@
     "traceId": "추적 ID",
     "copyTraceId": "추적 ID 복사",
     "copied": "복사됨",
+    "copyFailed": "복사하지 못했습니다. 직접 선택해 복사해 주세요.",
     "required": "(필수)",
     "cancel": "취소",
     "close": "닫기",

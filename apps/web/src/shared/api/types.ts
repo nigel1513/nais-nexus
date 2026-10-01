@@ -1,0 +1,54 @@
+import type { components, operations } from "@nais/contracts";
+
+export type Schemas = components["schemas"];
+export type Query<Op extends keyof operations> = NonNullable<operations[Op]["parameters"]["query"]>;
+
+/** PageEnvelope with typed items (openapi-typescript renders allOf as `unknown[] & T[]`, which is awkward to map over). */
+export type Page<T> = { items: T[]; page: { next_cursor?: string | null; has_more: boolean } };
+export type SearchPage = Page<Schemas["DatasetSearchHit"]> & { total: number; facets: Schemas["DatasetSearchResult"]["facets"] };
+export type NotificationPage = Page<Schemas["Notification"]> & { unread_count?: number };
+
+export type Me = Schemas["Me"];
+export type Organization = Schemas["Organization"];
+export type OrganizationSummary = Schemas["OrganizationSummary"];
+export type OrganizationMembership = Schemas["OrganizationMembership"];
+export type IdentityPublicProfile = Schemas["IdentityPublicProfile"];
+export type ProjectSummary = Schemas["ProjectSummary"];
+export type Project = Schemas["Project"];
+export type ProjectMember = Schemas["ProjectMember"];
+export type Dataset = Schemas["Dataset"];
+export type DatasetPolicyView = Schemas["DatasetPolicyView"];
+export type DatasetVersion = Schemas["DatasetVersion"];
+export type DatasetVersionSummary = Schemas["DatasetVersionSummary"];
+export type DatasetFile = Schemas["DatasetFile"];
+export type DatasetSearchHit = Schemas["DatasetSearchHit"];
+export type FacetBucket = Schemas["FacetBucket"];
+export type UploadSession = Schemas["UploadSession"];
+export type AccessRequest = Schemas["AccessRequest"];
+export type AccessGrant = Schemas["AccessGrant"];
+export type AccessDecisionResult = Schemas["AccessDecisionResult"];
+export type DownloadSession = Schemas["DownloadSession"];
+export type ReadinessProfile = Schemas["ReadinessProfile"];
+export type ReadinessValidation = Schemas["ReadinessValidation"];
+export type ReadinessCheckResult = Schemas["ReadinessCheckResult"];
+export type AuditEvent = Schemas["AuditEvent"];
+export type AppNotification = Schemas["Notification"];
+
+export type ActiveStatus = Schemas["ActiveStatus"];
+export type OrgRole = Schemas["OrgRole"];
+export type ProjectRole = Schemas["ProjectRole"];
+export type ProjectStatus = Schemas["ProjectStatus"];
+export type ProjectVisibility = Schemas["ProjectVisibility"];
+export type AccessLevel = Schemas["AccessLevel"];
+export type Purpose = Schemas["Purpose"];
+export type Operation = Schemas["Operation"];
+export type DatasetVersionStatus = Schemas["DatasetVersionStatus"];
+export type FileStatus = Schemas["FileStatus"];
+export type AccessRequestStatus = Schemas["AccessRequestStatus"];
+export type AccessGrantStatus = Schemas["AccessGrantStatus"];
+export type ReadinessOverall = Schemas["ReadinessOverall"];
+export type ReadinessRunStatus = Schemas["ReadinessRunStatus"];
+export type ReadinessCheckStatus = Schemas["ReadinessCheckStatus"];
+export type AuditAction = Schemas["AuditAction"];
+export type ResourceType = Schemas["ResourceType"];
+export type NotificationType = Schemas["NotificationType"];
