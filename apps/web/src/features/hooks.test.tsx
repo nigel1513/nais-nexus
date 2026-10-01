@@ -1,22 +1,22 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { delay, http } from "msw";
+import { delay, http, HttpResponse } from "msw";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { DATASET, PROJECT, USER, VERSION } from "@/mocks/fixtures";
 import { makeQueryClient } from "@/shared/api/query-client";
 import { server } from "../../tests/msw";
 import { setMockUser } from "../../tests/render";
-import { useSearchDatasets } from "./catalog/api";
-import { useCreateAccessRequest, useListAccessRequests } from "./governance/api";
+import { useCreateDatasetVersion, usePublishDatasetVersion, useSearchDatasets } from "./catalog/api";
+import { useApproveAccessRequest, useCreateAccessRequest, useListAccessRequests, useStartAccessReview } from "./governance/api";
 import { useCreateProject, useGetProject, useListProjects } from "./projects/api";
+import { useDeleteDraftFile } from "./upload/api";
 import { useGetReadiness } from "./readiness/api";
 
 const ready = vi.hoisted(() => ({ value: true }));
 vi.mock("@/features/auth/use-auth-ready", () => ({ useAuthReady: () => ready.value }));
 
-function wrapper() {
-  const client = makeQueryClient({ retry: false });
+function wrapper(client = makeQueryClient({ retry: false })) {
   function Wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
@@ -115,5 +115,159 @@ describe("domain hooks", () => {
     rerender();
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(calls).toBe(1);
+  });
+});
+
+const keys = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c) => JSON.stringify((c[0] as { queryKey: unknown }).queryKey));
+const readinessUrl = "*/mock-api/v1/dataset-versions/:id/readiness";
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+describe("readiness polling", () => {
+  function countRequests(url = readinessUrl) {
+    const n = { calls: 0 };
+    server.use(http.get(url, () => { n.calls++; return undefined; }));
+    return n;
+  }
+
+  it("stops after COMPLETED", async () => {
+    setMockUser(USER.aSteward);
+    const n = countRequests();
+    const { result } = renderHook(() => useGetReadiness(VERSION.sensors, { intervalMs: 20 }), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await wait(200);
+    expect(n.calls).toBe(1);
+  });
+
+  it("follows RUNNING to COMPLETED and then stops", async () => {
+    setMockUser(USER.aSteward);
+    const { getDb } = await import("@/mocks/db");
+    const { queueValidation } = await import("@/mocks/handlers/catalog");
+    getDb().versions.find((v) => v.dataset_version_id === VERSION.electrolyte)!.status = "PUBLISHED";
+    queueValidation(getDb(), VERSION.electrolyte, "GENERIC_BASIC", "USER");
+    const n = countRequests();
+    const seen: string[] = [];
+    const { result } = renderHook(
+      () => {
+        const q = useGetReadiness(VERSION.electrolyte, { intervalMs: 20 });
+        const st = q.data?.items[0]?.run_status;
+        if (st && seen.at(-1) !== st) seen.push(st);
+        return q;
+      },
+      { wrapper: wrapper() },
+    );
+    await waitFor(() => expect(result.current.data?.items[0]?.run_status).toBe("COMPLETED"));
+    expect(seen).toEqual(["RUNNING", "COMPLETED"]);
+    const done = n.calls;
+    await wait(200);
+    expect(n.calls).toBe(done);
+  });
+
+  it("stops on unmount", async () => {
+    setMockUser(USER.aSteward);
+    const { getDb } = await import("@/mocks/db");
+    getDb().versions.find((v) => v.dataset_version_id === VERSION.electrolyte)!.status = "PUBLISHED";
+    const n = countRequests();
+    const { unmount } = renderHook(() => useGetReadiness(VERSION.electrolyte, { intervalMs: 20 }), { wrapper: wrapper() });
+    await waitFor(() => expect(n.calls).toBeGreaterThan(1)); // empty runs keep polling
+    unmount();
+    await wait(50);
+    const after = n.calls;
+    await wait(200);
+    expect(n.calls).toBe(after);
+  });
+
+  it("stops on 404/403 errors", async () => {
+    setMockUser(USER.aSteward);
+    const n = countRequests();
+    const { result } = renderHook(() => useGetReadiness(VERSION.electrolyte, { intervalMs: 20 }), { wrapper: wrapper() }); // DRAFT -> 404
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    await wait(200);
+    expect(n.calls).toBe(1);
+    const n2 = { calls: 0 };
+    server.use(http.get(readinessUrl, () => { n2.calls++; return HttpResponse.json({ error: { code: "FORBIDDEN", message: "x", trace_id: "t" } }, { status: 403 }); }));
+    const r2 = renderHook(() => useGetReadiness(VERSION.sensors, { intervalMs: 20 }), { wrapper: wrapper() });
+    await waitFor(() => expect(r2.result.current.isError).toBe(true));
+    await wait(150);
+    expect(n2.calls).toBe(1);
+  });
+
+  it("backs off while a published version keeps returning no runs", async () => {
+    setMockUser(USER.aSteward);
+    const n = { calls: 0 };
+    server.use(http.get(readinessUrl, () => { n.calls++; return HttpResponse.json({ items: [] }); }));
+    renderHook(() => useGetReadiness(VERSION.sensors, { intervalMs: 5 }), { wrapper: wrapper() });
+    await wait(300);
+    expect(n.calls).toBeLessThanOrEqual(5); // 4 quick polls, then 30 s back-off
+  });
+});
+
+describe("scoped invalidation", () => {
+  const ok = (body: unknown = {}) => HttpResponse.json(body as Record<string, unknown>);
+
+  it("publish invalidates only the version's dataset, versions list and readiness", async () => {
+    setMockUser(USER.aSteward);
+    server.use(http.post("*/mock-api/v1/dataset-versions/:id/publish", () => ok({ dataset_version_id: VERSION.electrolyte, dataset_id: DATASET.electrolyte })));
+    const client = makeQueryClient({ retry: false });
+    const spy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => usePublishDatasetVersion(VERSION.electrolyte), { wrapper: wrapper(client) });
+    await act(() => result.current.mutateAsync());
+    expect(keys(spy)).toEqual([
+      JSON.stringify(["listDatasetVersions", { datasetId: DATASET.electrolyte }]),
+      JSON.stringify(["getDataset", { datasetId: DATASET.electrolyte }]),
+      JSON.stringify(["getReadiness", { versionId: VERSION.electrolyte }]),
+      JSON.stringify(["searchDatasets"]),
+    ]);
+  });
+
+  it("createDatasetVersion also refreshes the dataset", async () => {
+    setMockUser(USER.aSteward);
+    server.use(http.post("*/mock-api/v1/datasets/:id/versions", () => ok({ dataset_version_id: "x" })));
+    const client = makeQueryClient({ retry: false });
+    const spy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useCreateDatasetVersion(DATASET.battery), { wrapper: wrapper(client) });
+    await act(() => result.current.mutateAsync({ version_label: "v9" }));
+    expect(keys(spy)).toEqual([JSON.stringify(["listDatasetVersions", { datasetId: DATASET.battery }]), JSON.stringify(["getDataset", { datasetId: DATASET.battery }])]);
+  });
+
+  it("createAccessRequest scopes getDataset to the requested dataset", async () => {
+    setMockUser(USER.aResearcher);
+    server.use(http.post("*/mock-api/v1/access-requests", () => ok({ access_request_id: "r" })));
+    const client = makeQueryClient({ retry: false });
+    const spy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useCreateAccessRequest(), { wrapper: wrapper(client) });
+    await act(() =>
+      result.current.mutateAsync({ dataset_id: DATASET.battery, project_id: PROJECT.seed, purpose: "ACADEMIC_RESEARCH", purpose_detail: "x".repeat(40), operations: ["READ"], requested_days: 30 }),
+    );
+    expect(keys(spy)).toEqual([JSON.stringify(["listAccessRequests"]), JSON.stringify(["getDataset", { datasetId: DATASET.battery }])]);
+  });
+
+  it("only approve refreshes access grants", async () => {
+    setMockUser(USER.aSteward);
+    server.use(
+      http.post("*/mock-api/v1/access-requests/:id/start-review", () => ok({ access_request_id: "r" })),
+      http.post("*/mock-api/v1/access-requests/:id/approve", () => ok({ access_request: { access_request_id: "r" }, access_grant: null })),
+    );
+    const client = makeQueryClient({ retry: false });
+    const spy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => ({ review: useStartAccessReview("r"), approve: useApproveAccessRequest("r") }), { wrapper: wrapper(client) });
+    await act(() => result.current.review.mutateAsync());
+    expect(keys(spy)).not.toContain(JSON.stringify(["listAccessGrants"]));
+    spy.mockClear();
+    await act(() => result.current.approve.mutateAsync({ approved_days: 30 } as never));
+    expect(keys(spy)).toContain(JSON.stringify(["listAccessGrants"]));
+  });
+
+  it("file mutations refresh the version and its dataset's version list", async () => {
+    setMockUser(USER.aSteward);
+    server.use(http.delete("*/mock-api/v1/dataset-versions/:id/files/:fid", () => new HttpResponse(null, { status: 204 })));
+    const client = makeQueryClient({ retry: false });
+    client.setQueryData(["getDatasetVersion", { versionId: VERSION.electrolyte }], { dataset_id: DATASET.electrolyte });
+    const spy = vi.spyOn(client, "invalidateQueries");
+    const { result } = renderHook(() => useDeleteDraftFile(VERSION.electrolyte), { wrapper: wrapper(client) });
+    await act(() => result.current.mutateAsync("f1"));
+    expect(keys(spy)).toEqual([
+      JSON.stringify(["getDatasetVersion", { versionId: VERSION.electrolyte }]),
+      JSON.stringify(["listDatasetVersions", { datasetId: DATASET.electrolyte }]),
+    ]);
   });
 });

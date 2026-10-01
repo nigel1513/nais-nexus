@@ -7,7 +7,12 @@ type Parts = { file_id: string; etags: { part_number: number; etag: string }[] }
 
 function useVersionInvalidation(versionId: string) {
   const qc = useQueryClient();
-  return () => qc.invalidateQueries({ queryKey: ["getDatasetVersion", { versionId }] });
+  return () => {
+    const datasetId = qc.getQueryData<{ dataset_id?: string }>(["getDatasetVersion", { versionId }])?.dataset_id;
+    void qc.invalidateQueries({ queryKey: ["getDatasetVersion", { versionId }] });
+    // file_count lives on the version list; refresh that dataset's list (all lists if the version is not cached).
+    void qc.invalidateQueries({ queryKey: datasetId ? ["listDatasetVersions", { datasetId }] : ["listDatasetVersions"] });
+  };
 }
 
 export function useCreateUploadSession(versionId: string) {

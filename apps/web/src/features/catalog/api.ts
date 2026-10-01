@@ -81,7 +81,10 @@ export function useCreateDatasetVersion(datasetId: string) {
   return useMutation({
     mutationFn: async (body: { version_label: string; change_note?: string }) =>
       (await unwrap(api.POST("/datasets/{dataset_id}/versions", { params: { path: { dataset_id: datasetId } }, body }))) as DatasetVersion,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["listDatasetVersions", { datasetId }] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["listDatasetVersions", { datasetId }] });
+      void qc.invalidateQueries({ queryKey: ["getDataset", { datasetId }] });
+    },
   });
 }
 
@@ -91,7 +94,11 @@ export function usePublishDatasetVersion(versionId: string) {
     mutationFn: async () => (await unwrap(api.POST("/dataset-versions/{version_id}/publish", { params: { path: { version_id: versionId } } }))) as DatasetVersion,
     onSuccess: (version) => {
       qc.setQueryData(["getDatasetVersion", { versionId }], version);
-      for (const key of ["listDatasetVersions", "getDataset", "getReadiness", "searchDatasets"]) void qc.invalidateQueries({ queryKey: [key] });
+      const datasetId = version.dataset_id;
+      void qc.invalidateQueries({ queryKey: ["listDatasetVersions", { datasetId }] });
+      void qc.invalidateQueries({ queryKey: ["getDataset", { datasetId }] });
+      void qc.invalidateQueries({ queryKey: ["getReadiness", { versionId }] });
+      void qc.invalidateQueries({ queryKey: ["searchDatasets"] });
     },
   });
 }

@@ -9,7 +9,9 @@ export function safeInternalPath(link: string | null | undefined, base: string =
     const url = new URL(link, origin);
     if (url.origin !== origin) return null;
     // "/\evil.com" parses as same-origin on some engines; refuse any backslash or control char before the path proper.
-    if (/[\\\u0000-\u001f]/.test(link.split(/[?#]/)[0] ?? "")) return null;
+    if (/[\\\u0000-\u001f\u007f]/.test(link)) return null;
+    // Dot-segment normalization can turn "/.//evil.com" into "//evil.com", which a browser treats as protocol-relative.
+    if (url.pathname.startsWith("//")) return null;
     return url.pathname + url.search + url.hash;
   } catch {
     return null;

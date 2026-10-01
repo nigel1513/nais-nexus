@@ -26,13 +26,13 @@ export function useGetAccessRequest(accessRequestId: string) {
   });
 }
 
-function useRequestChanged(accessRequestId: string) {
+function useRequestChanged(accessRequestId: string, { grants = false }: { grants?: boolean } = {}) {
   const qc = useQueryClient();
   return (request?: AccessRequest) => {
     if (request) qc.setQueryData(["getAccessRequest", { accessRequestId }], request);
     else void qc.invalidateQueries({ queryKey: ["getAccessRequest", { accessRequestId }] });
     void qc.invalidateQueries({ queryKey: ["listAccessRequests"] });
-    void qc.invalidateQueries({ queryKey: ["listAccessGrants"] });
+    if (grants) void qc.invalidateQueries({ queryKey: ["listAccessGrants"] });
   };
 }
 
@@ -40,9 +40,9 @@ export function useCreateAccessRequest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (body: Schemas["AccessRequestCreate"]) => (await unwrap(api.POST("/access-requests", { body }))) as AccessRequest,
-    onSuccess: () => {
+    onSuccess: (_request, body) => {
       void qc.invalidateQueries({ queryKey: ["listAccessRequests"] });
-      void qc.invalidateQueries({ queryKey: ["getDataset"] });
+      void qc.invalidateQueries({ queryKey: ["getDataset", { datasetId: body.dataset_id }] });
     },
   });
 }
@@ -58,7 +58,7 @@ export function useStartAccessReview(accessRequestId: string) {
 }
 
 export function useApproveAccessRequest(accessRequestId: string) {
-  const changed = useRequestChanged(accessRequestId);
+  const changed = useRequestChanged(accessRequestId, { grants: true });
   return useMutation({
     mutationFn: async (body: Schemas["AccessApprove"]) =>
       (await unwrap(api.POST("/access-requests/{access_request_id}/approve", { ...path(accessRequestId), body }))) as AccessDecisionResult,

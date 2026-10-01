@@ -5,6 +5,7 @@ import { api, unwrap } from "@/shared/api/client";
 import type { ReadinessProfile, ReadinessValidation } from "@/shared/api/types";
 
 type Items<T> = { items: T[] };
+const MAX_EMPTY_POLLS = 12;
 const pending = (data?: Items<ReadinessValidation>) => !!data?.items.some((v) => v.run_status === "QUEUED" || v.run_status === "RUNNING");
 
 export function useListReadinessProfiles() {
@@ -25,7 +26,17 @@ export function useGetReadiness(versionId: string, { enabled = true, intervalMs 
     queryFn: async () =>
       (await unwrap(api.GET("/dataset-versions/{version_id}/readiness", { params: { path: { version_id: versionId } } }))) as Items<ReadinessValidation>,
     enabled: ready && enabled,
-    refetchInterval: (query) => (pending(query.state.data) || !query.state.data?.items.length ? intervalMs : false),
+    refetchInterval: (query) => {
+      if (query.state.status === "error") return false;
+      const data = query.state.data;
+      if (pending(data)) return intervalMs;
+      if (data && data.items.length === 0) {
+        // Runs may not exist yet right after publish: back off to 30 s, give up after ~12 empty polls.
+        const empty = query.state.dataUpdateCount;
+        return empty > MAX_EMPTY_POLLS ? false : empty > 3 ? Math.max(intervalMs, 30_000) : intervalMs;
+      }
+      return false;
+    },
   });
 }
 
