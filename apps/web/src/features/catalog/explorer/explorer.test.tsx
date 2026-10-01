@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { configure, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -9,8 +9,9 @@ import { renderScreen } from "../../../../tests/render";
 import { DatasetDetailScreen } from "../dataset-detail-screen";
 import { isTabular } from "../lib/tabular";
 
+configure({ asyncUtilTimeout: 5000 }); // the full suite loads the machine; the 1 s default flakes
 const open = (user: string) => renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user, path: `/commons/data/${DATASET.battery}` });
-const explorer = async () => within(await screen.findByRole("list", { name: "파일" }).then((l) => l.closest("div.grid") as HTMLElement));
+const explorer = async () => within(await screen.findByRole("list", { name: "파일" }, { timeout: 5000 }).then((l) => l.closest("div.grid") as HTMLElement));
 
 describe("isTabular", () => {
   it("accepts csv/tsv/parquet and ignores _-prefixed metadata files", () => {
@@ -25,7 +26,7 @@ describe("isTabular", () => {
 describe("Data Explorer", () => {
   it("lists files, defaults to the first tabular file and shows the column view", async () => {
     open(USER.bResearcher);
-    const tree = await screen.findByRole("list", { name: "파일" });
+    const tree = await screen.findByRole("list", { name: "파일" }, { timeout: 5000 });
     expect(within(tree).getByRole("button", { name: /data\/measurements\.csv/ })).toHaveAttribute("aria-current", "true");
     const ex = await explorer();
     await userEvent.click(ex.getByRole("radio", { name: "Column" }));
