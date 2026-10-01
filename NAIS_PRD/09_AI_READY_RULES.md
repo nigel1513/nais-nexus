@@ -340,8 +340,8 @@ P1: M11 Knowledge 모듈의 dataset semantic mapping 결과를 출처로 추가�
 | 항목 | 규칙 |
 |---|---|
 | `validator_version` | 코드 상수 `VALIDATOR_VERSION = "1.0.0"`. 규칙 코드, 번들 사전(UCUM, SPDX, alias), 파서 라이브러리 major 버전이 바뀌면 올린다 |
-| `input_fingerprint` | `sha256(manifest_sha256 + "\|" + profile_id + "\|" + profile_version + "\|" + validator_version)` (openapi 정의) |
-| 재사용 범위 | `(dataset_version_id, profile_id, input_fingerprint)`가 같은 COMPLETED 결과가 있으면 재실행하지 않고 반환. metadata_snapshot은 version에 대해 불변이므로 version 범위 안에서 결정론이 성립 |
+| `input_fingerprint` | `sha256(manifest_sha256 + "\|" + metadata_snapshot_sha256 + "\|" + profile_id + "\|" + profile_version + "\|" + validator_version)`. `metadata_snapshot_sha256`은 canonical JSON(metadata_snapshot)의 sha256 (D-029) |
+| 재사용 범위 | `(dataset_version_id, profile_id, input_fingerprint)`가 같은 COMPLETED 결과가 있으면 재실행하지 않고 반환. metadata_snapshot 변경은 fingerprint에 반영되므로(D-029) 같은 fingerprint는 같은 입력을 뜻한다 |
 | 금지 | 현재 시간, 난수, locale, 환경 변수 임계값, 스레드 완료 순서, 네트워크 조회(LLM 포함)에 결과가 의존하는 코드 |
 | 정규화 | float는 소수 6자리 반올림, dict key 정렬, 배열 정렬 후 canonical JSON(`separators=(",", ":")`, `ensure_ascii=False`) |
 | `result_sha256` | canonical JSON(`checks` + `overall_status` + `summary`)의 sha256. 결정론 테스트의 비교 기준 |

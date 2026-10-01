@@ -3,7 +3,7 @@
 import copy
 import hashlib
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import Any
 
 from api.modules.readiness.catalog_port import FileRef
@@ -12,14 +12,27 @@ EVIDENCE_MAX_BYTES = 64 * 1024
 
 
 def r6(value: float) -> float:
-    return round(float(value), 6)
+    rounded = round(float(value), 6)
+    return 0.0 if rounded == 0 else rounded  # normalise -0.0
 
 
 def ratio(numerator: int, denominator: int) -> float:
     return r6(numerator / denominator) if denominator else 0.0
 
 
+def _check_keys(obj: Any) -> None:
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            if not isinstance(key, str):
+                raise TypeError(f"canonical_json requires str keys, got {type(key).__name__}")
+            _check_keys(value)
+    elif isinstance(obj, list | tuple):
+        for item in obj:
+            _check_keys(item)
+
+
 def canonical_json(obj: Any) -> str:
+    _check_keys(obj)
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
 
 
@@ -31,18 +44,37 @@ def _size(obj: Any) -> int:
     return len(canonical_json(obj).encode("utf-8"))
 
 
+def _lists(obj: Any, path: tuple[str | int, ...] = ()) -> Iterator[tuple[tuple[str | int, ...], list[Any]]]:
+    if isinstance(obj, dict):
+        for key, value in obj.items():
+            yield from _lists(value, (*path, key))
+    elif isinstance(obj, list):
+        if obj:
+            yield path, obj
+        for index, item in enumerate(obj):
+            yield from _lists(item, (*path, index))
+
+
 def bound_evidence(evidence: dict[str, Any], limit: int = EVIDENCE_MAX_BYTES) -> dict[str, Any]:
-    """M05 §4.2: evidence <= 64 KiB. Halve the largest top-level array until it fits, mark truncated."""
+    """M05 §4.2: evidence <= 64 KiB. Halve the largest list anywhere in the tree until it fits, mark truncated.
+
+    Ties break on the smallest path (str keys / int indexes compared by their string form). Raises ValueError
+    when nothing is left to shrink: validators own the evidence shape.
+    """
     if _size(evidence) <= limit:
         return evidence
     bounded = copy.deepcopy(evidence)
     bounded["truncated"] = True
     while _size(bounded) > limit:
-        arrays = [(_size(v), k) for k, v in bounded.items() if isinstance(v, list) and v]
-        if not arrays:
-            break
-        _, key = max(arrays)
-        bounded[key] = bounded[key][: len(bounded[key]) // 2]
+        candidates = [(_size(lst), path, lst) for path, lst in _lists(bounded)]
+        if not candidates:
+            raise ValueError("evidence exceeds the size limit and has no list left to truncate")
+        best = max(size for size, _, _ in candidates)
+        _, _, target = min(
+            ((s, tuple(str(p) for p in path), lst) for s, path, lst in candidates if s == best),
+            key=lambda item: item[1],
+        )
+        del target[len(target) // 2 :]
     return bounded
 
 

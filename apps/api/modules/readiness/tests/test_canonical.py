@@ -13,6 +13,7 @@ from api.modules.readiness.engine.canonical import (
     input_fingerprint,
     manifest_sha256,
     metadata_snapshot_sha256,
+    r6,
     ratio,
 )
 
@@ -92,3 +93,48 @@ def test_manifest_sha256_equals_m03_function_on_non_trivial_paths() -> None:
     refs = [FileRef(uuid.uuid4(), p, s, h, "text/csv", "VERIFIED", "b", f"k/{p}") for p, s, h in entries]
     assert manifest_sha256(refs) == m03_manifest_sha256(entries)
     assert manifest_sha256(reversed(refs)) == m03_manifest_sha256(entries)
+
+
+def test_bound_evidence_reduces_nested_lists() -> None:
+    evidence = {"per_file": {"a.csv": {"fields": [{"f": "x" * 50, "i": i} for i in range(5000)]}}}
+    bounded = bound_evidence(evidence)
+    assert bounded["truncated"] is True
+    assert 0 < len(bounded["per_file"]["a.csv"]["fields"]) < 5000
+    assert len(canonical_json(bounded).encode()) <= EVIDENCE_MAX_BYTES
+    assert len(evidence["per_file"]["a.csv"]["fields"]) == 5000
+
+
+def test_bound_evidence_raises_when_oversize_without_lists() -> None:
+    with pytest.raises(ValueError):
+        bound_evidence({"note": "x" * (EVIDENCE_MAX_BYTES + 1)})
+
+
+def test_bound_evidence_is_deterministic_across_equal_size_lists() -> None:
+    def make() -> dict:
+        return {"b": ["y" * 40] * 2000, "a": ["y" * 40] * 2000}
+
+    first, second = bound_evidence(make()), bound_evidence(make())
+    assert canonical_json(first) == canonical_json(second)
+    assert len(first["a"]) < 2000  # tie breaks on the smallest path first
+
+
+def test_r6_normalises_negative_zero() -> None:
+    assert canonical_json(r6(-0.0)) == "0.0"
+    assert canonical_json(r6(-1e-9)) == "0.0"
+
+
+def test_canonical_json_rejects_non_str_keys_at_any_depth() -> None:
+    with pytest.raises(TypeError):
+        canonical_json({1: "a"})
+    with pytest.raises(TypeError):
+        canonical_json({"a": [{"b": {2: 1}}]})
+
+
+def test_canonical_json_serialization_is_pinned() -> None:
+    assert canonical_json(1e21) == "1e+21"
+    assert canonical_json([1.0, 1]) == "[1.0,1]"
+    assert canonical_json([True, 1]) == "[true,1]"
+    assert canonical_json("\u0001") == '"\\u0001"'
+    assert canonical_json({"\U0001f600": 1, "￮": 2, "a": 3}) == '{"a":3,"￮":2,"\U0001f600":1}'
+    with pytest.raises(ValueError):
+        canonical_json(math.inf)
