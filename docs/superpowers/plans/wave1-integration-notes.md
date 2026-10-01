@@ -36,3 +36,7 @@ Audit visibility for a given project_id: use `project_id in ProjectQueryPort.lis
 ## Carry-forward to M04 (Wave 2, from M02 final review)
 - `project.member.removed.v1` is also emitted when a member leaves an ARCHIVED project (grants already revoked at archive) → revocation handling must be idempotent.
 - `ProjectQueryPort.get_member_role` returns roles for ARCHIVED projects; authorization must use `is_active_member` (False for archived).
+
+## Carry (from M10 Task 12 review)
+- M03 updateDataset has no way to clear optional fields (domain, usage_policy, contact_email, provenance): StrictIn rejects null. The web blocks clearing with a message. Consider explicit-null/empty-string clear semantics in a later contract bump.
+- openapi DatasetFile has no failure_code; web can only show a generic reason for async FAILED files. Consider adding it in the next contract bump.
