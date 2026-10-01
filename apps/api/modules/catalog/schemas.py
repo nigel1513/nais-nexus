@@ -122,3 +122,16 @@ class FilePartsIn(BaseModel):
 
 class UploadCompleteIn(StrictIn):
     parts: list[FilePartsIn] = Field(default_factory=list)
+
+
+SchemeIn = Literal["SUBJECT", "METHOD", "MATERIAL"]
+Code = Annotated[str, StringConstraints(pattern=r"^[A-Z0-9_]{2,64}$")]
+Iri = Annotated[str, StringConstraints(pattern=r"^https?://\S+$", max_length=2000)]
+
+
+class VocabularyTermIn(StrictIn):
+    code: Code
+    label_ko: Annotated[str, StringConstraints(min_length=1, max_length=200)]
+    label_en: Annotated[str, StringConstraints(min_length=1, max_length=200)]
+    iri: Iri | None = None
+    parent_code: Code | None = None

@@ -10,6 +10,7 @@ from api.modules.catalog.routes import (
     search,
     uploads,
     versions,
+    vocabulary,
 )
 
 router = APIRouter()
@@ -21,5 +22,6 @@ for sub in (
     uploads.router,
     completion.router,
     publish.router,
+    vocabulary.router,
 ):
     router.include_router(sub)
