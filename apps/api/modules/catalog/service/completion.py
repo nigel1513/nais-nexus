@@ -13,7 +13,7 @@ from api.modules.catalog.access import can_see_dataset, is_steward, not_found, r
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.errors import dependency_errors
 from api.modules.catalog.objects import MultipartFailed, ObjectStore
-from api.modules.catalog.repo import load_dataset, load_version, must
+from api.modules.catalog.repo import load_dataset, load_version, must, rowcount
 from api.modules.catalog.schemas import UploadCompleteIn
 from api.modules.catalog.service.uploads import abort_quietly, upload_session_response
 from api.modules.catalog.tables import dataset_files, upload_sessions
@@ -54,8 +54,11 @@ def _finalize_upload(
         try:
             store.complete_multipart(key, f["multipart_upload_id"], parts or [])
         except MultipartFailed:
-            abort_quietly(store, key, f["multipart_upload_id"])
-            return "FAILED", "OBJECT_MISSING"
+            # A retry after a mid-loop 503 finds the upload already completed in storage: if the object exists,
+            # carry on to the size/verification path instead of failing a good file.
+            if store.head(key) is None:
+                abort_quietly(store, key, f["multipart_upload_id"])
+                return "FAILED", "OBJECT_MISSING"
     size = store.head(key)
     if size is None:
         return "FAILED", "OBJECT_MISSING"
@@ -68,6 +71,17 @@ def _finalize_upload(
 def complete_upload_session(
     session: Session, deps: CatalogDeps, user: CurrentUser, upload_session_id: UUID, body: UploadCompleteIn
 ) -> tuple[dict[str, Any], list[UUID]]:
+    probe = session.execute(
+        select(upload_sessions.c.dataset_version_id).where(
+            upload_sessions.c.upload_session_id == upload_session_id
+        )
+    ).first()
+    if probe is None:
+        raise not_found("Upload session")
+    # Lock order: version -> session -> files (create_upload_session locks the version first).
+    version = load_version(session, probe[0], for_update=True)
+    if version is None:
+        raise not_found("Upload session")
     sess = (
         session.execute(
             select(upload_sessions)
@@ -79,7 +93,6 @@ def complete_upload_session(
     )
     if sess is None:
         raise not_found("Upload session")
-    version = must(load_version(session, sess["dataset_version_id"]), "version")
     ds = must(load_dataset(session, version["dataset_id"]), "dataset")
     if sess["created_by"] != user.user_id and not is_steward(user, ds["owner_organization_id"]):
         if can_see_dataset(user, ds):
@@ -88,6 +101,7 @@ def complete_upload_session(
                 "Only the session creator or an owner-organization steward can complete it.",
             )
         raise not_found("Upload session")
+    require_draft(version)
     now = clock.now()
     if sess["status"] == "EXPIRED" or (sess["status"] == "OPEN" and sess["expires_at"] <= now):
         raise ApiError(ErrorCode.UPLOAD_SESSION_EXPIRED, "Upload session expired; create a new one.")
@@ -100,6 +114,7 @@ def complete_upload_session(
                 dataset_files.c.upload_session_id == upload_session_id, dataset_files.c.status == "PENDING"
             )
             .order_by(dataset_files.c.path.collate("C"))
+            .with_for_update()
         )
         .mappings()
         .all()
@@ -110,12 +125,16 @@ def complete_upload_session(
         for f in files:
             store = deps.storage.for_bucket(f["storage_bucket"])
             status, failure = _finalize_upload(store, f, parts.get(f["file_id"]))
-            session.execute(
+            result = session.execute(
                 update(dataset_files)
-                .where(dataset_files.c.file_id == f["file_id"])
+                .where(
+                    dataset_files.c.file_id == f["file_id"],
+                    dataset_files.c.status == "PENDING",
+                    dataset_files.c.upload_session_id == upload_session_id,
+                )
                 .values(status=status, failure_code=failure, updated_at=now)
             )
-            if status == "UPLOADED":
+            if rowcount(result) == 1 and status == "UPLOADED":
                 uploaded.append(f)
         session.execute(
             update(upload_sessions)

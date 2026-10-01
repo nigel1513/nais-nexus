@@ -90,3 +90,69 @@ def test_deleting_a_failed_multipart_file_aborts_its_upload(api: CatalogApi, db:
     response = api.delete("b.steward", f"/dataset-versions/{version_id}/files/{file_id}")
     assert response.status_code == 204
     assert upload_id in memory_store(api.deps.storage, "inst-b").aborted
+
+
+def _multipart_api(api: CatalogApi) -> None:
+    api.use(
+        replace(
+            api.deps,
+            settings=CatalogSettings(
+                storage_multipart_threshold_bytes=1024, catalog_multipart_part_size_bytes=1024
+            ),
+        )
+    )
+
+
+def test_retry_after_mid_loop_503_keeps_completed_files(api: CatalogApi, db: PgUrls) -> None:
+    _multipart_api(api)
+    _, version_id = new_draft(api)
+    contents = {"a.csv": CSV, "b.csv": CSV}
+    body = start_upload(api, version_id, contents)
+    parts = put_uploaded(api, db, body, contents)
+    store = memory_store(api.deps.storage, "inst-b")
+    real = store.complete_multipart
+    calls = {"n": 0}
+
+    def flaky(key: str, upload_id: str, p: Any) -> None:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise StorageUnavailable("down")
+        real(key, upload_id, p)
+
+    store.complete_multipart = flaky  # type: ignore[method-assign]
+    assert complete(api, body["upload_session_id"], parts).status_code == 503
+    retry = complete(api, body["upload_session_id"], parts)
+    assert retry.status_code == 200, retry.text
+    assert [f["status"] for f in retry.json()["files"]] == ["VERIFIED", "VERIFIED"]
+
+
+def test_retargeted_file_is_not_touched_by_old_session(api: CatalogApi, db: PgUrls) -> None:
+    _, version_id = new_draft(api)
+    old = start_upload(api, version_id, {"a.csv": CSV, "b.csv": CSV})
+    new = start_upload(api, version_id, {"c.csv": CSV})
+    moved = old["files"][0]["file_id"]
+    execute(
+        db,
+        "UPDATE catalog.dataset_files SET upload_session_id = :s WHERE file_id = :f",
+        s=new["upload_session_id"],
+        f=moved,
+    )
+    assert complete(api, old["upload_session_id"]).status_code == 200
+    row = file_row(db, moved)
+    assert row["status"] == "PENDING" and str(row["upload_session_id"]) == new["upload_session_id"]
+
+
+def test_complete_requires_draft_version(api: CatalogApi, db: PgUrls) -> None:
+    _, version_id = new_draft(api)
+    body = start_upload(api, version_id, {"a.csv": CSV})
+    execute(
+        db,
+        "UPDATE catalog.dataset_versions SET status = 'PUBLISHED', manifest_sha256 = :m,"
+        " metadata_snapshot = CAST('{}' AS jsonb), file_count = 0, total_bytes = 0, published_at = now(),"
+        " published_by = created_by WHERE dataset_version_id = :v",
+        m="a" * 64,
+        v=version_id,
+    )
+    response = complete(api, body["upload_session_id"])
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "DATASET_VERSION_IMMUTABLE"
