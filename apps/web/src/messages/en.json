@@ -87,11 +87,48 @@
   "data": {
     "card": {
       "aiReady": "AI-ready {score}/10",
-      "aiReadyUnverified": "AI-ready not verified"
+      "aiReadyUnverified": "AI-ready not verified",
+      "tabsLabel": "Dataset information",
+      "tabCard": "Data card",
+      "tabVersions": "Versions",
+      "aiReadyLoading": "Checking AI-ready…",
+      "about": "About Dataset",
+      "noDescription": "No description.",
+      "inquiry": "Contact",
+      "inquirySoon": "In-platform inquiries are coming soon.",
+      "absent": "Steward needs to be reassigned",
+      "absentHint": "The steward has left the organization. Please tell the organization's data steward.",
+      "lastPublished": "Last published",
+      "version": "Version",
+      "jsonld": "JSON-LD",
+      "jsonldFailed": "Could not download the JSON-LD.",
+      "activity": "{count} versions · last published {date}",
+      "activityNone": "{count} versions · not published yet",
+      "contactTitle": "Contact",
+      "explorerFiles": "{count} files"
     },
     "people": {
       "atTheTime": " (at the time)",
       "now": "now {org}"
+    },
+    "meta": {
+      "title": "Metadata",
+      "pi": "Principal investigator",
+      "collectingOrg": "Collecting organization",
+      "period": "Data period",
+      "ongoing": "ongoing",
+      "subjects": "Research field",
+      "methods": "Collection method",
+      "materials": "Subject of measurement",
+      "project": "Research project",
+      "funding": "Funding agency",
+      "methodDetail": "Method details",
+      "provenance": "Provenance",
+      "license": "License",
+      "usagePolicy": "Terms of use",
+      "updateFrequency": "Update frequency",
+      "publications": "Related publications",
+      "legacyContact": "Contact email (legacy)"
     }
   }
 }

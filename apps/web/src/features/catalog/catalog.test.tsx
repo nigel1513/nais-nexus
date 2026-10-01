@@ -95,8 +95,8 @@ describe("DatasetNewScreen", () => {
 });
 
 describe("DatasetDetailScreen", () => {
-  const open = (user: string, datasetId: string) =>
-    renderScreen(<DatasetDetailScreen datasetId={datasetId} />, { user, path: `/commons/data/${datasetId}` });
+  const open = (user: string, datasetId: string, query = "") =>
+    renderScreen(<DatasetDetailScreen datasetId={datasetId} />, { user, path: `/commons/data/${datasetId}${query}` });
 
   it("grant holder gets a download CTA with expiry", async () => {
     open(USER.aResearcher, DATASET.battery);
@@ -180,11 +180,11 @@ describe("DatasetDetailScreen", () => {
 
   it("DRAFT versions are listed only for the owner organization's steward", async () => {
     getDb().datasets.find((d) => d.dataset_id === DATASET.electrolyte)!.access_level = "PUBLIC";
-    const { unmount } = open(USER.aResearcher, DATASET.electrolyte);
+    const { unmount } = open(USER.aResearcher, DATASET.electrolyte, "?tab=versions");
     await screen.findByRole("heading", { level: 1, name: "Electrolyte Screening (draft)" });
     expect(screen.queryByText("초안")).not.toBeInTheDocument();
     unmount();
-    open(USER.aSteward, DATASET.electrolyte);
+    open(USER.aSteward, DATASET.electrolyte, "?tab=versions");
     await screen.findByRole("heading", { level: 1, name: "Electrolyte Screening (draft)" });
     expect(await screen.findByText("초안")).toBeInTheDocument();
   });

@@ -20,4 +20,10 @@ describe("AiReadyBadge", () => {
     renderWithProviders(<AiReadyBadge versionId={VERSION.battery} />, { user: USER.bResearcher });
     expect(await screen.findByText(/미검증/)).toBeInTheDocument();
   });
+  it("shows a pending label, not 미검증, while readiness is loading", async () => {
+    server.use(http.get("*/dataset-versions/:id/readiness", () => new Promise(() => {})));
+    renderWithProviders(<AiReadyBadge versionId={VERSION.battery} />, { user: USER.bResearcher });
+    expect(await screen.findByRole("button", { name: "AI-ready 확인 중" })).toBeDisabled();
+    expect(screen.queryByText(/미검증/)).not.toBeInTheDocument();
+  });
 });

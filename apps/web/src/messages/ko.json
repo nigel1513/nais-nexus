@@ -291,11 +291,48 @@
     },
     "card": {
       "aiReady": "AI-ready {score}/10",
-      "aiReadyUnverified": "AI-ready 미검증"
+      "aiReadyUnverified": "AI-ready 미검증",
+      "tabsLabel": "데이터셋 정보",
+      "tabCard": "데이터 카드",
+      "tabVersions": "버전",
+      "aiReadyLoading": "AI-ready 확인 중",
+      "about": "About Dataset",
+      "noDescription": "설명이 없습니다.",
+      "inquiry": "문의",
+      "inquirySoon": "플랫폼 내 문의 기능은 곧 제공됩니다.",
+      "absent": "담당자 재지정 필요",
+      "absentHint": "담당자가 소속 기관을 떠났습니다. 기관의 데이터 관리자에게 알려 주세요.",
+      "lastPublished": "마지막 발행",
+      "version": "버전",
+      "jsonld": "JSON-LD",
+      "jsonldFailed": "JSON-LD를 내려받지 못했습니다.",
+      "activity": "버전 {count}개 · 최근 발행 {date}",
+      "activityNone": "버전 {count}개 · 아직 발행되지 않았습니다",
+      "contactTitle": "담당자",
+      "explorerFiles": "파일 {count}개"
     },
     "people": {
       "atTheTime": " (당시 소속)",
       "now": "현재 {org}"
+    },
+    "meta": {
+      "title": "메타데이터",
+      "pi": "연구책임자",
+      "collectingOrg": "수집 기관",
+      "period": "데이터 기간",
+      "ongoing": "진행 중",
+      "subjects": "연구 분야",
+      "methods": "수집 방법",
+      "materials": "측정 대상",
+      "project": "연구과제",
+      "funding": "지원기관",
+      "methodDetail": "수집 방법 상세",
+      "provenance": "출처",
+      "license": "라이선스",
+      "usagePolicy": "이용 조건",
+      "updateFrequency": "갱신 주기",
+      "publications": "관련 논문",
+      "legacyContact": "대표 이메일(이전)"
     }
   },
   "version": {

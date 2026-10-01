@@ -10,12 +10,12 @@ export function AiReadyBadge({ versionId }: { versionId: string }) {
   const t = useTranslations();
   const [open, setOpen] = useState(false);
   const panelId = useId();
-  const { data } = useGetReadiness(versionId);
+  const { data, isPending } = useGetReadiness(versionId);
   const { score, checks } = aiReadyScore(data?.items ?? []);
-  const label = score === null ? t("data.card.aiReadyUnverified") : t("data.card.aiReady", { score: score.toFixed(1) });
+  const label = isPending ? t("data.card.aiReadyLoading") : score === null ? t("data.card.aiReadyUnverified") : t("data.card.aiReady", { score: score.toFixed(1) });
   return (
     <div className="flex flex-col gap-2">
-      <Button variant="outline" size="sm" aria-expanded={open} aria-controls={panelId} disabled={score === null} onClick={() => setOpen((o) => !o)}>
+      <Button variant="outline" size="sm" aria-expanded={open} aria-controls={panelId} disabled={isPending || score === null} onClick={() => setOpen((o) => !o)}>
         {label}
       </Button>
       {open && score !== null ? (
