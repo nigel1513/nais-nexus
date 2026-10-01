@@ -19,6 +19,7 @@ from api.modules.readiness.engine.parsing import (
     FilePlan,
     FileStats,
     FileTimeout,
+    FileTooLarge,
     open_parquet_range,
     profile_csv,
     profile_parquet,
@@ -154,6 +155,7 @@ class EvaluationContext:
     file_timeout_s: float | None = None
     monotonic: Callable[[], float] = time.monotonic  # only to abort slow parses, never for verdicts
     _stats: dict[str, FileStats] = field(default_factory=dict)
+    _failures: dict[str, FileTooLarge | FileTimeout] = field(default_factory=dict)
 
     @cached_property
     def by_path(self) -> dict[str, FileRef]:
@@ -177,8 +179,17 @@ class EvaluationContext:
         ref = self.by_path.get(path)
         if ref is None:
             return None
+        limit = CONVENTION_MAX_BYTES + 1
+        parts: list[bytes] = []
+        total = 0
         with self.reader.open_stream(ref) as stream:
-            data = stream.read(CONVENTION_MAX_BYTES + 1)
+            while total < limit:
+                chunk = stream.read(min(1024 * 1024, limit - total))
+                if not chunk:
+                    break
+                parts.append(chunk)
+                total += len(chunk)
+        data = b"".join(parts)
         return data if len(data) <= CONVENTION_MAX_BYTES else None
 
     @property
@@ -231,37 +242,46 @@ class EvaluationContext:
         return check
 
     def file_stats(self, path: str) -> FileStats:
-        """Parsed once per run and shared by the schema / datatype / missing / units checks (M05 §10)."""
+        """Parsed once per run and shared by the schema / datatype / missing / units checks (M05 §10).
+        FileTooLarge / FileTimeout are cached and re-raised; storage errors are not (the run retries)."""
+        if path in self._failures:
+            raise self._failures[path]
         if path not in self._stats:
-            p = self.params
-            ref = self.by_path[path]
-            if path.lower().endswith(".parquet"):
-                stream = open_parquet_range(
-                    lambda start, end: self.reader.open_stream(ref, (start, end)),
-                    ref.size_bytes,
-                    deadline=self._deadline(),
-                )
-                try:
-                    stats = profile_parquet(
-                        stream,
-                        path=path,
-                        plan=self.plan_for(path),
-                        max_rows=p.sample_max_rows,
-                        max_bytes=p.sample_max_bytes,
-                        deadline=self._deadline(),
-                    )
-                finally:
-                    stream.close()
-            else:
-                with self.reader.open_stream(ref) as csv_stream:
-                    stats = profile_csv(
-                        csv_stream,
-                        path=path,
-                        delimiter="\t" if path.lower().endswith(".tsv") else ",",
-                        plan=self.plan_for(path),
-                        max_rows=p.sample_max_rows,
-                        max_bytes=p.sample_max_bytes,
-                        deadline=self._deadline(),
-                    )
-            self._stats[path] = stats
+            try:
+                self._stats[path] = self._profile(path)
+            except (FileTooLarge, FileTimeout) as exc:
+                self._failures[path] = exc
+                raise
         return self._stats[path]
+
+    def _profile(self, path: str) -> FileStats:
+        p = self.params
+        ref = self.by_path[path]
+        deadline = self._deadline()  # one budget per file
+        if path.lower().endswith(".parquet"):
+            stream = open_parquet_range(
+                lambda start, end: self.reader.open_stream(ref, (start, end)),
+                ref.size_bytes,
+                deadline=deadline,
+            )
+            try:
+                return profile_parquet(
+                    stream,
+                    path=path,
+                    plan=self.plan_for(path),
+                    max_rows=p.sample_max_rows,
+                    max_bytes=p.sample_max_bytes,
+                    deadline=deadline,
+                )
+            finally:
+                stream.close()
+        with self.reader.open_stream(ref) as csv_stream:
+            return profile_csv(
+                csv_stream,
+                path=path,
+                delimiter="\t" if path.lower().endswith(".tsv") else ",",
+                plan=self.plan_for(path),
+                max_rows=p.sample_max_rows,
+                max_bytes=p.sample_max_bytes,
+                deadline=deadline,
+            )
