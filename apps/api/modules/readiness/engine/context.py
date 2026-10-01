@@ -230,7 +230,7 @@ class EvaluationContext:
         missing = resource.missing_values if resource is not None else DEFAULT_MISSING
         return FilePlan(missing_tokens=missing, columns=columns)
 
-    def _deadline(self) -> Callable[[], None]:
+    def new_deadline(self) -> Callable[[], None]:
         if self.file_timeout_s is None:
             return lambda: None
         limit = self.monotonic() + self.file_timeout_s
@@ -257,7 +257,7 @@ class EvaluationContext:
     def _profile(self, path: str) -> FileStats:
         p = self.params
         ref = self.by_path[path]
-        deadline = self._deadline()  # one budget per file
+        deadline = self.new_deadline()  # one budget per file
         if path.lower().endswith(".parquet"):
             stream = open_parquet_range(
                 lambda start, end: self.reader.open_stream(ref, (start, end)),

@@ -81,13 +81,13 @@ def test_parquet_shares_one_deadline_per_file(monkeypatch: pytest.MonkeyPatch) -
     pq.write_table(pa.table({"a": [1, 2]}), buf)
     ctx = make_ctx(files={"data/t.parquet": buf.getvalue()})
     made = []
-    original = ctx._deadline
+    original = ctx.new_deadline
 
     def counting() -> Any:
         made.append(1)
         return original()
 
-    monkeypatch.setattr(ctx, "_deadline", counting)
+    monkeypatch.setattr(ctx, "new_deadline", counting)
     ctx.file_stats("data/t.parquet")
     assert len(made) == 1
 
