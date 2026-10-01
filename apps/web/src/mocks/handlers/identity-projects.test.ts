@@ -150,6 +150,12 @@ describe("identity mocks", () => {
       expect(updated).toMatchObject({ roles: [] });
     });
 
+    it("nobody can disable their own membership, PLATFORM_ADMIN included (422)", async () => {
+      as(USER.admin);
+      await expect(patch(ORG.nais, USER.admin, { status: "DISABLED" })).rejects.toMatchObject({ status: 422, code: "ROLE_NOT_ASSIGNABLE" });
+      expect(getDb().users.find((u) => u.user_id === USER.admin)?.membership_status).toBe("ACTIVE");
+    });
+
     it("another organization's admin gets 403", async () => {
       as(USER.aAdmin);
       await expect(patch(ORG.b, USER.bResearcher, { roles: ["DATA_STEWARD"] })).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });

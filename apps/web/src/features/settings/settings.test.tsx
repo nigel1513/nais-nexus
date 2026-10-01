@@ -97,6 +97,25 @@ describe("OrganizationScreen", () => {
     expect(within(row).getByRole("checkbox", { name: "데이터 관리자" })).toBeEnabled();
   });
 
+  it("the status control is disabled on one's own row even for a PLATFORM_ADMIN (ORG_ADMIN role stays editable)", async () => {
+    renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
+    const row = (await screen.findAllByRole("group", { name: "NAIS Admin" }))[0]!;
+    expect(within(row).getByRole("checkbox", { name: "활성" })).toBeDisabled();
+    expect(within(row).getByRole("checkbox", { name: "기관 관리자" })).toBeEnabled();
+    expect(within(row).getByText("본인의 상태는 직접 변경할 수 없습니다.")).toBeInTheDocument();
+  });
+
+  it("removing the last ORG_ADMIN of someone else shows the specific message", async () => {
+    getDb().users.find((u) => u.user_id === USER.aResearcher)!.org_roles = ["ORG_ADMIN"];
+    server.use(http.patch("*/mock-api/v1/organizations/:id/members/:uid", () => apiError(422, "ROLE_NOT_ASSIGNABLE"), { once: true }));
+    renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
+    const row = (await screen.findAllByRole("group", { name: "A Researcher" }))[0]!;
+    await userEvent.click(within(row).getByRole("checkbox", { name: "기관 관리자" }));
+    await userEvent.click(within(row).getByRole("button", { name: "변경 저장" }));
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "변경" }));
+    expect(await screen.findByText("기관의 마지막 기관 관리자는 플랫폼 관리자만 해제할 수 있습니다.")).toBeInTheDocument();
+  });
+
   it("a server rejection (ROLE_NOT_ASSIGNABLE) is localized and the dialog closes", async () => {
     server.use(http.patch("*/mock-api/v1/organizations/:id/members/:uid", () => apiError(422, "ROLE_NOT_ASSIGNABLE"), { once: true }));
     renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });

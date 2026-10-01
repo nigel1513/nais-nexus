@@ -89,11 +89,13 @@ export const identityHandlers = [
     const nextRoles = patch.roles ?? target.org_roles;
     const nextStatus = patch.status ?? target.membership_status;
     const losesAdmin = target.org_roles.includes("ORG_ADMIN") && target.membership_status === "ACTIVE" && !(nextRoles.includes("ORG_ADMIN") && nextStatus === "ACTIVE");
+    // M01 §6 (members.py): nobody, PLATFORM_ADMIN included, can disable their own membership.
+    if (isSelf && nextStatus !== "ACTIVE") fail("ROLE_NOT_ASSIGNABLE", "You cannot disable your own membership.");
     if (!platformAdmin) {
-      // An ORG_ADMIN can neither drop their own ORG_ADMIN role nor disable themselves; the last ACTIVE ORG_ADMIN is PLATFORM_ADMIN-only.
-      if (isSelf && (losesAdmin || nextStatus === "DISABLED")) fail("ROLE_NOT_ASSIGNABLE");
+      // An ORG_ADMIN cannot drop their own ORG_ADMIN role; the last ACTIVE ORG_ADMIN is PLATFORM_ADMIN-only.
+      if (isSelf && losesAdmin) fail("ROLE_NOT_ASSIGNABLE", "You cannot remove your own ORG_ADMIN role.");
       const activeAdmins = db.users.filter((u) => u.organization_id === orgId && u.membership_status === "ACTIVE" && u.org_roles.includes("ORG_ADMIN"));
-      if (losesAdmin && activeAdmins.length <= 1) fail("ROLE_NOT_ASSIGNABLE");
+      if (losesAdmin && activeAdmins.length <= 1) fail("ROLE_NOT_ASSIGNABLE", "Only a PLATFORM_ADMIN can remove the last ORG_ADMIN.");
     }
     const rolesChanged = [...nextRoles].sort().join() !== [...target.org_roles].sort().join();
     const statusChanged = nextStatus !== target.membership_status;

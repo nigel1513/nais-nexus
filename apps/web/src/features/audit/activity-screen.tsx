@@ -19,7 +19,9 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 function seoulDayStart(date: string | null): number | null {
   if (!date || !DATE.test(date)) return null;
   const ms = Date.parse(`${date}T00:00:00.000+09:00`);
-  return Number.isNaN(ms) ? null : ms;
+  if (Number.isNaN(ms)) return null;
+  // Date rolls impossible days over (2026-02-30 → 03-02); only accept dates that survive the round trip.
+  return new Date(ms + 9 * 3_600_000).toISOString().slice(0, 10) === date ? ms : null;
 }
 
 const isAction = (v: string): v is AuditAction => (ENUMS.AuditAction as readonly string[]).includes(v);

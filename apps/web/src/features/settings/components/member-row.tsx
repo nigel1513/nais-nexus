@@ -3,6 +3,7 @@ import { Button, Checkbox, ConfirmDialog } from "@nais/ui";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useUpdateOrganizationMember } from "@/features/organizations/api";
+import { asApiError } from "@/shared/api/errors";
 import { useErrorText } from "@/shared/api/use-error-text";
 import type { ActiveStatus, OrganizationMembership, OrgRole } from "@/shared/api/types";
 import { useMeData } from "@/shared/hooks/use-me";
@@ -24,6 +25,7 @@ export function MemberRow({ member, isSelf, organizationId }: { member: Organiza
   const disabling = status === "DISABLED" && member.status !== "DISABLED";
   // M01 §6: an ORG_ADMIN cannot drop their own ORG_ADMIN role or disable themselves (the server answers 422); only a PLATFORM_ADMIN can.
   const selfLocked = isSelf && member.roles.includes("ORG_ADMIN") && !me.platform_roles.includes("PLATFORM_ADMIN");
+  const statusLocked = isSelf; // nobody can disable their own membership (M01 §6), PLATFORM_ADMIN included
   const hintId = `member-hint-${member.user_id}`;
   const selfDemotion = isSelf && member.roles.includes("ORG_ADMIN") && !roles.includes("ORG_ADMIN");
 
@@ -37,7 +39,9 @@ export function MemberRow({ member, isSelf, organizationId }: { member: Organiza
         },
         onError: (e) => {
           setStep(0);
-          toast(errorText(e), "error");
+          // The server reports the last-ORG_ADMIN rule with the generic ROLE_NOT_ASSIGNABLE code; derive it from what was attempted.
+          const lastAdmin = asApiError(e).code === "ROLE_NOT_ASSIGNABLE" && !isSelf && member.roles.includes("ORG_ADMIN") && (!roles.includes("ORG_ADMIN") || status === "DISABLED");
+          toast(lastAdmin ? t("org.lastAdminError") : errorText(e), "error");
         },
       },
     );
@@ -63,15 +67,15 @@ export function MemberRow({ member, isSelf, organizationId }: { member: Organiza
         <label className="flex items-center gap-1 text-sm">
           <Checkbox
             checked={status === "ACTIVE"}
-            disabled={selfLocked}
-            aria-describedby={selfLocked ? hintId : undefined}
+            disabled={statusLocked}
+            aria-describedby={statusLocked ? hintId : undefined}
             onChange={(e) => setStatus(e.target.checked ? "ACTIVE" : "DISABLED")} />
           {t("enums.ActiveStatus.ACTIVE")}
         </label>
       </fieldset>
-      {selfLocked ? (
+      {statusLocked ? (
         <p id={hintId} className="text-xs text-muted-foreground md:max-w-52">
-          {t("org.selfLocked")}
+          {t(selfLocked ? "org.selfLocked" : "org.selfStatusLocked")}
         </p>
       ) : null}
       <Button size="sm" disabled={!dirty || update.isPending} onClick={() => setStep(1)}>

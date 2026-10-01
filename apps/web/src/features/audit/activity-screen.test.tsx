@@ -56,7 +56,7 @@ describe("ActivityScreen", () => {
 
   it("ignores malformed URL filter values instead of crashing or sending them", async () => {
     const { seen, stop } = watchAuditRequests();
-    renderScreen(<ActivityScreen />, { user: USER.aResearcher, path: "/commons/activity?action=NOPE&resource_type=BOGUS&from=garbage&to=2026-13-45" });
+    renderScreen(<ActivityScreen />, { user: USER.aResearcher, path: "/commons/activity?action=NOPE&resource_type=BOGUS&from=2026-02-30&to=2026-13-45" });
     await waitFor(() => expect(seen.length).toBeGreaterThan(0));
     stop();
     expect(seen.length).toBeGreaterThan(0);
