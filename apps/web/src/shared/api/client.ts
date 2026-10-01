@@ -1,6 +1,7 @@
 import type { paths } from "@nais/contracts";
 import createClient, { type Middleware } from "openapi-fetch";
 import { apiBase, isMocking, MOCK_USER_COOKIE } from "@/shared/config";
+import { randomId } from "@/shared/lib/random-id";
 import { ApiError, networkError, toApiError } from "./errors";
 
 type TokenGetter = () => string | undefined;
@@ -25,7 +26,7 @@ export function readCookie(name: string, cookieString: string = typeof document 
 
 const requestMiddleware: Middleware = {
   onRequest({ request }) {
-    request.headers.set("X-Request-Id", crypto.randomUUID());
+    request.headers.set("X-Request-Id", randomId());
     const token = getToken();
     if (token) request.headers.set("Authorization", `Bearer ${token}`);
     if (isMocking()) {
