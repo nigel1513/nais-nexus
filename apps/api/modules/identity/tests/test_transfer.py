@@ -1,11 +1,14 @@
 from typing import Any
 
 import pytest
+from sqlalchemy import false, text
 
+from api.modules.identity import transfer
 from api.modules.identity.keycloak_admin import FakeKeycloakAdmin, KeycloakAdminPort
 from api.modules.identity.seed_data import ORGS_BY_CODE, USERS_BY_EMAIL
 from api.modules.identity.tests.support import bearer, events, make_client, scalar, token_for
 from api.platform import ports
+from api.platform.db import session_factory
 from api.platform.testing.contracts import assert_matches_response, assert_valid_event
 from api.platform.testing.fixtures import PgUrls
 
@@ -40,7 +43,7 @@ def test_platform_admin_transfers_researcher(seeded: PgUrls, keycloak: FakeKeycl
         and body["roles"] == ["DATA_STEWARD"]
         and body["status"] == "ACTIVE"
     )
-    assert keycloak.calls == [(RESEARCHER.user_id, "inst-b")]
+    assert keycloak.calls == [(RESEARCHER.keycloak_sub, "inst-b")]
     assert (
         scalar(
             seeded,
@@ -69,7 +72,7 @@ def test_same_org_is_idempotent(seeded: PgUrls, keycloak: FakeKeycloakAdmin) -> 
         headers=bearer(token_for(ADMIN)),
     )
     assert response.status_code == 200
-    assert keycloak.calls == [(RESEARCHER.user_id, "inst-a")]
+    assert keycloak.calls == [(RESEARCHER.keycloak_sub, "inst-a")]
     assert events(seeded, "identity.membership.changed.v1") == []
 
 
@@ -126,3 +129,55 @@ def test_unknown_user_or_org(seeded: PgUrls, keycloak: FakeKeycloakAdmin) -> Non
     assert bad_org.json()["error"]["details"]["fields"] == [
         {"field": "organization_id", "reason": "UNKNOWN_ORGANIZATION"}
     ]
+
+
+def test_keycloak_receives_the_sub_not_the_user_id(seeded: PgUrls, keycloak: FakeKeycloakAdmin) -> None:
+    with session_factory(seeded.app)() as session:
+        session.execute(
+            text("UPDATE identity.users SET keycloak_sub = 'kc-sub-xyz' WHERE user_id = :u"),
+            {"u": RESEARCHER.user_id},
+        )
+        session.commit()
+    response = client_with(seeded, keycloak).post(
+        f"/api/v1/users/{RESEARCHER.user_id}/transfer",
+        json={"organization_id": str(INST_B)},
+        headers=bearer(token_for(ADMIN)),
+    )
+    assert response.status_code == 200, response.text
+    assert keycloak.calls == [("kc-sub-xyz", "inst-b")]
+
+
+def test_user_without_current_membership(seeded: PgUrls, keycloak: FakeKeycloakAdmin) -> None:
+    with session_factory(seeded.app)() as session:
+        session.execute(
+            text(
+                "UPDATE identity.organization_memberships SET status='DISABLED', roles='{}', ended_at=now() "
+                "WHERE user_id = :u"
+            ),
+            {"u": RESEARCHER.user_id},
+        )
+        session.commit()
+    response = client_with(seeded, keycloak).post(
+        f"/api/v1/users/{RESEARCHER.user_id}/transfer",
+        json={"organization_id": str(INST_B)},
+        headers=bearer(token_for(ADMIN)),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["organization_id"] == str(INST_B)
+    assert [e["payload"]["status"] for e in events(seeded, "identity.membership.changed.v1")] == ["ACTIVE"]
+
+
+def test_unique_violation_maps_to_409(
+    seeded: PgUrls, keycloak: FakeKeycloakAdmin, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Simulate losing a race: the old membership stays current, so opening the new one violates uq_memberships_current.
+    real_update = transfer.update
+    monkeypatch.setattr(transfer, "update", lambda table: real_update(table).where(false()))
+    response = client_with(seeded, keycloak).post(
+        f"/api/v1/users/{RESEARCHER.user_id}/transfer",
+        json={"organization_id": str(INST_B)},
+        headers=bearer(token_for(ADMIN)),
+    )
+    assert response.status_code == 409, response.text
+    assert keycloak.calls == []
+    assert events(seeded, "identity.membership.changed.v1") == []

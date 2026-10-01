@@ -1,11 +1,9 @@
-from uuid import UUID
-
 import httpx
 import pytest
 
 from api.modules.identity.keycloak_admin import HttpKeycloakAdmin, KeycloakAdminUnavailable
 
-USER = UUID("00000000-0000-7000-8000-000000000a02")
+USER = "kc-sub-1234"  # differs from any NAIS user_id
 
 
 def test_sets_org_code_keeping_other_attributes() -> None:
@@ -53,3 +51,26 @@ def test_network_error_raises_unavailable() -> None:
     admin = HttpKeycloakAdmin("http://kc/auth", "nais", "nais", "nais", transport=httpx.MockTransport(boom))
     with pytest.raises(KeycloakAdminUnavailable):
         admin.set_org_code(USER, "x")
+
+
+def _stage_handler(fail_at: str, status: int):  # type: ignore[no-untyped-def]
+    def handler(request: httpx.Request) -> httpx.Response:
+        stage = "token" if request.url.path.endswith("/token") else request.method
+        if stage == fail_at:
+            return httpx.Response(status)
+        if stage == "token":
+            return httpx.Response(200, json={"access_token": "t"})
+        if stage == "GET":
+            return httpx.Response(200, json={"id": USER, "attributes": {}})
+        return httpx.Response(204)
+
+    return handler
+
+
+@pytest.mark.parametrize(("stage", "status"), [("token", 401), ("token", 503), ("GET", 404), ("PUT", 500)])
+def test_each_stage_failure_raises_unavailable(stage: str, status: int) -> None:
+    admin = HttpKeycloakAdmin(
+        "http://kc/auth", "nais", "nais", "nais", transport=httpx.MockTransport(_stage_handler(stage, status))
+    )
+    with pytest.raises(KeycloakAdminUnavailable):
+        admin.set_org_code(USER, "inst-b")

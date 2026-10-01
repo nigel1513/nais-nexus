@@ -1,7 +1,6 @@
 """Keycloak admin REST seam for transferUserOrganization (org_code user attribute, D-019 token claim)."""
 
 from typing import Any, Protocol
-from uuid import UUID
 
 import httpx
 
@@ -11,7 +10,7 @@ class KeycloakAdminUnavailable(RuntimeError):  # noqa: N818
 
 
 class KeycloakAdminPort(Protocol):
-    def set_org_code(self, user_id: UUID, org_code: str) -> None: ...
+    def set_org_code(self, keycloak_sub: str, org_code: str) -> None: ...
 
 
 class HttpKeycloakAdmin:
@@ -38,7 +37,7 @@ class HttpKeycloakAdmin:
         self._timeout = timeout
         self._transport = transport
 
-    def set_org_code(self, user_id: UUID, org_code: str) -> None:
+    def set_org_code(self, keycloak_sub: str, org_code: str) -> None:
         try:
             with httpx.Client(timeout=self._timeout, transport=self._transport) as client:
                 token = self._ok(
@@ -47,7 +46,7 @@ class HttpKeycloakAdmin:
                     )
                 ).json()["access_token"]
                 headers = {"Authorization": f"Bearer {token}"}
-                url = f"{self._base}/admin/realms/{self._realm}/users/{user_id}"
+                url = f"{self._base}/admin/realms/{self._realm}/users/{keycloak_sub}"
                 user: dict[str, Any] = self._ok(client.get(url, headers=headers)).json()
                 attributes = dict(user.get("attributes") or {})
                 attributes["org_code"] = [org_code]
@@ -67,10 +66,10 @@ class HttpKeycloakAdmin:
 
 class FakeKeycloakAdmin:
     def __init__(self) -> None:
-        self.calls: list[tuple[UUID, str]] = []
+        self.calls: list[tuple[str, str]] = []
         self.fail = False
 
-    def set_org_code(self, user_id: UUID, org_code: str) -> None:
+    def set_org_code(self, keycloak_sub: str, org_code: str) -> None:
         if self.fail:
             raise KeycloakAdminUnavailable("fake failure")
-        self.calls.append((user_id, org_code))
+        self.calls.append((keycloak_sub, org_code))
