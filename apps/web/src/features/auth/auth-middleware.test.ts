@@ -9,10 +9,12 @@ const req = (path: string, auth?: { error?: string } | null) =>
 describe("real-mode middleware", () => {
   it("redirects protected routes without a session to the Keycloak sign-in", () => {
     const res = authGate(req("/commons/data", null));
-    expect(res.headers.get("location")).toBe("/web-auth/signin?callbackUrl=%2Fcommons%2Fdata");
+    expect(new URL(res.headers.get("x-middleware-rewrite")!).pathname).toBe("/auth-redirect");
+    expect(res.headers.get("x-middleware-request-x-nais-login")).toBe("/web-auth/signin");
+    expect(decodeURIComponent(res.headers.get("x-middleware-request-x-nais-callback")!)).toBe("/commons/data");
   });
   it("redirects when the session carries an error (RefreshFailed)", () => {
-    expect(authGate(req("/settings", { error: "RefreshFailed" })).status).toBe(307);
+    expect(authGate(req("/settings", { error: "RefreshFailed" })).headers.get("x-middleware-rewrite")).toContain("/auth-redirect");
   });
   it("lets valid sessions and public routes through", () => {
     expect(authGate(req("/commons", {})).headers.get("x-middleware-next")).toBe("1");

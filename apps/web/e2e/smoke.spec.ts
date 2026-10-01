@@ -55,3 +55,10 @@ test("no secure-context-only APIs needed: dashboard renders without a service-un
   await expect(page.getByText(/서비스를 사용할 수 없|service unavailable/i)).toHaveCount(0);
   await expect(page.getByText("DEPENDENCY_UNAVAILABLE")).toHaveCount(0);
 });
+
+test("protected routes redirect with a relative Location and never reflect a forwarded host", async ({ request }, testInfo) => {
+  test.skip(testInfo.project.name !== "chromium", "node-side request client cannot resolve the mapped test host");
+  const res = await request.get("/commons/data?q=x", { maxRedirects: 0, headers: { "x-forwarded-host": "evil.example" } });
+  expect(res.status()).toBe(307);
+  expect(res.headers()["location"]).toBe("/mock-login?callbackUrl=%2Fcommons%2Fdata%3Fq%3Dx");
+});
