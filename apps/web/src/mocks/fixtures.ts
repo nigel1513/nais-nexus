@@ -1,4 +1,5 @@
 import type { Schemas } from "@/shared/api/types";
+import { profileCsv, SEED_MEASUREMENTS_CSV, type Hint } from "./previews";
 import { buildResult } from "./readiness-results";
 import { SEED_FILES } from "./seed-files";
 import { VOCABULARY } from "./vocabulary";
@@ -222,6 +223,22 @@ export function createSeed(now: Date): MockDb {
     };
   });
 
+  // 10_SEED_DATA §5 _schema.json hints; _codebook.csv starts with "_" so it is not tabular.
+  const seedHints: Record<string, Hint> = {
+    sample_id: { type: "string" },
+    temperature_c: { type: "number", unit: "Cel", description: "시편 온도", concept_iri: "http://qudt.org/vocab/quantitykind/Temperature" },
+    pressure_kpa: { type: "number", unit: "kPa", description: "챔버 압력", concept_iri: "http://qudt.org/vocab/quantitykind/Pressure" },
+    material: { type: "string" },
+    measured_at: { type: "datetime" },
+  };
+  const previews: MockDb["previews"] = {};
+  for (const v of versions.filter((x) => x.status === "PUBLISHED")) {
+    const file = v.files.find((f) => f.path === "data/measurements.csv");
+    if (!file) continue;
+    const { columns, preview, rowsSampled, truncated, columnsTruncated } = profileCsv(SEED_MEASUREMENTS_CSV, file.path, seedHints);
+    previews[file.file_id] = { status: "READY", column_profile: { format: "csv", rows_sampled: rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at: seedTime };
+  }
+
   const uploadSessions: Schemas["UploadSession"][] = seedDatasets
     .filter((d) => d.fixture !== null)
     .map((d, i) => ({
@@ -407,6 +424,8 @@ export function createSeed(now: Date): MockDb {
     audit: seedAudit,
     contributors: [],
     vocabulary: [...VOCABULARY],
+    previews,
+    objects: {},
     notifications: [
       // M09 §7.3 templates; 10_SEED_DATA §7: a.researcher's inbox holds exactly one ACCESS_EXPIRING.
       { notification_id: sid("7001"), user_id: USER.aResearcher, type: "ACCESS_EXPIRING", title: `"Battery Cycling Measurements" 접근 권한이 ${expiresText} UTC에 만료됩니다`, link: "/commons/access?tab=grants", read: false, created_at: at(20) },

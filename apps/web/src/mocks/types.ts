@@ -1,4 +1,5 @@
 import type { Schemas } from "@/shared/api/types";
+import type { PreviewBody } from "./previews";
 
 export type MockUser = {
   user_id: string;
@@ -33,6 +34,14 @@ export type StoredValidation = Schemas["ReadinessValidation"] & { polls: number;
 export type StoredUploadSession = Schemas["UploadSession"] & { created_by?: string };
 export type StoredNotification = Schemas["Notification"] & { user_id: string };
 
+export type StoredPreview = {
+  status: Schemas["FilePreviewStatus"];
+  failure_code?: "UNPARSEABLE" | "TIMEOUT" | "GENERATION_FAILED";
+  column_profile?: { format: "csv" | "tsv" | "parquet"; rows_sampled: number; truncated: boolean; columns_truncated: boolean; columns: Schemas["ColumnProfile"][] };
+  preview?: PreviewBody;
+  generated_at?: string;
+};
+
 export type MockDb = {
   organizations: Schemas["Organization"][];
   users: MockUser[];
@@ -48,4 +57,8 @@ export type MockDb = {
   notifications: StoredNotification[];
   contributors: StoredContributor[];
   vocabulary: Schemas["VocabularyTerm"][];
+  /** Data Explorer rows keyed by file_id; only tabular files have one. */
+  previews: Record<string, StoredPreview>;
+  /** Captured upload bodies (≤ 2 MiB, lenient UTF-8) keyed by file_id; the mock stand-in for object storage. */
+  objects: Record<string, string>;
 };

@@ -580,3 +580,58 @@ describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
     expect(sensors.people.principal_investigator.current_organization.organization_id).toBe(ORG.b);
   });
 });
+
+describe("Data Explorer mocks (web Task 2)", () => {
+  const dataFile = async (version: string, path = "data/measurements.csv") => {
+    const v = await getJson(USER.bSteward, `/dataset-versions/${version}`);
+    return v.files.find((f: { path: string }) => f.path === path) as { file_id: string };
+  };
+
+  it("serves file profiles to viewers and previews only with download permission (grants ignored, P6)", async () => {
+    const data = await dataFile(VERSION.battery);
+    const profile = await getJson(USER.aResearcher, `/dataset-files/${data.file_id}/profile`);
+    expect(profile.status).toBe("READY");
+    expect(JSON.stringify(profile)).not.toMatch(/top_values|histogram|"min"|"max"|S0001/);
+    // a.researcher holds an ACTIVE grant, but previews ignore grants.
+    const denied = await send(USER.aResearcher, "GET", `/dataset-files/${data.file_id}/preview`);
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).error.details.reason).toBe("DOWNLOAD_PERMISSION_REQUIRED");
+    expect((await send(USER.bResearcher, "GET", `/dataset-files/${data.file_id}/preview`)).status).toBe(200);
+    expect((await send(USER.admin, "GET", `/dataset-files/${data.file_id}/preview`)).status).toBe(200);
+    const open = await dataFile(VERSION.openMaterials);
+    expect((await send(USER.aResearcher, "GET", `/dataset-files/${open.file_id}/preview`)).status).toBe(200);
+    const readme = await dataFile(VERSION.battery, "README.md");
+    expect((await getJson(USER.aResearcher, `/dataset-files/${readme.file_id}/profile`)).status).toBe("UNSUPPORTED");
+    expect((await send(USER.aResearcher, "GET", `/dataset-files/${crypto.randomUUID()}/profile`)).status).toBe(404);
+  });
+
+  it("captures uploaded CSVs on publish; unparseable and parquet files FAIL", async () => {
+    const created = await (await send(USER.aSteward, "POST", "/datasets", datasetCreate(ORG.a))).json();
+    const v = await (await send(USER.aSteward, "POST", `/datasets/${created.dataset_id}/versions`, { version_label: "v1" })).json();
+    const csv = "x,y\n1,a\n2,b\n";
+    const long = `x\n${"z".repeat(MiB + 10)}\n`;
+    const files = [
+      { path: "t.csv", body: csv },
+      { path: "long.csv", body: long },
+      { path: "p.parquet", body: "PAR1" },
+    ];
+    const session = await (
+      await send(USER.aSteward, "POST", `/dataset-versions/${v.dataset_version_id}/upload-session`, {
+        files: files.map((f) => ({ path: f.path, size_bytes: f.body.length, sha256: "a".repeat(64), media_type: f.path.endsWith(".parquet") ? "application/vnd.apache.parquet" : "text/csv" })),
+      })
+    ).json();
+    for (const f of session.files) {
+      const body = files.find((x) => x.path === f.path)!.body;
+      await fetch(f.upload.url, { method: "PUT", body });
+    }
+    await send(USER.aSteward, "POST", `/upload-sessions/${session.upload_session_id}/complete`, {});
+    expect((await send(USER.aSteward, "POST", `/dataset-versions/${v.dataset_version_id}/publish`)).status).toBe(200);
+    const id = (path: string) => session.files.find((f: { path: string }) => f.path === path).file_id;
+    const ok = await getJson(USER.aSteward, `/dataset-files/${id("t.csv")}/profile`);
+    expect(ok).toMatchObject({ status: "READY", format: "csv", rows_sampled: 2 });
+    const bad = await getJson(USER.aSteward, `/dataset-files/${id("long.csv")}/profile`);
+    expect(bad).toMatchObject({ status: "FAILED", failure_code: "UNPARSEABLE" });
+    expect((await getJson(USER.aSteward, `/dataset-files/${id("t.csv")}/preview`)).rows).toEqual([["1", "a"], ["2", "b"]]);
+    expect(await getJson(USER.aSteward, `/dataset-files/${id("p.parquet")}/profile`)).toMatchObject({ status: "FAILED", failure_code: "GENERATION_FAILED" });
+  });
+});

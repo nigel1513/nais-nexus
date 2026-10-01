@@ -4,6 +4,7 @@ import { getDb } from "../db";
 import { API, body, currentUser, fail, newestFirst, newId, notify, nowIso, orgName, paginate, publicOrigin, recordAudit } from "../http";
 import { buildResult } from "../readiness-results";
 import { emptyResearch } from "../fixtures";
+import { profileCsv, UnparseableError } from "../previews";
 import type { MockDb, MockUser, StoredDataset, StoredUploadSession, StoredValidation, StoredVersion } from "../types";
 
 /**
@@ -336,7 +337,27 @@ async function manifestSha256(files: { path: string; size_bytes: number; sha256:
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-const isTabular = (path: string) => /\.(csv|tsv|parquet)$/i.test(path) && !(path.split("/").pop() ?? "").startsWith("_");
+export const isTabular = (path: string) => /\.(csv|tsv|parquet)$/i.test(path) && !(path.split("/").pop() ?? "").startsWith("_");
+
+/** Publish-time Data Explorer generation (mirror of the backend preview worker): parquet and missing bodies FAIL, long lines are UNPARSEABLE. */
+function generatePreviews(db: MockDb, v: StoredVersion) {
+  const generated_at = nowIso();
+  for (const f of v.files.filter((x) => isTabular(x.path))) {
+    const text = db.objects[f.file_id];
+    if (/\.parquet$/i.test(f.path) || text === undefined) {
+      db.previews[f.file_id] = { status: "FAILED", failure_code: "GENERATION_FAILED", generated_at };
+      continue;
+    }
+    try {
+      const { columns, preview, rowsSampled, truncated, columnsTruncated } = profileCsv(text, f.path, {});
+      const format = f.path.toLowerCase().endsWith(".tsv") ? "tsv" : "csv";
+      db.previews[f.file_id] = { status: "READY", column_profile: { format, rows_sampled: rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at };
+    } catch (e) {
+      if (!(e instanceof UnparseableError)) throw e;
+      db.previews[f.file_id] = { status: "FAILED", failure_code: "UNPARSEABLE", generated_at };
+    }
+  }
+}
 
 /** The mock computes an outcome from the version's real metadata so new datasets do not all show PASS. */
 function outcomeFor(db: MockDb, versionId: string, profileId: string) {
@@ -997,6 +1018,7 @@ export const catalogHandlers = [
     v.status = "PUBLISHED";
     v.published_at = nowIso();
     ds.updated_at = v.published_at;
+    generatePreviews(db, v);
     queueValidation(db, v.dataset_version_id, "GENERIC_BASIC", "AUTO_ON_PUBLISH");
     if (v.files.some((f) => isTabular(f.path))) queueValidation(db, v.dataset_version_id, "TABULAR_ML_BASIC", "AUTO_ON_PUBLISH");
     recordAudit(db, { action: "DATASET_VERSION_PUBLISHED", actor: user, resource: { type: "DATASET_VERSION", id: v.dataset_version_id, owner_organization_id: ds.owner_organization_id } });

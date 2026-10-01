@@ -145,17 +145,20 @@ describe("mock API ↔ openapi.yaml", () => {
     await call(A, "post", "/dataset-versions/{version_id}/download-session", { path: { version_id: VERSION.battery }, body: { project_id: P.project_id }, status: 201 });
     await call(BS, "post", "/access-grants/{access_grant_id}/revoke", { path: { access_grant_id: approved.access_grant.access_grant_id }, body: { reason: "종료" }, status: 200 });
 
+    const file = { file_id: (await call(BS, "get", "/dataset-versions/{version_id}", { path: { version_id: VERSION.battery }, status: 200 })).files.find((f: { path: string }) => f.path === "data/measurements.csv").file_id as string };
+    await call(A, "get", "/dataset-files/{file_id}/profile", { path: file, status: 200 });
+    await call(BR, "get", "/dataset-files/{file_id}/preview", { path: file, status: 200 });
+    await call(A, "get", "/dataset-files/{file_id}/preview", { path: file, status: 403 });
+
     await call(A, "get", "/audit-events", { status: 200 });
     await call(A, "get", "/notifications", { status: 200 });
     await call(A, "post", "/notifications/{notification_id}/read", { path: { notification_id: sid("7001") }, status: 200 });
     await call(A, "post", "/notifications/read-all", { status: 204 });
     await call(A, "post", "/projects/{project_id}/archive", { path: P, status: 200 });
 
-    // Data Explorer operations are mocked by web Task 2, which deletes this list.
-    const PENDING_W15 = new Set(["getFileProfile", "getFilePreview"]);
     const METHODS = ["get", "post", "put", "patch", "delete"];
     const all = Object.values(doc.paths).flatMap((item) => Object.entries(item).filter(([m]) => METHODS.includes(m)).map(([, op]) => op.operationId));
     expect(all).toHaveLength(58);
-    expect(all.filter((id) => !exercised.has(id) && !PENDING_W15.has(id))).toEqual([]);
+    expect(all.filter((id) => !exercised.has(id))).toEqual([]);
   });
 });
