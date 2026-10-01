@@ -12,6 +12,7 @@ export const userLabel = (u: IdentityPublicProfile) => `${u.display_name} (${u.o
  * ARIA 1.2 combobox: type ≥2 chars, ArrowUp/Down to move, Enter to pick, Escape to close.
  * `organizationId` narrows the search (people pickers of a dataset are limited to the owner organization).
  * Typing clears the selection (onChange(null)); `initialText` seeds the box with an already chosen person.
+ * With `onRevert`, leaving the box without picking puts the current person's label back instead of silently keeping a person the text no longer shows.
  */
 export function UserPicker({
   id,
@@ -21,6 +22,7 @@ export function UserPicker({
   required,
   error,
   onChange,
+  onRevert,
 }: {
   id?: string;
   label: string;
@@ -29,12 +31,15 @@ export function UserPicker({
   required?: boolean;
   error?: string;
   onChange: (user: IdentityPublicProfile | null) => void;
+  /** Edit mode: called on blur when the text was typed over without picking a result. Restores the current person and returns its label (null = nothing to restore). */
+  onRevert?: () => string | null;
 }) {
   const t = useTranslations();
   const autoId = useId();
   const inputId = id ?? autoId;
   const listId = `${inputId}-list`;
   const [text, setText] = useState(initialText);
+  const [picked, setPicked] = useState(true);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const debounced = useDebouncedValue(text, 250);
@@ -42,6 +47,7 @@ export function UserPicker({
   const options = users.data?.items ?? [];
   const choose = (u: IdentityPublicProfile) => {
     onChange(u);
+    setPicked(true);
     setText(userLabel(u));
     setOpen(false);
   };
@@ -67,9 +73,18 @@ export function UserPicker({
         placeholder={t("projects.members.searchPlaceholder")}
         onChange={(e) => {
           setText(e.target.value);
+          setPicked(false);
           onChange(null);
           setOpen(true);
           setActive(0);
+        }}
+        onBlur={() => {
+          if (picked || !onRevert) return;
+          const label = onRevert();
+          if (label === null) return;
+          setText(label);
+          setPicked(true);
+          setOpen(false);
         }}
         onKeyDown={(e) => {
           if (e.key === "ArrowDown") {

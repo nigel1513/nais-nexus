@@ -2,7 +2,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, Checkbox, ConfirmDialog, FormField, Input, Textarea } from "@nais/ui";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFieldArray, useForm, type FieldErrors } from "react-hook-form";
 import { ENUMS } from "@/generated/contracts";
 import { asApiError, fieldErrors } from "@/shared/api/errors";
@@ -46,6 +46,27 @@ export function DatasetForm({
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [pendingPolicy, setPendingPolicy] = useState<DatasetFormValues | null>(null);
   const { errors, isSubmitting } = form.formState;
+  // Latest props/picks, read from async handlers whose closures predate the re-render a successful PATCH causes.
+  const defaultsRef = useRef(defaultValues);
+  defaultsRef.current = defaultValues;
+  const lastPerson = useRef({ principal_investigator: defaultValues.principal_investigator, steward_contact: defaultValues.steward_contact });
+  const personProps = (field: "principal_investigator" | "steward_contact") => ({
+    onChange: (u: { user_id: string } | null) => {
+      const value = u ? { user_id: u.user_id, label: userLabel(u as Parameters<typeof userLabel>[0]) } : null;
+      if (value) lastPerson.current[field] = value;
+      form.setValue(field, value, { shouldValidate: form.formState.isSubmitted });
+    },
+    // Edit only: typed-over text without a pick goes back to the current person.
+    onRevert:
+      mode === "edit"
+        ? () => {
+            const p = lastPerson.current[field];
+            if (!p) return null;
+            form.setValue(field, p, { shouldValidate: form.formState.isSubmitted });
+            return p.label;
+          }
+        : undefined,
+  });
   const level = form.watch("access_level");
   const collectingMode = form.watch("collecting_mode");
   const maxDays = level === "SENSITIVE" ? 30 : 365;
@@ -89,14 +110,17 @@ export function DatasetForm({
   const submit = async (values: DatasetFormValues) => {
     setSubmitError(null);
     setSummary([]);
+    const startKey = JSON.stringify(defaultValues);
     try {
       await onSubmit(values);
     } catch (e) {
+      // PATCH succeeded but a later step failed: the dataset (our defaults) moved on, so rebase the form on it and keep only what is still unsaved (contributors).
+      if (mode === "edit" && JSON.stringify(defaultsRef.current) !== startKey) form.reset({ ...defaultsRef.current, contributors: form.getValues("contributors") });
       const apiErr = asApiError(e);
       const raw = fieldErrors(apiErr);
       if (apiErr.code === "VALIDATION_FAILED" && Object.keys(raw).length) {
         // Backend reason codes (PERSON_NOT_ELIGIBLE, TEMPORAL_RANGE, ...) get localized texts in useValidationText; pydantic-style messages pass through.
-        const fields = Object.entries(raw).map(([k, m]) => [SERVER_FIELD[k] ?? (k as Field), m] as const);
+        const fields = Object.entries(raw).map(([k, m]) => [SERVER_FIELD[k] ?? (k.startsWith("contributors") ? "contributors" : (k as Field)), m] as const);
         for (const [k, m] of fields) if (k in labels) form.setError(k, { message: m });
         setSummary(fields.map(([k, m]) => ({ id: `dataset-${k}`, message: `${labels[k] ?? k}: ${tv(m)}` })));
       } else setSubmitError(apiErr);
@@ -158,7 +182,7 @@ export function DatasetForm({
             required
             initialText={defaultValues.principal_investigator?.label}
             error={err("principal_investigator")}
-            onChange={(u) => form.setValue("principal_investigator", u ? { user_id: u.user_id, label: userLabel(u) } : null, { shouldValidate: form.formState.isSubmitted })}
+            {...personProps("principal_investigator")}
           />
           <UserPicker
             id="dataset-steward_contact"
@@ -167,7 +191,7 @@ export function DatasetForm({
             required
             initialText={defaultValues.steward_contact?.label}
             error={err("steward_contact")}
-            onChange={(u) => form.setValue("steward_contact", u ? { user_id: u.user_id, label: userLabel(u) } : null, { shouldValidate: form.formState.isSubmitted })}
+            {...personProps("steward_contact")}
           />
         </div>
         <label className="flex items-start gap-2">

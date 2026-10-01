@@ -122,7 +122,11 @@ export function DataSearchScreen() {
           </p>
           {search.isPending ? (
             <DelayedSkeleton lines={5} />
-          ) : temporalInvalid ? null : search.isError ? (
+          ) : temporalInvalid ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              {t("data.search.periodInvalidHint")}
+            </p>
+          ) : search.isError ? (
             <ErrorView error={search.error} onRetry={() => void search.refetch()} />
           ) : hits.length === 0 ? (
             <EmptyState

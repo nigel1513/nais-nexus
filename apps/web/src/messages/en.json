@@ -134,6 +134,7 @@
       "legacyContact": "Contact email (legacy)"
     },
     "search": {
+      "periodInvalidHint": "Correct the data period to see search results.",
       "facet": {
         "subject": "Research field",
         "collecting_organization_id": "Collecting organization",

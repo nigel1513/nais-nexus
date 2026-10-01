@@ -63,4 +63,20 @@ describe("dataset form (stage 1)", () => {
     await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     expect((await screen.findAllByText(/기간의 끝이 시작보다 빠릅니다/)).length).toBeGreaterThan(0);
   });
+
+  it("maps server contributors[n].user_id errors onto the contributors field", async () => {
+    server.use(
+      http.post(`${API}/datasets`, () => apiError("VALIDATION_FAILED", "invalid", { fields: [{ field: "contributors[0].user_id", reason: "DUPLICATE" }] }), { once: true }),
+    );
+    renderScreen(<DatasetNewScreen />, { user: USER.bSteward, path: "/commons/data/new" });
+    await userEvent.type(await screen.findByLabelText(/^제목/), "Electrolyte Cycling");
+    await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
+    await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
+    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
+    const link = await screen.findByRole("link", { name: /공동연구자: 중복된 값이 있습니다/ });
+    expect(link).toHaveAttribute("href", "#dataset-contributors");
+    expect(document.getElementById("dataset-contributors")).not.toBeNull();
+  });
 });

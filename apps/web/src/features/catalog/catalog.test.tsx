@@ -56,6 +56,7 @@ describe("DataSearchScreen", () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?temporal_from=2026-05-01&temporal_to=2025-01-01" });
     expect(await screen.findByText(/기간의 끝이 시작보다 빠릅니다/)).toBeInTheDocument();
     expect(screen.getByLabelText("기간 시작")).toHaveValue("2026-05-01");
+    expect(screen.getByRole("status")).toHaveTextContent("데이터 기간을 바로잡으면 검색 결과가 표시됩니다.");
   });
 
   it("filters by principal investigator via the person picker", async () => {
@@ -284,5 +285,44 @@ describe("DatasetDetailScreen", () => {
     expect(dialog).toHaveTextContent("기존 권한에는 소급 적용되지 않습니다");
     await userEvent.click(within(dialog).getByRole("button", { name: "변경" }));
     await waitFor(() => expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.policy.max_grant_days).toBe(90));
+  });
+
+  it("typing over the PI without picking reverts to the current person on blur", async () => {
+    const piBefore = getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.principal_investigator_id;
+    open(USER.bSteward, DATASET.battery);
+    await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    const pi = screen.getByRole("combobox", { name: /연구책임자/ });
+    const original = (pi as HTMLInputElement).value;
+    expect(original).not.toBe("");
+    await userEvent.type(pi, "zz");
+    expect(pi).toHaveValue(`${original}zz`);
+    await userEvent.tab();
+    expect(pi).toHaveValue(original);
+    await userEvent.clear(screen.getByLabelText(/^제목/));
+    await userEvent.type(screen.getByLabelText(/^제목/), "Renamed Battery");
+    await userEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.title).toBe("Renamed Battery"));
+    expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.principal_investigator_id).toBe(piBefore);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not ask for the policy confirmation again when retrying after a contributors failure", async () => {
+    let puts = 0;
+    server.use(http.put("*/mock-api/v1/datasets/:id/contributors", () => { puts += 1; return puts === 1 ? HttpResponse.json({ code: "INTERNAL_ERROR", message: "boom", details: {} }, { status: 500 }) : HttpResponse.json({ items: [] }); }));
+    open(USER.bSteward, DATASET.battery);
+    await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    const days = screen.getByLabelText(/^최대 이용 기간/);
+    await userEvent.clear(days);
+    await userEvent.type(days, "90");
+    await userEvent.type(screen.getByRole("combobox", { name: "공동연구자 검색" }), "B R");
+    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.click(screen.getByRole("button", { name: "추가" }));
+    await userEvent.click(screen.getByRole("button", { name: "저장" }));
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "변경" }));
+    await waitFor(() => expect(puts).toBe(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(puts).toBe(2));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });
