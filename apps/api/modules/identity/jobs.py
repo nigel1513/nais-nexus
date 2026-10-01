@@ -35,4 +35,4 @@ def run_prune_sessions(sessions: SessionFactory = session_scope) -> None:
 
 
 def register_worker(broker: dramatiq.Broker, scheduler: Scheduler) -> None:
-    scheduler.every(PRUNE_INTERVAL_S, "identity.prune_sessions", run_prune_sessions)
+    scheduler.every(PRUNE_INTERVAL_S, "identity.prune_sessions", run_prune_sessions, run_immediately=True)

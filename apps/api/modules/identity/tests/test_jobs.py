@@ -44,4 +44,7 @@ def test_job_is_registered_daily() -> None:
     scheduler = Scheduler(clock=lambda: 0.0)
     register_worker(StubBroker(), scheduler)
     assert scheduler.job_names == ["identity.prune_sessions"]
+    (job,) = scheduler._jobs
+    assert job.interval_s == 86400
+    assert job.next_run == 0.0  # run_immediately=True: due on the first tick
     assert MODULE.register_worker is register_worker
