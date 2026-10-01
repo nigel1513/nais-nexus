@@ -45,11 +45,14 @@ describe("seed fidelity (10_SEED_DATA / seed_ids.json)", () => {
       ["2005", "Electrolyte Screening (draft)", "a", "CONTROLLED"],
     ]);
     expect(db.versions.map((v) => [v.dataset_version_id.slice(-4), v.status, v.file_count])).toEqual([
-      ["2101", "PUBLISHED", 4],
+      ["2101", "PUBLISHED", 5],
       ["2102", "PUBLISHED", 4],
       ["2103", "PUBLISHED", 4],
       ["2104", "PUBLISHED", 4],
       ["2105", "DRAFT", 0],
+      ["2111", "PUBLISHED", 2], // battery history: v1.0, v1.1 and the owner-only draft
+      ["2112", "PUBLISHED", 3],
+      ["2113", "DRAFT", 1],
     ]);
     expect(VERSION.battery.slice(-4)).toBe("2101");
     expect(DATASET.electrolyte.slice(-4)).toBe("2005");

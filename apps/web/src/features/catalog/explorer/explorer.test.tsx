@@ -31,7 +31,7 @@ describe("Data Explorer", () => {
     const ex = await explorer();
     await userEvent.click(ex.getByRole("radio", { name: "Column" }));
     const table = await ex.findByRole("table", { name: /열 요약/ });
-    expect(within(table).getByRole("cell", { name: "temperature_c" })).toBeInTheDocument();
+    expect(within(table).getByRole("cell", { name: "temp_c" })).toBeInTheDocument();
     expect(within(table).getByRole("cell", { name: "Cel" })).toBeInTheDocument();
   });
 
@@ -39,7 +39,7 @@ describe("Data Explorer", () => {
     open(USER.bResearcher);
     const ex = await explorer();
     await userEvent.click(await ex.findByRole("radio", { name: "Detail" }));
-    expect(await ex.findByRole("img", { name: /temperature_c 분포/ })).toBeInTheDocument();
+    expect(await ex.findByRole("img", { name: /temp_c 분포/ })).toBeInTheDocument();
     await userEvent.click(ex.getByRole("radio", { name: "Compact" }));
     const rows = within(await ex.findByRole("table", { name: /미리보기/ })).getAllByRole("row");
     expect(rows).toHaveLength(101);
@@ -52,9 +52,9 @@ describe("Data Explorer", () => {
     expect(await ex.findByText("접근 승인 후 미리보기 가능")).toBeInTheDocument();
     expect(ex.getByRole("button", { name: "접근 요청" })).toBeInTheDocument();
     expect(ex.queryByRole("img", { name: /분포/ })).not.toBeInTheDocument();
-    expect(ex.queryByText("AL")).not.toBeInTheDocument();
+    expect(ex.queryByText("3.0500")).not.toBeInTheDocument();
     await userEvent.click(ex.getByRole("radio", { name: "Column" }));
-    expect(await ex.findByRole("cell", { name: "temperature_c" })).toBeInTheDocument();
+    expect(await ex.findByRole("cell", { name: "temp_c" })).toBeInTheDocument();
   });
 
   it("shows a pending state while the profile is generated", async () => {
