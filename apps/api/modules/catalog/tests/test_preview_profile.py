@@ -273,3 +273,177 @@ def test_empty_and_header_only() -> None:
         run(b"")
     result = run(b"a,b\n")
     assert result.rows_sampled == 0 and [c["name"] for c in result.column_profile] == ["a", "b"]
+
+
+# ---------------------------------------------------------------- fix round 1: bounded profile, loop limits, parquet
+
+
+def _profile_bytes(result) -> int:  # type: ignore[no-untyped-def]
+    return len(json.dumps(result.column_profile, ensure_ascii=False).encode())
+
+
+def test_csv_huge_header_names_are_cut_in_profile_and_hints_still_match() -> None:
+    names = [f"c{i}" + "가" * 5_000 for i in range(200)]  # ~3 MB header, one record under the record cap
+    header = ",".join(f'"{n}"' for n in names).encode() + b"\n"
+    hints = {names[0]: FieldHint("number", "u" * 10_000, "d" * 10_000, "http://x/" + "i" * 10_000)}
+    result = run(header + b",".join(b"1" for _ in names) + b"\n", hints=hints)
+    first = result.column_profile[0]
+    assert all(len(c["name"]) == 200 for c in result.column_profile)
+    assert first["type"] == "number" and len(first["unit"]) == 200 and len(first["description"]) == 200
+    assert first["concept_iri"] is None  # an IRI longer than 512 chars is not a concept IRI
+    assert _profile_bytes(result) <= 256 * 1024
+
+
+def test_csv_header_record_over_cap_is_unparseable() -> None:
+    name = ("一" * 1000 + "\n") * 130  # quoted names spanning many physical lines (reviewer case)
+    header = ",".join(f'"{name}{i}"' for i in range(200)).encode() + b"\n"
+    with pytest.raises(Unparseable):
+        run(header + b"1" + b",1" * 199 + b"\n")
+
+
+def test_header_counts_toward_max_bytes() -> None:
+    with pytest.raises(Unparseable):
+        run(b"a" * 300 + b",b\n1,2\n", limits=PreviewLimits(max_bytes=100))
+
+
+def test_huge_hint_text_alone_cannot_blow_up_profile() -> None:
+    header = ",".join(f"c{i}" for i in range(200)).encode() + b"\n"
+    hints = {f"c{i}": FieldHint(None, "가" * 50_000, "나" * 50_000) for i in range(200)}
+    result_or_error: object
+    try:
+        result_or_error = run(header + b",".join(b"1" for _ in range(200)) + b"\n", hints=hints)
+    except Unparseable as exc:
+        result_or_error = exc
+    if not isinstance(result_or_error, Unparseable):
+        assert _profile_bytes(result_or_error) <= 256 * 1024
+    hints_small = {"c0": FieldHint(None, "가" * 50_000, "나" * 50_000)}
+    ok = run(header + b",".join(b"1" for _ in range(200)) + b"\n", hints=hints_small)
+    assert len(ok.column_profile[0]["unit"]) == 200 and _profile_bytes(ok) <= 256 * 1024
+
+
+def test_profile_over_ceiling_is_unparseable() -> None:
+    header = ",".join(f"c{i}" for i in range(200)).encode() + b"\n"
+    hints = {f"c{i}": FieldHint(None, "가" * 500, "나" * 500) for i in range(200)}  # 200 × ~1.2 KB UTF-8
+    with pytest.raises(Unparseable):
+        run(header + b",".join(b"1" for _ in range(200)) + b"\n", hints=hints)
+
+
+def test_parquet_huge_names_are_cut() -> None:
+    sink = io.BytesIO()
+    pq.write_table(pa.table({("x" * (1 << 20)) + str(i): [1] for i in range(20)}), sink)
+    result = run(sink.getvalue(), path="p.parquet")
+    assert all(len(c["name"]) == 200 for c in result.column_profile)
+    assert _profile_bytes(result) <= 256 * 1024
+
+
+def test_many_blank_lines_stop_quickly_as_truncated() -> None:
+    import time
+
+    start = time.monotonic()
+    result = run(b"a,b\n1,2\n" + b"\n" * (8 << 20))
+    assert result.truncated and result.rows_sampled == 1
+    assert time.monotonic() - start < 5
+
+
+def test_many_over_limit_records_stop_at_max_bytes() -> None:
+    record = b'"' + (b"x" * 1000 + b"\n") * 200 + b'",1\n'  # one field over the csv field limit
+    result = run(b"a,b\n" + record * 40, limits=PreviewLimits(max_bytes=1 << 20))
+    assert result.truncated and result.rows_sampled == 0
+
+
+def test_wide_parquet_reads_only_the_first_columns() -> None:
+    import time
+
+    sink = io.BytesIO()
+    pq.write_table(
+        pa.table({f"c{i}": pa.array(["v" * 1000] * 1024) for i in range(2000)}), sink, compression="zstd"
+    )
+    data = sink.getvalue()
+    requested: list[int] = []
+
+    def open_range(start: int, end: int) -> io.BytesIO:
+        requested.append(end - start + 1)
+        return io.BytesIO(data[start : end + 1])
+
+    start = time.monotonic()
+    result = profile_table(
+        open_range, len(data), path="p.parquet", hints={}, limits=PreviewLimits(), deadline=lambda: None
+    )
+    assert result.columns_truncated and len(result.column_profile) == 200
+    assert time.monotonic() - start < 10
+
+
+def test_nested_bomb_is_skipped_as_other() -> None:
+    import time
+
+    n, width = 64, 2_000_000  # 128 M int8 list elements that zstd squeezes to a few KB
+    offsets = pa.array(range(0, (n + 1) * width, width), type=pa.int32())
+    zeros = pa.Array.from_buffers(pa.int8(), n * width, [None, pa.py_buffer(bytes(n * width))])
+    bomb = pa.ListArray.from_arrays(offsets, zeros)
+    sink = io.BytesIO()
+    pq.write_table(pa.table({"x": pa.array(range(n)), "l": bomb}), sink, compression="zstd", row_group_size=n)
+    data = sink.getvalue()
+    del bomb
+    assert len(data) < 1 << 20
+    start = time.monotonic()
+    result = run(data, path="p.parquet")
+    assert time.monotonic() - start < 2
+    dist = {c["name"]: c for c in result.preview["columns"]}
+    assert dist["l"]["kind"] == "other" and dist["x"]["kind"] == "numeric"
+    assert result.rows_sampled == n and result.preview["rows"][0] == ["0", None]
+
+
+def test_parquet_binary_is_other_and_byte_budgets() -> None:
+    sink = io.BytesIO()
+    pq.write_table(pa.table({"b": pa.array([b"\x00\x01"] * 3, type=pa.binary())}), sink)
+    assert run(sink.getvalue(), path="p.parquet").preview["columns"][0]["kind"] == "other"
+    small = PreviewLimits(max_bytes=1 << 20)
+    sink = io.BytesIO()
+    pq.write_table(
+        pa.table({"s": pa.array([f"{i}" + "y" * 100_000 for i in range(64)])}), sink, compression="zstd"
+    )
+    result = run(
+        sink.getvalue(), path="p.parquet", limits=small
+    )  # 6.4 MB decoded: sample stops at the budget
+    assert result.truncated and 0 < result.rows_sampled < 64
+    sink = io.BytesIO()
+    pq.write_table(pa.table({"s": pa.array(["y" * (2 << 20)])}), sink, compression="zstd")
+    with pytest.raises(Unparseable):  # a single row over the budget
+        run(sink.getvalue(), path="p.parquet", limits=small)
+
+
+def test_parquet_duplicate_names_and_struct() -> None:
+    table = pa.Table.from_arrays(
+        [
+            pa.array([1, 2]),
+            pa.array([{"a": 1, "b": "z"}, {"a": 2, "b": "w"}]),
+            pa.array(["p", "q"]),
+            pa.array([3, 4]),
+        ],
+        names=["x", "s", "y", "x"],
+    )
+    sink = io.BytesIO()
+    pq.write_table(table, sink)
+    result = run(sink.getvalue(), path="p.parquet")
+    assert [c["name"] for c in result.column_profile] == ["x", "s", "y", "x"]
+    assert result.preview["rows"][1] == ["2", None, "q", "4"]
+
+
+def test_parquet_nan_is_missing_and_inf_is_not_categorical() -> None:
+    sink = io.BytesIO()
+    pq.write_table(pa.table({"f": [1.0, float("nan"), float("inf"), 2.0]}), sink)
+    result = run(sink.getvalue(), path="p.parquet")
+    col = result.column_profile[0]
+    assert col["missing_ratio"] == pytest.approx(0.25)
+    dist = result.preview["columns"][0]
+    assert dist["kind"] == "numeric" and (dist["min"], dist["max"]) == (1.0, 2.0)
+    assert sum(b["count"] for b in dist["histogram"]) == 2  # inf excluded from the histogram
+    assert result.preview["rows"][1] == [None] and result.preview["rows"][2] == ["inf"]
+    json.dumps(result.preview, allow_nan=False)
+
+
+def test_narrow_span_histogram_edges_stay_distinct() -> None:
+    data = b"x\n" + b"".join(f"{1 + i * 1e-9:.12f}\n".encode() for i in range(100))
+    hist = run(data).preview["columns"][0]["histogram"]
+    edges = [b["lower"] for b in hist]
+    assert len(set(edges)) == len(edges) == 10
