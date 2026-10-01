@@ -1,0 +1,24 @@
+// @vitest-environment node
+import { NextRequest } from "next/server";
+import { describe, expect, it } from "vitest";
+import { mockMiddleware } from "./mock-middleware";
+
+describe("mock-mode middleware", () => {
+  it("redirects protected routes without a mock session to /mock-login with a callback", () => {
+    const res = mockMiddleware(new NextRequest("http://localhost:3000/commons/data?q=x", { headers: { host: "localhost:21051" } }));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("http://localhost:21051/mock-login?callbackUrl=%2Fcommons%2Fdata%3Fq%3Dx");
+  });
+
+  it("lets requests with a mock session through", () => {
+    const res = mockMiddleware(
+      new NextRequest("http://localhost:3000/commons", { headers: { host: "localhost:21051", cookie: "nais_mock_user=00000000-0000-7000-8000-000000000a02" } }),
+    );
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("ignores public routes", () => {
+    const res = mockMiddleware(new NextRequest("http://localhost:3000/", { headers: { host: "localhost:21051" } }));
+    expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+});

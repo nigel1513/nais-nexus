@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages, getTranslations } from "next-intl/server";
+import { Providers } from "./providers";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -15,7 +16,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang={locale}>
       <body className="min-h-screen antialiased">
         <NextIntlClientProvider locale={locale} messages={messages} timeZone="Asia/Seoul">
-          {children}
+          <Providers>{children}</Providers>
         </NextIntlClientProvider>
       </body>
     </html>
