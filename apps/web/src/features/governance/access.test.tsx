@@ -76,6 +76,13 @@ describe("AccessScreen", () => {
     expect((await screen.findAllByText("Facility Sensor Streams")).length).toBeGreaterThan(0);
   });
 
+  it("revoked grants show no expiry countdown or warning colour", async () => {
+    getDb().grants.find((g) => g.access_grant_id === GRANT.seed)!.status = "REVOKED";
+    renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access?tab=grants" });
+    expect((await screen.findAllByText("회수됨")).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/후 만료|만료됨/, { selector: "span" })).not.toBeInTheDocument();
+  });
+
   it("steward revokes an org grant only after giving a reason", async () => {
     renderScreen(<AccessScreen />, { user: USER.bSteward, path: "/commons/access?tab=org-grants" });
     await userEvent.click((await screen.findAllByRole("button", { name: "회수" }))[0]!);
@@ -138,6 +145,17 @@ describe("AccessRequestDetailScreen", () => {
     expect(within(screen.getByRole("dialog")).getByLabelText(/^승인 기간/)).toHaveValue(10);
   });
 
+  it("a SENSITIVE dataset never allows more than 30 grant days even if the policy says more", async () => {
+    const sensors = getDb().datasets.find((d) => d.dataset_id === DATASET.sensors)!;
+    expect(sensors.access_level).toBe("SENSITIVE");
+    sensors.policy.max_grant_days = 90;
+    const id = await seedPending(30);
+    request(id).requested_days = 60;
+    open(USER.aSteward, id);
+    await userEvent.click(await screen.findByRole("button", { name: "승인" }));
+    await waitFor(() => expect(within(screen.getByRole("dialog")).getByLabelText(/^승인 기간/)).toHaveAttribute("max", "30"));
+  });
+
   it("approve re-check failure from the server is localized and the request stays open", async () => {
     const id = await seedPending();
     server.use(http.post("*/mock-api/v1/access-requests/:id/approve", () => apiError(422, "ACCESS_PURPOSE_NOT_ALLOWED"), { once: true }));
@@ -172,6 +190,19 @@ describe("AccessRequestDetailScreen", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "거절" }));
     expect(await screen.findByText("다른 사용자가 먼저 처리했습니다. 최신 상태를 불러옵니다.")).toBeInTheDocument();
     expect((await screen.findAllByText("철회됨")).length).toBeGreaterThan(0);
+  });
+
+  it("approve operations error is tied to the fieldset via aria-describedby", async () => {
+    const id = await seedPending();
+    server.use(http.post("*/mock-api/v1/access-requests/:id/approve", () => apiError(422, "VALIDATION_FAILED", { fields: [{ field: "operations", reason: "REQUIRED" }] }), { once: true }));
+    open(USER.aSteward, id);
+    await userEvent.click(await screen.findByRole("button", { name: "승인" }));
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(within(dialog).getByRole("button", { name: "승인" }));
+    const group = await within(dialog).findByRole("group", { name: "권한" });
+    const alert = within(dialog).getByRole("alert");
+    expect(group.getAttribute("aria-describedby")).toBe(alert.id);
+    expect(alert.id).not.toBe("");
   });
 
   it("reject requires a reason and shows a server field reason inside the dialog", async () => {
@@ -234,6 +265,27 @@ describe("AccessRequestDetailScreen", () => {
     open(USER.bResearcher, id);
     await userEvent.click(await screen.findByRole("button", { name: "다시 제출" }));
     expect(await screen.findByText("너무 짧습니다.")).toBeInTheDocument();
+  });
+
+  it("the resubmit form follows a changed request (updated_at) instead of keeping stale text", async () => {
+    const id = await seedPending();
+    Object.assign(request(id), { status: "CHANGE_REQUESTED" });
+    const { queryClient } = open(USER.bResearcher, id);
+    const detail = await screen.findByLabelText("목적 상세");
+    await userEvent.type(detail, " 추가");
+    act(() => {
+      const current = queryClient.getQueryData<Record<string, unknown>>(["getAccessRequest", { accessRequestId: id }])!;
+      queryClient.setQueryData(["getAccessRequest", { accessRequestId: id }], { ...current, purpose_detail: "다른 검토자가 반영한 새 상세 설명입니다 충분히 길게.", updated_at: "2099-01-01T00:00:00Z" });
+    });
+    await waitFor(() => expect(screen.getByLabelText("목적 상세")).toHaveValue("다른 검토자가 반영한 새 상세 설명입니다 충분히 길게."));
+  });
+
+  it("shows a dash for an empty purpose detail", async () => {
+    const id = await seedPending();
+    request(id).purpose_detail = "";
+    open(USER.bResearcher, id);
+    const term = await screen.findByText("목적 상세", { selector: "dt" });
+    expect(term.nextElementSibling).toHaveTextContent("—");
   });
 
   it("requester can withdraw (after confirming); reviewer actions are hidden", async () => {

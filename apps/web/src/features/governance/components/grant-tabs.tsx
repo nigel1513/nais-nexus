@@ -9,7 +9,7 @@ import { flattenPages } from "@/shared/api/pagination";
 import { useErrorText } from "@/shared/api/use-error-text";
 import type { AccessGrant, AccessGrantStatus } from "@/shared/api/types";
 import { GrantStatusBadge } from "@/shared/ui/badges";
-import { ExpiryText } from "@/shared/ui/date-text";
+import { DateTime, ExpiryText } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { useToast } from "@/shared/ui/toast";
 import { useListAccessGrants, useRevokeAccessGrant } from "../api";
@@ -53,7 +53,7 @@ export function MyGrantsTab() {
             { key: "project", header: t("access.columns.project"), cell: (g) => names[g.project_id] ?? short(g.project_id) },
             { key: "purpose", header: t("access.columns.purpose"), cell: (g) => t(`enums.Purpose.${g.purpose}`) },
             { key: "status", header: t("access.columns.status"), cell: (g) => <GrantStatusBadge status={g.status} /> },
-            { key: "expires", header: t("access.columns.expires"), cell: (g) => <ExpiryText value={g.expires_at} /> },
+            { key: "expires", header: t("access.columns.expires"), cell: (g) => (g.status === "ACTIVE" ? <ExpiryText value={g.expires_at} /> : <DateTime value={g.expires_at} />) },
             {
               key: "actions",
               header: t("common.actions"),
@@ -81,6 +81,8 @@ export function OrgGrantsTab() {
   const revoke = useRevokeAccessGrant();
   const [target, setTarget] = useState<AccessGrant | null>(null);
   const [reasonError, setReasonError] = useState<string | undefined>();
+  // The dialog keeps showing the last dataset while it animates closed.
+  const [lastTitle, setLastTitle] = useState("");
   const close = () => {
     setTarget(null);
     setReasonError(undefined);
@@ -106,6 +108,7 @@ export function OrgGrantsTab() {
             cell: (g) => (
               <Button size="sm" variant="destructive" onClick={() => {
                   setReasonError(undefined);
+                  setLastTitle(g.dataset_title ?? "");
                   setTarget(g);
                 }}>
                 {t("access.revoke")}
@@ -118,7 +121,7 @@ export function OrgGrantsTab() {
       <ReasonDialog
         open={!!target}
         onOpenChange={(o) => !o && close()}
-        title={t("access.revokeTitle", { dataset: target?.dataset_title ?? "" })}
+        title={t("access.revokeTitle", { dataset: lastTitle })}
         description={t("access.revokeWarning")}
         label={t("access.revokeReason")}
         confirmLabel={t("access.revoke")}

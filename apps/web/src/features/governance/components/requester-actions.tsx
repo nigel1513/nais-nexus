@@ -2,7 +2,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Button, ConfirmDialog, FormField, Input, Select, Textarea } from "@nais/ui";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { asApiError, fieldErrors } from "@/shared/api/errors";
 import { useErrorText } from "@/shared/api/use-error-text";
@@ -27,6 +27,11 @@ export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { r
     defaultValues: { project_id: request.project_id, purpose: request.purpose, purpose_detail: request.purpose_detail, requested_days: request.requested_days },
   });
   const { errors, isSubmitting } = form.formState;
+  const { reset } = form;
+  // Another actor (or a refetch) changed the request: start the form from the current values, not stale text.
+  useEffect(() => {
+    reset({ project_id: request.project_id, purpose: request.purpose, purpose_detail: request.purpose_detail, requested_days: request.requested_days });
+  }, [request.updated_at, request.project_id, request.purpose, request.purpose_detail, request.requested_days, reset]);
   const onError = (e: unknown) => {
     if (asApiError(e).code === "ACCESS_REQUEST_INVALID_STATE") {
       toast(t("access.detail.handledElsewhere"), "error");

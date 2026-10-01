@@ -16,6 +16,7 @@ import { RequesterActions } from "./components/requester-actions";
 import { ReviewActions } from "./components/review-actions";
 
 const REVIEWABLE = ["SUBMITTED", "UNDER_REVIEW"];
+const SENSITIVE_MAX_DAYS = 30;
 const OPEN = ["SUBMITTED", "UNDER_REVIEW", "CHANGE_REQUESTED"];
 
 export function AccessRequestDetailScreen({ accessRequestId }: { accessRequestId: string }) {
@@ -44,7 +45,9 @@ export function AccessRequestDetailScreen({ accessRequestId }: { accessRequestId
   if (q.isPending) return <DelayedSkeleton lines={6} />;
   if (q.isError) return <ErrorView error={q.error} onRetry={() => void q.refetch()} />;
   const req = q.data;
-  const maxDays = policy.data?.max_grant_days ?? req.requested_days;
+  // M02: SENSITIVE data is never granted for more than 30 days, regardless of the stored policy value.
+  const policyMax = policy.data?.max_grant_days ?? req.requested_days;
+  const maxDays = policy.data?.access_level === "SENSITIVE" ? Math.min(policyMax, SENSITIVE_MAX_DAYS) : policyMax;
 
   return (
     <>
@@ -76,7 +79,7 @@ export function AccessRequestDetailScreen({ accessRequestId }: { accessRequestId
               <dd>{t(`enums.Purpose.${req.purpose}`)}</dd>
               <dt className="text-muted-foreground">{t("access.request.detail")}</dt>
               {/* Plain text only: user input is never rendered as HTML/Markdown (M10 §16). */}
-              <dd className="whitespace-pre-wrap break-words">{req.purpose_detail}</dd>
+              <dd className="whitespace-pre-wrap break-words">{req.purpose_detail?.trim() ? req.purpose_detail : "—"}</dd>
               <dt className="text-muted-foreground">{t("access.request.operations")}</dt>
               <dd>{req.operations.map((o) => t(`enums.Operation.${o}`)).join(", ")}</dd>
               <dt className="text-muted-foreground">{t("access.columns.days")}</dt>

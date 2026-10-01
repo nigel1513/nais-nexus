@@ -78,7 +78,7 @@ export function ReviewActions({ request, maxGrantDays }: { request: AccessReques
         <FormField id="approve-days" label={t("access.detail.grantDays")} hint={t("access.detail.grantDaysHint", { max: cap })} error={daysValid ? (serverErrors.grant_days) : t("validation.grantDays", { max: cap })}>
           {(a11y) => <Input {...a11y} type="number" min={1} max={cap} value={Number.isNaN(days) ? "" : days} onChange={(e) => setDays(e.target.valueAsNumber)} />}
         </FormField>
-        <fieldset className="flex flex-col gap-1">
+        <fieldset className="flex flex-col gap-1" aria-describedby={serverErrors.operations ? "approve-operations-error" : undefined}>
           <legend className="text-sm font-medium">{t("access.request.operations")}</legend>
           {request.operations.map((op) => (
             <label key={op} className="flex items-center gap-2 text-sm">
@@ -87,7 +87,7 @@ export function ReviewActions({ request, maxGrantDays }: { request: AccessReques
             </label>
           ))}
           {serverErrors.operations ? (
-            <p role="alert" className="text-sm text-danger">
+            <p id="approve-operations-error" role="alert" className="text-sm text-danger">
               {serverErrors.operations}
             </p>
           ) : null}
