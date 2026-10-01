@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from api.modules.project import repository as repo
 from api.modules.project import service, views
 from api.modules.project.identity import IdentityQueryPort, get_identity_port
-from api.modules.project.schemas import MemberAddIn, ProjectCreateIn, ProjectUpdateIn
+from api.modules.project.schemas import MemberAddIn, MemberRoleIn, ProjectCreateIn, ProjectUpdateIn
 from api.modules.project.settings import ProjectSettings, get_project_settings
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
@@ -100,4 +100,17 @@ def add_project_member(
     member = service.add_member(
         session, user, identity, project_id, body, max_members=settings.project_max_members
     )
+    return views.members_view(identity, [member])[0]
+
+
+@router.patch("/projects/{project_id}/members/{user_id}", operation_id="updateProjectMemberRole")
+def update_project_member_role(
+    project_id: UUID,
+    user_id: UUID,
+    body: MemberRoleIn,
+    user: CurrentUserDep,
+    session: SessionDep,
+    identity: IdentityDep,
+) -> dict[str, Any]:
+    member = service.change_member_role(session, user, project_id, user_id, body.role)
     return views.members_view(identity, [member])[0]

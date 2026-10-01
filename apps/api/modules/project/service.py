@@ -221,3 +221,34 @@ def add_member(
         EventActor.for_user(user),
     )
     return member
+
+
+def change_member_role(
+    session: Session, user: CurrentUser, project_id: UUID, target_user_id: UUID, role: str
+) -> RowMapping:
+    access = _mutable(session, user, project_id)  # locks the project row before any member-row work
+    member = repo.active_member(session, project_id, target_user_id)
+    if member is None:
+        raise ApiError(ErrorCode.PROJECT_MEMBER_NOT_FOUND)
+    current = member["role"]
+    if not roles.can_manage_member(access.my_role, current, role):
+        raise ApiError(ErrorCode.FORBIDDEN)
+    if current == role:
+        return member
+    if roles.drops_an_owner(current, role) and repo.count_active_owners(session, project_id) <= 1:
+        raise ApiError(ErrorCode.PROJECT_LAST_OWNER)
+    updated = repo.set_member_role(session, member["project_member_id"], role)
+    repo.touch_project(session, project_id, now=clock.now())
+    outbox.write(
+        session,
+        "project.member.role_changed.v1",
+        {
+            "project_id": str(project_id),
+            "user_id": str(target_user_id),
+            "previous_role": current,
+            "role": role,
+            "changed_by": str(user.user_id),
+        },
+        EventActor.for_user(user),
+    )
+    return updated
