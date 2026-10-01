@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { getDb } from "@/mocks/db";
 import { DATASET, GRANT, USER, VERSION } from "@/mocks/fixtures";
 import { server } from "../../../tests/msw";
@@ -223,5 +223,24 @@ describe("VersionDetailScreen", () => {
     const buttons = await screen.findAllByRole("button", { name: "data/measurements.csv SHA-256 복사" });
     await userEvent.click(buttons[0]!);
     expect(await screen.findByText("복사하지 못했습니다. 직접 선택해 복사해 주세요.")).toBeInTheDocument();
+  });
+
+  it("copy-SHA works on a non-secure origin through the execCommand fallback", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    Object.defineProperty(document, "execCommand", { value: vi.fn(() => true), configurable: true, writable: true });
+    open(USER.bSteward, DATASET.battery, VERSION.battery);
+    const buttons = await screen.findAllByRole("button", { name: "data/measurements.csv SHA-256 복사" });
+    await userEvent.click(buttons[0]!);
+    expect(await screen.findByText("SHA-256을 복사했습니다.")).toBeInTheDocument();
+  });
+
+  it("when every copy path fails the full SHA-256 is shown selectable", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    Object.defineProperty(document, "execCommand", { value: vi.fn(() => false), configurable: true, writable: true });
+    open(USER.bSteward, DATASET.battery, VERSION.battery);
+    const buttons = await screen.findAllByRole("button", { name: "data/measurements.csv SHA-256 복사" });
+    await userEvent.click(buttons[0]!);
+    const full = getDb().versions.find((v) => v.dataset_version_id === VERSION.battery)!.files.find((f) => f.path === "data/measurements.csv")!.sha256;
+    expect(await screen.findByText(full)).toBeInTheDocument();
   });
 });

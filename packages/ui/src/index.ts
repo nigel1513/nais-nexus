@@ -13,3 +13,4 @@ export { StatusBadge } from "./status-badge";
 export { ConfirmDialog } from "./confirm-dialog";
 export { DataTable, type DataColumn } from "./data-table";
 export { FileDropzone } from "./file-dropzone";
+export { copyText } from "./copy-text";

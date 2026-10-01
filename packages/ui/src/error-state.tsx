@@ -2,6 +2,7 @@
 import { TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { Button } from "./button";
+import { copyText } from "./copy-text";
 
 export function ErrorState({
   title,
@@ -35,7 +36,7 @@ export function ErrorState({
       {traceId ? (
         <p className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span>
-            {traceIdLabel}: <code>{traceId}</code>
+            {traceIdLabel}: <code className="select-all break-all">{traceId}</code>
           </span>
           <Button
             size="sm"
@@ -43,16 +44,11 @@ export function ErrorState({
             onClick={async () => {
               // Reset first so a repeated copy re-announces the same message.
               setCopyState(null);
-              try {
-                if (!navigator.clipboard) throw new Error("clipboard unavailable");
-                await navigator.clipboard.writeText(traceId);
-                setCopyState("copied");
-              } catch {
-                // Yield so the reset above commits before the failure is set; otherwise React batches them
-                // and a repeated failure is never re-announced.
-                await Promise.resolve();
-                setCopyState("failed");
-              }
+              // Yield so the reset above commits before the result is set; otherwise React batches them
+              // and a repeated result is never re-announced.
+              const ok = await copyText(traceId);
+              await Promise.resolve();
+              setCopyState(ok ? "copied" : "failed");
             }}
           >
             {copyLabel}

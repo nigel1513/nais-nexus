@@ -15,6 +15,7 @@ import { useMeData } from "@/shared/hooks/use-me";
 import { formatBytes, shortHash } from "@/shared/lib/format";
 import { FileStatusBadge, VersionStatusBadge } from "@/shared/ui/badges";
 import { PageHeader } from "@/shared/ui/page-header";
+import { CopyShaButton } from "@/shared/ui/copy-sha-button";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { useToast } from "@/shared/ui/toast";
 import { useGetDataset, useGetDatasetVersion, usePublishDatasetVersion } from "./api";
@@ -51,12 +52,6 @@ export function VersionDetailScreen({
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState<DatasetFile | null>(null);
   const [publishError, setPublishError] = useState<unknown>(null);
-
-  const copySha = (sha: string) => {
-    const fail = () => toast(t("download.copyFailed"), "error");
-    if (!navigator.clipboard?.writeText) return fail();
-    navigator.clipboard.writeText(sha).then(() => toast(t("download.copiedSha")), fail);
-  };
 
   if (ds.isPending || v.isPending) return <DelayedSkeleton lines={6} />;
   if (ds.isError) return <ErrorView error={ds.error} onRetry={() => void ds.refetch()} />;
@@ -140,9 +135,7 @@ export function VersionDetailScreen({
                 cell: (f) => (
                   <span className="flex items-center gap-1">
                     <code title={f.sha256}>{shortHash(f.sha256)}</code>
-                    <Button size="sm" variant="ghost" aria-label={t("download.copyShaFor", { path: f.path })} onClick={() => copySha(f.sha256)}>
-                      {t("download.copySha")}
-                    </Button>
+                    <CopyShaButton path={f.path} sha={f.sha256} />
                   </span>
                 ),
               },

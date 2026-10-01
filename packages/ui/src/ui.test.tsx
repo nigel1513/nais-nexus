@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
-import { ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle, DataTable, ErrorState, FileDropzone, FormField, Input, StatusBadge } from "./index";
+import { copyText, ConfirmDialog, Dialog, DialogContent, DialogDescription, DialogTitle, DataTable, ErrorState, FileDropzone, FormField, Input, StatusBadge } from "./index";
 
 describe("StatusBadge", () => {
   it("renders text label plus a decorative icon (never color alone)", () => {
@@ -299,5 +299,42 @@ describe("ErrorState repeated failure", () => {
     await user.click(screen.getByRole("button", { name: "복사" }));
     await waitFor(() => expect(seen.filter((x) => x === "복사 실패")).toHaveLength(2));
     expect(seen).toContain("");
+  });
+});
+
+describe("copyText", () => {
+  const setExec = (fn: unknown) => Object.defineProperty(document, "execCommand", { value: fn, configurable: true, writable: true });
+  it("uses navigator.clipboard when available", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+    expect(await copyText("abc")).toBe(true);
+    expect(writeText).toHaveBeenCalledWith("abc");
+  });
+  it("falls back to a hidden textarea + execCommand('copy') on non-secure origins", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    let copied = "";
+    const exec = vi.fn((cmd: string) => {
+      copied = (document.activeElement as HTMLTextAreaElement).value;
+      return cmd === "copy";
+    });
+    setExec(exec);
+    expect(await copyText("sha-value")).toBe(true);
+    expect(copied).toBe("sha-value");
+    expect(document.querySelector("textarea")).toBeNull();
+  });
+  it("falls back when writeText rejects, and reports false when both fail", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockRejectedValue(new Error("denied")) }, configurable: true });
+    setExec(vi.fn(() => false));
+    expect(await copyText("x")).toBe(false);
+    setExec(vi.fn(() => true));
+    expect(await copyText("x")).toBe(true);
+  });
+  it("ErrorState copies the trace id through the fallback", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, "clipboard", { value: undefined, configurable: true });
+    setExec(vi.fn(() => true));
+    render(<ErrorState title="오류" message="m" traceId="t-1" traceIdLabel="ID" copyLabel="복사" copiedLabel="복사됨" copyFailedLabel="복사 실패" />);
+    await user.click(screen.getByRole("button", { name: "복사" }));
+    expect(await screen.findByText("복사됨")).toBeInTheDocument();
   });
 });

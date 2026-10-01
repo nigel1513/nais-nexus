@@ -15,17 +15,19 @@ corepack pnpm contracts:check               # generated error/enum lists match N
 ```
 
 In compose the portal is the `web` service behind the gateway: `http://localhost:21051/` (Auth.js under `/web-auth`).
-For a browser on another machine use `http://<NAIS_EXTERNAL_HOST>:21051/` (value from the local, untracked `.env`; never commit it).
+In **mock mode** (the default) any origin works: `http://localhost:21051/` or `http://<NAIS_EXTERNAL_HOST>:21051/` (value from the local,
+untracked `.env`; never commit it). Redirects inside the app are relative, so they follow whatever origin the browser used.
+In **real (Keycloak) mode** the portal works from ONE origin only, see "Real mode" below.
 
 ## Environment
 
 | Variable | Meaning |
 |---|---|
 | `NEXT_PUBLIC_API_MOCKING` | `enabled` -> in-app mock API at `/mock-api/v1` + mock login; build-time (compose sets it from `WEB_API_MOCKING`, default `enabled` until Wave 2) |
-| `NEXT_PUBLIC_API_BASE` | Real API base as seen by the browser (`/api/v1`) |
+| `NEXT_PUBLIC_API_BASE` | Real API base as seen by the browser (`/api/v1`); `NEXT_PUBLIC_*` are inlined at build time, changing them needs a rebuild |
 | `API_INTERNAL_BASE` | Server-side API base (`http://api:8000/api/v1`), reserved for Wave 2 server components |
 | `AUTH_URL`, `AUTH_SECRET`, `AUTH_TRUST_HOST` | Auth.js (`AUTH_URL` ends in `/web-auth`, D-026) |
-| `NAIS_EXTERNAL_HOST` | Public host/IP of the dev server; added to the Auth.js allowed hosts so `http://<NAIS_EXTERNAL_HOST>:21051` works |
+| `NAIS_EXTERNAL_HOST` | Public host/IP of the dev server; only adds it to the host allow-list used for the absolute logout return URL. It does NOT make real mode work from a second origin. With no allow-list configured the forwarded host is never trusted (fails closed) |
 | `AUTH_ALLOWED_HOSTS` | Optional comma-separated extra `host[:port]` entries to allow (e.g. a test hostname) |
 | `NAIS_PUBLIC_BASE_URL` | Base URL that presigned storage URLs are signed against (API/storage side). For browsers on the external host the local `.env` must set `NAIS_PUBLIC_BASE_URL=http://<NAIS_EXTERNAL_HOST>:21051`, otherwise uploads/downloads from external browsers point at `localhost` |
 | `AUTH_KEYCLOAK_ISSUER` | Public issuer, must equal token `iss`: `http://localhost:21051/auth/realms/nais` |
@@ -53,11 +55,17 @@ The issuer must equal the token `iss` (public host), while token/userinfo/JWKS g
 Tokens live only in the encrypted httpOnly session cookie; the session exposes `accessToken` only and refreshes it 60 s before expiry.
 `USER_DISABLED`, `MEMBERSHIP_DISABLED`, `ORGANIZATION_UNKNOWN` lead to `/blocked?code=...`. Logout redirects to the Keycloak `end_session` endpoint.
 
+**Single-origin rule.** Keycloak real mode works from exactly one browser origin: `NAIS_PUBLIC_BASE_URL` (e.g. `http://localhost:21051`, or
+`http://<NAIS_EXTERNAL_HOST>:21051` for remote browsers). `AUTH_URL` (`<base>/web-auth`), `AUTH_KEYCLOAK_ISSUER` (`<base>/auth/realms/nais`) and the
+API's `OIDC_ISSUER` must all derive from that same base: the issuer has to equal the token `iss`, the OIDC callback and the session cookie are bound to
+the `AUTH_URL` origin, and presigned storage URLs are signed against it. Opening the portal from any other origin breaks sign-in. Mock mode has no
+such restriction.
+
 ## Rule: no secure-context-only browser APIs
 
 The portal is opened over plain HTTP on non-localhost origins (`http://<NAIS_EXTERNAL_HOST>:21051`), which are not secure contexts.
 There `crypto.randomUUID`, `crypto.subtle`, Service Workers and `navigator.clipboard` are undefined. Client code must not depend on them
-(use `shared/lib/random-id.ts`, hash-wasm for SHA-256, a clipboard fallback). This once broke every API call (fixed in f0de935), so the e2e
+(use `shared/lib/random-id.ts`, hash-wasm for SHA-256, `copyText` from `@nais/ui` for the clipboard: `navigator.clipboard`, else a hidden textarea + `execCommand("copy")`, else the value is shown to select by hand). This once broke every API call (fixed in f0de935), so the e2e
 suite runs a second Playwright project, `chromium-insecure-origin`, against `http://nais.test:<port>` (Chromium arg
 `--host-resolver-rules=MAP nais.test 127.0.0.1`; a placeholder host, never the real address) and asserts the dashboard renders without a
 "service unavailable" error and that `window.isSecureContext` is false.

@@ -9,8 +9,8 @@ import type { Dataset, DownloadSession } from "@/shared/api/types";
 import { formatCountdown, useCountdown } from "@/shared/hooks/use-countdown";
 import { useMeData } from "@/shared/hooks/use-me";
 import { formatBytes, shortHash } from "@/shared/lib/format";
+import { CopyShaButton } from "@/shared/ui/copy-sha-button";
 import { ErrorView } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
 import { useCreateDownloadSession, useListAccessGrants } from "../api";
 
 function triggerDownload(url: string) {
@@ -57,13 +57,6 @@ export function DownloadPanel({ dataset, versionId, focus = false }: { dataset: 
   const [error, setError] = useState<unknown>(null);
   const left = useCountdown(session?.expires_at ?? null);
   const expired = !!session && left === 0;
-  const toast = useToast();
-  const copySha = (sha: string) => {
-    const done = () => toast(t("download.copiedSha"));
-    const fail = () => toast(t("download.copyFailed"), "error");
-    if (!navigator.clipboard?.writeText) return fail();
-    navigator.clipboard.writeText(sha).then(done, fail);
-  };
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -128,9 +121,7 @@ export function DownloadPanel({ dataset, versionId, focus = false }: { dataset: 
                 )}
                 <span className="text-muted-foreground">{formatBytes(f.size_bytes)}</span>
                 <code title={f.sha256}>{shortHash(f.sha256)}</code>
-                <Button size="sm" variant="ghost" aria-label={t("download.copyShaFor", { path: f.path })} onClick={() => copySha(f.sha256)}>
-                  {t("download.copySha")}
-                </Button>
+                <CopyShaButton path={f.path} sha={f.sha256} />
               </li>
             ))}
           </ul>
