@@ -10,12 +10,12 @@ from contextlib import AbstractContextManager
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, select, update
+from sqlalchemy import Row, and_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.modules.identity.tables import memberships, organizations, user_sessions, users
+from api.modules.identity.tables import CURRENT_MEMBERSHIP, memberships, organizations, user_sessions, users
 from api.platform import clock
 from api.platform.auth import CurrentUser
 from api.platform.db import session_scope
@@ -106,7 +106,11 @@ class IdentityPrincipalResolver:
                 memberships.c.roles,
                 memberships.c.status.label("membership_status"),
             )
-            .select_from(users.outerjoin(memberships, memberships.c.user_id == users.c.user_id))
+            .select_from(
+                users.outerjoin(
+                    memberships, and_(memberships.c.user_id == users.c.user_id, CURRENT_MEMBERSHIP)
+                )
+            )
             .where(users.c.keycloak_sub == sub)
         ).first()
 

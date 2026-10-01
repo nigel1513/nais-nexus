@@ -45,7 +45,7 @@ def add_membership(session: Session, user_id: uuid.UUID, org_id: uuid.UUID, role
 
 
 def test_version_table_lives_in_identity_schema(db: PgUrls) -> None:
-    assert scalar(db, "SELECT version_num FROM identity.alembic_version") == "identity_0001"
+    assert scalar(db, "SELECT version_num FROM identity.alembic_version") == "identity_0002"
 
 
 def test_app_role_can_write_every_table_with_defaults(db: PgUrls) -> None:
@@ -111,3 +111,31 @@ def test_search_indexes_exist(db: PgUrls) -> None:
         "ix_user_sessions_user",
     ):
         assert index in names
+
+
+def test_identity_0002_columns_and_partial_unique(identity_db: PgUrls) -> None:
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(identity_db.migrator)
+    with engine.connect() as conn:
+        cols = {
+            r[0]
+            for r in conn.execute(
+                text(
+                    "SELECT table_name || '.' || column_name FROM information_schema.columns"
+                    " WHERE table_schema = 'identity'"
+                )
+            )
+        }
+        index = conn.execute(
+            text(
+                "SELECT indexdef FROM pg_indexes WHERE schemaname='identity' AND indexname='uq_memberships_current'"
+            )
+        ).scalar_one()
+    engine.dispose()
+    assert {
+        "users.national_researcher_number",
+        "organization_memberships.started_at",
+        "organization_memberships.ended_at",
+    } <= cols
+    assert "WHERE (ended_at IS NULL)" in index

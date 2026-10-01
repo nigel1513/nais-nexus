@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary
 from api.modules.identity.schemas import MeOut, OrganizationOut
-from api.modules.identity.tables import memberships, organizations, users
+from api.modules.identity.tables import CURRENT_MEMBERSHIP, memberships, organizations, users
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
 from api.platform.pagination import Page, PageParams, build_page
@@ -31,7 +31,7 @@ def get_me(session: Session, user_id: UUID) -> MeOut:
             organizations.c.type,
         )
         .select_from(
-            users.join(memberships, memberships.c.user_id == users.c.user_id).join(
+            users.join(memberships, and_(memberships.c.user_id == users.c.user_id, CURRENT_MEMBERSHIP)).join(
                 organizations, organizations.c.organization_id == memberships.c.organization_id
             )
         )
@@ -105,6 +105,7 @@ def get_organization(session: Session, organization_id: UUID) -> OrganizationOut
         .where(
             memberships.c.organization_id == organizations.c.organization_id,
             memberships.c.status == "ACTIVE",
+            CURRENT_MEMBERSHIP,
         )
         .scalar_subquery()
     )
@@ -145,7 +146,7 @@ def search_users(
             organizations.c.name.label("organization_name"),
         )
         .select_from(
-            users.join(memberships, memberships.c.user_id == users.c.user_id).join(
+            users.join(memberships, and_(memberships.c.user_id == users.c.user_id, CURRENT_MEMBERSHIP)).join(
                 organizations, organizations.c.organization_id == memberships.c.organization_id
             )
         )

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary, OrgRole
 from api.modules.identity.resolver import SessionFactory
-from api.modules.identity.tables import memberships, organizations, users
+from api.modules.identity.tables import CURRENT_MEMBERSHIP, memberships, organizations, users
 from api.platform.db import session_scope
 
 _BOTH_ACTIVE = and_(users.c.status == "ACTIVE", memberships.c.status == "ACTIVE")
@@ -23,7 +23,7 @@ def _profiles_select() -> Select[Any]:
         memberships.c.organization_id,
         organizations.c.name.label("organization_name"),
     ).select_from(
-        users.join(memberships, memberships.c.user_id == users.c.user_id).join(
+        users.join(memberships, and_(memberships.c.user_id == users.c.user_id, CURRENT_MEMBERSHIP)).join(
             organizations, organizations.c.organization_id == memberships.c.organization_id
         )
     )
@@ -91,7 +91,11 @@ class SqlIdentityQuery:
         with self._read() as session:
             rows = session.execute(
                 select(users.c.user_id)
-                .select_from(users.join(memberships, memberships.c.user_id == users.c.user_id))
+                .select_from(
+                    users.join(
+                        memberships, and_(memberships.c.user_id == users.c.user_id, CURRENT_MEMBERSHIP)
+                    )
+                )
                 .where(
                     memberships.c.organization_id == organization_id,
                     literal(role) == any_(memberships.c.roles),
@@ -112,7 +116,9 @@ class SqlIdentityQuery:
     def _exists(session: Session, *conditions: Any) -> bool:
         found = session.execute(
             select(users.c.user_id)
-            .select_from(users.join(memberships, memberships.c.user_id == users.c.user_id))
+            .select_from(
+                users.join(memberships, and_(memberships.c.user_id == users.c.user_id, CURRENT_MEMBERSHIP))
+            )
             .where(*conditions)
             .limit(1)
         ).first()

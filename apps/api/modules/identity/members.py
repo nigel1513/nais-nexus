@@ -3,12 +3,12 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Row, Select, any_, literal, select, update
+from sqlalchemy import Row, Select, and_, any_, literal, select, update
 from sqlalchemy.orm import Session
 
 from api.modules.identity.directory import after, cursor_key
 from api.modules.identity.schemas import MembershipOut, MemberUpdateIn
-from api.modules.identity.tables import memberships, organizations, users
+from api.modules.identity.tables import CURRENT_MEMBERSHIP, memberships, organizations, users
 from api.platform import clock
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
@@ -45,7 +45,7 @@ def _membership_select() -> Select[Any]:
         memberships.c.updated_at,
         users.c.display_name,
         users.c.email,
-    ).select_from(memberships.join(users, users.c.user_id == memberships.c.user_id))
+    ).select_from(memberships.join(users, and_(users.c.user_id == memberships.c.user_id, CURRENT_MEMBERSHIP)))
 
 
 def _to_out(row: Row[Any]) -> MembershipOut:
@@ -61,7 +61,7 @@ def _to_out(row: Row[Any]) -> MembershipOut:
 
 
 def list_members(session: Session, organization_id: UUID, params: PageParams) -> Page[MembershipOut]:
-    stmt = _membership_select().where(memberships.c.organization_id == organization_id)
+    stmt = _membership_select().where(memberships.c.organization_id == organization_id, CURRENT_MEMBERSHIP)
     key = cursor_key(params)
     if key is not None:
         stmt = stmt.where(after(users.c.display_name, users.c.user_id, key))
@@ -90,6 +90,7 @@ def _active_admin_count(session: Session, organization_id: UUID) -> int:
         select(memberships.c.user_id).where(
             memberships.c.organization_id == organization_id,
             memberships.c.status == "ACTIVE",
+            CURRENT_MEMBERSHIP,
             literal(ORG_ADMIN) == any_(memberships.c.roles),
         )
     ).all()
@@ -109,7 +110,11 @@ def update_member(
     ensure_org_admin(actor, organization_id)
     row = session.execute(
         _membership_select()
-        .where(memberships.c.organization_id == organization_id, memberships.c.user_id == user_id)
+        .where(
+            memberships.c.organization_id == organization_id,
+            memberships.c.user_id == user_id,
+            CURRENT_MEMBERSHIP,
+        )
         .with_for_update(of=memberships)
     ).first()
     if row is None:
@@ -139,7 +144,11 @@ def update_member(
     now = clock.now()
     session.execute(
         update(memberships)
-        .where(memberships.c.organization_id == organization_id, memberships.c.user_id == user_id)
+        .where(
+            memberships.c.organization_id == organization_id,
+            memberships.c.user_id == user_id,
+            CURRENT_MEMBERSHIP,
+        )
         .values(roles=roles, status=status, updated_at=now, updated_by=actor.user_id)
     )
     outbox.write(
