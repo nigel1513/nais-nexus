@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { HttpError, putWithProgress, runPool, uploadMultipart, withRetry, type XhrLike } from "./transfer";
+import { HttpError, NetworkError, putWithProgress, runPool, uploadMultipart, withRetry, type XhrLike } from "./transfer";
 
 describe("runPool", () => {
   it("never runs more than `concurrency` tasks at once and keeps result order", async () => {
@@ -40,15 +40,15 @@ describe("runPool", () => {
 describe("withRetry (3 retries, 1s/2s/4s backoff, idempotent failures only)", () => {
   it("retries with backoff then succeeds", async () => {
     const sleep = vi.fn().mockResolvedValue(undefined);
-    const fn = vi.fn().mockRejectedValueOnce(new Error("a")).mockRejectedValueOnce(new Error("b")).mockResolvedValue("ok");
-    expect(await withRetry(fn, { sleep })).toBe("ok");
+    const fn = vi.fn().mockRejectedValueOnce(new NetworkError()).mockRejectedValueOnce(new NetworkError()).mockResolvedValue("ok");
+    expect(await withRetry(fn, { sleep, random: () => 0.5 })).toBe("ok");
     expect(sleep.mock.calls.map((c) => c[0])).toEqual([1000, 2000]);
   });
 
   it("gives up after the third retry", async () => {
     const sleep = vi.fn().mockResolvedValue(undefined);
-    const fn = vi.fn().mockRejectedValue(new Error("down"));
-    await expect(withRetry(fn, { sleep })).rejects.toThrow("down");
+    const fn = vi.fn().mockRejectedValue(new NetworkError());
+    await expect(withRetry(fn, { sleep, random: () => 0.5 })).rejects.toThrow("network error");
     expect(fn).toHaveBeenCalledTimes(4);
     expect(sleep.mock.calls.map((c) => c[0])).toEqual([1000, 2000, 4000]);
   });
@@ -67,7 +67,7 @@ describe("withRetry (3 retries, 1s/2s/4s backoff, idempotent failures only)", ()
 
   it("does not retry after abort and rejects while sleeping", async () => {
     const ctl = new AbortController();
-    const fn = vi.fn().mockRejectedValue(new Error("down"));
+    const fn = vi.fn().mockRejectedValue(new NetworkError());
     const sleep = vi.fn(async () => ctl.abort());
     await expect(withRetry(fn, { sleep, signal: ctl.signal })).rejects.toThrow();
     expect(fn).toHaveBeenCalledTimes(1);
@@ -79,7 +79,51 @@ describe("withRetry (3 retries, 1s/2s/4s backoff, idempotent failures only)", ()
   });
 });
 
+describe("retry policy details", () => {
+  it("applies +-20% jitter to the delays", async () => {
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    const fn = vi.fn().mockRejectedValue(new NetworkError());
+    await expect(withRetry(fn, { sleep, random: () => 0 })).rejects.toThrow();
+    expect(sleep.mock.calls.map((c) => c[0])).toEqual([800, 1600, 3200]);
+    sleep.mockClear();
+    await expect(withRetry(fn, { sleep, random: () => 1 })).rejects.toThrow();
+    expect(sleep.mock.calls.map((c) => c[0])).toEqual([1200, 2400, 4800]);
+  });
+
+  it("never retries arbitrary errors such as TypeError", async () => {
+    const fn = vi.fn().mockRejectedValue(new TypeError("bug"));
+    await expect(withRetry(fn, { sleep: async () => {} })).rejects.toThrow("bug");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("uploadMultipart", () => {
+  it("resets a part's progress when its attempt fails", async () => {
+    const seen: number[] = [];
+    let n = 0;
+    const putPart = vi.fn(async (_u: string, body: Blob, onProgress: (n: number) => void) => {
+      n += 1;
+      if (n === 1) {
+        onProgress(8);
+        throw new NetworkError();
+      }
+      onProgress(body.size);
+      return { etag: '"e"' };
+    });
+    await uploadMultipart(new Blob([new Uint8Array(10)]), [{ part_number: 1, url: "u" }], 10, { putPart, sleep: async () => {}, onProgress: (b) => seen.push(b) });
+    expect(seen).toEqual([8, 0, 10, 10]);
+  });
+
+  it("fails fast when the part list does not match the file size or a slice would be empty", async () => {
+    const putPart = vi.fn();
+    const mk = (k: number) => Array.from({ length: k }, (_, i) => ({ part_number: i + 1, url: `u/${i}` }));
+    await expect(uploadMultipart(new Blob([new Uint8Array(25)]), mk(2), 10, { putPart })).rejects.toThrow(/parts/);
+    await expect(uploadMultipart(new Blob([new Uint8Array(25)]), mk(4), 10, { putPart })).rejects.toThrow(/parts/);
+    const gap = [1, 3, 3].map((part_number) => ({ part_number, url: "u" }));
+    await expect(uploadMultipart(new Blob([new Uint8Array(25)]), gap, 10, { putPart })).rejects.toThrow(/part/);
+    expect(putPart).not.toHaveBeenCalled();
+  });
+
   it("uploads slices, retries a failed part and returns ETags ordered by part number", async () => {
     const file = new Blob([new Uint8Array(25)]);
     const bodies: Record<number, number> = {};
@@ -88,7 +132,7 @@ describe("uploadMultipart", () => {
       const n = Number(url.split("/").pop());
       if (n === 2 && !failedOnce) {
         failedOnce = true;
-        throw new Error("flaky");
+        throw new NetworkError();
       }
       bodies[n] = body.size;
       onProgress(body.size);

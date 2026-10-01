@@ -14,17 +14,24 @@ export class HttpError extends Error {
   }
 }
 
+export class NetworkError extends Error {
+  constructor() {
+    super("network error");
+    this.name = "NetworkError";
+  }
+}
+
 /**
  * Presigned PUTs are idempotent, so transient failures are safe to repeat: network errors, 408, 429, 5xx.
- * Other 4xx (expired/invalid signature, checksum mismatch) will fail identically and are surfaced at once.
+ * Other 4xx (expired/invalid signature, checksum mismatch) and unexpected errors (bugs) are surfaced at once.
  */
 export function isRetryable(error: unknown): boolean {
   if (isAbort(error)) return false;
   if (error instanceof HttpError) return error.status === 408 || error.status === 429 || error.status >= 500;
-  return true;
+  return error instanceof NetworkError;
 }
 
-type RetryOptions = { delays?: number[]; sleep?: Sleep; signal?: AbortSignal; shouldRetry?: (error: unknown) => boolean };
+type RetryOptions = { delays?: number[]; sleep?: Sleep; random?: () => number; signal?: AbortSignal; shouldRetry?: (error: unknown) => boolean };
 
 function abortable(promise: Promise<void>, signal?: AbortSignal): Promise<void> {
   if (!signal) return promise;
@@ -35,14 +42,14 @@ function abortable(promise: Promise<void>, signal?: AbortSignal): Promise<void> 
   });
 }
 
-export async function withRetry<T>(fn: () => Promise<T>, { delays = RETRY_DELAYS, sleep = realSleep, signal, shouldRetry = isRetryable }: RetryOptions = {}): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, { delays = RETRY_DELAYS, sleep = realSleep, random = Math.random, signal, shouldRetry = isRetryable }: RetryOptions = {}): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     throwIfAborted(signal);
     try {
       return await fn();
     } catch (error) {
       if (signal?.aborted || attempt >= delays.length || !shouldRetry(error)) throw error;
-      await abortable(sleep(delays[attempt]!), signal);
+      await abortable(sleep(Math.round(delays[attempt]! * (0.8 + 0.4 * random()))), signal);
     }
   }
 }
@@ -112,7 +119,7 @@ export function putWithProgress(
     };
     xhr.onerror = () => {
       settle();
-      reject(new Error("network error"));
+      reject(new NetworkError());
     };
     xhr.onabort = () => {
       settle();
@@ -132,22 +139,34 @@ export async function uploadMultipart(
   opts: { putPart?: PutPart; concurrency?: number; onProgress?: (bytes: number) => void; sleep?: Sleep; signal?: AbortSignal } = {},
 ): Promise<{ part_number: number; etag: string }[]> {
   const put: PutPart = opts.putPart ?? ((url, body, onProgress, signal) => putWithProgress(url, body, {}, onProgress, undefined, signal));
+  const expected = Math.ceil(file.size / partSize);
+  const numbers = new Set(parts.map((p) => p.part_number));
+  if (!(partSize > 0) || parts.length !== expected || numbers.size !== expected || [...numbers].some((n) => !Number.isInteger(n) || n < 1 || n > expected)) {
+    throw new Error(`Upload parts do not match the file: expected parts 1..${expected} for ${file.size} bytes in ${partSize}-byte parts, got ${parts.length}`);
+  }
   const loaded = new Map<number, number>();
   const report = () => opts.onProgress?.([...loaded.values()].reduce((a, b) => a + b, 0));
   const tasks = parts.map((part) => async () => {
     const start = (part.part_number - 1) * partSize;
     const body = file.slice(start, Math.min(start + partSize, file.size));
     const { etag } = await withRetry(
-      () =>
-        put(
-          part.url,
-          body,
-          (n) => {
-            loaded.set(part.part_number, n);
-            report();
-          },
-          opts.signal,
-        ),
+      async () => {
+        try {
+          return await put(
+            part.url,
+            body,
+            (n) => {
+              loaded.set(part.part_number, n);
+              report();
+            },
+            opts.signal,
+          );
+        } catch (error) {
+          loaded.delete(part.part_number);
+          report();
+          throw error;
+        }
+      },
       { sleep: opts.sleep, signal: opts.signal },
     );
     if (!etag) throw new Error(`Storage did not return an ETag for part ${part.part_number}`);
