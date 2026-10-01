@@ -23,7 +23,8 @@
 6. **데이터 정보**: 데이터 기간(언제부터 언제까지의 데이터인지), 수집 기관, 수집 방법·장비, 측정 대상.
 7. 메타데이터는 **AI 활용 가능하게** 설계한다(구조화, 표준 어휘, JSON-LD 내보내기, 변경 이벤트, 영구 식별자).
 8. **문의는 문의자와 담당자 두 사람만** 볼 수 있다(기관 관리자·플랫폼 관리자도 열람 불가).
-9. 사람마다 **연구자 등록번호** 개념의 식별번호를 둔다(국가연구자번호, ORCID).
+9. 사람마다 **연구자 등록번호**로 **NTIS 국가연구자번호**를 둔다(해외 식별자는 이번 범위 밖).
+10. 연구자는 **연구기관 간 이직**이 잦다. 데이터에 연결된 사람은 **그 당시 소속**이 함께 기록·표시되어야 한다.
 
 ### 범위 밖 (이번에 하지 않음)
 - 자연어 질의·AI 검색 기능 자체(M11 P1). 이번에는 그 기반이 되는 메타데이터만 만든다.
@@ -46,16 +47,31 @@
 ## 3. 데이터 모델 (M03 `catalog` 스키마, 마이그레이션 `catalog_0002`)
 
 ### 3.0 연구자 식별번호 (M01 `identity` 스키마, 마이그레이션 `identity_0002`)
-`identity.users` 추가 컬럼(모두 선택):
+`identity.users` 추가 컬럼(선택):
 | column | type | 규칙 |
 |---|---|---|
 | national_researcher_number | text | 국가연구자번호(NTIS) 8자리 숫자 `^[0-9]{8}$`, UNIQUE(값이 있을 때) |
-| orcid | text | `^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$` + ISO 7064 MOD 11-2 체크섬, UNIQUE(값이 있을 때) |
 
 - 입력: 본인이 `/settings`에서 등록·수정(`updateMe`). 형식·체크섬 오류는 `VALIDATION_FAILED`, 중복은 `CONFLICT`.
-- 노출: `IdentityPublicProfile`에 두 필드 추가 → 데이터 상세의 연구책임자·담당자·공동연구자 카드, 인용(DataCite `nameIdentifier`), JSON-LD(`schema:identifier`, ORCID는 `https://orcid.org/{id}` IRI)에 표시.
-- `metadata_snapshot`에는 발행 시점의 사람 정보(user_id, 표시명, 소속, 두 식별번호)를 함께 동결한다.
+- 노출: `IdentityPublicProfile`에 `national_researcher_number` 추가 → 데이터 상세의 연구책임자·담당자·공동연구자 카드, 인용(DataCite `nameIdentifier`, scheme `NTIS`), JSON-LD(`schema:identifier`, `propertyID: "NTIS"`)에 표시.
+- `metadata_snapshot`에는 발행 시점의 사람 정보(user_id, 표시명, 소속, 국가연구자번호)를 함께 동결한다.
 - 이벤트: `identity.user.updated.v1`(필드 목록만) — 향후 M11 색인 갱신용.
+
+### 3.0b 소속 이력과 "당시 소속" (M01 + M03)
+현재 M01은 "사용자 1명 = 기관 1개, 기관 이동 미지원"(P0)이다. 이직을 지원하도록 확장한다.
+- `identity.organization_memberships`: 사용자당 **ACTIVE 1개 + 종료된 이력 여러 개** 허용. `uq_memberships_user`를 `UNIQUE(user_id) WHERE status='ACTIVE'` 부분 인덱스로 바꾸고 `started_at`, `ended_at` 컬럼 추가.
+- 이직 처리 `transferUserOrganization`(신규, PLATFORM_ADMIN): 기존 membership 종료(`ended_at`, DISABLED, 역할 제거) → 새 기관 membership 생성 → Keycloak `org_code` 속성 변경 → `identity.membership.changed.v1` 발행(기존 이벤트). 기존 기관에서의 접근 권한 회수는 M04(Wave 2) 규칙을 따른다.
+- 이직해도 **사람 ID와 국가연구자번호는 그대로**다. 그래서 이직 전후의 데이터가 한 사람으로 이어진다.
+- **당시 소속 기록**: 데이터에 사람을 연결하는 모든 곳에 지정 시점 소속을 함께 저장한다.
+  - `catalog.datasets`: `principal_investigator_org_id`, `data_steward_contact_org_id` (지정 시 자동 기록)
+  - `catalog.dataset_contributors`: `affiliation_organization_id`
+  - `catalog.processing_steps`: `performed_by_org_id`
+  - `catalog.dataset_inquiries`: `asker_org_id`, `recipient_org_id`
+  - 발행 스냅샷(`metadata_snapshot`)에는 사람별 {user_id, 표시명, 당시 소속 기관 ID·이름, 국가연구자번호}를 동결한다.
+  - 감사(M09)는 이미 `actor_organization_id`를 이벤트 시점 값으로 저장한다(변경 없음).
+- **표시**: "홍길동 (기관 A · 당시 소속)". 현재 소속이 다르면 "현재 기관 B"를 함께 표시한다.
+- **담당자 공백**: 담당자가 소유 기관 ACTIVE 구성원이 아니게 되면(이직·비활성) 상세에 "담당자 재지정 필요"를 표시하고 소유 기관 DATA_STEWARD에게 알린다. 재지정 전까지 새 문의는 받지 않고 안내만 표시한다(문의 비공개 원칙 유지). 연구책임자(PI)는 이직해도 역사적 사실이므로 그대로 둔다.
+
 
 
 ### 3.1 통제 어휘
@@ -162,8 +178,8 @@
 
 | operation | 내용 | 권한 |
 |---|---|---|
-| `updateMe` (신규, `PATCH /me`) | 본인의 `national_researcher_number`, `orcid` 등록·수정(빈 값으로 해제 가능) | 본인 |
-| `getMe`, `IdentityPublicProfile` | 두 식별번호 필드 추가(선택) | 기존 |
+| `updateMe` (신규, `PATCH /me`) | 본인의 `national_researcher_number` 등록·수정(빈 값으로 해제 가능) | 본인 |
+| `getMe`, `IdentityPublicProfile` | `national_researcher_number` 추가(선택) | 기존 |
 | `createDataset` / `updateDataset` | §3.2 필드 추가. PI·담당자 필수(생성), ACTIVE·소유기관 검증 → 422 `VALIDATION_FAILED` reason `PERSON_NOT_ELIGIBLE` | 소유기관 DATA_STEWARD |
 | `getDataset` | 응답에 `people{principal_investigator, steward_contact(email은 공개 시만), contributors[]}`, 연구 맥락, 데이터 정보, 자동 통계(형식·파일 수·용량·행/열 수=readiness profile) | 가시성 D-012 |
 | `listVocabulary` (신규) | `GET /vocabulary/{scheme}` | 인증 사용자 |
