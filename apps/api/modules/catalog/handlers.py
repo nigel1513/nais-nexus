@@ -30,7 +30,7 @@ def on_readiness_completed(session: Session, event: EventEnvelope) -> None:
         source_event_id=event.event_id,
     )
     excluded = stmt.excluded
-    session.execute(
+    changed = session.execute(
         stmt.on_conflict_do_update(
             index_elements=[readiness_summaries.c.dataset_version_id, readiness_summaries.c.profile_id],
             set_={
@@ -41,14 +41,19 @@ def on_readiness_completed(session: Session, event: EventEnvelope) -> None:
                 "completed_at": excluded.completed_at,
                 "source_event_id": excluded.source_event_id,
             },
-            # older results never win; a FAILED run never replaces a COMPLETED one (D-028 "latest COMPLETED")
-            where=and_(
-                readiness_summaries.c.completed_at <= excluded.completed_at,
-                or_(excluded.run_status == "COMPLETED", readiness_summaries.c.run_status == "FAILED"),
+            # order-independent: FAILED never replaces COMPLETED; COMPLETED replaces FAILED regardless of time;
+            # same status: strictly newer wins (ties keep the stored row)
+            where=or_(
+                and_(excluded.run_status == "COMPLETED", readiness_summaries.c.run_status == "FAILED"),
+                and_(
+                    excluded.run_status == readiness_summaries.c.run_status,
+                    readiness_summaries.c.completed_at < excluded.completed_at,
+                ),
             ),
-        )
-    )
-    enqueue_index(session, UUID(payload["dataset_id"]))
+        ).returning(readiness_summaries.c.dataset_version_id)
+    ).first()
+    if changed is not None:
+        enqueue_index(session, UUID(payload["dataset_id"]))
 
 
 @subscribe("identity.organization.created.v1")

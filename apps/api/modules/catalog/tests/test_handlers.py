@@ -180,3 +180,41 @@ def test_organization_created_requeues_its_datasets(api: CatalogApi, db: PgUrls)
         UUID(first),
         UUID(second),
     }
+
+
+def test_completed_result_wins_over_a_later_failed_one_in_any_order(api: CatalogApi, db: PgUrls) -> None:
+    dataset_id, version_id = published_dataset(api, db)
+    now = datetime.now(UTC)
+    emit(
+        db,
+        "readiness.validation.completed.v1",
+        readiness(dataset_id, version_id, run_status="FAILED"),
+        at=now + timedelta(minutes=1),
+    )
+    emit(db, "readiness.validation.completed.v1", readiness(dataset_id, version_id, overall="PASS"), at=now)
+    relay(db)
+    assert overall(api, dataset_id) == "PASS"
+
+
+def test_equal_timestamp_tie_and_stale_events_enqueue_nothing(api: CatalogApi, db: PgUrls) -> None:
+    dataset_id, version_id = published_dataset(api, db)
+    at = datetime.now(UTC)
+    emit(db, "readiness.validation.completed.v1", readiness(dataset_id, version_id, overall="PASS"), at=at)
+    relay(db)
+    execute(db, "DELETE FROM catalog.index_queue")
+    emit(db, "readiness.validation.completed.v1", readiness(dataset_id, version_id, overall="FAIL"), at=at)
+    emit(
+        db,
+        "readiness.validation.completed.v1",
+        readiness(dataset_id, version_id, overall="FAIL"),
+        at=at - timedelta(minutes=5),
+    )
+    emit(
+        db,
+        "readiness.validation.completed.v1",
+        readiness(dataset_id, version_id, run_status="FAILED"),
+        at=at + timedelta(minutes=1),
+    )
+    relay(db)
+    assert overall(api, dataset_id) == "PASS"
+    assert rows(db, "SELECT dataset_id FROM catalog.index_queue") == []
