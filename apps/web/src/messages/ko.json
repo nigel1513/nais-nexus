@@ -325,6 +325,8 @@
       "pattern": "영문, 숫자, . _ - / 만 사용할 수 있습니다.",
       "dotdot": "'..' 경로는 사용할 수 없습니다.",
       "leading-slash": "'/'로 시작할 수 없습니다.",
+      "empty-segment": "빈 폴더 이름('//')이나 끝의 '/'는 사용할 수 없습니다.",
+      "extension": "허용되지 않는 파일 형식입니다. 허용: csv, tsv, json, jsonl, txt, md, parquet, h5, hdf5, nc, zip",
       "empty": "빈 파일은 올릴 수 없습니다.",
       "too-large": "{max}를 넘는 파일은 올릴 수 없습니다.",
       "duplicate": "같은 경로의 파일이 이미 있습니다."
