@@ -5,8 +5,8 @@ column_profile = metadata-visible (no raw values). preview = raw-value-bearing (
 Histograms are computed from a deterministic reservoir sample (≤ 2,000 values per column); min/max/mean are exact
 over the sample rows. The preview JSON never exceeds `preview_bytes`: rows are dropped from the end first
 (`rows_truncated`), then the distributions (`columns: []`, ruling P17), then over-long header names are shortened.
-column_profile is bounded too: names/units/descriptions are cut to `cell_chars` and the serialised profile must fit
-`profile_bytes` (else Unparseable). Non-finite floats: NaN is missing (like the CSV token "NaN"); ±inf is a present
+column_profile is bounded too: names/units/descriptions are cut to `cell_chars`, and a profile over `profile_bytes`
+degrades (descriptions, then units/IRIs dropped, then names cut to 64) before it is Unparseable. Non-finite floats: NaN is missing (like the CSV token "NaN"); ±inf is a present
 value that is excluded from min/max/mean/histogram and from top values. Parquet nested and binary columns are never
 decoded: they are profiled as kind "other" with no values."""
 
@@ -281,6 +281,31 @@ def _fit_preview(preview: dict[str, Any], budget: int) -> dict[str, Any]:
     return preview
 
 
+PROFILE_NAME_FALLBACK = 64
+
+
+def _profile_size(profile: list[dict[str, Any]]) -> int:
+    return len(json.dumps(profile, ensure_ascii=False).encode("utf-8", "surrogatepass"))
+
+
+def _fit_profile(profile: list[dict[str, Any]], budget: int) -> None:
+    """Degrade, never silently overflow: drop descriptions, then units and concept IRIs, then shorten names to 64
+    chars; only if it still does not fit is the file Unparseable. No flag is added: FileProfile in contract 1.3.0
+    declares none (same reasoning as ruling P17), and the dropped fields are nullable."""
+    steps: list[Callable[[dict[str, Any]], None]] = [
+        lambda c: c.update(description=None),
+        lambda c: c.update(unit=None, concept_iri=None),
+        lambda c: c.update(name=c["name"][:PROFILE_NAME_FALLBACK]),
+    ]
+    for step in [None, *steps]:
+        if step is not None:
+            for column in profile:
+                step(column)
+        if _profile_size(profile) <= budget:
+            return
+    raise Unparseable("column profile exceeds its size ceiling")
+
+
 def _finish(
     fmt: str,
     cols: list[_Column],
@@ -306,9 +331,7 @@ def _finish(
             }
         )
         dists.append(_distribution(col, ctype, limits))
-    encoded = json.dumps(profile, ensure_ascii=False).encode("utf-8", "surrogatepass")
-    if len(encoded) > limits.profile_bytes:
-        raise Unparseable("column profile exceeds its size ceiling")
+    _fit_profile(profile, limits.profile_bytes)
     preview: dict[str, Any] = {
         "header": [c.name[: limits.cell_chars] for c in cols],
         "rows": rows,

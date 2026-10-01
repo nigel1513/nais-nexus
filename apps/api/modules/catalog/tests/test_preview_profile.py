@@ -321,11 +321,39 @@ def test_huge_hint_text_alone_cannot_blow_up_profile() -> None:
     assert len(ok.column_profile[0]["unit"]) == 200 and _profile_bytes(ok) <= 256 * 1024
 
 
-def test_profile_over_ceiling_is_unparseable() -> None:
-    header = ",".join(f"c{i}" for i in range(200)).encode() + b"\n"
-    hints = {f"c{i}": FieldHint(None, "가" * 500, "나" * 500) for i in range(200)}  # 200 × ~1.2 KB UTF-8
+def test_wide_korean_hints_degrade_instead_of_failing() -> None:
+    names = [f"{i:03d}" + "열" * 197 for i in range(200)]
+    header = ",".join(names).encode() + b"\n"
+    hints = {n: FieldHint("number", "단" * 200, "설" * 200, "http://qudt.org/x") for n in names}
+    result = run(header + b",".join(b"1" for _ in names) + b"\n", hints=hints)
+    assert _profile_bytes(result) <= 256 * 1024
+    first = result.column_profile[0]
+    assert first["description"] is None and first["type"] == "number"
+    assert len({c["name"] for c in result.column_profile}) == 200
+    assert set(first) == {
+        "name",
+        "type",
+        "unit",
+        "description",
+        "concept_iri",
+        "missing_ratio",
+        "distinct_count",
+        "distinct_capped",
+    }
+
+
+def test_profile_degrades_in_order_then_fails() -> None:
+    header = b"a,b\n1,2\n"
+    hints = {"a": FieldHint(None, "u" * 100, "d" * 150, "http://x/y")}
+    base = run(header, hints=hints).column_profile[0]
+    assert (base["unit"], base["description"]) == ("u" * 100, "d" * 150)
+    size_full = _profile_bytes(run(header, hints=hints))
+    no_desc = run(header, hints=hints, limits=PreviewLimits(profile_bytes=size_full - 1)).column_profile[0]
+    assert no_desc["description"] is None and no_desc["unit"] == "u" * 100
+    no_unit = run(header, hints=hints, limits=PreviewLimits(profile_bytes=size_full - 150)).column_profile[0]
+    assert no_unit["unit"] is None and no_unit["concept_iri"] is None
     with pytest.raises(Unparseable):
-        run(header + b",".join(b"1" for _ in range(200)) + b"\n", hints=hints)
+        run(header, hints=hints, limits=PreviewLimits(profile_bytes=50))
 
 
 def test_parquet_huge_names_are_cut() -> None:
