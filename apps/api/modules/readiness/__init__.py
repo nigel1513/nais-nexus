@@ -3,11 +3,13 @@
 from pathlib import Path
 
 from api.modules.readiness.jobs import register_worker
+from api.modules.readiness.public import wire
 from api.platform.modules import ModuleSpec
 
 MODULE = ModuleSpec(
     name="readiness",
     db_schema="readiness",
     migrations_dir=Path(__file__).parent / "migrations",
+    wire=wire,
     register_worker=register_worker,
 )
