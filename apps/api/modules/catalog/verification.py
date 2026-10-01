@@ -36,6 +36,7 @@ ZIP_MAX_ENTRIES = 10_000
 ZIP_MAX_UNCOMPRESSED = 20 * 1024**3
 ZIP_MAX_RATIO = 100
 ZIP_MAX_CENTRAL_DIRECTORY = 32 * 1024 * 1024
+ZIP_READ_SLACK = 64 * 1024
 HDF5_SIGNATURE = b"\x89HDF\r\n\x1a\n"
 TEXT_EXTENSIONS = frozenset({".csv", ".tsv", ".json", ".jsonl", ".txt", ".md"})
 
@@ -80,11 +81,16 @@ def sniff(ext: str, head: bytes, tail: bytes, size: int) -> bool:
     return False
 
 
+class RangeTooLarge(Exception):
+    """A single ranged read exceeded the configured bound (memory defence while zipfile locates the directory)."""
+
+
 class RangeReader(io.RawIOBase):
     """Seekable read-only view of an object through ranged GETs (zipfile needs seek/tell)."""
 
-    def __init__(self, store: ObjectStore, key: str, size: int) -> None:
+    def __init__(self, store: ObjectStore, key: str, size: int, max_read: int | None = None) -> None:
         super().__init__()
+        self._max_read = max_read
         self._store = store
         self._key = key
         self._size = size
@@ -111,6 +117,8 @@ class RangeReader(io.RawIOBase):
         if self._pos >= self._size or len(view) == 0:
             return 0
         end = min(self._pos + len(view), self._size) - 1
+        if self._max_read is not None and end - self._pos + 1 > self._max_read:
+            raise RangeTooLarge(end - self._pos + 1)
         data = self._store.read_range(self._key, self._pos, end)
         view[: len(data)] = data
         self._pos += len(data)
@@ -119,8 +127,9 @@ class RangeReader(io.RawIOBase):
 
 def _eocd_ok(store: ObjectStore, key: str, size: int) -> bool:
     """Reject archives whose (zip64) end-of-central-directory declares too many entries or a huge directory,
-    before zipfile loads the directory into memory."""
-    tail_len = min(size, 22 + 65535)
+    before zipfile loads the directory into memory. Mirrors zipfile's lookup: a zip64 locator immediately before the
+    EOCD means the 56-byte zip64 record immediately before the locator overrides the EOCD values."""
+    tail_len = min(size, 22 + 65535 + 20 + 56)
     tail = store.read_range(key, size - tail_len, size - 1)
     index = tail.rfind(b"PK\x05\x06")
     if index < 0 or len(tail) - index < 22:
@@ -128,15 +137,13 @@ def _eocd_ok(store: ObjectStore, key: str, size: int) -> bool:
     entries = int(struct.unpack("<H", tail[index + 10 : index + 12])[0])
     directory_size = int(struct.unpack("<I", tail[index + 12 : index + 16])[0])
     offset = int(struct.unpack("<I", tail[index + 16 : index + 20])[0])
-    if entries == 0xFFFF or directory_size == 0xFFFFFFFF or offset == 0xFFFFFFFF:
-        locator = tail[max(index - 20, 0) : index]
-        if len(locator) != 20 or locator[:4] != b"PK\x06\x07":
+    sentinel = entries == 0xFFFF or directory_size == 0xFFFFFFFF or offset == 0xFFFFFFFF
+    has_locator = index >= 20 and tail[index - 20 : index - 16] == b"PK\x06\x07"
+    if has_locator or sentinel:
+        if not has_locator or index < 76:
             return False
-        record_offset = int(struct.unpack("<Q", locator[8:16])[0])
-        if record_offset + 56 > size:
-            return False
-        record = store.read_range(key, record_offset, record_offset + 55)
-        if len(record) != 56 or record[:4] != b"PK\x06\x06":
+        record = tail[index - 76 : index - 20]
+        if record[:4] != b"PK\x06\x06":
             return False
         entries = int(struct.unpack("<Q", record[32:40])[0])
         directory_size = int(struct.unpack("<Q", record[40:48])[0])
@@ -154,9 +161,14 @@ def zip_is_safe(store: ObjectStore, key: str, size: int) -> bool:
     try:
         if not _eocd_ok(store, key, size):
             return False
-        with zipfile.ZipFile(io.BufferedReader(RangeReader(store, key, size), 64 * 1024)) as archive:
+        with zipfile.ZipFile(
+            io.BufferedReader(
+                RangeReader(store, key, size, ZIP_MAX_CENTRAL_DIRECTORY + ZIP_READ_SLACK), 64 * 1024
+            )
+        ) as archive:
             infos = archive.infolist()
     except (
+        RangeTooLarge,
         zipfile.BadZipFile,
         zipfile.LargeZipFile,
         ValueError,

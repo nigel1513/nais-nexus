@@ -227,11 +227,56 @@ def test_zip64_huge_central_directory_is_unsafe_without_a_large_read() -> None:
     assert store.max_range <= verification.ZIP_MAX_CENTRAL_DIRECTORY
 
 
+def _plain_eocd(entries: int = 1, directory_size: int = 10) -> bytes:
+    return struct.pack("<4sHHHHIIH", b"PK\x05\x06", 0, 0, entries, entries, directory_size, 0, 0)
+
+
+def _hostile_blob(directory: int) -> bytes:
+    """Non-sentinel EOCD preceded by a zip64 record+locator declaring a huge directory (zipfile honours these)."""
+    body = b"PK\x03\x04" + b"\x00" * directory
+    record = struct.pack(
+        "<4sQHHIIQQQQ", b"PK\x06\x06", 44, 45, 45, 0, 0, 1, 1, directory, len(body) - directory
+    )
+    locator = struct.pack("<4sIQI", b"PK\x06\x07", 0, len(body), 1)
+    return body + record + locator + _plain_eocd()
+
+
+def _run_recorded(data: bytes) -> tuple[Outcome, int]:
+    store = RecordingStore("b")
+    store.put("k", data, "x")
+    outcome = evaluate_object(
+        store,
+        key="k",
+        size=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+        path="a.zip",
+        scanner=Scanner("SKIPPED"),
+    )
+    return outcome, store.max_range
+
+
 def test_zip64_too_many_entries_and_missing_locator_are_unsafe() -> None:
     body = b"PK\x03\x04" + b"\x00" * 100
-    assert run("a.zip", body + _zip64_eocd(10**9, 100, len(body))) == Outcome("FAILED", "ARCHIVE_UNSAFE")
+    outcome, max_range = _run_recorded(body + _zip64_eocd(10**9, 100, len(body)))
+    assert outcome == Outcome("FAILED", "ARCHIVE_UNSAFE")
+    assert max_range <= verification.ZIP_MAX_CENTRAL_DIRECTORY
     eocd = struct.pack("<4sHHHHIIH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0)
-    assert run("a.zip", body + eocd) == Outcome("FAILED", "ARCHIVE_UNSAFE")
+    outcome, max_range = _run_recorded(body + eocd)
+    assert outcome == Outcome("FAILED", "ARCHIVE_UNSAFE")
+    assert max_range <= verification.ZIP_MAX_CENTRAL_DIRECTORY
+
+
+def test_non_sentinel_eocd_with_hostile_zip64_record_is_unsafe() -> None:
+    outcome, max_range = _run_recorded(_hostile_blob(40 * 1024 * 1024))
+    assert outcome == Outcome("FAILED", "ARCHIVE_UNSAFE")
+    assert max_range <= verification.ZIP_MAX_CENTRAL_DIRECTORY
+
+
+def test_range_reader_cap_holds_even_if_eocd_check_is_bypassed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(verification, "_eocd_ok", lambda store, key, size: True)
+    outcome, max_range = _run_recorded(_hostile_blob(40 * 1024 * 1024))
+    assert outcome == Outcome("FAILED", "ARCHIVE_UNSAFE")
+    assert max_range <= verification.ZIP_MAX_CENTRAL_DIRECTORY + verification.ZIP_READ_SLACK
 
 
 def test_legitimate_zip64_archive_is_verified(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -322,3 +367,11 @@ def test_verify_in_session_keeps_object_when_row_is_no_longer_uploaded(db: PgUrl
     outcome, present = _verify(db, b"zzzz", declared=b"a,b\n", status="VERIFIED")
     assert outcome.failed
     assert present is True
+
+
+def test_zipfile_native_zip64_archive_is_verified(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(zipfile, "ZIP_FILECOUNT_LIMIT", 1)
+    raw = make_zip({"a.txt": b"hello", "b.txt": b"world"})
+    monkeypatch.undo()
+    assert b"PK\x06\x06" in raw and b"PK\x06\x07" in raw
+    assert run("z.zip", raw).status == "VERIFIED"
