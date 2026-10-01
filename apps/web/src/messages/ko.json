@@ -304,7 +304,11 @@
       "size": "크기",
       "status": "상태",
       "empty": "아직 파일이 없습니다."
-    }
+    },
+    "deleteFile": "{path} 삭제",
+    "deleteTitle": "파일 삭제",
+    "deleteConfirm": "{path} 파일을 삭제합니다. 되돌릴 수 없습니다.",
+    "deleted": "파일을 삭제했습니다."
   },
   "upload": {
     "title": "파일 업로드",
@@ -338,11 +342,20 @@
       "uploading": "업로드 중",
       "UPLOADED": "검증 중",
       "VERIFIED": "검증됨",
-      "FAILED": "실패"
+      "FAILED": "실패",
+      "PENDING": "검증 중"
     },
     "announce": {
       "done": "{count}개 파일을 업로드하고 검증했습니다.",
       "partial": "{failed}개 파일이 검증에 실패했습니다."
+    },
+    "cancel": "업로드 취소",
+    "removeFile": "{path} 목록에서 제거",
+    "failure": {
+      "CHECKSUM_MISMATCH": "업로드된 파일이 원본과 다릅니다. 다시 업로드하세요.",
+      "OBJECT_MISSING": "업로드된 파일을 찾지 못했습니다. 다시 업로드하세요.",
+      "SIZE_MISMATCH": "업로드된 파일 크기가 다릅니다. 다시 업로드하세요.",
+      "generic": "검증에 실패했습니다. 다시 업로드하세요."
     }
   },
   "download": {
@@ -354,7 +367,10 @@
     "expiresIn": "링크 만료까지 {time}",
     "expired": "링크가 만료되었습니다. 다시 받으세요.",
     "copySha": "SHA-256 복사",
-    "verifyHint": "다운로드한 파일의 SHA-256 값을 위 값과 비교해 무결성을 확인하세요."
+    "verifyHint": "다운로드한 파일의 SHA-256 값을 위 값과 비교해 무결성을 확인하세요.",
+    "copiedSha": "SHA-256을 복사했습니다.",
+    "copyShaFor": "{path} SHA-256 복사",
+    "copyFailed": "복사하지 못했습니다. 직접 선택해 복사해 주세요."
   },
   "readiness": {
     "title": "AI-Ready 검증",
@@ -373,6 +389,15 @@
     "severity": {
       "REQUIRED": "필수",
       "RECOMMENDED": "권장"
+    },
+    "runError": {
+      "FILE_TIMEOUT": "파일 분석 시간이 초과되었습니다.",
+      "FILE_NOT_FOUND": "검증할 파일을 찾지 못했습니다.",
+      "FILE_TOO_LARGE": "파일이 너무 커서 검증할 수 없습니다.",
+      "STORAGE_UNAVAILABLE": "저장소에 일시적으로 접근할 수 없습니다. 잠시 후 다시 실행하세요.",
+      "STALE_JOB": "검증이 제때 진행되지 않아 중단되었습니다. 다시 실행하세요.",
+      "RUN_TIMEOUT": "검증 시간이 초과되었습니다.",
+      "generic": "검증을 완료하지 못했습니다. 다시 실행하세요."
     }
   },
   "access": {

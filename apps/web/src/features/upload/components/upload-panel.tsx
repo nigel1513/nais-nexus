@@ -3,6 +3,7 @@ import { Button, FileDropzone, Table, TBody, Td, Th, THead, Tr } from "@nais/ui"
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { useGetDatasetVersion } from "@/features/catalog/api";
+import type { UploadSession } from "@/shared/api/types";
 import { asApiError } from "@/shared/api/errors";
 import { formatBytes } from "@/shared/lib/format";
 import { ErrorView } from "@/shared/ui/state-views";
@@ -11,7 +12,7 @@ import { hashFile } from "../lib/hash-client";
 import { mediaTypeFor, suggestPath, uploadMessageParams, validatePath, validateSelection, type SelectionIssue } from "../lib/paths";
 import { transferSession, type PreparedFile } from "../lib/run-upload";
 
-type RowStatus = "ready" | "hashing" | "hashed" | "uploading" | "UPLOADED" | "VERIFIED" | "FAILED";
+type RowStatus = "ready" | "hashing" | "hashed" | "uploading" | "PENDING" | "UPLOADED" | "VERIFIED" | "FAILED";
 type Row = { key: number; file: File; path: string; size: number; media_type: string; sha256?: string; progress: number; status: RowStatus; failure?: string | null };
 
 let seq = 0;
@@ -21,6 +22,8 @@ export function UploadPanel({ versionId }: { versionId: string }) {
   const limits = uploadMessageParams();
   const version = useGetDatasetVersion(versionId, { pollMs: 1500 });
   const abortRef = useRef<AbortController | null>(null);
+  // A cancelled run leaves its session open on the server (its paths stay PENDING), so the next start resumes it.
+  const resumeRef = useRef<UploadSession | null>(null);
   const createSession = useCreateUploadSession(versionId);
   const complete = useCompleteUploadSession(versionId);
   const [rows, setRows] = useState<Row[]>([]);
@@ -38,11 +41,11 @@ export function UploadPanel({ versionId }: { versionId: string }) {
     setRows((prev) => {
       let changed = false;
       const next = prev.map((r) => {
-        if (r.status !== "UPLOADED") return r;
+        if (r.status !== "UPLOADED" && r.status !== "PENDING") return r;
         const f = files.find((x) => x.path === r.path);
-        if (!f || f.status === "UPLOADED" || f.status === "PENDING") return r;
+        if (!f || (f.status !== "VERIFIED" && f.status !== "FAILED")) return r;
         changed = true;
-        return { ...r, status: f.status as RowStatus };
+        return { ...r, status: f.status, failure: (f as { failure_code?: string | null }).failure_code ?? (f.status === "FAILED" ? "UNKNOWN" : null) };
       });
       return changed ? next : prev;
     });
@@ -62,7 +65,8 @@ export function UploadPanel({ versionId }: { versionId: string }) {
   const issuesFor = (index: number) => selection.issues.filter((i) => i.index === index);
   const pathIssueCount = rows.filter((r) => validatePath(r.path)).length;
   const blocking = selection.issues.length > 0 || selection.tooMany;
-  const pending = rows.filter((r) => r.status !== "VERIFIED");
+  // Only rows that were never sent (ready/hashed); UPLOADED/PENDING rows are still being verified by the server.
+  const pending = rows.filter((r) => r.status === "ready" || r.status === "hashed");
   const failed = rows.filter((r) => r.status === "FAILED");
 
   const patch = (key: number, p: Partial<Row>) => setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...p } : r)));
@@ -99,6 +103,7 @@ export function UploadPanel({ versionId }: { versionId: string }) {
     setBusy(true);
     setError(null);
     setExpired(false);
+    let sessionRef: UploadSession | null = null;
     try {
       const prepared: PreparedFile[] = [];
       for (const r of targets) {
@@ -110,9 +115,15 @@ export function UploadPanel({ versionId }: { versionId: string }) {
         patch(r.key, { sha256: sha, status: "hashed", progress: 0 });
         prepared.push({ file: r.file, path: r.path, size: r.size, sha256: sha, media_type: r.media_type });
       }
-      const session = await createSession.mutateAsync({
-        files: prepared.map(({ path, size, sha256, media_type }) => ({ path, size_bytes: size, sha256, media_type })),
-      });
+      const resumable = resumeRef.current;
+      resumeRef.current = null;
+      const session =
+        resumable && prepared.every((p) => resumable.files.some((f) => f.path === p.path && (f.status === "PENDING" || f.status === "FAILED")))
+          ? resumable
+          : await createSession.mutateAsync({
+              files: prepared.map(({ path, size, sha256, media_type }) => ({ path, size_bytes: size, sha256, media_type })),
+            });
+      sessionRef = session;
       const keyByPath = new Map(targets.map((r) => [r.path, r]));
       for (const r of targets) patch(r.key, { status: "uploading", progress: 0 });
       const parts = await transferSession(session, prepared, {
@@ -125,13 +136,16 @@ export function UploadPanel({ versionId }: { versionId: string }) {
       const result = await complete.mutateAsync({ uploadSessionId: session.upload_session_id, parts });
       for (const f of result.files) {
         const row = keyByPath.get(f.path);
-        if (row) patch(row.key, { status: f.status === "PENDING" ? "uploading" : f.status, failure: f.failure_code ?? null, progress: 1 });
+        if (row) patch(row.key, { status: f.status, failure: f.failure_code ?? (f.status === "FAILED" ? "UNKNOWN" : null), progress: 1 });
       }
       const failedCount = result.files.filter((f) => f.status === "FAILED").length;
       setAnnounce(failedCount ? t("upload.announce.partial", { failed: failedCount }) : t("upload.announce.done", { count: result.files.length }));
     } catch (e) {
-      if (asApiError(e).code === "UPLOAD_SESSION_EXPIRED") setExpired(true);
-      setError(e);
+      if (controller.signal.aborted) resumeRef.current = sessionRef;
+      else {
+        if (asApiError(e).code === "UPLOAD_SESSION_EXPIRED") setExpired(true);
+        setError(e);
+      }
       setRows((prev) => prev.map((r) => (r.status === "hashing" || r.status === "uploading" ? { ...r, status: "ready" } : r)));
     } finally {
       setBusy(false);
@@ -182,7 +196,7 @@ export function UploadPanel({ versionId }: { versionId: string }) {
                       {issueText(i)}
                     </p>
                   ))}
-                  {r.failure ? <p className="text-xs text-danger">{t(`errors.${r.failure}`, limits)}</p> : null}
+                  {r.failure ? <p className="text-xs text-danger">{t.has(`upload.failure.${r.failure}`) ? t(`upload.failure.${r.failure}`) : t("upload.failure.generic")}</p> : null}
                 </Td>
                 <Td>{formatBytes(r.size)}</Td>
                 <Td>
@@ -192,7 +206,7 @@ export function UploadPanel({ versionId }: { versionId: string }) {
                   ) : null}
                 </Td>
                 <Td>
-                  <Button size="sm" variant="ghost" disabled={busy} onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}>
+                  <Button size="sm" variant="ghost" disabled={busy} aria-label={t("upload.removeFile", { path: r.path })} onClick={() => setRows((prev) => prev.filter((x) => x.key !== r.key))}>
                     {t("upload.remove")}
                   </Button>
                 </Td>
@@ -206,6 +220,11 @@ export function UploadPanel({ versionId }: { versionId: string }) {
         <Button disabled={busy || blocking || pending.length === 0} onClick={() => void run(pending)}>
           {expired ? t("upload.restartExpired") : t("upload.start")}
         </Button>
+        {busy ? (
+          <Button variant="outline" onClick={() => abortRef.current?.abort()}>
+            {t("upload.cancel")}
+          </Button>
+        ) : null}
         {failed.length > 0 && !busy ? (
           <Button variant="outline" onClick={() => void run(failed)}>
             {t("upload.retryFailed")}

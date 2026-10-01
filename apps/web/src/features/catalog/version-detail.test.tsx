@@ -146,4 +146,82 @@ describe("VersionDetailScreen", () => {
     await userEvent.selectOptions(choose, within(choose).getByRole("option", { name: /Seed/ }));
     expect(request).toBeEnabled();
   });
+
+  const addFile = (status: "VERIFIED" | "PENDING", path = "ok.csv") => {
+    const v = getDb().versions.find((x) => x.dataset_version_id === VERSION.electrolyte)!;
+    v.files.push({ file_id: "00000000-0000-7000-8000-0000000f0001", path, size_bytes: 3, sha256: "a".repeat(64), media_type: "text/csv", status } as (typeof v.files)[number]);
+  };
+
+  it("deleting a draft file asks for confirmation naming the path", async () => {
+    addFile("VERIFIED");
+    open(USER.aSteward, DATASET.electrolyte, VERSION.electrolyte);
+    await userEvent.click((await screen.findAllByRole("button", { name: "ok.csv 삭제" }))[0]!);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("ok.csv");
+    await userEvent.click(within(dialog).getByRole("button", { name: "취소" }));
+    expect(getDb().versions.find((v) => v.dataset_version_id === VERSION.electrolyte)!.files).toHaveLength(1);
+    await userEvent.click(screen.getAllByRole("button", { name: "ok.csv 삭제" })[0]!);
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "삭제" }));
+    await waitFor(() => expect(getDb().versions.find((v) => v.dataset_version_id === VERSION.electrolyte)!.files).toHaveLength(0));
+  });
+
+  it("delete conflict (409 CONFLICT) shows the localized error", async () => {
+    addFile("VERIFIED");
+    server.use(
+      http.delete("*/mock-api/v1/dataset-versions/:version_id/files/:file_id", () =>
+        HttpResponse.json({ error: { code: "CONFLICT", message: "x", details: {}, trace_id: "t" } }, { status: 409 }),
+      ),
+    );
+    open(USER.aSteward, DATASET.electrolyte, VERSION.electrolyte);
+    await userEvent.click((await screen.findAllByRole("button", { name: "ok.csv 삭제" }))[0]!);
+    await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "삭제" }));
+    expect(await screen.findByText("다른 변경과 충돌했습니다. 새로고침 후 다시 시도하세요.")).toBeInTheDocument();
+  });
+
+  it("publish stays disabled while a file is not VERIFIED", async () => {
+    addFile("PENDING");
+    open(USER.aSteward, DATASET.electrolyte, VERSION.electrolyte);
+    expect(await screen.findByRole("button", { name: "게시" })).toBeDisabled();
+  });
+
+  it("a non-steward sees no publish, upload or readiness start", async () => {
+    open(USER.aResearcher, DATASET.battery, VERSION.battery);
+    await screen.findByRole("heading", { level: 1, name: "버전 v1" });
+    await screen.findByRole("region", { name: "AI-Ready 검증" });
+    expect(screen.queryByRole("button", { name: "게시" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "파일 업로드" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "검증 실행" })).not.toBeInTheDocument();
+  });
+
+  it("readiness start refusal (409) is reported and the default profile is the first loaded one", async () => {
+    server.use(
+      http.post("*/mock-api/v1/dataset-versions/:version_id/readiness-validations", () =>
+        HttpResponse.json({ error: { code: "READINESS_VALIDATION_IN_PROGRESS", message: "x", details: {}, trace_id: "t" } }, { status: 409 }),
+      ),
+    );
+    open(USER.bSteward, DATASET.battery, VERSION.battery);
+    const readiness = await screen.findByRole("region", { name: "AI-Ready 검증" });
+    const select = await within(readiness).findByLabelText("검증 프로파일");
+    await waitFor(() => expect(within(select).getAllByRole("option").length).toBeGreaterThan(0));
+    expect((select as HTMLSelectElement).value).toBe((within(select).getAllByRole("option")[0] as HTMLOptionElement).value);
+    await userEvent.click(within(readiness).getByRole("button", { name: "검증 실행" }));
+    expect(await screen.findByText("이미 검증이 진행 중입니다.")).toBeInTheDocument();
+  });
+
+  it("localizes a failed readiness run by its code prefix", async () => {
+    const run = getDb().validations[0]!;
+    Object.assign(run, { run_status: "FAILED", error: "FILE_TIMEOUT: parsing exceeded 600s", overall_status: null, checks: [] });
+    open(USER.bSteward, DATASET.battery, VERSION.battery);
+    const readiness = await screen.findByRole("region", { name: "AI-Ready 검증" });
+    expect(await within(readiness).findAllByText("파일 분석 시간이 초과되었습니다.")).not.toHaveLength(0);
+    expect(readiness).not.toHaveTextContent("parsing exceeded");
+  });
+
+  it("copy-SHA buttons are named per file and report clipboard rejection", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: () => Promise.reject(new Error("denied")) }, configurable: true });
+    open(USER.bSteward, DATASET.battery, VERSION.battery);
+    const buttons = await screen.findAllByRole("button", { name: "data/measurements.csv SHA-256 복사" });
+    await userEvent.click(buttons[0]!);
+    expect(await screen.findByText("복사하지 못했습니다. 직접 선택해 복사해 주세요.")).toBeInTheDocument();
+  });
 });

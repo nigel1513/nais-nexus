@@ -457,7 +457,17 @@ export const catalogHandlers = [
   http.get(`${API}/dataset-versions/:version_id`, ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
-    return HttpResponse.json(versionView(db, visibleVersion(db, String(params.version_id), user).v));
+    const { v } = visibleVersion(db, String(params.version_id), user);
+    // Mock verification worker: files > 256 MiB stay UPLOADED after complete and settle on the next read ("asyncfail" paths fail).
+    for (const f of v.files) {
+      if (f.status !== "UPLOADED") continue;
+      f.status = f.path.includes("asyncfail") ? "FAILED" : "VERIFIED";
+      for (const s of db.uploadSessions) {
+        const sf = s.files.find((x) => x.file_id === f.file_id);
+        if (sf) Object.assign(sf, { status: f.status, failure_code: f.status === "FAILED" ? "CHECKSUM_MISMATCH" : null });
+      }
+    }
+    return HttpResponse.json(versionView(db, v));
   }),
 
   http.post(`${API}/dataset-versions/:version_id/upload-session`, async ({ request, params }) => {

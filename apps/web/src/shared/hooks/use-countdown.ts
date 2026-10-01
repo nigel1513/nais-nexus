@@ -3,18 +3,16 @@ import { useEffect, useState } from "react";
 
 const secondsLeft = (expiresAt: string | null) => (expiresAt ? Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 1000)) : 0);
 
+/** Derived on every render so a freshly arrived (or already past) expiry never shows a stale value for a frame. */
 export function useCountdown(expiresAt: string | null): number {
-  const [left, setLeft] = useState(() => secondsLeft(expiresAt));
+  const [, tick] = useState(0);
+  const left = secondsLeft(expiresAt);
+  const running = !!expiresAt && left > 0;
   useEffect(() => {
-    setLeft(secondsLeft(expiresAt));
-    if (!expiresAt) return;
-    const id = setInterval(() => {
-      const s = secondsLeft(expiresAt);
-      setLeft(s);
-      if (s === 0) clearInterval(id);
-    }, 1000);
+    if (!running) return;
+    const id = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(id);
-  }, [expiresAt]);
+  }, [running, expiresAt]);
   return left;
 }
 

@@ -12,6 +12,10 @@ import { useGetReadiness, useListReadinessProfiles, useStartReadinessValidation 
 
 function ValidationCard({ v }: { v: ReadinessValidation }) {
   const t = useTranslations();
+  const runErrorText = (error: string) => {
+    const code = error.split(":")[0]!.trim();
+    return /^[A-Z_]+$/.test(code) && t.has(`readiness.runError.${code}`) ? t(`readiness.runError.${code}`) : t("readiness.runError.generic");
+  };
   return (
     <Card>
       <CardHeader>
@@ -34,7 +38,7 @@ function ValidationCard({ v }: { v: ReadinessValidation }) {
             {t("readiness.summary", { pass: v.summary.pass ?? 0, warning: v.summary.warning ?? 0, fail: v.summary.fail ?? 0, na: v.summary.not_applicable ?? 0 })}
           </p>
         ) : null}
-        {v.error ? <p className="text-sm text-danger">{v.error}</p> : null}
+        {v.error ? <p className="text-sm text-danger">{runErrorText(v.error)}</p> : null}
         {v.checks?.length ? (
           <Table caption={t("readiness.checksCaption", { profile: v.profile_id })}>
             <THead>
@@ -81,7 +85,9 @@ export function ReadinessPanel({ versionId, published, steward, pollMs = 5000 }:
   const q = useGetReadiness(versionId, { enabled: published, intervalMs: pollMs });
   const profiles = useListReadinessProfiles();
   const start = useStartReadinessValidation(versionId);
-  const [profile, setProfile] = useState("GENERIC_BASIC");
+  const [chosen, setChosen] = useState("");
+  const profileItems = profiles.data?.items ?? [];
+  const profile = chosen || profileItems[0]?.profile_id || "";
   const [announce, setAnnounce] = useState("");
   const items = q.data?.items ?? [];
   const pending = items.some((v) => v.run_status === "QUEUED" || v.run_status === "RUNNING");
@@ -122,8 +128,8 @@ export function ReadinessPanel({ versionId, published, steward, pollMs = 5000 }:
         >
           <FormField id="readiness-profile" label={t("readiness.profile")}>
             {(a11y) => (
-              <Select {...a11y} value={profile} onChange={(e) => setProfile(e.target.value)}>
-                {(profiles.data?.items ?? []).map((p) => (
+              <Select {...a11y} value={profile} onChange={(e) => setChosen(e.target.value)}>
+                {profileItems.map((p) => (
                   <option key={p.profile_id} value={p.profile_id}>
                     {p.name} ({p.profile_id})
                   </option>
@@ -131,7 +137,7 @@ export function ReadinessPanel({ versionId, published, steward, pollMs = 5000 }:
               </Select>
             )}
           </FormField>
-          <Button type="submit" disabled={start.isPending}>
+          <Button type="submit" disabled={start.isPending || !profile}>
             {t("readiness.run")}
           </Button>
         </form>

@@ -49,7 +49,14 @@ export function VersionDetailScreen({
   const publish = usePublishDatasetVersion(versionId);
   const deleteFile = useDeleteDraftFile(versionId);
   const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState<DatasetFile | null>(null);
   const [publishError, setPublishError] = useState<unknown>(null);
+
+  const copySha = (sha: string) => {
+    const fail = () => toast(t("download.copyFailed"), "error");
+    if (!navigator.clipboard?.writeText) return fail();
+    navigator.clipboard.writeText(sha).then(() => toast(t("download.copiedSha")), fail);
+  };
 
   if (ds.isPending || v.isPending) return <DelayedSkeleton lines={6} />;
   if (ds.isError) return <ErrorView error={ds.error} onRetry={() => void ds.refetch()} />;
@@ -133,7 +140,7 @@ export function VersionDetailScreen({
                 cell: (f) => (
                   <span className="flex items-center gap-1">
                     <code title={f.sha256}>{shortHash(f.sha256)}</code>
-                    <Button size="sm" variant="ghost" onClick={() => void navigator.clipboard?.writeText(f.sha256)}>
+                    <Button size="sm" variant="ghost" aria-label={t("download.copyShaFor", { path: f.path })} onClick={() => copySha(f.sha256)}>
                       {t("download.copySha")}
                     </Button>
                   </span>
@@ -150,7 +157,8 @@ export function VersionDetailScreen({
                           size="sm"
                           variant="ghost"
                           disabled={deleteFile.isPending}
-                          onClick={() => deleteFile.mutate(f.file_id, { onError: (e) => toast(errorText(e, uploadMessageParams()), "error") })}
+                          aria-label={t("version.deleteFile", { path: f.path })}
+                          onClick={() => setDeleting(f)}
                         >
                           {t("upload.remove")}
                         </Button>
@@ -165,6 +173,30 @@ export function VersionDetailScreen({
         {published ? <DownloadPanel dataset={dataset} versionId={versionId} focus={focusDownload} /> : null}
         <ReadinessPanel versionId={versionId} published={published} steward={steward} pollMs={readinessPollMs} />
       </div>
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        title={t("version.deleteTitle")}
+        description={deleting ? t("version.deleteConfirm", { path: deleting.path }) : ""}
+        confirmLabel={t("upload.remove")}
+        cancelLabel={t("common.cancel")}
+        closeLabel={t("common.close")}
+        destructive
+        pending={deleteFile.isPending}
+        onConfirm={() =>
+          deleting &&
+          deleteFile.mutate(deleting.file_id, {
+            onSuccess: () => {
+              setDeleting(null);
+              toast(t("version.deleted"));
+            },
+            onError: (e) => {
+              setDeleting(null);
+              toast(errorText(e, uploadMessageParams()), "error");
+            },
+          })
+        }
+      />
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
