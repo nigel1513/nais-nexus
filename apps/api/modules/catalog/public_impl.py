@@ -8,6 +8,7 @@ from typing import Any, BinaryIO, TypeVar, cast
 from uuid import UUID
 
 from botocore.exceptions import BotoCoreError
+from sqlalchemy import select
 from urllib3.exceptions import HTTPError as Urllib3Error
 
 from api.modules.catalog.access import can_see_dataset
@@ -25,8 +26,10 @@ from api.modules.catalog.public import (
     VersionView,
 )
 from api.modules.catalog.repo import files_of_versions, load_dataset, load_version, must
+from api.modules.catalog.tables import dataset_files, dataset_versions
 from api.platform import clock
 from api.platform.auth import CurrentUser
+from api.platform.storage import StorageNotConfigured
 
 
 def _file_ref(f: Mapping[Any, Any]) -> FileRef:
@@ -93,6 +96,8 @@ class CatalogStorageService:
     def presign_get(
         self, dataset_version_id: UUID, file_ids: Sequence[UUID] | None, ttl_seconds: int
     ) -> list[PresignedGet]:
+        if ttl_seconds <= 0:
+            raise ValueError("ttl_seconds must be positive")
         with self._deps.session_factory() as session:
             version = load_version(session, dataset_version_id)
             if (
@@ -115,12 +120,14 @@ class CatalogStorageService:
         expires_at = clock.now() + timedelta(seconds=ttl_seconds)
         signed: list[PresignedGet] = []
         for f in chosen:
-            store = self._deps.storage.for_bucket(f["storage_bucket"])
+            with _public_errors(f["path"]):
+                store = self._deps.storage.for_bucket(f["storage_bucket"])
+                url = store.presign_get(f["storage_key"], basename(f["path"]), ttl_seconds)
             signed.append(
                 PresignedGet(
                     file_id=f["file_id"],
                     path=f["path"],
-                    url=store.presign_get(f["storage_key"], basename(f["path"]), ttl_seconds),
+                    url=url,
                     size_bytes=int(f["size_bytes"]),
                     sha256=f["sha256"].strip(),
                     expires_at=expires_at,
@@ -141,7 +148,7 @@ def _public_errors(path: str) -> Iterator[None]:
         yield
     except InternalObjectMissing as exc:
         raise ObjectMissing(path) from exc  # the path, never the storage key (M05 echoes args[0])
-    except (InternalStorageUnavailable, BotoCoreError, Urllib3Error) as exc:
+    except (InternalStorageUnavailable, StorageNotConfigured, BotoCoreError, Urllib3Error) as exc:
         raise StorageUnavailable(str(exc)) from exc
 
 
@@ -185,6 +192,26 @@ class CatalogReader:
         self._deps = deps
 
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO:
+        if byte_range is not None and not 0 <= byte_range[0] <= byte_range[1]:
+            raise ValueError("byte_range must satisfy 0 <= start <= end")
+        # never trust the caller's FileRef: only VERIFIED files of PUBLISHED versions, with the stored location
+        with self._deps.session_factory() as session:
+            row = session.execute(
+                select(dataset_files.c.storage_bucket, dataset_files.c.storage_key, dataset_files.c.status)
+                .select_from(
+                    dataset_files.join(
+                        dataset_versions,
+                        dataset_files.c.dataset_version_id == dataset_versions.c.dataset_version_id,
+                    )
+                )
+                .where(dataset_files.c.file_id == file.file_id, dataset_versions.c.status == "PUBLISHED")
+            ).first()
+        if (
+            row is None
+            or row.status != "VERIFIED"
+            or (row.storage_bucket, row.storage_key) != (file.storage_bucket, file.storage_key)
+        ):
+            raise ObjectMissing(file.path)
         with _public_errors(file.path):
             inner = self._deps.storage.for_bucket(file.storage_bucket).open_stream(
                 file.storage_key, byte_range

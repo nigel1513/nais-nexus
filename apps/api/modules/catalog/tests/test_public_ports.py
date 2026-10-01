@@ -23,6 +23,7 @@ from api.modules.catalog.tests.support import ORG_B, SHA_A, insert_version, rows
 from api.modules.catalog.tests.support_api import USERS, CatalogApi, create_dataset, new_draft
 from api.modules.catalog.tests.support_upload import upload_files
 from api.platform import clock, ports
+from api.platform.storage import StorageNotConfigured
 from api.platform.testing.fixtures import PgUrls
 
 FILES = {"data/b.csv": b"x,y\n3,4\n", "B.md": b"# B\n", "data/a.csv": b"x,y\n1,2\n"}
@@ -187,3 +188,76 @@ def test_mid_read_storage_errors_surface_as_public_storage_unavailable(api: Cata
     with pytest.raises(StorageUnavailable):
         stream.readinto(bytearray(4))  # type: ignore[attr-defined]
     stream.close()
+
+
+def test_open_stream_rejects_forged_file_refs(api: CatalogApi, db: PgUrls) -> None:
+    _, version_id = published_version(api, db)
+    view = ports.get(CatalogQueryPort).get_version(UUID(version_id))
+    assert view is not None
+    real = view.files[0]
+    reader = ports.get(CatalogReadPort)
+    for forged in (
+        replace(real, storage_key="datasets/other/key.csv"),
+        replace(real, storage_bucket="nais-inst-a"),
+        replace(real, file_id=uuid4()),
+    ):
+        with pytest.raises(ObjectMissing):
+            reader.open_stream(forged)
+    # a file of a DRAFT version, with its true bucket and key
+    _, draft_id = new_draft(api)
+    session = api.post(
+        "b.steward",
+        f"/dataset-versions/{draft_id}/upload-session",
+        json={"files": [{"path": "p.csv", "size_bytes": 3, "sha256": SHA_A, "media_type": "text/csv"}]},
+    ).json()
+    draft_file = ports.get(CatalogQueryPort).get_version(UUID(draft_id)).files[0]  # type: ignore[union-attr]
+    assert str(draft_file.file_id) == session["files"][0]["file_id"]
+    with pytest.raises(ObjectMissing):
+        reader.open_stream(draft_file)
+
+
+def test_open_stream_rejects_a_bad_byte_range(api: CatalogApi, db: PgUrls) -> None:
+    _, version_id = published_version(api, db)
+    ref = ports.get(CatalogQueryPort).get_version(UUID(version_id)).files[0]  # type: ignore[union-attr]
+    for bad in ((-1, 3), (5, 2)):
+        with pytest.raises(ValueError):
+            ports.get(CatalogReadPort).open_stream(ref, bad)
+
+
+def test_presign_skips_non_verified_files_of_a_published_version(api: CatalogApi, db: PgUrls) -> None:
+    dataset_id = UUID(create_dataset(api)["dataset_id"])
+    version_id = insert_version(
+        db, dataset_id, published=True, files=[("bad.csv", 1, SHA_A)], file_status="FAILED"
+    )
+    view = ports.get(CatalogQueryPort).get_version(version_id)
+    assert view is not None and [f.status for f in view.files] == ["FAILED"]
+    assert ports.get(StoragePort).presign_get(version_id, None, 60) == []
+    with pytest.raises(CatalogNotFound):
+        ports.get(StoragePort).presign_get(version_id, [view.files[0].file_id], 60)
+    with pytest.raises(ObjectMissing):
+        ports.get(CatalogReadPort).open_stream(view.files[0])
+
+
+def test_unconfigured_bucket_is_a_public_storage_unavailable(
+    api: CatalogApi, db: PgUrls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, version_id = published_version(api, db)
+    view = ports.get(CatalogQueryPort).get_version(UUID(version_id))
+    assert view is not None
+    with pytest.raises(ObjectMissing):  # a bucket that is not the stored one is a forged FileRef
+        ports.get(CatalogReadPort).open_stream(replace(view.files[0], storage_bucket="no-such-bucket"))
+
+    def unconfigured(bucket: str) -> object:
+        raise StorageNotConfigured(f"no storage configuration for bucket {bucket!r}")
+
+    monkeypatch.setattr(api.deps.storage, "for_bucket", unconfigured)
+    with pytest.raises(StorageUnavailable):
+        ports.get(StoragePort).presign_get(UUID(version_id), None, 60)
+    with pytest.raises(StorageUnavailable):
+        ports.get(CatalogReadPort).open_stream(view.files[0])
+
+
+def test_presign_rejects_a_non_positive_ttl(api: CatalogApi, db: PgUrls) -> None:
+    _, version_id = published_version(api, db)
+    with pytest.raises(ValueError):
+        ports.get(StoragePort).presign_get(UUID(version_id), None, 0)

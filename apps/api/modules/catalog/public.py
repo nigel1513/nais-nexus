@@ -90,7 +90,8 @@ class StoragePort(Protocol):
 
 class CatalogReadPort(Protocol):
     """Readiness worker only (D-018): reads bytes with the service credentials, independent of user grants.
-    Raises ObjectMissing (404) or StorageUnavailable (connection/timeout/5xx), both defined above."""
+    The FileRef is re-verified against the catalog (VERIFIED file of a PUBLISHED version, same bucket/key),
+    otherwise ObjectMissing; byte_range must satisfy 0 <= start <= end (ValueError). Raises ObjectMissing (404) or StorageUnavailable (connection/timeout/5xx), both defined above."""
 
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
 
