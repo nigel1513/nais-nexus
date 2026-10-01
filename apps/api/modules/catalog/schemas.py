@@ -193,3 +193,15 @@ class VocabularyTermIn(StrictIn):
     label_en: Annotated[str, StringConstraints(min_length=1, max_length=200)]
     iri: Iri | None = None
     parent_code: Code | None = None
+
+
+ContributorRoleIn = Literal["CO_INVESTIGATOR", "DATA_COLLECTOR", "DATA_CURATOR"]
+
+
+class ContributorIn(StrictIn):
+    user_id: UUID
+    role: ContributorRoleIn
+
+
+class ContributorsPutIn(StrictIn):
+    contributors: Annotated[list[ContributorIn], Field(max_length=50)]

@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from api.modules.catalog.routes import (
     completion,
+    contributors,
     dataset_update,
     datasets,
     publish,
@@ -21,6 +22,7 @@ for sub in (
     versions.router,
     uploads.router,
     completion.router,
+    contributors.router,
     publish.router,
     vocabulary.router,
 ):

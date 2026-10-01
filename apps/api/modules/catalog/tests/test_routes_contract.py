@@ -14,6 +14,8 @@ from api.platform.testing.contracts import operation
 EXPECTED = {
     "listVocabulary",
     "createVocabularyTerm",
+    "listDatasetContributors",
+    "putDatasetContributors",
     "searchDatasets",
     "createDataset",
     "getDataset",

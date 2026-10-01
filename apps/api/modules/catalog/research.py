@@ -83,7 +83,8 @@ def validate_research(
             out[PEOPLE[field]] = person.organization_id  # at-the-time affiliation
     for field, scheme in SCHEMES.items():
         codes = values.get(field)
-        if codes and set(codes) - active_codes(session, scheme):
+        stored = set(current[field] or []) if current is not None else set()
+        if codes and set(codes) - stored - active_codes(session, scheme):  # stored codes stay valid (P21)
             problems.append({"field": field, "reason": "VOCABULARY_TERM_UNKNOWN"})
     start = _merged(values, current, "temporal_start")
     end = _merged(values, current, "temporal_end")
