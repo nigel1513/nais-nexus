@@ -21,6 +21,7 @@ from api.platform.ids import new_id
 
 TriggeredBy = Literal["AUTO_ON_PUBLISH", "USER"]
 INFLIGHT = ("QUEUED", "RUNNING")
+MAX_DECISIONS = 3
 
 
 @dataclass(frozen=True)
@@ -75,20 +76,8 @@ def request_validation(
     """REUSED (same fingerprint COMPLETED) > IN_PROGRESS (QUEUED/RUNNING) > insert QUEUED + enqueue after commit."""
     fingerprint = fingerprint_for(version, profile)
     vid, pid = version.dataset_version_id, profile.profile_id
-    reused = _latest(
-        session,
-        vid,
-        pid,
-        validations.c.run_status == "COMPLETED",
-        validations.c.input_fingerprint == fingerprint,
-    )
-    if reused is not None:
-        return RequestOutcome("REUSED", reused)
-    running = _latest(session, vid, pid, validations.c.run_status.in_(INFLIGHT))
-    if running is not None:
-        return RequestOutcome("IN_PROGRESS", running)
     values = {
-        "validation_id": new_id(),
+        "validation_id": None,
         "dataset_version_id": vid,
         "dataset_id": version.dataset_id,
         "owner_organization_id": version.owner_organization_id,
@@ -103,18 +92,34 @@ def request_validation(
         "attempt": 0,
         "correlation_id": correlation_id,
     }
-    try:
-        with session.begin_nested():
-            row = (
-                session.execute(validations.insert().values(**values).returning(validations)).mappings().one()
-            )
-    except IntegrityError:  # uq_validation_inflight: a concurrent request won the race
+    for _ in range(MAX_DECISIONS):
+        reused = _latest(
+            session,
+            vid,
+            pid,
+            validations.c.run_status == "COMPLETED",
+            validations.c.input_fingerprint == fingerprint,
+        )
+        if reused is not None:
+            return RequestOutcome("REUSED", reused)
         running = _latest(session, vid, pid, validations.c.run_status.in_(INFLIGHT))
-        if running is None:
-            raise
-        return RequestOutcome("IN_PROGRESS", running)
-    jobs.enqueue_after_commit(session, row["validation_id"], correlation_id)
-    return RequestOutcome("QUEUED", row)
+        if running is not None:
+            return RequestOutcome("IN_PROGRESS", running)
+        values["validation_id"] = new_id()
+        try:
+            with session.begin_nested():
+                row = (
+                    session.execute(validations.insert().values(**values).returning(validations))
+                    .mappings()
+                    .one()
+                )
+        except (
+            IntegrityError
+        ):  # uq_validation_inflight / uq_validation_reuse: a concurrent request won; re-decide
+            continue
+        jobs.enqueue_after_commit(session, row["validation_id"], correlation_id)
+        return RequestOutcome("QUEUED", row)
+    raise RuntimeError("could not settle the validation request after concurrent conflicts")
 
 
 def load_checks(session: Session, validation_ids: list[UUID]) -> dict[UUID, list[dict[str, Any]]]:

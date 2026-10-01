@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from api.modules.readiness.jobs import register_worker
-from api.modules.readiness.public import wire
+from api.modules.readiness.query import wire
 from api.platform.modules import ModuleSpec
 
 MODULE = ModuleSpec(

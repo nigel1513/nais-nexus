@@ -1,6 +1,11 @@
 """Queueing rules (M05 §6.2 steps 5-7), auto profile choice (§3.2), reads and ReadinessQueryPort (§8)."""
 
+import ast
+import subprocess
+import sys
+import threading
 import uuid
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -11,7 +16,8 @@ from api.modules.readiness.engine import VALIDATOR_VERSION
 from api.modules.readiness.engine.canonical import input_fingerprint
 from api.modules.readiness.fakes import FixtureCatalog
 from api.modules.readiness.profile_registry import PROFILES
-from api.modules.readiness.public import ReadinessQueryPort, wire
+from api.modules.readiness.public import ReadinessQueryPort
+from api.modules.readiness.query import wire
 from api.modules.readiness.service import RequestOutcome, auto_profiles, fingerprint_for, request_validation
 from api.modules.readiness.tests.dbutil import CORRELATION, queued_messages, row
 from api.modules.readiness.tests.helpers import ORG_B, USERS, clean_snapshot
@@ -134,3 +140,77 @@ def test_broker_outage_at_enqueue_keeps_the_committed_row(
     outcome = request(db, view)
     assert outcome.kind == "QUEUED"
     assert row(db, outcome.row["validation_id"])["run_status"] == "QUEUED"
+
+
+def test_conflict_with_winner_completed_meanwhile_is_reused(
+    db: PgUrls, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pre-checks blind, insert hits uq_validation_inflight, the winner COMPLETES before the re-read -> REUSED."""
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    winner = request(db, view, "GENERIC_BASIC")
+    real_latest = service._latest
+    calls: list[int] = []
+
+    def blind_then_complete(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        if len(calls) <= 2:
+            return None
+        if len(calls) == 3:  # first re-read after the conflict: the winner finishes just before it
+            jobs.run_validation(winner.row["validation_id"])
+        return real_latest(*args, **kwargs)
+
+    monkeypatch.setattr(service, "_latest", blind_then_complete)
+    loser = request(db, view, "GENERIC_BASIC")
+    assert (loser.kind, loser.row["validation_id"]) == ("REUSED", winner.row["validation_id"])
+    assert len(queued_messages()) == 1
+
+
+def test_two_sessions_block_on_unique_index_then_in_progress(db: PgUrls, catalog: FixtureCatalog) -> None:
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    profile = PROFILES["GENERIC_BASIC"]
+    result: dict[str, Any] = {}
+    started = threading.Event()
+
+    def second() -> None:
+        started.set()
+        try:
+            result["outcome"] = request(db, view, "GENERIC_BASIC")
+        except Exception as exc:  # surface the cause in the assertion below
+            result["error"] = exc
+
+    with session_factory(db.app)() as a, a.begin():
+        first = request_validation(
+            a, view, profile, triggered_by="AUTO_ON_PUBLISH", requester=None, correlation_id=CORRELATION
+        )
+        assert first.kind == "QUEUED"
+        thread = threading.Thread(target=second, daemon=True)
+        thread.start()
+        started.wait(5)
+        thread.join(1.0)
+        assert thread.is_alive(), "B should block on the uncommitted in-flight row"
+        # A committed here
+    thread.join(10)
+    assert not thread.is_alive()
+    assert "error" not in result, result.get("error")
+    outcome = result["outcome"]
+    assert (outcome.kind, outcome.row["validation_id"]) == ("IN_PROGRESS", first.row["validation_id"])
+    assert len(queued_messages()) == 1
+
+
+def test_public_module_is_a_leaf() -> None:
+    """D-038: public.py imports only stdlib/typing; run it standalone so the package __init__ (actor) is not involved."""
+    path = Path(__file__).parents[1] / "public.py"
+    tree = ast.parse(path.read_text())
+    imported = {
+        (node.module or "") if isinstance(node, ast.ImportFrom) else alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Import, ast.ImportFrom))
+        for alias in (node.names if isinstance(node, ast.Import) else [None])
+    }
+    assert imported <= {"typing", "uuid"}, imported
+    code = (
+        "import runpy, sys;"
+        f"runpy.run_path({str(path)!r});"
+        "sys.exit(1 if any(m in sys.modules for m in ('api.modules.readiness.jobs', 'pyarrow')) else 0)"
+    )
+    assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
