@@ -1,0 +1,121 @@
+import { http, HttpResponse } from "msw";
+import { ENUMS } from "@/generated/contracts";
+import type { Schemas } from "@/shared/api/types";
+import { getDb } from "../db";
+import { API, body, currentUser, fail, nowIso, orgName, paginate, recordAudit, validationFailed } from "../http";
+import type { MockDb, MockUser } from "../types";
+
+export function meView(db: MockDb, u: MockUser): Schemas["Me"] {
+  const org = db.organizations.find((o) => o.organization_id === u.organization_id)!;
+  return {
+    user_id: u.user_id,
+    display_name: u.display_name,
+    email: u.email,
+    status: u.status,
+    organization: { organization_id: org.organization_id, code: org.code, name: org.name, type: org.type },
+    org_roles: u.org_roles,
+    platform_roles: u.platform_roles,
+  };
+}
+
+function membershipView(u: MockUser): Schemas["OrganizationMembership"] {
+  return { user_id: u.user_id, organization_id: u.organization_id, display_name: u.display_name, email: u.email, roles: u.org_roles, status: u.membership_status, updated_at: u.updated_at };
+}
+
+function requireOrgAdmin(user: MockUser, organizationId: string) {
+  const ok = user.platform_roles.includes("PLATFORM_ADMIN") || (user.organization_id === organizationId && user.org_roles.includes("ORG_ADMIN"));
+  if (!ok) fail("FORBIDDEN");
+}
+
+export const identityHandlers = [
+  http.get(`${API}/health/live`, () => HttpResponse.json({ status: "ok" })),
+  http.get(`${API}/health/ready`, () => HttpResponse.json({ status: "ok", checks: { mock: "ok" } })),
+
+  http.get(`${API}/me`, ({ request }) => HttpResponse.json(meView(getDb(), currentUser(request)))),
+
+  http.get(`${API}/users`, ({ request }) => {
+    currentUser(request);
+    const db = getDb();
+    const url = new URL(request.url);
+    const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+    if (q && q.length < 2) validationFailed("q", "TOO_SHORT", "q must have at least 2 characters");
+    const org = url.searchParams.get("organization_id");
+    const items: Schemas["IdentityPublicProfile"][] = db.users
+      .filter((u) => u.status === "ACTIVE" && u.membership_status === "ACTIVE")
+      .filter((u) => !org || u.organization_id === org)
+      .filter((u) => !q || u.display_name.toLowerCase().includes(q) || u.email.toLowerCase().startsWith(q))
+      .map((u) => ({ user_id: u.user_id, display_name: u.display_name, organization_id: u.organization_id, organization_name: orgName(db, u.organization_id), status: u.status }));
+    return HttpResponse.json(paginate(items, url));
+  }),
+
+  http.get(`${API}/organizations`, ({ request }) => {
+    currentUser(request);
+    const items = getDb().organizations.map(({ organization_id, code, name, type }) => ({ organization_id, code, name, type }));
+    return HttpResponse.json(paginate(items, new URL(request.url)));
+  }),
+
+  http.get(`${API}/organizations/:organization_id`, ({ request, params }) => {
+    currentUser(request);
+    const org = getDb().organizations.find((o) => o.organization_id === params.organization_id);
+    if (!org) fail("NOT_FOUND");
+    return HttpResponse.json(org);
+  }),
+
+  http.get(`${API}/organizations/:organization_id/members`, ({ request, params }) => {
+    const user = currentUser(request);
+    const orgId = String(params.organization_id);
+    requireOrgAdmin(user, orgId);
+    const items = getDb().users.filter((u) => u.organization_id === orgId).map(membershipView);
+    return HttpResponse.json(paginate(items, new URL(request.url)));
+  }),
+
+  http.patch(`${API}/organizations/:organization_id/members/:user_id`, async ({ request, params }) => {
+    const user = currentUser(request);
+    const orgId = String(params.organization_id);
+    requireOrgAdmin(user, orgId);
+    const db = getDb();
+    const target = db.users.find((u) => u.user_id === params.user_id && u.organization_id === orgId);
+    if (!target) fail("NOT_FOUND");
+    const patch = await body<{ roles?: Schemas["OrgRole"][]; status?: Schemas["ActiveStatus"] }>(request);
+    if (patch.roles === undefined && patch.status === undefined) fail("VALIDATION_FAILED", "empty patch");
+    const platformAdmin = user.platform_roles.includes("PLATFORM_ADMIN");
+    const isSelf = target.user_id === user.user_id;
+    if (patch.roles) {
+      // PLATFORM_ADMIN is not an organization role; duplicates are a validation error (M01 §6).
+      if (patch.roles.some((r) => !(ENUMS.OrgRole as readonly string[]).includes(r))) fail("ROLE_NOT_ASSIGNABLE");
+      if (new Set(patch.roles).size !== patch.roles.length) fail("VALIDATION_FAILED", "duplicate roles", { fields: [{ field: "roles", reason: "DUPLICATE" }] });
+    }
+    if (patch.status !== undefined && !(ENUMS.ActiveStatus as readonly string[]).includes(patch.status)) fail("VALIDATION_FAILED", "invalid status", { fields: [{ field: "status", reason: "INVALID" }] });
+    const nextRoles = patch.roles ?? target.org_roles;
+    const nextStatus = patch.status ?? target.membership_status;
+    const losesAdmin = target.org_roles.includes("ORG_ADMIN") && target.membership_status === "ACTIVE" && !(nextRoles.includes("ORG_ADMIN") && nextStatus === "ACTIVE");
+    // M01 §6 (members.py): nobody, PLATFORM_ADMIN included, can disable their own membership.
+    if (isSelf && nextStatus !== "ACTIVE") fail("ROLE_NOT_ASSIGNABLE", "You cannot disable your own membership.");
+    if (!platformAdmin) {
+      // An ORG_ADMIN cannot drop their own ORG_ADMIN role; the last ACTIVE ORG_ADMIN is PLATFORM_ADMIN-only.
+      if (isSelf && losesAdmin) fail("ROLE_NOT_ASSIGNABLE", "You cannot remove your own ORG_ADMIN role.");
+      const activeAdmins = db.users.filter((u) => u.organization_id === orgId && u.membership_status === "ACTIVE" && u.org_roles.includes("ORG_ADMIN"));
+      if (losesAdmin && activeAdmins.length <= 1) fail("ROLE_NOT_ASSIGNABLE", "Only a PLATFORM_ADMIN can remove the last ORG_ADMIN.");
+    }
+    const rolesChanged = [...nextRoles].sort().join() !== [...target.org_roles].sort().join();
+    const statusChanged = nextStatus !== target.membership_status;
+    if (!rolesChanged && !statusChanged) return HttpResponse.json(membershipView(target));
+    if (rolesChanged) {
+      target.org_roles = [...nextRoles];
+      recordAudit(db, { action: "ADMIN_ROLE_CHANGED", actor: user, resource: { type: "MEMBERSHIP", id: target.user_id, owner_organization_id: orgId }, details: { roles: target.org_roles } });
+    }
+    if (statusChanged) {
+      target.membership_status = nextStatus;
+      if (nextStatus === "DISABLED") {
+        for (const g of db.grants.filter((g) => g.subject_user_id === target.user_id && g.status === "ACTIVE")) {
+          g.status = "REVOKED";
+          g.revoked_at = nowIso();
+          g.revoked_by = null;
+          g.revocation_reason = "MEMBERSHIP_DISABLED";
+        }
+      }
+    }
+    target.updated_at = nowIso();
+    return HttpResponse.json(membershipView(target));
+  }),
+];

@@ -1,0 +1,62 @@
+const PROTECTED = [/^\/commons(\/|$)/, /^\/settings(\/|$)/];
+
+export function isProtected(pathname: string): boolean {
+  return PROTECTED.some((re) => re.test(pathname));
+}
+
+/** Only same-origin relative paths are allowed as post-login destinations (no open redirect). */
+export function safeCallbackUrl(raw: string | null | undefined, fallback = "/commons"): string {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(raw)) return fallback;
+  try {
+    const u = new URL(raw, "http://placeholder.invalid");
+    // "/.//evil.com" normalizes to "//evil.com": a protocol-relative URL once pushed.
+    if (u.origin !== "http://placeholder.invalid" || u.pathname.startsWith("//")) return fallback;
+    return u.pathname + u.search + u.hash;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Hosts the app may be reached on: AUTH_URL and the public issuer (host:port), NAIS_EXTERNAL_HOST (host name or IP, any
+ * port: the port comes from the request) and the optional comma-separated AUTH_ALLOWED_HOSTS. Empty = not configured.
+ */
+export function allowedHosts(env: Record<string, string | undefined> = process.env): string[] {
+  const hosts: string[] = [];
+  for (const raw of [env.AUTH_URL, env.AUTH_KEYCLOAK_ISSUER]) {
+    try {
+      if (raw) hosts.push(new URL(raw).host);
+    } catch {
+      /* ignore malformed config */
+    }
+  }
+  for (const raw of [env.NAIS_EXTERNAL_HOST, ...(env.AUTH_ALLOWED_HOSTS ?? "").split(",")]) {
+    const h = raw?.trim();
+    if (h) hosts.push(h);
+  }
+  return hosts;
+}
+
+/** An entry with a port must match exactly; an entry without one matches that host name on any port. */
+function hostAllowed(host: string, allowed: string[]): boolean {
+  const name = host.replace(/:\d+$/, "");
+  return allowed.some((entry) => entry === host || (!/:\d+$/.test(entry) && entry === name));
+}
+
+/**
+ * Absolute URL on the host the browser used. Fails CLOSED: the forwarded host is client-controlled input, so it is only
+ * trusted when it is on the allow-list; with no allow-list (or no match) the path is resolved against `requestUrl`
+ * (callers pass the AUTH_URL origin). Same-origin redirects should be relative instead; use this only where an absolute URL is required.
+ */
+export function publicUrl(headers: Headers, requestUrl: string, path: string, allowed: string[] = allowedHosts()): URL {
+  const host = headers.get("x-forwarded-host")?.split(",")[0]?.trim() || headers.get("host");
+  if (!host || allowed.length === 0 || !hostAllowed(host, allowed)) return new URL(path, requestUrl);
+  const proto = (headers.get("x-forwarded-proto") ?? new URL(requestUrl).protocol.replace(":", "")).split(",")[0]!.trim();
+  return new URL(path, `${proto === "https" ? "https" : "http"}://${host}`);
+}
+
+/** Request protocol as the browser saw it (gateway forwards x-forwarded-proto); falls back to the configured URL. */
+export function isSecureRequest(headers: Headers, fallbackUrl: string): boolean {
+  const proto = headers.get("x-forwarded-proto") ?? new URL(fallbackUrl).protocol.replace(":", "");
+  return proto.split(",")[0]!.trim() === "https";
+}

@@ -1,0 +1,59 @@
+{
+  "common": {
+    "appName": "NAIS Research Commons",
+    "skipToContent": "Skip to main content",
+    "loading": "Loading…",
+    "loadMore": "Load more",
+    "retry": "Retry",
+    "errorTitle": "Something went wrong",
+    "traceId": "Trace ID",
+    "copyTraceId": "Copy trace ID",
+    "copied": "Copied",
+    "copyFailed": "Copy failed. Please select and copy it manually.",
+    "required": "(required)",
+    "cancel": "Cancel",
+    "close": "Close",
+    "save": "Save",
+    "edit": "Edit",
+    "actions": "Actions",
+    "yes": "Yes",
+    "no": "No",
+    "notValidated": "Not validated",
+    "expired": "Expired",
+    "expiresInDays": "expires in {count} days",
+    "expiresInHours": "expires in {count} hours"
+  },
+  "meta": {
+    "title": "NAIS Research Commons",
+    "description": "NAIS AI-OS collaborative research data platform"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "projects": "Projects",
+    "data": "Data",
+    "access": "Access",
+    "activity": "Activity",
+    "organization": "Organization",
+    "settings": "Settings"
+  },
+  "shell": {
+    "mainNav": "Main menu",
+    "searchLabel": "Search data",
+    "searchPlaceholder": "Search dataset titles, descriptions, keywords",
+    "notifications": "{count, plural, =0 {Notifications} one {# unread notification} other {# unread notifications}}",
+    "markAllRead": "Mark all as read",
+    "noNotifications": "No new notifications.",
+    "userMenu": "user menu"
+  },
+  "landing": {
+    "title": "NAIS AI-OS Research Commons",
+    "subtitle": "Collaborate across institutions, find AI-ready data and use it safely within approved limits.",
+    "cta": "Start with Research Commons",
+    "signIn": "Sign in"
+  },
+  "auth": {
+    "mockUser": "User",
+    "signIn": "Sign in",
+    "signOut": "Sign out"
+  }
+}
