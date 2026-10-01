@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from api.modules.identity.jobs import register_worker
 from api.modules.identity.public import IdentityQueryPort
 from api.modules.identity.query import SqlIdentityQuery
 from api.modules.identity.resolver import IdentityPrincipalResolver, SessionFactory
@@ -29,5 +30,6 @@ MODULE = ModuleSpec(
     router=router,
     migrations_dir=Path(__file__).parent / "migrations",
     wire=wire,
+    register_worker=register_worker,
     seed=seed,
 )
