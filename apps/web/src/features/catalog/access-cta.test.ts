@@ -41,4 +41,9 @@ describe("decideAccessCta (M10 §7.6)", () => {
   it("ignores non-ACTIVE grants", () => {
     expect(decideAccessCta({ ...base, accessLevel: "CONTROLLED", me: me("org-a"), activeGrants: [{ ...grant, status: "REVOKED" }] }).kind).toBe("request");
   });
+  it("ignores ACTIVE grants whose expires_at has passed", () => {
+    const expired = { ...grant, expires_at: "2020-01-01T00:00:00Z" };
+    expect(decideAccessCta({ ...base, accessLevel: "CONTROLLED", me: me("org-a"), activeGrants: [expired] }).kind).toBe("request");
+    expect(decideAccessCta({ ...base, accessLevel: "CONTROLLED", me: me("org-a"), activeGrants: [grant], now: new Date("2100-01-01") }).kind).toBe("request");
+  });
 });

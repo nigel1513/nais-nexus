@@ -14,7 +14,7 @@ import { DateTime, ExpiryText } from "@/shared/ui/date-text";
 import { PageHeader } from "@/shared/ui/page-header";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { useToast } from "@/shared/ui/toast";
-import { decideAccessCta } from "./access-cta";
+import { decideAccessCta, type AccessCta as AccessCtaT } from "./access-cta";
 import { useGetDataset, useListDatasetVersions, useUpdateDataset } from "./api";
 import { DatasetForm } from "./components/dataset-form";
 import { NewVersionDialog } from "./components/new-version-dialog";
@@ -33,16 +33,19 @@ function AccessCta({ dataset }: { dataset: Dataset }) {
   const t = useTranslations();
   const me = useMeData();
   const [requesting, setRequesting] = useState(false);
+  const [notRequired, setNotRequired] = useState(false);
   const grants = useListAccessGrants({ role: "subject", dataset_id: dataset.dataset_id, status: ["ACTIVE"] });
   const requests = useListAccessRequests({ role: "requester", dataset_id: dataset.dataset_id });
   if (grants.isPending || requests.isPending) return <DelayedSkeleton lines={1} />;
-  const cta = decideAccessCta({
+  const decided = decideAccessCta({
     accessLevel: dataset.access_level,
     ownerOrganizationId: dataset.owner_organization_id,
     me,
     activeGrants: flattenPages(grants.data),
     requests: flattenPages(requests.data),
   });
+  // ACCESS_NOT_REQUIRED from the server wins over our guess (M10 §7.9).
+  const cta: AccessCtaT = notRequired ? { kind: "download", basis: "OWNER_ORGANIZATION" } : decided;
   const latest = dataset.latest_published_version;
   const downloadHref = latest ? `/commons/data/${dataset.dataset_id}/versions/${latest.dataset_version_id}?download=1` : null;
 
@@ -71,7 +74,7 @@ function AccessCta({ dataset }: { dataset: Dataset }) {
       return (
         <>
           <Button onClick={() => setRequesting(true)}>{t("access.request.title")}</Button>
-          <AccessRequestDialog dataset={dataset} open={requesting} onOpenChange={setRequesting} />
+          <AccessRequestDialog dataset={dataset} open={requesting} onOpenChange={setRequesting} onNotRequired={() => setNotRequired(true)} />
         </>
       );
     default:
@@ -79,7 +82,7 @@ function AccessCta({ dataset }: { dataset: Dataset }) {
   }
 }
 
-export function DatasetDetailScreen({ datasetId, created = false }: { datasetId: string; created?: boolean }) {
+export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const t = useTranslations();
   const me = useMeData();
   const toast = useToast();
@@ -126,7 +129,7 @@ export function DatasetDetailScreen({ datasetId, created = false }: { datasetId:
           <Badge>{d.owner_organization_name ?? d.owner_organization_id}</Badge>
         </div>
       </PageHeader>
-      {steward && (created || versionItems.length === 0) && versions.isSuccess && versionItems.length === 0 ? (
+      {steward && versions.isSuccess && versionItems.length === 0 ? (
         <p role="status" className="mb-4 rounded-md border border-info p-3 text-sm">
           {t("data.detail.firstVersionHint")}{" "}
           <Button size="sm" variant="link" onClick={() => setNewVersion(true)}>

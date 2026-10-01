@@ -125,7 +125,9 @@ function validateDataset(input: Partial<Schemas["DatasetCreate"]> & { status?: s
   const text = (name: string, value: unknown, min: number, max: number) => {
     if (typeof value !== "string" || value.length < min || value.length > max) fields.push({ field: name, reason: "LENGTH" });
   };
-  const has = (k: keyof typeof input) => input[k] !== undefined;
+  // StrictIn rejects null: the real API has no "clear this field" semantics.
+  for (const [k, v] of Object.entries(input)) if (v === null) fields.push({ field: k, reason: "NULL_NOT_ALLOWED" });
+  const has = (k: keyof typeof input) => input[k] !== undefined && input[k] !== null;
   if (!partial || has("title")) text("title", input.title, 3, 300);
   if (!partial || has("description")) text("description", input.description, 0, 20000);
   if (!partial || has("license")) text("license", input.license, 1, 200);

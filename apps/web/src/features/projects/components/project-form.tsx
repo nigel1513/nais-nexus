@@ -58,7 +58,7 @@ export function ProjectForm({
             const fields = fieldErrors(err);
             if (err.code === "VALIDATION_FAILED" && Object.keys(fields).length) {
               for (const [k, m] of Object.entries(fields)) if (k in labels) form.setError(k as Field, { message: m });
-              setSummary(Object.entries(fields).map(([k, m]) => ({ id: `project-${k}`, message: `${labels[k as Field] ?? k}: ${m}` })));
+              setSummary(Object.entries(fields).map(([k, m]) => ({ id: `project-${k}`, message: `${labels[k as Field] ?? k}: ${tv(m)}` })));
             } else setSubmitError(err);
           }
         },

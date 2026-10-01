@@ -58,6 +58,14 @@ describe("DataSearchScreen", () => {
     expect(screen.getByRole("heading", { level: 2, name: "Hit 1" })).toBeInTheDocument();
   });
 
+  it("keeps a selected facet value visible and toggleable with 0 hits", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?keyword=nonexistent-kw" });
+    const box = await screen.findByRole("checkbox", { name: "nonexistent-kw (0)" });
+    expect(box).toBeChecked();
+    await userEvent.click(box);
+    expect(router.replace).toHaveBeenLastCalledWith("/commons/data", { scroll: false });
+  });
+
   it("DATA_STEWARD sees the register button", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.bSteward, path: "/commons/data" });
     expect(await screen.findByRole("link", { name: "데이터셋 등록" })).toHaveAttribute("href", "/commons/data/new");
@@ -179,6 +187,46 @@ describe("DatasetDetailScreen", () => {
     open(USER.aSteward, DATASET.electrolyte);
     await screen.findByRole("heading", { level: 1, name: "Electrolyte Screening (draft)" });
     expect(await screen.findByText("초안")).toBeInTheDocument();
+  });
+
+  it("ACCESS_NOT_REQUIRED from the server switches the CTA to download", async () => {
+    server.use(http.post("*/mock-api/v1/access-requests", () => HttpResponse.json({ error: { code: "ACCESS_NOT_REQUIRED", message: "n", trace_id: "t" } }, { status: 422 })));
+    open(USER.aResearcher, DATASET.sensors);
+    await userEvent.click(await screen.findByRole("button", { name: "접근 요청" }));
+    const dialog = await screen.findByRole("dialog", { name: "접근 요청" });
+    await userEvent.selectOptions(within(dialog).getByLabelText(/^프로젝트/), PROJECT.seed);
+    await userEvent.type(within(dialog).getByLabelText(/^목적 상세/), "충분히 길게 작성한 목적 상세 설명입니다. 비교 분석 연구.");
+    await userEvent.click(within(dialog).getByRole("button", { name: "요청 보내기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "접근 요청" })).not.toBeInTheDocument();
+  });
+
+  it("maps server VALIDATION_FAILED onto the request dialog fields with localized reasons", async () => {
+    server.use(
+      http.post("*/mock-api/v1/access-requests", () =>
+        HttpResponse.json({ error: { code: "VALIDATION_FAILED", message: "v", trace_id: "t", details: { fields: [{ field: "purpose_detail", reason: "TOO_LONG" }] } } }, { status: 422 }),
+      ),
+    );
+    open(USER.aResearcher, DATASET.sensors);
+    await userEvent.click(await screen.findByRole("button", { name: "접근 요청" }));
+    const dialog = await screen.findByRole("dialog", { name: "접근 요청" });
+    await userEvent.selectOptions(within(dialog).getByLabelText(/^프로젝트/), PROJECT.seed);
+    await userEvent.type(within(dialog).getByLabelText(/^목적 상세/), "충분히 길게 작성한 목적 상세 설명입니다. 비교 분석 연구.");
+    await userEvent.click(within(dialog).getByRole("button", { name: "요청 보내기" }));
+    expect(await within(dialog).findByText("너무 깁니다.")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/^목적 상세/)).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("editing cannot silently clear a previously set optional field", async () => {
+    let patches = 0;
+    server.use(http.patch("*/mock-api/v1/datasets/:id", () => { patches += 1; return HttpResponse.json({}); }));
+    open(USER.bSteward, DATASET.battery);
+    await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    await userEvent.clear(screen.getByLabelText(/^분야/));
+    await userEvent.click(screen.getByRole("button", { name: "저장" }));
+    expect((await screen.findAllByText(/이 항목은 비울 수 없습니다/)).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/^분야/)).toHaveAttribute("aria-invalid", "true");
+    expect(patches).toBe(0);
   });
 
   it("owner-org steward can change policy only after the non-retroactive warning", async () => {

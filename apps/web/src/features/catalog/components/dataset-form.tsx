@@ -12,6 +12,7 @@ import { ErrorView } from "@/shared/ui/state-views";
 import { datasetFormSchema, policyChanged, type DatasetFormValues } from "../schemas";
 
 type Field = keyof DatasetFormValues;
+const CLEARABLE = ["domain", "usage_policy", "contact_email", "provenance"] as const;
 
 export function DatasetForm({
   mode,
@@ -65,7 +66,7 @@ export function DatasetForm({
       const fields = fieldErrors(err);
       if (err.code === "VALIDATION_FAILED" && Object.keys(fields).length) {
         for (const [k, m] of Object.entries(fields)) if (k in labels) form.setError(k as Field, { message: m });
-        setSummary(Object.entries(fields).map(([k, m]) => ({ id: `dataset-${k}`, message: `${labels[k as Field] ?? k}: ${m}` })));
+        setSummary(Object.entries(fields).map(([k, m]) => ({ id: `dataset-${k}`, message: `${labels[k as Field] ?? k}: ${tv(m)}` })));
       } else setSubmitError(err);
     }
   };
@@ -78,6 +79,15 @@ export function DatasetForm({
       noValidate
       className="flex max-w-3xl flex-col gap-4"
       onSubmit={form.handleSubmit(async (values) => {
+        // The API has no way to clear an optional field (null is rejected), so block it instead of silently keeping the old value.
+        if (mode === "edit") {
+          const cleared = CLEARABLE.filter((k) => defaultValues[k].trim() && !values[k].trim());
+          if (cleared.length) {
+            for (const k of cleared) form.setError(k, { message: "validation.notClearable" });
+            setSummary(cleared.map((k) => ({ id: `dataset-${k}`, message: `${labels[k]}: ${tv("validation.notClearable")}` })));
+            return;
+          }
+        }
         if (mode === "edit" && policyChanged(defaultValues, values)) setPendingPolicy(values);
         else await submit(values);
       }, (errs) => setSummary(toSummary(errs)))}

@@ -32,6 +32,7 @@ describe("PlatformShell", () => {
   });
 
   it("sends disabled members to /blocked", async () => {
+    router.replace.mockImplementationOnce(() => {}); // the real shell unmounts on redirect; don't re-enter it here
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.bDisabled });
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/blocked?code=MEMBERSHIP_DISABLED"));
     expect(screen.queryByRole("heading", { name: "본문" })).not.toBeInTheDocument();
@@ -39,6 +40,7 @@ describe("PlatformShell", () => {
 
   it("sends signed-out users to the mock login with a callback", async () => {
     setLocation("/commons/data?q=x");
+    router.replace.mockImplementationOnce(() => {});
     renderWithProviders(<PlatformShell>{page}</PlatformShell>);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/mock-login?callbackUrl=%2Fcommons%2Fdata%3Fq%3Dx"));
   });

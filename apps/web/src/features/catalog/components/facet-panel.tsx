@@ -22,7 +22,9 @@ export function FacetPanel({
   return (
     <aside aria-label={t("data.search.filters")} className="flex flex-col gap-4">
       {FACETS.map((key) => {
-        const buckets = facets?.[key] ?? [];
+        const found = facets?.[key] ?? [];
+        // A selected value stays visible and toggleable even when it has 0 hits.
+        const buckets = [...found, ...selected[key].filter((v) => !found.some((b) => b.value === v)).map((value) => ({ value, count: 0 }) as FacetBucket)];
         if (!buckets.length && !selected[key].length) return null;
         return (
           <fieldset key={key} className="flex flex-col gap-1">

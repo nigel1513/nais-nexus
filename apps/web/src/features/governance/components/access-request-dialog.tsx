@@ -7,7 +7,7 @@ import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useListProjects } from "@/features/projects/api";
-import { asApiError } from "@/shared/api/errors";
+import { asApiError, fieldErrors } from "@/shared/api/errors";
 import { flattenPages } from "@/shared/api/pagination";
 import type { Dataset, Purpose } from "@/shared/api/types";
 import { useValidationText } from "@/shared/hooks/use-validation-text";
@@ -16,20 +16,39 @@ import { useToast } from "@/shared/ui/toast";
 import { useCreateAccessRequest } from "../api";
 import { accessRequestSchema, type AccessRequestFormValues } from "../schemas";
 
-export function AccessRequestDialog({ dataset, open, onOpenChange }: { dataset: Dataset; open: boolean; onOpenChange: (o: boolean) => void }) {
+export function AccessRequestDialog({
+  dataset,
+  open,
+  onOpenChange,
+  onNotRequired,
+}: {
+  dataset: Dataset;
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  /** The server says no grant is needed (ACCESS_NOT_REQUIRED): the caller switches its CTA to download. */
+  onNotRequired?: () => void;
+}) {
   const t = useTranslations();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent closeLabel={t("common.close")} className="max-w-xl">
         <DialogTitle>{t("access.request.title")}</DialogTitle>
         <DialogDescription>{t("access.request.description", { title: dataset.title })}</DialogDescription>
-        {open ? <RequestForm dataset={dataset} /> : null}
+        {open ? (
+          <RequestForm
+            dataset={dataset}
+            onNotRequired={() => {
+              onOpenChange(false);
+              onNotRequired?.();
+            }}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function RequestForm({ dataset }: { dataset: Dataset }) {
+function RequestForm({ dataset, onNotRequired }: { dataset: Dataset; onNotRequired: () => void }) {
   const t = useTranslations();
   const tv = useValidationText();
   const router = useRouter();
@@ -44,6 +63,7 @@ function RequestForm({ dataset }: { dataset: Dataset }) {
     defaultValues: { project_id: "", purpose: dataset.policy.allowed_purposes[0] ?? "", purpose_detail: "", requested_days: Math.min(30, maxDays) },
   });
   const { errors, isSubmitting } = form.formState;
+  const v0: Record<string, true> = { project_id: true, purpose: true, purpose_detail: true, requested_days: true };
   const detail = form.watch("purpose_detail") ?? "";
 
   if (projects.isPending) return <DelayedSkeleton />;
@@ -83,7 +103,13 @@ function RequestForm({ dataset }: { dataset: Dataset }) {
           toast(t("access.request.sent"));
           router.push(`/commons/access/${r.access_request_id}`);
         } catch (e) {
-          setServerError(e);
+          const err = asApiError(e);
+          if (err.code === "ACCESS_NOT_REQUIRED") return onNotRequired();
+          const fields = fieldErrors(err);
+          const mapped = Object.entries(fields).filter(([k]) => k in v0);
+          if (err.code === "VALIDATION_FAILED" && mapped.length) {
+            for (const [k, m] of mapped) form.setError(k as keyof AccessRequestFormValues, { message: m });
+          } else setServerError(e);
         }
       })}
     >

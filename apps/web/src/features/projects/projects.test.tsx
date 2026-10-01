@@ -89,6 +89,22 @@ describe("ProjectsListScreen URL state (Back/Forward)", () => {
 });
 
 describe("ProjectNewScreen", () => {
+  it.each([
+    ["TOO_MANY", "항목이 너무 많습니다."],
+    ["SOMETHING_NEW", "입력값을 확인해 주세요."],
+  ])("localizes server reason %s instead of showing the raw code", async (reason, text) => {
+    server.use(
+      http.post("*/mock-api/v1/projects", () =>
+        HttpResponse.json({ error: { code: "VALIDATION_FAILED", message: "x", trace_id: "t", details: { fields: [{ field: "keywords", reason }] } } }, { status: 422 }),
+      ),
+    );
+    renderScreen(<ProjectNewScreen />, { user: USER.aResearcher, path: "/commons/projects/new" });
+    await userEvent.type(await screen.findByLabelText(/^이름/), "Reason Test");
+    await userEvent.click(screen.getByRole("button", { name: "프로젝트 만들기" }));
+    expect((await screen.findAllByText(new RegExp(text))).length).toBeGreaterThan(0);
+    expect(screen.queryByText(new RegExp(reason))).not.toBeInTheDocument();
+  });
+
   it("maps server VALIDATION_FAILED onto the field (indexed keys normalised) and the summary", async () => {
     server.use(
       http.post("*/mock-api/v1/projects", () =>

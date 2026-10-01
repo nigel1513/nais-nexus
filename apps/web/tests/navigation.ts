@@ -11,9 +11,11 @@ const state = { pathname: "/", search: new URLSearchParams(), params: {} as Reco
 
 export function setLocation(href: string, params: Record<string, string> = {}) {
   const u = new URL(href, "http://localhost:3000");
+  const changed = state.pathname !== u.pathname || state.search.toString() !== new URLSearchParams(u.search).toString();
   state.pathname = u.pathname;
-  state.search = new URLSearchParams(u.search);
   state.params = params;
+  if (!changed) return; // a no-op navigation must not re-render (would loop redirect effects)
+  state.search = new URLSearchParams(u.search);
   listeners.forEach((fn) => fn());
 }
 

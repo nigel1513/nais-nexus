@@ -16,13 +16,14 @@ export function decideAccessCta(input: {
   me: Me;
   activeGrants: AccessGrant[];
   requests: AccessRequest[];
+  now?: Date;
 }): AccessCta {
   const { accessLevel, ownerOrganizationId, me } = input;
   if (accessLevel === "PUBLIC") return { kind: "download", basis: "PUBLIC" };
   const ownOrg = me.organization.organization_id === ownerOrganizationId;
   if (ownOrg && (me.org_roles.includes("DATA_STEWARD") || me.org_roles.includes("ORG_ADMIN"))) return { kind: "download", basis: "OWNER_ORGANIZATION" };
   if (accessLevel === "INTERNAL") return ownOrg ? { kind: "download", basis: "OWNER_ORGANIZATION" } : { kind: "unavailable" };
-  const active = input.activeGrants.filter((g) => g.status === "ACTIVE");
+  const active = input.activeGrants.filter((g) => g.status === "ACTIVE" && Date.parse(g.expires_at) > (input.now ?? new Date()).getTime());
   if (active.length) return { kind: "download-grant", grants: active };
   const open = input.requests.find((r) => OPEN.includes(r.status));
   if (open) return { kind: "view-request", accessRequestId: open.access_request_id };

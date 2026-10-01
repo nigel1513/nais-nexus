@@ -46,6 +46,15 @@ describe("catalog mocks", () => {
     expect(created.policy).toMatchObject({ access_level: "SENSITIVE", max_grant_days: 30, approval_required: true });
   });
 
+  it("PATCH rejects null (StrictIn: no clear semantics) with VALIDATION_FAILED", async () => {
+    as(USER.bSteward);
+    await expect(unwrap(api.PATCH("/datasets/{dataset_id}", { params: { path: { dataset_id: DATASET.battery } }, body: { domain: null } as never }))).rejects.toMatchObject({
+      code: "VALIDATION_FAILED",
+      details: { fields: [{ field: "domain", reason: "NULL_NOT_ALLOWED" }] },
+    });
+    expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.domain).toBe("materials");
+  });
+
   it("hides DRAFT versions from non-stewards", async () => {
     as(USER.aResearcher);
     const plain = await unwrap(api.GET("/datasets/{dataset_id}/versions", { params: { path: { dataset_id: DATASET.electrolyte } } }));
