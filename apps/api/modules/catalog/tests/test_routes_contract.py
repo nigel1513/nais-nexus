@@ -21,6 +21,7 @@ EXPECTED = {
     "getDataset",
     "updateDataset",
     "getDatasetPolicy",
+    "getDatasetJsonLd",
     "listDatasetVersions",
     "createDatasetVersion",
     "getDatasetVersion",

@@ -32,5 +32,7 @@ def db(catalog_db: PgUrls) -> Iterator[PgUrls]:
     engine = create_engine(catalog_db.migrator)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {', '.join(TRUNCATE)} CASCADE"))
+        # Seeded vocabulary terms are all active; undo any deactivation a previous test left behind.
+        conn.execute(text("UPDATE catalog.vocabulary_terms SET active = true WHERE NOT active"))
     engine.dispose()
     yield catalog_db

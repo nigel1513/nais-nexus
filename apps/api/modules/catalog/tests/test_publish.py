@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy.exc import DBAPIError
 
-from api.modules.catalog.domain import manifest_sha256
+from api.modules.catalog.domain import SNAPSHOT_FIELDS, manifest_sha256
 from api.modules.catalog.service import publish as publish_service
 from api.modules.catalog.tests.support import execute, outbox_events, rows
 from api.modules.catalog.tests.support_api import USERS, CatalogApi, new_draft
@@ -56,19 +56,7 @@ def test_publish_freezes_manifest_and_metadata(api: CatalogApi, db: PgUrls) -> N
         v=version_id,
     )
     snapshot = row["metadata_snapshot"]
-    assert sorted(snapshot) == [
-        "access_level",
-        "allowed_purposes",
-        "contact_email",
-        "description",
-        "domain",
-        "keywords",
-        "license",
-        "max_grant_days",
-        "provenance",
-        "title",
-        "usage_policy",
-    ]
+    assert sorted(snapshot) == sorted([*SNAPSHOT_FIELDS, "people"])
     assert snapshot["title"] == "Battery Cycling Measurements" and snapshot["allowed_purposes"] == [
         "ACADEMIC_RESEARCH",
         "AI_TRAINING",
@@ -223,7 +211,7 @@ def test_concurrent_update_waits_for_publish_and_snapshot_is_pre_patch(
 
     monkeypatch.setattr(publish_service, "finalize_publish", finalize_with_concurrent_patch)
     with session_factory(db.app)() as session, session.begin():
-        publish_service.publish_version(session, USERS["b.steward"], UUID(version_id))
+        publish_service.publish_version(session, api.deps, USERS["b.steward"], UUID(version_id))
     threads[0].join(timeout=10)
     assert outcome.get("blocked") is True, outcome
     assert not threads[0].is_alive() and outcome.get("status") == 200, outcome

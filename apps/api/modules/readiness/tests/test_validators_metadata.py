@@ -40,6 +40,14 @@ def test_metadata_fail_matches_missing_metadata_fixture() -> None:
     )
 
 
+def test_metadata_steward_contact_satisfies_contact() -> None:
+    """Ruling P23: the snapshot never carries a private steward email; a frozen steward contact counts as contact."""
+    snap = _snap(contact_email=None, data_steward_contact_id="00000000-0000-7000-8000-000000000b03")
+    outcome = metadata_completeness.check(make_ctx(snapshot=snap))
+    assert outcome.status == "PASS" and outcome.evidence["required_missing"] == []
+    assert metadata_completeness.check(make_ctx(snapshot=_snap(contact_email=None))).status == "FAIL"
+
+
 @pytest.mark.parametrize(
     ("changes", "status"),
     [
