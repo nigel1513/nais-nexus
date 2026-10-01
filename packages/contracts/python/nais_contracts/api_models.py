@@ -281,6 +281,7 @@ class ProjectSummary(BaseModel):
     visibility: ProjectVisibility
     lead_organization_id: Id
     my_role: ProjectRole | None = None
+    lead_organization_name: str | None = None
     member_count: int | None = None
     updated_at: Timestamp | None = None
 
@@ -467,7 +468,7 @@ class File1(BaseModel):
     path: str
     status: FileStatus
     failure_code: str | None = None
-    upload: Upload | Upload1
+    upload: Upload | Upload1 | None = None
 
 
 class UploadSession(BaseModel):
@@ -576,6 +577,8 @@ class AccessGrant(BaseModel):
     project_id: Id
     dataset_id: Id
     dataset_title: str | None = None
+    subject_display_name: str | None = None
+    project_name: str | None = None
     purpose: Purpose
     operations: list[Operation]
     valid_from: Timestamp

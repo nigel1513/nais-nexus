@@ -1,7 +1,7 @@
 # Cross-Module Contracts
 
 > **v1.1:** 이 문서는 개요다. 기계가 읽는 최종 계약은 `contracts/`에 있다.
-> - API: `contracts/openapi.yaml` (OpenAPI 3.1, v1.1.1: 41 paths / 49 operations)
+> - API: `contracts/openapi.yaml` (OpenAPI 3.1, v1.2.0: 41 paths / 49 operations)
 > - Events: `contracts/events/p0_events.schema.json` (envelope + payload), 목록 `contracts/events/index.json`
 > - Errors: `contracts/error_codes.json`
 > 둘이 다르면 `contracts/`가 우선한다.

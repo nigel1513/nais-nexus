@@ -888,6 +888,7 @@ export interface components {
             visibility: components["schemas"]["ProjectVisibility"];
             lead_organization_id: components["schemas"]["Id"];
             my_role?: components["schemas"]["ProjectRole"] | null;
+            lead_organization_name?: string;
             member_count?: number;
             updated_at?: components["schemas"]["Timestamp"];
         };
@@ -1061,7 +1062,7 @@ export interface components {
                 path: string;
                 status: components["schemas"]["FileStatus"];
                 failure_code?: string | null;
-                upload: {
+                upload?: {
                     /** @constant */
                     method: "PUT";
                     /** Format: uri */
@@ -1163,6 +1164,8 @@ export interface components {
             project_id: components["schemas"]["Id"];
             dataset_id: components["schemas"]["Id"];
             dataset_title?: string;
+            subject_display_name?: string;
+            project_name?: string;
             purpose: components["schemas"]["Purpose"];
             operations: components["schemas"]["Operation"][];
             valid_from: components["schemas"]["Timestamp"];
@@ -1418,6 +1421,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     listOrganizations: {
@@ -1444,6 +1448,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     getOrganization: {
@@ -1466,6 +1471,7 @@ export interface operations {
                     "application/json": components["schemas"]["Organization"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -1494,7 +1500,10 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     updateOrganizationMember: {
@@ -1525,6 +1534,7 @@ export interface operations {
                     "application/json": components["schemas"]["OrganizationMembership"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             422: components["responses"]["Error"];
@@ -1556,6 +1566,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     createProject: {
@@ -1580,6 +1592,7 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            401: components["responses"]["Error"];
             422: components["responses"]["Error"];
         };
     };
@@ -1603,6 +1616,7 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
@@ -1631,8 +1645,11 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     archiveProject: {
@@ -1655,7 +1672,9 @@ export interface operations {
                     "application/json": components["schemas"]["Project"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
     };
@@ -1681,6 +1700,7 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -1711,7 +1731,9 @@ export interface operations {
                     "application/json": components["schemas"]["ProjectMember"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
         };
@@ -1735,6 +1757,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
@@ -1767,8 +1790,11 @@ export interface operations {
                     "application/json": components["schemas"]["ProjectMember"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     searchDatasets: {
@@ -1799,6 +1825,9 @@ export interface operations {
                     "application/json": components["schemas"]["DatasetSearchResult"];
                 };
             };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
     createDataset: {
@@ -1823,6 +1852,7 @@ export interface operations {
                     "application/json": components["schemas"]["Dataset"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             422: components["responses"]["Error"];
         };
@@ -1847,6 +1877,7 @@ export interface operations {
                     "application/json": components["schemas"]["Dataset"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -1874,7 +1905,10 @@ export interface operations {
                     "application/json": components["schemas"]["Dataset"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
             422: components["responses"]["Error"];
         };
     };
@@ -1898,6 +1932,7 @@ export interface operations {
                     "application/json": components["schemas"]["DatasetPolicyView"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -1923,6 +1958,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     createDatasetVersion: {
@@ -1956,7 +1993,9 @@ export interface operations {
                     "application/json": components["schemas"]["DatasetVersion"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
     };
@@ -1980,6 +2019,7 @@ export interface operations {
                     "application/json": components["schemas"]["DatasetVersion"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -2007,9 +2047,12 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSession"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
     getUploadSession: {
@@ -2032,6 +2075,7 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSession"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -2054,9 +2098,11 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
     completeUploadSession: {
@@ -2092,8 +2138,12 @@ export interface operations {
                     "application/json": components["schemas"]["UploadSession"];
                 };
             };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
     publishDatasetVersion: {
@@ -2116,7 +2166,9 @@ export interface operations {
                     "application/json": components["schemas"]["DatasetVersion"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
     };
@@ -2148,6 +2200,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     createAccessRequest: {
@@ -2172,6 +2226,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessRequest"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
@@ -2198,6 +2253,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessRequest"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -2221,6 +2277,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessRequest"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
@@ -2250,6 +2307,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessDecisionResult"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
@@ -2281,6 +2339,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessDecisionResult"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
@@ -2311,6 +2370,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessDecisionResult"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
@@ -2344,6 +2404,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessRequest"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
@@ -2369,6 +2430,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessRequest"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
@@ -2401,6 +2463,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     revokeAccessGrant: {
@@ -2429,6 +2493,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccessGrant"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
@@ -2458,6 +2523,7 @@ export interface operations {
                     "application/json": components["schemas"]["DownloadSession"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
@@ -2484,6 +2550,7 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
         };
     };
     startReadinessValidation: {
@@ -2525,9 +2592,12 @@ export interface operations {
                     "application/json": components["schemas"]["ReadinessValidation"];
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
     getReadiness: {
@@ -2554,7 +2624,9 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
     listAuditEvents: {
@@ -2588,7 +2660,9 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
             403: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     listNotifications: {
@@ -2616,6 +2690,8 @@ export interface operations {
                     };
                 };
             };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     markNotificationRead: {
@@ -2638,6 +2714,7 @@ export interface operations {
                     "application/json": components["schemas"]["Notification"];
                 };
             };
+            401: components["responses"]["Error"];
             404: components["responses"]["Error"];
         };
     };
@@ -2657,6 +2734,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            401: components["responses"]["Error"];
         };
     };
 }
