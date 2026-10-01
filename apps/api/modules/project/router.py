@@ -1,19 +1,22 @@
 """M02 HTTP surface (openapi tag `projects`). Handlers stay thin: service enforces rules, views shape bodies."""
 
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
+from api.modules.project import repository as repo
 from api.modules.project import service, views
 from api.modules.project.identity import IdentityQueryPort, get_identity_port
 from api.modules.project.schemas import ProjectCreateIn
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
+from api.platform.pagination import PageParams, build_page, page_params
 
 router = APIRouter(tags=["projects"])
 
 IdentityDep = Annotated[IdentityQueryPort, Depends(get_identity_port)]
+PageDep = Annotated[PageParams, Depends(page_params)]
 
 
 @router.post("/projects", status_code=201, operation_id="createProject")
@@ -29,3 +32,34 @@ def get_project(
     project_id: UUID, user: CurrentUserDep, session: SessionDep, identity: IdentityDep
 ) -> dict[str, Any]:
     return views.detail_view(session, identity, service.read_project(session, user, project_id))
+
+
+@router.get("/projects", operation_id="listProjects")
+def list_projects(
+    user: CurrentUserDep,
+    session: SessionDep,
+    page: PageDep,
+    scope: Literal["mine", "discover"] = "mine",
+    status: Literal["ACTIVE", "ARCHIVED"] | None = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
+) -> dict[str, Any]:
+    rows = repo.list_projects(
+        session,
+        user_id=user.user_id,
+        scope=scope,
+        status=status,
+        q=(q or "").strip() or None,
+        after=service.decode_after(page.cursor),
+        limit=page.limit,
+    )
+    result = build_page(rows, page.limit, lambda row: [row["updated_at"].isoformat(), str(row["project_id"])])
+    project_ids = [row["project_id"] for row in result.items]
+    counts = repo.member_counts(session, project_ids)
+    my_roles = repo.roles_for_user(session, project_ids, user.user_id)
+    items = [
+        views.summary_view(
+            row, my_role=my_roles.get(row["project_id"]), member_count=counts.get(row["project_id"], 0)
+        )
+        for row in result.items
+    ]
+    return {"items": items, "page": result.page.model_dump()}

@@ -5,7 +5,8 @@ to one project are serialized and "count(ACTIVE PROJECT_OWNER) >= 1" holds under
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import RowMapping
@@ -108,3 +109,17 @@ def create_project(session: Session, user: CurrentUser, data: ProjectCreateIn) -
         EventActor.for_user(user),
     )
     return project_id
+
+
+def decode_after(cursor: list[Any] | None) -> tuple[datetime, UUID] | None:
+    """Decoded listProjects cursor -> (updated_at, project_id) keyset position."""
+    if cursor is None:
+        return None
+    try:
+        updated_at_raw, project_id_raw = cursor
+        updated_at = datetime.fromisoformat(updated_at_raw)
+        if updated_at.tzinfo is None:
+            raise ValueError("cursor timestamp must carry a UTC offset")
+        return updated_at, UUID(project_id_raw)
+    except (TypeError, ValueError, AttributeError) as exc:
+        raise _validation_error("cursor", "INVALID_CURSOR", "Invalid pagination cursor.") from exc
