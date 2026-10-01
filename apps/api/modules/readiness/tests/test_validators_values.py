@@ -148,3 +148,23 @@ def test_tsv_uses_tab_delimiter() -> None:
     files = with_schema({"data/t.tsv": b"id\tv\nr1\t1,5\n"}, schema_doc("data/t.tsv", FIELDS))
     outcome = datatype_validity.check(make_ctx(files=files))
     assert outcome.evidence["fields"][0]["field"] == "v"  # "1,5" is one (invalid) number, not two columns
+
+
+def test_thresholds_compare_exact_fractions_not_rounded_ratios() -> None:
+    # 1000/99999 = 0.0100001 rounds to 0.01 for evidence but is above the 1% limit.
+    rows = "id,v\n" + "x\n".replace("x", "r,bad") * 1000 + "".join("r,1\n" for _ in range(98999))
+    ctx = make_ctx(files=with_schema({"data/t.csv": rows.encode()}, schema_doc("data/t.csv", FIELDS)))
+    outcome = datatype_validity.check(ctx)
+    assert outcome.status == "FAIL"
+    assert outcome.evidence["fields"][0]["invalid_ratio"] == 0.01
+    # 100/99999 malformed rows is above 0.1%.
+    rows = "id,v\n" + "broken\n" * 100 + "".join("r,1\n" for _ in range(99899))
+    ctx = make_ctx(files=with_schema({"data/t.csv": rows.encode()}, schema_doc("data/t.csv", FIELDS)))
+    assert datatype_validity.check(ctx).status == "FAIL"
+
+
+def test_missing_values_reports_skipped_files() -> None:
+    body = b"id,v\nr,1\n"
+    files = {"data/a.csv": body, "data/b.csv": body}
+    outcome = missing_values.check(make_ctx(files=files, max_tabular_files=1))
+    assert "skipped_files" in outcome.evidence

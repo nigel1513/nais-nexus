@@ -1,8 +1,9 @@
 """schema.datatype_validity (09 §3.3)."""
 
+from fractions import Fraction
 from typing import Any
 
-from api.modules.readiness.engine.canonical import ratio
+from api.modules.readiness.engine.canonical import exceeds, fraction, ratio
 from api.modules.readiness.engine.context import CheckOutcome, EvaluationContext
 
 
@@ -22,7 +23,7 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
     files: list[dict[str, Any]] = []
     fields: list[dict[str, Any]] = []
     encoding_error = False
-    worst_field_ratio = worst_malformed_ratio = 0.0
+    worst_field = worst_malformed = Fraction(0)
     for path in paths:
         stats = ctx.file_stats(path)
         encoding_error = encoding_error or stats.encoding_error
@@ -35,7 +36,7 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
                 "encoding_error": stats.encoding_error,
             }
         )
-        worst_malformed_ratio = max(worst_malformed_ratio, ratio(stats.malformed_rows, stats.rows_read))
+        worst_malformed = max(worst_malformed, fraction(stats.malformed_rows, stats.rows_read))
         resource = ctx.resource(path)
         declared = {f.name: f.type for f in resource.fields} if resource else {}
         for name in sorted(stats.columns):
@@ -43,7 +44,7 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
             if col.invalid == 0:
                 continue
             field_ratio = ratio(col.invalid, col.checked)
-            worst_field_ratio = max(worst_field_ratio, field_ratio)
+            worst_field = max(worst_field, fraction(col.invalid, col.checked))
             entry: dict[str, Any] = {
                 "path": path,
                 "field": name,
@@ -61,12 +62,12 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
         evidence["skipped_files"] = ctx.skipped_tabular
     if (
         encoding_error
-        or worst_field_ratio > p.datatype_fail_ratio
-        or worst_malformed_ratio > p.malformed_rows_fail_ratio
+        or exceeds(worst_field, p.datatype_fail_ratio)
+        or exceeds(worst_malformed, p.malformed_rows_fail_ratio)
     ):
         message = "타입 규칙을 위반한 값, 형식이 깨진 행 또는 인코딩 오류가 허용 한도를 넘었습니다."
         return CheckOutcome("FAIL", message, evidence)
-    if worst_field_ratio > p.datatype_warn_ratio or worst_malformed_ratio > 0:
+    if exceeds(worst_field, p.datatype_warn_ratio) or worst_malformed > 0:
         return CheckOutcome(
             "WARNING", "일부 값이 선언된 타입과 맞지 않거나 형식이 깨진 행이 있습니다.", evidence
         )

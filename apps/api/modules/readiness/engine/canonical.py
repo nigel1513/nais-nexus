@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 from collections.abc import Iterable, Iterator
+from fractions import Fraction
 from typing import Any
 
 from api.modules.readiness.catalog_port import FileRef
@@ -18,6 +19,16 @@ def r6(value: float) -> float:
 
 def ratio(numerator: int, denominator: int) -> float:
     return r6(numerator / denominator) if denominator else 0.0
+
+
+def fraction(numerator: int, denominator: int) -> Fraction:
+    """Exact ratio for verdict comparisons (r6 rounding is for evidence only)."""
+    return Fraction(numerator, denominator) if denominator else Fraction(0)
+
+
+def exceeds(value: Fraction, threshold: float) -> bool:
+    """value > threshold, comparing against the decimal literal of the profile parameter (0.01 is exactly 1/100)."""
+    return value > Fraction(repr(threshold))
 
 
 def _check_keys(obj: Any) -> None:
