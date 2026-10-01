@@ -2,6 +2,7 @@
 import { Button, buttonClass, EmptyState, Select } from "@nais/ui";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
+import { asApiError, fieldErrors } from "@/shared/api/errors";
 import { flattenPages } from "@/shared/api/pagination";
 import type { SearchPage } from "@/shared/api/types";
 import { hasOrgRole, useMeData } from "@/shared/hooks/use-me";
@@ -10,6 +11,8 @@ import { useUrlQuery } from "@/shared/hooks/use-url-query";
 import { PageHeader } from "@/shared/ui/page-header";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { useSearchDatasets, type SearchQuery } from "./api";
+import { PeriodFilter } from "./components/period-filter";
+import { PrincipalInvestigatorFilter } from "./components/principal-investigator-filter";
 import { FACETS, FacetPanel, type FacetKey } from "./components/facet-panel";
 import { SearchResultCard } from "./components/search-result-card";
 
@@ -26,7 +29,14 @@ export function DataSearchScreen() {
   const sort: Sort = sortParam && SORTS.includes(sortParam) ? sortParam : "relevance";
   const selected = Object.fromEntries(FACETS.map((k) => [k, params.getAll(k)])) as Record<FacetKey, string[]>;
 
+  const temporalFrom = params.get("temporal_from") ?? "";
+  const temporalTo = params.get("temporal_to") ?? "";
+  const piId = params.get("principal_investigator_id") ?? "";
+
   const query: SearchQuery = {
+    ...(temporalFrom ? { temporal_from: temporalFrom } : {}),
+    ...(temporalTo ? { temporal_to: temporalTo } : {}),
+    ...(piId ? { principal_investigator_id: piId } : {}),
     ...(debounced ? { q: debounced } : {}),
     ...(sort !== "relevance" ? { sort } : {}),
     ...Object.fromEntries(FACETS.filter((k) => selected[k].length).map((k) => [k, selected[k]])),
@@ -35,13 +45,20 @@ export function DataSearchScreen() {
   const first = search.data?.pages[0] as SearchPage | undefined;
   const hits = flattenPages(search.data);
 
+  // A hand-edited URL can carry an inverted range; the server's 422 TEMPORAL_RANGE is a field error, not a crash.
+  const temporalInvalid = (() => {
+    if (!search.isError) return false;
+    const err = asApiError(search.error);
+    return err.code === "VALIDATION_FAILED" && Object.values(fieldErrors(err)).includes("TEMPORAL_RANGE");
+  })();
+
   const toggle = (key: FacetKey, value: string) => {
     const next = selected[key].includes(value) ? selected[key].filter((v) => v !== value) : [...selected[key], value];
     setParams({ [key]: next });
   };
   const reset = () => {
     setQ("");
-    setParams(Object.fromEntries(["q", "sort", ...FACETS].map((k) => [k, null])));
+    setParams(Object.fromEntries(["q", "sort", "temporal_from", "temporal_to", "principal_investigator_id", ...FACETS].map((k) => [k, null])));
   };
 
   return (
@@ -91,7 +108,11 @@ export function DataSearchScreen() {
         </div>
       </div>
       <div className="grid gap-6 md:grid-cols-[16rem_1fr]">
-        <FacetPanel facets={first?.facets} selected={selected} onToggle={toggle} />
+        <div className="flex flex-col gap-4">
+          <PeriodFilter from={temporalFrom} to={temporalTo} serverInvalid={temporalInvalid} onApply={(f, e) => setParams({ temporal_from: f || null, temporal_to: e || null })} />
+          <PrincipalInvestigatorFilter value={piId} onChange={(id) => setParams({ principal_investigator_id: id })} />
+          <FacetPanel facets={first?.facets} selected={selected} onToggle={toggle} />
+        </div>
         <section aria-labelledby="data-results" className="flex min-w-0 flex-col gap-3">
           <h2 id="data-results" className="sr-only">
             {t("data.search.results")}
@@ -101,7 +122,7 @@ export function DataSearchScreen() {
           </p>
           {search.isPending ? (
             <DelayedSkeleton lines={5} />
-          ) : search.isError ? (
+          ) : temporalInvalid ? null : search.isError ? (
             <ErrorView error={search.error} onRetry={() => void search.refetch()} />
           ) : hits.length === 0 ? (
             <EmptyState
