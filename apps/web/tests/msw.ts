@@ -14,6 +14,7 @@ async function check(request: Request, response: Response): Promise<void> {
   // Tests that install ad-hoc overrides (server.use) intentionally return arbitrary payloads.
   if (server.listHandlers().length !== handlers.length) return;
   const url = new URL(request.url);
+  if (!url.pathname.includes("/mock-api/v1")) return; // mock storage (/mock-storage) is not part of the openapi contract
   const apiPath = url.pathname.replace(/^.*\/mock-api\/v1/, "");
   const text = await response.clone().text();
   let body: unknown = null;
