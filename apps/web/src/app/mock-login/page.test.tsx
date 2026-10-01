@@ -1,5 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { screen } from "@testing-library/react";
 import { notFound } from "next/navigation";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { renderWithProviders } from "../../../tests/render";
 import MockLoginPage from "./page";
 
 vi.mock("next-intl/server", () => ({ getTranslations: async () => (k: string) => k }));
@@ -13,9 +15,11 @@ describe("/mock-login page", () => {
     expect(notFound).toHaveBeenCalled();
   });
 
-  it("renders when mocking is enabled", async () => {
+  it("renders the login form when mocking is enabled", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MOCKING", "enabled");
     vi.mocked(notFound).mockClear();
-    await MockLoginPage({ searchParams: Promise.resolve({ callbackUrl: "//evil" }) });
+    renderWithProviders(await MockLoginPage({ searchParams: Promise.resolve({ callbackUrl: "//evil" }) }));
     expect(notFound).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("사용자")).toBeInTheDocument();
   });
 });

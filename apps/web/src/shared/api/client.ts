@@ -11,6 +11,10 @@ export function setAccessTokenGetter(fn: TokenGetter): void {
   getToken = fn;
 }
 
+export function getAccessToken(): string | undefined {
+  return getToken();
+}
+
 export function readCookie(name: string, cookieString: string = typeof document === "undefined" ? "" : document.cookie): string | undefined {
   for (const part of cookieString.split(";")) {
     const [k, ...rest] = part.trim().split("=");

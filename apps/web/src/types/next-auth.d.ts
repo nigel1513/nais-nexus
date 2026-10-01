@@ -13,6 +13,8 @@ declare module "next-auth/jwt" {
   interface JWT {
     accessToken?: string;
     refreshToken?: string;
+    /** Server-side cookie only: id_token_hint for the Keycloak end_session redirect. */
+    idToken?: string;
     expiresAt?: number;
     error?: "RefreshFailed";
   }

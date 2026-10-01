@@ -27,4 +27,20 @@ describe("token refresh (M10 §3.4)", () => {
     expect((await refreshAccessToken({ refreshToken: "r" }, { ...opts, fetchImpl: down })).error).toBe("RefreshFailed");
     expect((await refreshAccessToken({}, opts)).error).toBe("RefreshFailed");
   });
+
+  it("drops the refresh token on invalid_grant and does not keep it for retries", async () => {
+    const f = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 }));
+    const out = await refreshAccessToken({ accessToken: "a", refreshToken: "r", expiresAt: 1 }, { ...opts, fetchImpl: f });
+    expect(out.error).toBe("RefreshFailed");
+    expect(out.refreshToken).toBeUndefined();
+  });
+
+  it("a transient failure keeps the refresh token and does not flag a still-valid token", async () => {
+    const down = vi.fn().mockRejectedValue(new TypeError("fetch failed"));
+    const out = await refreshAccessToken({ accessToken: "a", refreshToken: "r", expiresAt: 400 }, { ...opts, fetchImpl: down, nowMs: 350_000 });
+    expect(out.error).toBeUndefined();
+    expect(out.refreshToken).toBe("r");
+    const expired = await refreshAccessToken({ accessToken: "a", refreshToken: "r", expiresAt: 100 }, { ...opts, fetchImpl: down, nowMs: 350_000 });
+    expect(expired).toMatchObject({ error: "RefreshFailed", refreshToken: "r" });
+  });
 });

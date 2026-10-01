@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isProtected, publicUrl, safeCallbackUrl } from "./redirects";
+import { allowedHosts, isProtected, publicUrl, safeCallbackUrl } from "./redirects";
 
 describe("redirect helpers", () => {
   it("protects /commons and /settings only", () => {
@@ -25,5 +25,14 @@ describe("redirect helpers", () => {
     const headers = new Headers({ host: "gateway.example:21051" });
     expect(publicUrl(headers, "http://0.0.0.0:3000/commons", "/mock-login").toString()).toBe("http://gateway.example:21051/mock-login");
     expect(publicUrl(new Headers(), "http://localhost:3000/x", "/y").toString()).toBe("http://localhost:3000/y");
+  });
+
+  it("ignores a forwarded host outside AUTH_URL / issuer hosts", () => {
+    const allowed = allowedHosts({ AUTH_URL: "http://gateway.example:21051/web-auth", AUTH_KEYCLOAK_ISSUER: "http://localhost:21051/auth/realms/nais" });
+    expect(allowed).toEqual(["gateway.example:21051", "localhost:21051"]);
+    const evil = new Headers({ "x-forwarded-host": "evil.example" });
+    expect(publicUrl(evil, "http://0.0.0.0:3000/commons", "/mock-login", allowed).toString()).toBe("http://0.0.0.0:3000/mock-login");
+    const ok = new Headers({ "x-forwarded-host": "localhost:21051" });
+    expect(publicUrl(ok, "http://0.0.0.0:3000/commons", "/mock-login", allowed).toString()).toBe("http://localhost:21051/mock-login");
   });
 });
