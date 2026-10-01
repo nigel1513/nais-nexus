@@ -125,7 +125,11 @@ def test_app_role_cannot_bypass_immutability(db: PgUrls) -> None:
         f"UPDATE readiness.check_results SET validation_id = '{other['validation_id']}'",
     ]
     for sql in attempts:
-        with pytest.raises(DBAPIError), session_factory(db.app)() as session, session.begin():
+        with (
+            pytest.raises(DBAPIError, match="immutable"),
+            session_factory(db.app)() as session,
+            session.begin(),
+        ):
             session.execute(text(sql))
     for sql in (
         "TRUNCATE readiness.check_results",
@@ -151,3 +155,31 @@ def test_evidence_size_is_capped(db: PgUrls) -> None:
                 **_result(row["validation_id"], check_id="x", evidence={"blob": "x" * 140_000})
             )
         )
+
+
+def _run(db: PgUrls, validation_id: uuid.UUID, **values: Any) -> None:
+    with session_factory(db.app)() as session, session.begin():
+        session.execute(
+            validations.update().where(validations.c.validation_id == validation_id).values(**values)
+        )
+
+
+def test_legal_state_transitions(db: PgUrls) -> None:
+    """QUEUED->RUNNING->QUEUED->RUNNING, RUNNING->FAILED, QUEUED->FAILED, a new run after FAILED, DELETE of a
+    FAILED run without results; partial results are deletable while RUNNING."""
+    row = _row()
+    _insert(db, row)
+    vid = row["validation_id"]
+    _run(db, vid, run_status="RUNNING", attempt=1)
+    with session_factory(db.app)() as session, session.begin():
+        session.execute(check_results.insert().values(**_result(vid)))
+    with session_factory(db.app)() as session, session.begin():
+        session.execute(check_results.delete().where(check_results.c.validation_id == vid))
+    _run(db, vid, run_status="QUEUED")
+    _run(db, vid, run_status="RUNNING", attempt=2)
+    _run(db, vid, run_status="FAILED", error="X: boom")
+    queued = _row(dataset_version_id=row["dataset_version_id"])  # a FAILED run does not block a new one
+    _insert(db, queued)
+    _run(db, queued["validation_id"], run_status="FAILED", error="STALE_JOB: x")  # QUEUED -> FAILED
+    with session_factory(db.app)() as session, session.begin():
+        session.execute(validations.delete().where(validations.c.validation_id == queued["validation_id"]))
