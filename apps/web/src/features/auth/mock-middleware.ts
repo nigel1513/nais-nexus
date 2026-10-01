@@ -1,10 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { MOCK_USER_COOKIE } from "@/shared/config";
-import { isProtected, publicUrl } from "./redirects";
+import { isProtected } from "./redirects";
 
 export function loginRedirect(req: NextRequest, loginPath: string): NextResponse {
   const callbackUrl = req.nextUrl.pathname + req.nextUrl.search;
-  return NextResponse.redirect(publicUrl(req.headers, req.url, `${loginPath}?callbackUrl=${encodeURIComponent(callbackUrl)}`));
+  // Relative Location: resolved by the browser against whatever origin it used (no host reflection).
+  return new NextResponse(null, { status: 307, headers: { location: `${loginPath}?callbackUrl=${encodeURIComponent(callbackUrl)}` } });
 }
 
 export function mockMiddleware(req: NextRequest): NextResponse {

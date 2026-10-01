@@ -9,7 +9,7 @@ const req = (path: string, auth?: { error?: string } | null) =>
 describe("real-mode middleware", () => {
   it("redirects protected routes without a session to the Keycloak sign-in", () => {
     const res = authGate(req("/commons/data", null));
-    expect(res.headers.get("location")).toBe("http://localhost:21051/web-auth/signin?callbackUrl=%2Fcommons%2Fdata");
+    expect(res.headers.get("location")).toBe("/web-auth/signin?callbackUrl=%2Fcommons%2Fdata");
   });
   it("redirects when the session carries an error (RefreshFailed)", () => {
     expect(authGate(req("/settings", { error: "RefreshFailed" })).status).toBe(307);

@@ -43,13 +43,14 @@ function hostAllowed(host: string, allowed: string[]): boolean {
 }
 
 /**
- * Absolute URL on the host the browser used (gateway forwards Host), never the container's 0.0.0.0:3000.
- * A forwarded host that is not allowed (when configured) is ignored: it is client-controlled input.
+ * Absolute URL on the host the browser used. Fails CLOSED: the forwarded host is client-controlled input, so it is only
+ * trusted when it is on the allow-list; with no allow-list (or no match) the path is resolved against `requestUrl`
+ * (callers pass the AUTH_URL origin). Same-origin redirects should be relative instead; use this only where an absolute URL is required.
  */
 export function publicUrl(headers: Headers, requestUrl: string, path: string, allowed: string[] = allowedHosts()): URL {
-  const host = headers.get("x-forwarded-host") ?? headers.get("host");
-  if (!host || (allowed.length > 0 && !hostAllowed(host, allowed))) return new URL(path, requestUrl);
-  const proto = headers.get("x-forwarded-proto") ?? new URL(requestUrl).protocol.replace(":", "");
+  const host = headers.get("x-forwarded-host")?.split(",")[0]?.trim() || headers.get("host");
+  if (!host || allowed.length === 0 || !hostAllowed(host, allowed)) return new URL(path, requestUrl);
+  const proto = (headers.get("x-forwarded-proto") ?? new URL(requestUrl).protocol.replace(":", "")).split(",")[0]!.trim();
   return new URL(path, `${proto === "https" ? "https" : "http"}://${host}`);
 }
 

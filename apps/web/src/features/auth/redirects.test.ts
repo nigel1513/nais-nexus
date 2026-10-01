@@ -21,10 +21,15 @@ describe("redirect helpers", () => {
     }
   });
 
-  it("builds redirect URLs from the Host the gateway forwarded", () => {
-    const headers = new Headers({ host: "gateway.example:21051" });
-    expect(publicUrl(headers, "http://0.0.0.0:3000/commons", "/mock-login").toString()).toBe("http://gateway.example:21051/mock-login");
-    expect(publicUrl(new Headers(), "http://localhost:3000/x", "/y").toString()).toBe("http://localhost:3000/y");
+  it("fails closed: with no allowed hosts the forwarded Host / X-Forwarded-Host are never trusted", () => {
+    const headers = new Headers({ host: "gateway.example:21051", "x-forwarded-host": "evil.example" });
+    expect(publicUrl(headers, "http://localhost:3000/commons", "/mock-login", []).toString()).toBe("http://localhost:3000/mock-login");
+    expect(publicUrl(new Headers(), "http://localhost:3000/x", "/y", []).toString()).toBe("http://localhost:3000/y");
+  });
+
+  it("uses the first value of a comma-separated x-forwarded-proto", () => {
+    const h = new Headers({ host: "a.example:1", "x-forwarded-proto": "https, http" });
+    expect(publicUrl(h, "http://0.0.0.0:3000/x", "/y", ["a.example:1"]).toString()).toBe("https://a.example:1/y");
   });
 
   it("ignores a forwarded host outside AUTH_URL / issuer hosts", () => {

@@ -7,7 +7,7 @@ describe("mock-mode middleware", () => {
   it("redirects protected routes without a mock session to /mock-login with a callback", () => {
     const res = mockMiddleware(new NextRequest("http://localhost:3000/commons/data?q=x", { headers: { host: "localhost:21051" } }));
     expect(res.status).toBe(307);
-    expect(res.headers.get("location")).toBe("http://localhost:21051/mock-login?callbackUrl=%2Fcommons%2Fdata%3Fq%3Dx");
+    expect(res.headers.get("location")).toBe("/mock-login?callbackUrl=%2Fcommons%2Fdata%3Fq%3Dx");
   });
 
   it("lets requests with a mock session through", () => {
@@ -22,11 +22,18 @@ describe("mock-mode middleware", () => {
     expect(res.headers.get("x-middleware-next")).toBe("1");
   });
 
-  it("redirects on the external host the browser used (NAIS_EXTERNAL_HOST placeholder)", () => {
+  it("never reflects an unlisted or spoofed host into Location", () => {
+    const res = mockMiddleware(new NextRequest("http://0.0.0.0:3000/commons", { headers: { host: "unlisted.example:9", "x-forwarded-host": "evil.example" } }));
+    expect(res.status).toBe(307);
+    expect(res.headers.get("location")).toBe("/mock-login?callbackUrl=%2Fcommons");
+    expect(res.headers.get("location")).not.toContain("evil.example");
+  });
+
+  it("redirects relative so it works on the external host the browser used", () => {
     vi.stubEnv("NAIS_EXTERNAL_HOST", "example-external-host");
     try {
       const res = mockMiddleware(new NextRequest("http://0.0.0.0:3000/commons", { headers: { host: "example-external-host:21051" } }));
-      expect(res.headers.get("location")).toBe("http://example-external-host:21051/mock-login?callbackUrl=%2Fcommons");
+      expect(res.headers.get("location")).toBe("/mock-login?callbackUrl=%2Fcommons");
     } finally {
       vi.unstubAllEnvs();
     }
