@@ -2,7 +2,8 @@
 
 from fastapi import APIRouter
 
-from api.modules.catalog.routes import datasets
+from api.modules.catalog.routes import dataset_update, datasets
 
 router = APIRouter()
-router.include_router(datasets.router)
+for sub in (datasets.router, dataset_update.router):
+    router.include_router(sub)
