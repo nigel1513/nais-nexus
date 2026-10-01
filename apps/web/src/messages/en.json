@@ -22,6 +22,10 @@
     "expiresInDays": "expires in {count} days",
     "expiresInHours": "expires in {count} hours"
   },
+  "meta": {
+    "title": "NAIS Research Commons",
+    "description": "NAIS AI-OS collaborative research data platform"
+  },
   "nav": {
     "dashboard": "Dashboard",
     "projects": "Projects",

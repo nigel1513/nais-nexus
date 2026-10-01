@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -73,8 +74,13 @@ describe("contract drift (reads NAIS_PRD/contracts directly, not the generated f
     expect(missing).toEqual([]);
   });
 
-  it("generated contracts.ts matches the contracts (run contracts:sync when this fails)", () => {
-    const codes: { code: string }[] = JSON.parse(readFileSync(path.join(contracts, "error_codes.json"), "utf8")).codes;
-    expect([...ERROR_CODES]).toEqual(codes.map((c) => c.code));
+  it("generated contracts.ts is fully up to date (ERROR_HTTP, ERROR_CODES, ENUMS)", () => {
+    const script = path.resolve(__dirname, "../../scripts/sync-contracts.mjs");
+    expect(() => execFileSync(process.execPath, [script, "--check"], { stdio: "pipe" })).not.toThrow();
+  });
+
+  it("user-visible ko copy has no dev-phase wording", () => {
+    const text = JSON.stringify(ko);
+    for (const bad of ["Wave", "P1", "개발 환경", "Mock", "seed", "Keycloak"]) expect(text).not.toContain(bad);
   });
 });

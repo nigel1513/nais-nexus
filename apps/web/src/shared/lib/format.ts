@@ -10,19 +10,22 @@ const parts = new Intl.DateTimeFormat("en-CA", {
 });
 
 function pick(iso: string) {
-  const map = Object.fromEntries(parts.formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const map = Object.fromEntries(parts.formatToParts(d).map((p) => [p.type, p.value]));
   return map as Record<"year" | "month" | "day" | "hour" | "minute", string>;
 }
 
 /** "YYYY-MM-DD HH:mm" in Asia/Seoul. Callers put the UTC original in a title attribute (M10 §7). */
 export function formatDateTime(iso: string): string {
   const p = pick(iso);
+  if (!p) return "-";
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
 }
 
 export function formatDate(iso: string): string {
   const p = pick(iso);
-  return `${p.year}-${p.month}-${p.day}`;
+  return p ? `${p.year}-${p.month}-${p.day}` : "-";
 }
 
 export type ExpiryParts = { key: "common.expired" | "common.expiresInDays" | "common.expiresInHours"; count: number };
@@ -38,10 +41,12 @@ export function expiryParts(iso: string, now: number = Date.now()): ExpiryParts 
 const UNITS = ["KiB", "MiB", "GiB", "TiB"] as const;
 
 export function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  let value = n / 1024;
+  if (!Number.isFinite(n) || n < 0) return "0 B";
+  const whole = Math.floor(n);
+  if (whole < 1024) return `${whole} B`;
+  let value = whole / 1024;
   let unit = 0;
-  while (value >= 1024 && unit < UNITS.length - 1) {
+  while ((value >= 1024 || value.toFixed(1) === "1024.0") && unit < UNITS.length - 1) {
     value /= 1024;
     unit += 1;
   }

@@ -26,4 +26,21 @@ describe("format", () => {
   it("shortens hashes", () => {
     expect(shortHash("a".repeat(60) + "b1c2")).toBe("aaaaaaaa…b1c2");
   });
+
+  it("promotes the unit when rounding reaches 1024", () => {
+    expect(formatBytes(1048575)).toBe("1.0 MiB");
+    expect(formatBytes(1024 ** 4 * 1024)).toBe("1024.0 TiB");
+  });
+
+  it("guards negative, NaN and fractional input", () => {
+    expect(formatBytes(-5)).toBe("0 B");
+    expect(formatBytes(Number.NaN)).toBe("0 B");
+    expect(formatBytes(Infinity)).toBe("0 B");
+    expect(formatBytes(10.7)).toBe("10 B");
+  });
+
+  it("renders invalid dates as a dash", () => {
+    expect(formatDateTime("not-a-date")).toBe("-");
+    expect(formatDate("")).toBe("-");
+  });
 });

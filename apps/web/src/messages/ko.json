@@ -45,6 +45,10 @@
     "unreadAnnouncement": "읽지 않은 알림 {count}개",
     "userMenu": "사용자 메뉴"
   },
+  "meta": {
+    "title": "NAIS Research Commons",
+    "description": "NAIS AI-OS 공동 연구 데이터 플랫폼"
+  },
   "landing": {
     "title": "NAIS AI-OS Research Commons",
     "subtitle": "기관의 경계를 넘어 공동 프로젝트를 만들고, AI-Ready 데이터를 찾고, 승인된 범위 안에서 안전하게 이용하세요.",
@@ -67,16 +71,16 @@
     },
     "aboutTitle": "NAIS 소개",
     "placeholder": {
-      "about": "About",
-      "research": "Research",
-      "news": "News",
+      "about": "소개",
+      "research": "연구",
+      "news": "소식",
       "body": "준비 중인 콘텐츠입니다."
     },
-    "footer": "© NAIS · 개발 환경"
+    "footer": "© NAIS"
   },
   "auth": {
-    "mockTitle": "개발용 로그인 (Mock)",
-    "mockDescription": "Mock 모드에서는 seed 사용자를 골라 로그인합니다. 실제 Keycloak 로그인은 Wave 2에서 연결됩니다.",
+    "mockTitle": "개발용 데모 로그인",
+    "mockDescription": "개발용 데모 로그인입니다. 사용자를 골라 로그인하세요.",
     "mockUser": "사용자",
     "signIn": "로그인",
     "signOut": "로그아웃"
@@ -302,7 +306,7 @@
   "upload": {
     "title": "파일 업로드",
     "dropLabel": "파일을 끌어다 놓거나 선택하세요",
-    "dropHint": "파일당 최대 50 GiB, 한 번에 500개까지",
+    "dropHint": "파일당 최대 {max}, 한 번에 500개까지",
     "chooseFiles": "파일 선택",
     "chooseFolder": "폴더 선택",
     "caption": "업로드할 파일",
@@ -319,7 +323,7 @@
       "dotdot": "'..' 경로는 사용할 수 없습니다.",
       "leading-slash": "'/'로 시작할 수 없습니다.",
       "empty": "빈 파일은 올릴 수 없습니다.",
-      "too-large": "50 GiB를 넘는 파일은 올릴 수 없습니다.",
+      "too-large": "{max}를 넘는 파일은 올릴 수 없습니다.",
       "duplicate": "같은 경로의 파일이 이미 있습니다."
     },
     "status": {
@@ -522,7 +526,7 @@
     "marketplace": "AI Marketplace",
     "compute": "Compute",
     "comingSoon": "준비 중입니다",
-    "description": "P1에서 제공될 예정입니다."
+    "description": "준비 중인 기능입니다."
   },
   "validation": {
     "required": "필수 항목입니다.",
@@ -566,10 +570,10 @@
     "DATASET_VERSION_NOT_PUBLISHED": "아직 게시되지 않은 버전입니다.",
     "DATASET_VERSION_INCOMPLETE": "업로드가 끝나지 않았거나 검증에 실패한 파일이 있습니다.",
     "DATASET_VERSION_LABEL_EXISTS": "이미 사용 중인 버전 이름입니다.",
-    "UPLOAD_SESSION_EXPIRED": "업로드 세션이 만료되었습니다. 남은 파일을 다시 업로드합니다.",
+    "UPLOAD_SESSION_EXPIRED": "업로드 세션이 만료되었습니다. 남은 파일을 다시 업로드하세요.",
     "UPLOAD_CHECKSUM_MISMATCH": "업로드된 파일이 원본과 다릅니다. 다시 업로드하세요.",
     "FILE_TYPE_NOT_ALLOWED": "허용되지 않는 파일 형식입니다.",
-    "FILE_TOO_LARGE": "파일이 최대 크기(50 GiB)를 초과합니다.",
+    "FILE_TOO_LARGE": "파일이 최대 크기({max})를 초과합니다.",
     "UPLOAD_ARCHIVE_UNSAFE": "압축 파일이 허용 한도(압축률, 항목 수, 해제 크기)를 넘습니다.",
     "MALWARE_DETECTED": "악성 코드가 발견되어 파일을 삭제했습니다.",
     "INVALID_POLICY": "데이터 정책 설정이 올바르지 않습니다. (민감 데이터는 최대 30일)",
