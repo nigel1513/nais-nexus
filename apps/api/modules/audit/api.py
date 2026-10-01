@@ -4,13 +4,14 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from nais_contracts.api_models import AuditAction, ResourceType
-from sqlalchemy import ColumnElement, DateTime, RowMapping, and_, literal, select, tuple_
+from sqlalchemy import ColumnElement, DateTime, RowMapping, and_, func, literal, select, tuple_, update
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
-from api.modules.audit.tables import audit_events
+from api.modules.audit.tables import audit_events, notifications
 from api.modules.audit.visibility import audit_scope
+from api.platform import clock
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 from api.platform.errors import ApiError
@@ -137,3 +138,91 @@ def list_audit_events(
         rows, page.limit, key=lambda r: [r["occurred_at"].isoformat(), str(r["audit_event_id"])]
     )
     return {"items": [serialize_audit(r) for r in result.items], "page": result.page.model_dump()}
+
+
+def serialize_notification(r: RowMapping) -> dict[str, Any]:
+    return {
+        "notification_id": str(r["notification_id"]),
+        "type": r["type"],
+        "title": r["title"],
+        "body": r["body"],
+        "link": r["link"],
+        "read": r["read_at"] is not None,
+        "created_at": r["created_at"].isoformat(),
+    }
+
+
+@router.get("/notifications", tags=["notifications"], operation_id="listNotifications")
+def list_notifications(
+    user: CurrentUserDep, session: SessionDep, page: PageDep, unread_only: bool = False
+) -> dict[str, Any]:
+    n = notifications.c
+    mine = n.recipient_user_id == user.user_id
+    conditions: list[ColumnElement[bool]] = [mine]
+    if unread_only:
+        conditions.append(n.read_at.is_(None))
+    cursor = decode_time_cursor(page.cursor)
+    if cursor is not None:
+        conditions.append(before_cursor(n.created_at, n.notification_id, cursor))
+    rows = (
+        session.execute(
+            select(notifications)
+            .where(and_(*conditions))
+            .order_by(n.created_at.desc(), n.notification_id.desc())
+            .limit(page.limit + 1)
+        )
+        .mappings()
+        .all()
+    )
+    unread = session.execute(
+        select(func.count()).select_from(notifications).where(mine, n.read_at.is_(None))
+    ).scalar_one()
+    result = build_page(
+        rows, page.limit, key=lambda r: [r["created_at"].isoformat(), str(r["notification_id"])]
+    )
+    return {
+        "items": [serialize_notification(r) for r in result.items],
+        "page": result.page.model_dump(),
+        "unread_count": int(unread),
+    }
+
+
+@router.post(
+    "/notifications/read-all",
+    tags=["notifications"],
+    operation_id="markAllNotificationsRead",
+    status_code=204,
+)
+def mark_all_notifications_read(user: CurrentUserDep, session: SessionDep) -> Response:
+    n = notifications.c
+    session.execute(
+        update(notifications)
+        .where(n.recipient_user_id == user.user_id, n.read_at.is_(None))
+        .values(read_at=clock.now())
+    )
+    return Response(status_code=204)
+
+
+@router.post(
+    "/notifications/{notification_id}/read", tags=["notifications"], operation_id="markNotificationRead"
+)
+def mark_notification_read(
+    notification_id: UUID, user: CurrentUserDep, session: SessionDep
+) -> dict[str, Any]:
+    n = notifications.c
+    mine = and_(n.notification_id == notification_id, n.recipient_user_id == user.user_id)
+    row = (
+        session.execute(
+            update(notifications)
+            .where(mine, n.read_at.is_(None))
+            .values(read_at=clock.now())
+            .returning(notifications)
+        )
+        .mappings()
+        .first()
+    )
+    if row is None:  # already read (unchanged) or not mine / missing (404, no existence leak)
+        row = session.execute(select(notifications).where(mine)).mappings().first()
+    if row is None:
+        raise ApiError(ErrorCode.NOTIFICATION_NOT_FOUND)
+    return serialize_notification(row)
