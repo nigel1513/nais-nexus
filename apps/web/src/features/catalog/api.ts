@@ -46,11 +46,15 @@ export function useListDatasetVersions(datasetId: string) {
   });
 }
 
-export function useGetDatasetVersion(versionId: string) {
+/** `pollMs`: refetch while any file is still being verified (UPLOADED → VERIFIED, M10 §9.6). */
+export function useGetDatasetVersion(versionId: string, { pollMs }: { pollMs?: number } = {}) {
   const ready = useAuthReady();
   return useQuery({
     queryKey: ["getDatasetVersion", { versionId }],
     enabled: ready,
+    refetchInterval: pollMs
+      ? (query) => (query.state.status !== "error" && query.state.data?.files.some((f) => f.status === "UPLOADED" || f.status === "PENDING") ? pollMs : false)
+      : false,
     queryFn: async () => (await unwrap(api.GET("/dataset-versions/{version_id}", { params: { path: { version_id: versionId } } }))) as DatasetVersion,
   });
 }

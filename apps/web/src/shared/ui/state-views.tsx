@@ -4,13 +4,13 @@ import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { asApiError, errorMessageKey } from "@/shared/api/errors";
 
-export function ErrorView({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+export function ErrorView({ error, onRetry, params }: { error: unknown; onRetry?: () => void; params?: Record<string, string | number> }) {
   const t = useTranslations();
   const e = asApiError(error);
   return (
     <ErrorState
       title={t("common.errorTitle")}
-      message={t(errorMessageKey(e.code))}
+      message={t(errorMessageKey(e.code), params)}
       traceId={e.traceId}
       traceIdLabel={t("common.traceId")}
       copyLabel={t("common.copyTraceId")}
