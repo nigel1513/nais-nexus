@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, beforeEach, expect } from "vitest";
 import { resetDb } from "@/mocks/db";
-import { contractViolations, server } from "./msw";
+import { contractViolations, pendingChecks, server } from "./msw";
 
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 beforeEach(() => {
@@ -10,7 +10,7 @@ beforeEach(() => {
   contractViolations.length = 0;
 });
 afterEach(async () => {
-  await new Promise((resolve) => setTimeout(resolve, 0)); // let async response:mocked listeners settle
+  await Promise.all(pendingChecks.splice(0)); // let every async response:mocked check settle
   const violations = [...contractViolations];
   contractViolations.length = 0;
   server.resetHandlers();

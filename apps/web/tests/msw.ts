@@ -7,7 +7,10 @@ export const server = setupServer(...handlers);
 /** Contract violations found in responses served by the default mock handlers during the current test. */
 export const contractViolations: string[] = [];
 
-server.events.on("response:mocked", async ({ request, response }) => {
+/** In-flight response checks; the per-test teardown awaits them all. */
+export const pendingChecks: Promise<void>[] = [];
+
+async function check(request: Request, response: Response): Promise<void> {
   // Tests that install ad-hoc overrides (server.use) intentionally return arbitrary payloads.
   if (server.listHandlers().length !== handlers.length) return;
   const url = new URL(request.url);
@@ -22,4 +25,8 @@ server.events.on("response:mocked", async ({ request, response }) => {
     }
   }
   contractViolations.push(...checkResponse(request.method, apiPath, response.status, body));
+}
+
+server.events.on("response:mocked", ({ request, response }) => {
+  pendingChecks.push(check(request, response));
 });

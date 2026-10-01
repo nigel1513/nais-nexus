@@ -152,7 +152,7 @@ describe("project mocks", () => {
     as(USER.aResearcher);
     await expect(unwrap(api.POST("/projects", { body: { name: "X", description: "" } }))).rejects.toMatchObject({
       code: "VALIDATION_FAILED",
-      details: { fields: { name: "2-200 characters" } },
+      details: { fields: [{ field: "name", reason: "LENGTH_2_200" }] },
     });
     await expect(
       unwrap(api.POST("/projects", { body: { name: "Bad dates", description: "", start_date: "2026-10-02", end_date: "2026-10-01" } })),
@@ -181,6 +181,64 @@ describe("project mocks", () => {
     as(USER.aSteward);
     await expect(unwrap(api.PATCH("/projects/{project_id}", { params: { path }, body: { visibility: "PUBLIC" } }))).rejects.toMatchObject({ code: "FORBIDDEN" });
     await unwrap(api.PATCH("/projects/{project_id}", { params: { path }, body: { name: "Renamed study" } }));
+  });
+
+  it("PROJECT_ADMIN follows can_manage_member (roles.py)", async () => {
+    as(USER.aResearcher);
+    const path = { project_id: PROJECT.seed };
+    const add = (user_id: string, role: "PROJECT_OWNER" | "PROJECT_ADMIN" | "RESEARCHER" | "VIEWER") =>
+      unwrap(api.POST("/projects/{project_id}/members", { params: { path }, body: { user_id, role } }));
+    await add(USER.aSteward, "PROJECT_ADMIN");
+    await add(USER.aAdmin, "PROJECT_ADMIN");
+    as(USER.aSteward);
+    await expect(add(USER.bSteward, "PROJECT_OWNER")).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    await expect(
+      unwrap(api.PATCH("/projects/{project_id}/members/{user_id}", { params: { path: { ...path, user_id: USER.aAdmin } }, body: { role: "VIEWER" } })),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      unwrap(api.PATCH("/projects/{project_id}/members/{user_id}", { params: { path: { ...path, user_id: USER.bResearcher } }, body: { role: "PROJECT_ADMIN" } })),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(unwrap(api.DELETE("/projects/{project_id}/members/{user_id}", { params: { path: { ...path, user_id: USER.aResearcher } } }))).rejects.toMatchObject({ status: 403 });
+    // RESEARCHER/VIEWER are manageable by an admin
+    await add(USER.bSteward, "VIEWER");
+    await unwrap(api.PATCH("/projects/{project_id}/members/{user_id}", { params: { path: { ...path, user_id: USER.bSteward } }, body: { role: "RESEARCHER" } }));
+    await unwrap(api.DELETE("/projects/{project_id}/members/{user_id}", { params: { path: { ...path, user_id: USER.bSteward } } }));
+    // self-leave of an admin stays allowed
+    await unwrap(api.DELETE("/projects/{project_id}/members/{user_id}", { params: { path: { ...path, user_id: USER.aSteward } } }));
+  });
+
+  it("PATCH project: owner-only only when visibility changes; dates validated against stored values", async () => {
+    as(USER.aResearcher);
+    const path = { project_id: PROJECT.seed };
+    await unwrap(api.POST("/projects/{project_id}/members", { params: { path }, body: { user_id: USER.aSteward, role: "PROJECT_ADMIN" } }));
+    await unwrap(api.PATCH("/projects/{project_id}", { params: { path }, body: { start_date: "2026-09-01" } }));
+    as(USER.aSteward);
+    await unwrap(api.PATCH("/projects/{project_id}", { params: { path }, body: { visibility: "PRIVATE", name: "Same visibility" } }));
+    await expect(unwrap(api.PATCH("/projects/{project_id}", { params: { path }, body: { end_date: "2026-08-31" } }))).rejects.toMatchObject({
+      status: 422,
+      code: "VALIDATION_FAILED",
+      details: { fields: [{ field: "end_date", reason: "END_BEFORE_START" }] },
+    });
+  });
+
+  it("pagination rejects an invalid cursor or limit with 422", async () => {
+    as(USER.aResearcher);
+    await expect(unwrap(api.GET("/projects", { params: { query: { cursor: "abc" } } }))).rejects.toMatchObject({
+      status: 422,
+      details: { fields: [{ field: "cursor", reason: "INVALID_CURSOR" }] },
+    });
+    await expect(unwrap(api.GET("/projects", { params: { query: { limit: 0 } } }))).rejects.toMatchObject({ status: 422 });
+    await expect(unwrap(api.GET("/projects", { params: { query: { limit: 101 } } }))).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("archive and role-change audit rows carry no owner organization (M09 §7.1)", async () => {
+    as(USER.aResearcher);
+    const path = { project_id: PROJECT.seed };
+    await unwrap(api.PATCH("/projects/{project_id}/members/{user_id}", { params: { path: { ...path, user_id: USER.bResearcher } }, body: { role: "VIEWER" } }));
+    await unwrap(api.POST("/projects/{project_id}/archive", { params: { path } }));
+    const rows = getDb().audit.filter((e) => e.action === "PROJECT_ARCHIVED" || e.action === "PROJECT_MEMBER_ROLE_CHANGED");
+    expect(rows).toHaveLength(2);
+    expect(rows.every((e) => e.resource.owner_organization_id === null)).toBe(true);
   });
 
   it("archiving revokes project-scoped grants and blocks further changes", async () => {

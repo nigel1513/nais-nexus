@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 import { ENUMS } from "@/generated/contracts";
 import type { Schemas } from "@/shared/api/types";
 import { getDb } from "../db";
-import { API, body, currentUser, fail, nowIso, orgName, paginate, recordAudit } from "../http";
+import { API, body, currentUser, fail, nowIso, orgName, paginate, recordAudit, validationFailed } from "../http";
 import type { MockDb, MockUser } from "../types";
 
 export function meView(db: MockDb, u: MockUser): Schemas["Me"] {
@@ -38,7 +38,7 @@ export const identityHandlers = [
     const db = getDb();
     const url = new URL(request.url);
     const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
-    if (q && q.length < 2) fail("VALIDATION_FAILED", "q must have at least 2 characters", { fields: { q: "min 2" } });
+    if (q && q.length < 2) validationFailed("q", "TOO_SHORT", "q must have at least 2 characters");
     const org = url.searchParams.get("organization_id");
     const items: Schemas["IdentityPublicProfile"][] = db.users
       .filter((u) => u.status === "ACTIVE" && u.membership_status === "ACTIVE")

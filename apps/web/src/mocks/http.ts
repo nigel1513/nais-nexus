@@ -20,6 +20,7 @@ export function apiError(code: string, message: string = code, details?: Record<
 
 /** Short-circuit a resolver with an error envelope (MSW treats a thrown Response as the mocked response). */
 export function fail(code: string, message?: string, details?: Record<string, unknown>): never {
+  if (!(code in ERROR_HTTP)) throw new Error(`Unknown error code passed to fail(): ${code}`);
   throw apiError(code, message ?? code, details);
 }
 
@@ -41,9 +42,18 @@ export function currentUser(request: Request): MockUser {
   return user;
 }
 
+/** Real error shape: details.fields is a list of { field, reason } (service._validation_error). */
+export function validationFailed(field: string, reason: string, message = "Request validation failed."): never {
+  return fail("VALIDATION_FAILED", message, { fields: [{ field, reason }] });
+}
+
 export function paginate<T>(items: T[], url: URL) {
-  const limit = Math.min(Math.max(Number(url.searchParams.get("limit") ?? 20) || 20, 1), 100);
-  const offset = Math.max(Number(url.searchParams.get("cursor") ?? 0) || 0, 0);
+  const rawLimit = url.searchParams.get("limit");
+  const limit = rawLimit === null ? 20 : Number(rawLimit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) validationFailed("limit", "OUT_OF_RANGE", "limit must be between 1 and 100.");
+  const rawCursor = url.searchParams.get("cursor");
+  const offset = rawCursor === null ? 0 : Number(rawCursor);
+  if (!Number.isInteger(offset) || offset < 0) validationFailed("cursor", "INVALID_CURSOR", "Invalid pagination cursor.");
   const next = offset + limit;
   const hasMore = next < items.length;
   return { items: items.slice(offset, next), page: { has_more: hasMore, next_cursor: hasMore ? String(next) : null } };

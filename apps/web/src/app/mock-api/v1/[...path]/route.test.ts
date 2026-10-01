@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { checkResponse } from "../../../../../tests/contract";
 import { USER } from "@/mocks/fixtures";
-import { GET } from "./route";
+import { GET, POST } from "./route";
 
 const get = (path: string, user: string = USER.bSteward) => GET(new Request(`http://localhost:3000/mock-api/v1${path}`, { headers: { cookie: `nais_mock_user=${user}` } }));
 
@@ -25,5 +25,27 @@ describe("contract checker", () => {
   it("is on openapi 1.2.0 and rejects non-conforming bodies", () => {
     expect(checkResponse("GET", "/me", 200, { user_id: "not-a-uuid" })).not.toEqual([]);
     expect(checkResponse("GET", "/no/such", 200, {})).toEqual(["GET /no/such: path not in openapi"]);
+  });
+});
+
+describe("production safety: mock route is disabled unless NEXT_PUBLIC_API_MOCKING=enabled", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(["disabled", ""])("returns 404 without mock data when the flag is %j", async (flag) => {
+    vi.stubEnv("NEXT_PUBLIC_API_MOCKING", flag);
+    const init = { headers: { cookie: `nais_mock_user=${USER.admin}`, "x-mock-user": USER.admin } };
+    for (const res of [
+      await GET(new Request("http://localhost:3000/mock-api/v1/me", init)),
+      await POST(new Request("http://localhost:3000/mock-api/v1/projects", { ...init, method: "POST", body: JSON.stringify({ name: "Injected" }) })),
+    ]) {
+      expect(res.status).toBe(404);
+      expect(await res.text()).not.toContain("NAIS Admin");
+    }
+  });
+
+  it("is also disabled when the flag is unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_MOCKING", undefined as unknown as string);
+    const res = await get("/me", USER.admin);
+    expect(res.status).toBe(404);
   });
 });
