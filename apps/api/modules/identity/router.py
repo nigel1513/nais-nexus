@@ -5,9 +5,16 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from api.modules.identity import directory, members, profile
+from api.modules.identity import directory, members, profile, transfer
 from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary
-from api.modules.identity.schemas import MembershipOut, MemberUpdateIn, MeOut, MeUpdateIn, OrganizationOut
+from api.modules.identity.schemas import (
+    MembershipOut,
+    MemberUpdateIn,
+    MeOut,
+    MeUpdateIn,
+    OrganizationOut,
+    TransferIn,
+)
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 from api.platform.pagination import Page, PageParams, page_params
@@ -63,3 +70,10 @@ def update_organization_member(
     organization_id: UUID, user_id: UUID, body: MemberUpdateIn, user: CurrentUserDep, session: SessionDep
 ) -> MembershipOut:
     return members.update_member(session, user, organization_id, user_id, body)
+
+
+@router.post("/users/{user_id}/transfer", operation_id="transferUserOrganization")
+def transfer_user_organization(
+    user_id: UUID, body: TransferIn, user: CurrentUserDep, session: SessionDep
+) -> MembershipOut:
+    return transfer.transfer_user(session, user, user_id, body)

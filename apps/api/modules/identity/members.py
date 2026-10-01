@@ -36,19 +36,20 @@ def ensure_org_admin(user: CurrentUser, organization_id: UUID) -> None:
         raise ApiError(ErrorCode.FORBIDDEN)
 
 
-def _membership_select() -> Select[Any]:
+def membership_select() -> Select[Any]:
     return select(
         memberships.c.user_id,
         memberships.c.organization_id,
         memberships.c.roles,
         memberships.c.status,
         memberships.c.updated_at,
+        memberships.c.started_at,
         users.c.display_name,
         users.c.email,
     ).select_from(memberships.join(users, and_(users.c.user_id == memberships.c.user_id, CURRENT_MEMBERSHIP)))
 
 
-def _to_out(row: Row[Any]) -> MembershipOut:
+def membership_out(row: Row[Any]) -> MembershipOut:
     return MembershipOut(
         user_id=row.user_id,
         organization_id=row.organization_id,
@@ -56,22 +57,23 @@ def _to_out(row: Row[Any]) -> MembershipOut:
         email=row.email,
         roles=sorted(row.roles),
         status=row.status,
+        started_at=row.started_at,
         updated_at=row.updated_at,
     )
 
 
 def list_members(session: Session, organization_id: UUID, params: PageParams) -> Page[MembershipOut]:
-    stmt = _membership_select().where(memberships.c.organization_id == organization_id, CURRENT_MEMBERSHIP)
+    stmt = membership_select().where(memberships.c.organization_id == organization_id, CURRENT_MEMBERSHIP)
     key = cursor_key(params)
     if key is not None:
         stmt = stmt.where(after(users.c.display_name, users.c.user_id, key))
     rows = session.execute(stmt.order_by(users.c.display_name, users.c.user_id).limit(params.limit + 1)).all()
     return build_page(
-        [_to_out(row) for row in rows], params.limit, key=lambda m: (m.display_name, str(m.user_id))
+        [membership_out(row) for row in rows], params.limit, key=lambda m: (m.display_name, str(m.user_id))
     )
 
 
-def _validated_roles(roles: list[str]) -> list[str]:
+def validated_roles(roles: list[str]) -> list[str]:
     if len(set(roles)) != len(roles):
         raise ApiError(
             ErrorCode.VALIDATION_FAILED,
@@ -109,7 +111,7 @@ def update_member(
     ensure_organization(session, organization_id, lock=True)
     ensure_org_admin(actor, organization_id)
     row = session.execute(
-        _membership_select()
+        membership_select()
         .where(
             memberships.c.organization_id == organization_id,
             memberships.c.user_id == user_id,
@@ -121,10 +123,10 @@ def update_member(
         raise ApiError(ErrorCode.NOT_FOUND)
 
     previous_roles = sorted(row.roles)
-    roles = _validated_roles(change.roles) if change.roles is not None else previous_roles
+    roles = validated_roles(change.roles) if change.roles is not None else previous_roles
     status = change.status or row.status
     if roles == previous_roles and status == row.status:
-        return _to_out(row)
+        return membership_out(row)
 
     loses_admin = (
         ORG_ADMIN in previous_roles
@@ -171,5 +173,6 @@ def update_member(
         email=row.email,
         roles=roles,
         status=status,
+        started_at=row.started_at,
         updated_at=now,
     )

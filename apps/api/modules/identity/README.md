@@ -48,6 +48,18 @@ The web portal uses `nais-web` (public, Authorization Code + PKCE S256, callback
 Changing the realm file needs a re-import: `kcadm.sh delete realms/nais` inside the keycloak container, then
 `docker compose restart keycloak`.
 
+## Membership history and transfers (Wave 1.5)
+- The current membership is the row with `ended_at IS NULL` (`CURRENT_MEMBERSHIP`); ended rows are kept as history.
+- `POST /users/{user_id}/transfer` (`transferUserOrganization`, PLATFORM_ADMIN only): ends the current membership
+  (`DISABLED`, roles cleared, `ended_at` set), opens an `ACTIVE` one in the target organization, emits
+  `identity.membership.changed.v1` twice, then sets the Keycloak `org_code` attribute through `KeycloakAdminPort`.
+  If Keycloak is unreachable the call returns 503 `DEPENDENCY_UNAVAILABLE` and the transaction rolls back (no rows, no events).
+  Transfer to the current organization is idempotent: it only re-asserts the Keycloak attribute.
+- Tokens issued before the transfer carry the old `org_code` and get 403 `ORGANIZATION_UNKNOWN` until the user signs in again.
+- The NTIS researcher number is set by the user via `updateMe` (`PATCH /me`).
+- Configuration: `KEYCLOAK_ADMIN_URL` (default `http://localhost:21051/auth`), `KEYCLOAK_ADMIN_USER`,
+  `KEYCLOAK_ADMIN_PASSWORD`, `KEYCLOAK_REALM`.
+
 ## Tests
 - `uv run pytest apps/api/modules/identity` (Postgres via testcontainers).
 - Live stack: `NAIS_LIVE=1 uv run pytest apps/api/modules/identity/tests/test_live_stack.py`.

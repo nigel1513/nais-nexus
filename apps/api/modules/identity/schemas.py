@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Annotated, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from api.modules.identity.public import ActiveStatus, OrganizationSummary
 
@@ -50,7 +50,15 @@ class MembershipOut(BaseModel):
     email: str
     roles: list[str]
     status: ActiveStatus
+    started_at: datetime | None = None
     updated_at: datetime
+
+
+class TransferIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    organization_id: UUID
+    roles: list[str] = Field(default_factory=list)
 
 
 class MemberUpdateIn(BaseModel):
