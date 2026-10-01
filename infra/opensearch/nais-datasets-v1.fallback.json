@@ -1,0 +1,106 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "analysis": {
+      "analyzer": {
+        "ko_en": {
+          "type": "custom",
+          "tokenizer": "standard",
+          "filter": [
+            "lowercase",
+            "cjk_bigram"
+          ]
+        }
+      },
+      "normalizer": {
+        "lc": {
+          "type": "custom",
+          "filter": [
+            "lowercase"
+          ]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "dynamic": "strict",
+    "properties": {
+      "dataset_id": {
+        "type": "keyword"
+      },
+      "title": {
+        "type": "text",
+        "analyzer": "ko_en",
+        "fields": {
+          "raw": {
+            "type": "keyword",
+            "normalizer": "lc"
+          }
+        }
+      },
+      "description": {
+        "type": "text",
+        "analyzer": "ko_en"
+      },
+      "snippet": {
+        "type": "keyword",
+        "index": false
+      },
+      "keywords": {
+        "type": "keyword",
+        "normalizer": "lc",
+        "fields": {
+          "text": {
+            "type": "text",
+            "analyzer": "ko_en"
+          }
+        }
+      },
+      "domain": {
+        "type": "keyword"
+      },
+      "access_level": {
+        "type": "keyword"
+      },
+      "owner_organization_id": {
+        "type": "keyword"
+      },
+      "owner_organization_name": {
+        "type": "keyword",
+        "fields": {
+          "text": {
+            "type": "text",
+            "analyzer": "ko_en"
+          }
+        }
+      },
+      "allowed_purposes": {
+        "type": "keyword"
+      },
+      "license": {
+        "type": "keyword"
+      },
+      "status": {
+        "type": "keyword"
+      },
+      "has_published_version": {
+        "type": "boolean"
+      },
+      "latest_version_id": {
+        "type": "keyword"
+      },
+      "latest_version_label": {
+        "type": "keyword"
+      },
+      "readiness_overall": {
+        "type": "keyword"
+      },
+      "published_at": {
+        "type": "date"
+      },
+      "updated_at": {
+        "type": "date"
+      }
+    }
+  }
+}

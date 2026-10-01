@@ -13,4 +13,5 @@ from api.platform.settings import Settings
 configure_broker(Settings(), StubBroker())
 
 from api.modules.catalog.tests.fixtures_db import catalog_db, db  # noqa: E402, F401
+from api.modules.catalog.tests.fixtures_search import opensearch_url, search_index  # noqa: E402, F401
 from api.modules.catalog.tests.fixtures_storage import s3_prefixes, seaweed_registry  # noqa: E402, F401

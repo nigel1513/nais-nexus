@@ -67,7 +67,8 @@ services:
       retries: 20
 
   opensearch:
-    image: opensearchproject/opensearch:2.19.1
+    build: infra/opensearch
+    image: nais-opensearch:2.19.1-nori
     environment:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
