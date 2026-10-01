@@ -6,10 +6,11 @@ export function isProtected(pathname: string): boolean {
 
 /** Only same-origin relative paths are allowed as post-login destinations (no open redirect). */
 export function safeCallbackUrl(raw: string | null | undefined, fallback = "/commons"): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) return fallback;
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(raw)) return fallback;
   try {
     const u = new URL(raw, "http://placeholder.invalid");
-    if (u.origin !== "http://placeholder.invalid") return fallback;
+    // "/.//evil.com" normalizes to "//evil.com": a protocol-relative URL once pushed.
+    if (u.origin !== "http://placeholder.invalid" || u.pathname.startsWith("//")) return fallback;
     return u.pathname + u.search + u.hash;
   } catch {
     return fallback;

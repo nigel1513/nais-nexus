@@ -203,4 +203,52 @@ describe("UploadPanel state machine", () => {
     expect(sessions[1]).toBe(sessions[0]); // resumed the first session
     expect(sessions[2]).not.toBe(sessions[0]); // FAILED file went to a new one
   });
+
+  it("drops a preserved session that still has PENDING paths missing locally and creates a new one", async () => {
+    const created: { files: { path: string }[] }[] = [];
+    server.use(
+      http.post("*/mock-api/v1/dataset-versions/:id/upload-session", async ({ request }) => {
+        created.push((await request.clone().json()) as { files: { path: string }[] });
+        // first call: real mock; later calls: the (still open) old session would conflict, which is not under test
+        return created.length === 1 ? undefined : HttpResponse.json({ error: { code: "CONFLICT", message: "x", details: {}, trace_id: "t" } }, { status: 409 });
+      }),
+    );
+    transfer.mockRejectedValueOnce(new Error("boom"));
+    mount();
+    const region = await pick(csv("a.csv"), csv("b.csv"));
+    await start(region);
+    expect(await within(region).findByRole("alert")).toBeInTheDocument();
+    await userEvent.click(within(region).getByRole("button", { name: "b.csv 목록에서 제거" }));
+    transfer.mockClear();
+    await start(region);
+    await waitFor(() => expect(created).toHaveLength(2));
+    expect(created[1]!.files.map((f) => f.path)).toEqual(["a.csv"]);
+    expect(transfer).not.toHaveBeenCalled();
+  });
+
+  it("on resume, a file the server already holds as VERIFIED (503 complete that committed) is taken over and skipped", async () => {
+    const created: unknown[] = [];
+    server.use(
+      http.post("*/mock-api/v1/dataset-versions/:id/upload-session", async ({ request }) => {
+        created.push(await request.clone().json());
+        return undefined;
+      }),
+    );
+    transfer.mockRejectedValueOnce(new Error("boom"));
+    mount();
+    const region = await pick(csv("a.csv"));
+    await start(region);
+    expect(await within(region).findByRole("alert")).toBeInTheDocument();
+    const db = getDb();
+    const session = db.uploadSessions.find((x) => x.dataset_version_id === VERSION.electrolyte)!;
+    session.status = "COMPLETED";
+    session.files.forEach((f) => (f.status = "VERIFIED"));
+    db.versions.find((v) => v.dataset_version_id === VERSION.electrolyte)!.files.forEach((f) => (f.status = "VERIFIED"));
+    transfer.mockClear();
+    await start(region);
+    expect(await within(region).findByText("검증됨")).toBeInTheDocument();
+    expect(created).toHaveLength(1);
+    expect(transfer).not.toHaveBeenCalled();
+    expect(within(region).queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

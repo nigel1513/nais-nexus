@@ -16,7 +16,7 @@ describe("redirect helpers", () => {
   });
 
   it("rejects open redirects", () => {
-    for (const raw of ["//evil.example", "https://evil.example/x", "/\\evil.example", "javascript:alert(1)", "commons", "", null, undefined]) {
+    for (const raw of ["//evil.example", "https://evil.example/x", "/\\evil.example", "/.//evil.com", "/a/..//evil.com", "/\\evil.com", "%2F.%2F%2Fevil.com", "/x\n/y", "javascript:alert(1)", "commons", "", null, undefined]) {
       expect(safeCallbackUrl(raw)).toBe("/commons");
     }
   });

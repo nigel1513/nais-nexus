@@ -120,6 +120,7 @@ export function UploadPanel({ versionId }: { versionId: string }) {
       // continue there, everything else (e.g. FAILED files, which have no instructions) goes to a new session.
       const groups: { session: UploadSession; files: PreparedFile[] }[] = [];
       let fresh = prepared;
+      const skipped = new Set<string>();
       const resumable = resumeRef.current;
       resumeRef.current = null;
       if (resumable) {
@@ -130,11 +131,25 @@ export function UploadPanel({ versionId }: { versionId: string }) {
           throw e;
         });
         sessionRef = null;
-        if (live && live.status === "OPEN") {
-          const usable = prepared.filter((p) => live.files.some((f) => f.path === p.path && (f.status === "PENDING" || f.status === "FAILED") && f.upload));
-          if (usable.length) {
-            groups.push({ session: live, files: usable });
-            fresh = prepared.filter((p) => !usable.includes(p));
+        if (live) {
+          // Files the server already holds (e.g. a 503 on complete that actually committed) take that state and are skipped.
+          const done = prepared.filter((p) => live.files.some((f) => f.path === p.path && (f.status === "UPLOADED" || f.status === "VERIFIED")));
+          for (const p of done) {
+            skipped.add(p.path);
+            const f = live.files.find((x) => x.path === p.path)!;
+            const row = targets.find((r) => r.path === p.path);
+            if (row) patch(row.key, { status: f.status as RowStatus, progress: 1, failure: null });
+          }
+          const localPaths = new Set(prepared.map((p) => p.path));
+          const orphaned = live.files.some((f) => f.status === "PENDING" && !localPaths.has(f.path));
+          // A session with PENDING paths we no longer have cannot be completed: drop it and start a new one.
+          const rest = prepared.filter((p) => !done.includes(p));
+          const usable = live.status === "OPEN" && !orphaned ? rest.filter((p) => live.files.some((f) => f.path === p.path && (f.status === "PENDING" || f.status === "FAILED") && f.upload)) : [];
+          if (usable.length) groups.push({ session: live, files: usable });
+          fresh = rest.filter((p) => !usable.includes(p));
+          if (done.length && !fresh.length && !usable.length) {
+            setAnnounce(t("upload.announce.done", { count: done.length }));
+            return;
           }
         }
       }
@@ -143,7 +158,7 @@ export function UploadPanel({ versionId }: { versionId: string }) {
         groups.push({ session, files: fresh });
       }
       const keyByPath = new Map(targets.map((r) => [r.path, r]));
-      for (const r of targets) patch(r.key, { status: "uploading", progress: 0 });
+      for (const r of targets) if (!skipped.has(r.path)) patch(r.key, { status: "uploading", progress: 0 });
       let total = 0;
       let failedCount = 0;
       for (const { session, files } of groups) {

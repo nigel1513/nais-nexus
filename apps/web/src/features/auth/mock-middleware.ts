@@ -1,10 +1,16 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { MOCK_USER_COOKIE } from "@/shared/config";
-import { CALLBACK_HEADER, LOGIN_HEADER } from "./login-redirect";
+import { CALLBACK_HEADER, LOGIN_HEADER, loginLocation } from "./login-redirect";
 import { isProtected } from "./redirects";
 
-/** Rewrites to the /auth-redirect handler, which answers with a relative Location (see there). */
+/**
+ * AUTH_URL set (real mode): Auth.js rewrites req.nextUrl to the AUTH_URL origin, so a rewrite would proxy to it; redirect
+ * absolutely on that single origin instead (the documented single-origin rule).
+ * Otherwise (mock mode): rewrite to the /auth-redirect handler, which answers with a relative Location (see there).
+ */
 export function loginRedirect(req: NextRequest, loginPath: string): NextResponse {
+  const callback = req.nextUrl.pathname + req.nextUrl.search;
+  if (process.env.AUTH_URL) return NextResponse.redirect(new URL(loginLocation(loginPath, callback), req.nextUrl.origin));
   const target = req.nextUrl.clone();
   target.pathname = "/auth-redirect";
   target.search = "";

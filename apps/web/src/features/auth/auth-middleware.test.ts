@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { authGate } from "./auth-middleware";
 
 const req = (path: string, auth?: { error?: string } | null) =>
@@ -19,5 +19,16 @@ describe("real-mode middleware", () => {
   it("lets valid sessions and public routes through", () => {
     expect(authGate(req("/commons", {})).headers.get("x-middleware-next")).toBe("1");
     expect(authGate(req("/", null)).headers.get("x-middleware-next")).toBe("1");
+  });
+
+  describe("with AUTH_URL set", () => {
+    afterEach(() => vi.unstubAllEnvs());
+    it("redirects absolutely to the single AUTH_URL origin (no rewrite, no proxy to an external host)", () => {
+      vi.stubEnv("AUTH_URL", "http://example.test:21051/web-auth");
+      const res = authGate(Object.assign(new NextRequest("http://example.test:21051/commons/data?q=x"), { auth: null }));
+      expect(res.status).toBe(307);
+      expect(res.headers.get("location")).toBe("http://example.test:21051/web-auth/signin?callbackUrl=%2Fcommons%2Fdata%3Fq%3Dx");
+      expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+    });
   });
 });
