@@ -70,3 +70,8 @@ strict = true
 ignore_missing_imports = true
 disable_error_code = ["type-abstract"]
 plugins = ["pydantic.mypy"]
+
+# Generated contract models (datamodel-codegen) use constr(...) in annotations; type them as-is, never fail on them.
+[[tool.mypy.overrides]]
+module = ["nais_contracts", "nais_contracts.*"]
+ignore_errors = true
