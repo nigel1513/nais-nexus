@@ -1,10 +1,13 @@
 import hashlib
+import threading
+import time
 from uuid import UUID
 
 import pytest
 from sqlalchemy.exc import DBAPIError
 
 from api.modules.catalog.domain import manifest_sha256
+from api.modules.catalog.service import publish as publish_service
 from api.modules.catalog.tests.support import execute, outbox_events, rows
 from api.modules.catalog.tests.support_api import USERS, CatalogApi, new_draft
 from api.modules.catalog.tests.support_upload import (
@@ -14,6 +17,7 @@ from api.modules.catalog.tests.support_upload import (
     start_upload,
     upload_files,
 )
+from api.platform.db import session_factory
 from api.platform.testing.contracts import assert_matches_response, assert_valid_event
 from api.platform.testing.fixtures import PgUrls
 
@@ -181,3 +185,67 @@ def test_published_version_becomes_the_latest(api: CatalogApi, db: PgUrls) -> No
     assert body["latest_published_version"]["dataset_version_id"] == version_id
     listed = api.get("a.researcher", f"/datasets/{dataset_id}/versions").json()["items"]
     assert [v["dataset_version_id"] for v in listed] == [version_id]
+
+
+def test_concurrent_update_waits_for_publish_and_snapshot_is_pre_patch(
+    api: CatalogApi, db: PgUrls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dataset_id, version_id = new_draft(api)
+    upload_files(api, db, version_id, FILES)
+    outcome: dict[str, object] = {}
+
+    def patch() -> None:
+        try:
+            response = api.patch("b.steward", f"/datasets/{dataset_id}", json={"title": "Concurrent title"})
+            outcome["status"] = response.status_code
+        except Exception as exc:  # noqa: BLE001 - surfaced by the assertion below
+            outcome["error"] = exc
+
+    real_finalize = publish_service.finalize_publish
+    threads: list[threading.Thread] = []
+
+    def finalize_with_concurrent_patch(*args: object, **kwargs: object) -> None:
+        # Publish has read the dataset but not committed: a PATCH started now must wait for the dataset lock.
+        thread = threading.Thread(target=patch, daemon=True)
+        thread.start()
+        threads.append(thread)
+        time.sleep(0.5)
+        outcome["blocked"] = thread.is_alive()
+        real_finalize(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(publish_service, "finalize_publish", finalize_with_concurrent_patch)
+    with session_factory(db.app)() as session, session.begin():
+        publish_service.publish_version(session, USERS["b.steward"], UUID(version_id))
+    threads[0].join(timeout=10)
+    assert outcome.get("blocked") is True, outcome
+    assert not threads[0].is_alive() and outcome.get("status") == 200, outcome
+    [row] = rows(
+        db,
+        "SELECT metadata_snapshot FROM catalog.dataset_versions WHERE dataset_version_id = :v",
+        v=version_id,
+    )
+    assert row["metadata_snapshot"]["title"] == "Battery Cycling Measurements"
+    assert api.get("b.steward", f"/datasets/{dataset_id}").json()["title"] == "Concurrent title"
+
+
+def test_withdrawn_dataset_cannot_publish(api: CatalogApi, db: PgUrls) -> None:
+    dataset_id, version_id = new_draft(api)
+    upload_files(api, db, version_id, FILES)
+    execute(db, "UPDATE catalog.datasets SET status = 'WITHDRAWN' WHERE dataset_id = :d", d=dataset_id)
+    response = publish(api, version_id)
+    assert response.status_code == 409 and response.json()["error"]["code"] == "CONFLICT"
+    assert outbox_events(db, "catalog.dataset.version_published.v1") == []
+
+
+def test_manifest_uses_c_collation_byte_order(api: CatalogApi, db: PgUrls) -> None:
+    # Paths are ASCII-only, so use cases where locale order differs from byte order (case, '_', '-', '.').
+    files = {"b.csv": b"1", "B.csv": b"2", "a_b.csv": b"3", "a-b.csv": b"4", "a.b.csv": b"5", "A/x.csv": b"6"}
+    _, version_id = new_draft(api)
+    upload_files(api, db, version_id, files)
+    body = publish(api, version_id).json()
+    lines = sorted(
+        ((p, len(d), hashlib.sha256(d).hexdigest()) for p, d in files.items()), key=lambda i: i[0].encode()
+    )
+    assert body["manifest_sha256"] == manifest_sha256(lines)
+    text = "".join(f"{p}\t{n}\t{h}\n" for p, n, h in lines)
+    assert body["manifest_sha256"] == hashlib.sha256(text.encode()).hexdigest()

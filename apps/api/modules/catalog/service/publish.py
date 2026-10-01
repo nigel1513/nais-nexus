@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from api.modules.catalog.access import require_draft, steward_version
 from api.modules.catalog.domain import SNAPSHOT_FIELDS, manifest_sha256
-from api.modules.catalog.repo import enqueue_index, load_version, must
+from api.modules.catalog.repo import enqueue_index, load_dataset, load_version, must
 from api.modules.catalog.service.versions import version_response
 from api.modules.catalog.tables import dataset_files, dataset_versions
 from api.platform import clock
@@ -94,8 +94,12 @@ def finalize_publish(
 
 
 def publish_version(session: Session, user: CurrentUser, version_id: UUID) -> dict[str, Any]:
-    version, ds = steward_version(session, user, version_id, for_update=True)
+    version, _ = steward_version(session, user, version_id, for_update=True)
     require_draft(version)
+    # Lock order version -> dataset: a concurrent updateDataset waits, so the frozen snapshot is current (D-029).
+    ds = must(load_dataset(session, version["dataset_id"], for_update=True), "dataset")
+    if ds["status"] == "WITHDRAWN":
+        raise ApiError(ErrorCode.CONFLICT, "WITHDRAWN datasets cannot publish versions.")
     finalize_publish(
         session, ds=ds, version=version, published_by=user.user_id, actor=EventActor.for_user(user)
     )
