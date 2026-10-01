@@ -136,6 +136,34 @@ def test_mapping_boundary_and_malformed_iri() -> None:
     assert outcome.status == "WARNING"
 
 
+def test_mapping_counts_only_resources_in_tabular_set() -> None:
+    doc = {
+        "resources": [
+            {"path": "data/t.csv", "schema": {"fields": FIELDS}},
+            {"path": "data/gone.csv", "schema": {"fields": [{"name": "z", "type": "string"}]}},
+            {"path": "data/u.csv", "schema": {"fields": [{"name": "y", "type": "string"}]}},
+        ]
+    }
+    files = with_schema({"data/t.csv": b"a,b\n1,x\n", "data/u.csv": b"y\n1\n"}, doc)
+    outcome = mapping_status.check(make_ctx(files=files, max_tabular_files=1))  # u.csv is cap-skipped
+    assert (outcome.status, outcome.evidence["declared_fields"], outcome.evidence["unmapped"]) == (
+        "PASS",
+        2,
+        [],
+    )
+
+
+def test_mapping_zero_declared_fields_warns() -> None:
+    doc = schema_doc("data/gone.csv", [{"name": "z", "type": "string"}])
+    outcome = mapping_status.check(make_ctx(files=with_schema({"data/t.csv": b"a\n1\n"}, doc)))
+    assert (outcome.status, outcome.evidence["declared_fields"], outcome.evidence["ratio"]) == (
+        "WARNING",
+        0,
+        0.0,
+    )
+    assert "0/0" in outcome.message
+
+
 def test_mapping_not_applicable_without_valid_schema() -> None:
     files = {k: v for k, v in fixture_files().items() if k != "_schema.json"}
     assert mapping_status.check(make_ctx(files=files)).status == "NOT_APPLICABLE"

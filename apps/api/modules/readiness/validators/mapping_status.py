@@ -17,7 +17,9 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
     declared = mapped = 0
     unmapped: list[dict[str, str]] = []
     malformed: list[dict[str, str]] = []
-    for path in sorted(doc.resources):
+    for path in sorted(f.path for f in ctx.tabular):
+        if path not in doc.resources:
+            continue
         for fld in doc.resources[path].fields:
             declared += 1
             if fld.concept is not None and _IRI.fullmatch(fld.concept):
