@@ -44,7 +44,16 @@ def deliver(session: Session, event: EventEnvelope, drafts: Sequence[Notificatio
         ).scalar_one_or_none()
         if notification_id is None or not settings.notification_email_enabled:
             continue
-        address = identity.get_email(draft.recipient_user_id)
+        try:
+            address = identity.get_email(draft.recipient_user_id)
+        except Exception:
+            # M09-R5: the in-app row stays; only this recipient's email is skipped (never log the address).
+            logger.warning(
+                "email lookup failed; in-app only",
+                extra={"user_id": str(draft.recipient_user_id), "event_id": str(event.event_id)},
+                exc_info=True,
+            )
+            continue
         if not address:
             logger.warning(
                 "recipient has no email; in-app only", extra={"user_id": str(draft.recipient_user_id)}

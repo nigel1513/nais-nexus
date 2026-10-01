@@ -34,4 +34,5 @@ def _kick(session: Session) -> None:
 
 
 def enqueue_after_commit(session: Session) -> None:
+    """Note: the once-listener assumes single-use sessions (one handler transaction per session)."""
     sa_event.listen(session, "after_commit", _kick, once=True)

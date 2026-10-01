@@ -19,6 +19,7 @@ from api.modules.audit.handlers import audit_writer, notifier
 from api.modules.audit.tests.support.db import fetch, run, scalar
 from api.modules.audit.tests.support.events import envelope
 from api.platform import ports
+from api.platform.db import session_factory
 from api.platform.event_bus import registry
 from api.platform.generated.event_types import EventType
 from api.platform.testing.fixtures import PgUrls
@@ -151,7 +152,14 @@ def test_identity_failure_rolls_back_claim_and_retry_succeeds(db: PgUrls, actor:
     assert actor.calls == 1
 
 
-def test_no_actor_configured_is_harmless(db: PgUrls) -> None:
+@pytest.fixture
+def restore_actor() -> Iterator[None]:
+    saved = email_queue._state["actor"]
+    yield
+    email_queue.set_send_actor(saved)
+
+
+def test_no_actor_configured_is_harmless(db: PgUrls, restore_actor: None) -> None:
     email_queue.set_send_actor(None)
     run(db, notifier, envelope("project.member.added.v1"))
     assert scalar(db, "SELECT count(*) FROM audit.email_deliveries WHERE status = 'PENDING'") == 1
@@ -163,3 +171,32 @@ def test_both_handlers_subscribed_to_every_event_type() -> None:
         assert "api.modules.audit.handlers.audit_writer" in table[e.value]
         assert "api.modules.audit.handlers.notifier" in table[e.value]
     assert (audit_writer, notifier) == handlers.HANDLERS
+
+
+class EmailFailingIdentity:
+    def __init__(self) -> None:
+        self.inner = FakeIdentity(SEED_USERS)
+
+    def get_email(self, user_id: Any) -> str | None:
+        raise ConnectionError("email lookup down")
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.inner, name)
+
+
+def test_email_lookup_failure_keeps_in_app_notification(db: PgUrls, actor: RecordingActor) -> None:
+    ports.provide(audit_ports.IdentityQueryPort, EmailFailingIdentity())
+    event = envelope("project.member.added.v1")
+    run(db, notifier, event)
+    assert scalar(db, "SELECT count(*) FROM audit.notifications") == 1
+    assert scalar(db, "SELECT count(*) FROM audit.email_deliveries") == 0
+    assert scalar(db, "SELECT count(*) FROM audit.processed_events WHERE handler = 'notifier'") == 1
+    assert actor.calls == 0
+
+
+def test_rollback_after_deliver_never_kicks_actor(db: PgUrls, actor: RecordingActor) -> None:
+    with pytest.raises(RuntimeError), session_factory(db.app)() as session, session.begin():
+        notifier(session, envelope("project.member.added.v1"))
+        raise RuntimeError("boom")
+    assert scalar(db, "SELECT count(*) FROM audit.notifications") == 0
+    assert actor.calls == 0
