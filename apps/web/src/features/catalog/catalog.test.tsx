@@ -23,6 +23,48 @@ describe("DataSearchScreen", () => {
     expect(screen.queryByRole("link", { name: /Dataset 등록|데이터셋 등록/ })).not.toBeInTheDocument();
   });
 
+  it("filters by subject facet and shows PI, period and subtitle on cards", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    const card = (await screen.findByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).closest("article")!;
+    expect(within(card as HTMLElement).getByText("연료전지 고분자 막 시편 1,000개의 온도·압력 측정")).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText(/B Researcher/)).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText(/2026-01-01 – 2026-01-01/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: /^재료 \(/ }));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/commons/data?subject=MATERIALS", { scroll: false }));
+  });
+
+  it("offers material and method facets with vocabulary labels", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    expect(await screen.findByRole("group", { name: "소재" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "수집·분석 방법" })).toBeInTheDocument();
+    const box = within(screen.getByRole("group", { name: "소재" })).getAllByRole("checkbox")[0]!;
+    await userEvent.click(box);
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\?material=/), { scroll: false }));
+  });
+
+  it("applies a data-period filter and rejects an inverted range", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    await userEvent.type(await screen.findByLabelText("기간 시작"), "2026-01-01");
+    await userEvent.click(screen.getByRole("button", { name: "기간 적용" }));
+    await waitFor(() => expect(router.replace).toHaveBeenLastCalledWith("/commons/data?temporal_from=2026-01-01", { scroll: false }));
+    await userEvent.type(screen.getByLabelText("기간 끝"), "2025-01-01");
+    await userEvent.click(screen.getByRole("button", { name: "기간 적용" }));
+    expect(await screen.findByText(/기간의 끝이 시작보다 빠릅니다/)).toBeInTheDocument();
+  });
+
+  it("shows the server 422 TEMPORAL_RANGE from an edited URL as a field error", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?temporal_from=2026-05-01&temporal_to=2025-01-01" });
+    expect(await screen.findByText(/기간의 끝이 시작보다 빠릅니다/)).toBeInTheDocument();
+    expect(screen.getByLabelText("기간 시작")).toHaveValue("2026-05-01");
+  });
+
+  it("filters by principal investigator via the person picker", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    await userEvent.type(await screen.findByRole("combobox", { name: "사용자 검색" }), "Researcher");
+    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\?principal_investigator_id=/), { scroll: false }));
+  });
+
   it("empty result offers a filter reset", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?q=zzzz" });
     expect(await screen.findByText("조건에 맞는 데이터가 없습니다.")).toBeInTheDocument();

@@ -223,14 +223,37 @@
         "owner_organization_id": "소유 기관",
         "purpose": "허용 목적",
         "keyword": "키워드",
-        "readiness_status": "AI-Ready"
+        "readiness_status": "AI-Ready",
+        "subject": "연구 분야",
+        "collecting_organization_id": "수집 기관",
+        "material": "소재",
+        "method": "수집·분석 방법"
       },
       "owner": "소유 기관",
       "purposes": "허용 목적",
       "latestVersion": "최신 버전",
       "updated": "수정일",
       "empty": "조건에 맞는 데이터가 없습니다.",
-      "reset": "필터 초기화"
+      "reset": "필터 초기화",
+      "period": {
+        "label": "데이터 기간",
+        "from": "기간 시작",
+        "to": "기간 끝",
+        "apply": "기간 적용",
+        "clear": "초기화"
+      },
+      "pi": {
+        "label": "연구책임자",
+        "selected": "연구책임자 필터: {name}",
+        "selectedUnknown": "연구책임자 필터 적용 중",
+        "clear": "연구책임자 해제"
+      },
+      "meta": {
+        "pi": "연구책임자",
+        "period": "기간",
+        "collecting": "수집",
+        "ongoing": "진행 중"
+      }
     },
     "new": {
       "title": "데이터셋 등록",
@@ -608,7 +631,8 @@
     "purposeDetail": "목적 상세는 20자 이상 4000자 이하로 입력하세요.",
     "requestedDays": "이용 기간은 1일 이상 {max}일 이하로 입력하세요.",
     "grantDays": "승인 기간은 1일 이상 {max}일 이하입니다.",
-    "versionLabel": "버전 이름은 영문, 숫자, . _ - 로 32자 이하입니다."
+    "versionLabel": "버전 이름은 영문, 숫자, . _ - 로 32자 이하입니다.",
+    "temporalRange": "기간의 끝이 시작보다 빠릅니다. 시작일과 같거나 이후로 입력하세요."
   },
   "errors": {
     "fallback": "요청을 처리하지 못했습니다. 문제가 계속되면 추적 ID와 함께 문의하세요.",

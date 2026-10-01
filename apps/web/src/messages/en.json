@@ -92,6 +92,36 @@
     "people": {
       "atTheTime": " (at the time)",
       "now": "now {org}"
+    },
+    "search": {
+      "facet": {
+        "subject": "Research field",
+        "collecting_organization_id": "Collecting organization",
+        "material": "Material",
+        "method": "Method"
+      },
+      "period": {
+        "label": "Data period",
+        "from": "Period start",
+        "to": "Period end",
+        "apply": "Apply period",
+        "clear": "Clear"
+      },
+      "pi": {
+        "label": "Principal investigator",
+        "selected": "Principal investigator: {name}",
+        "selectedUnknown": "Principal investigator filter active",
+        "clear": "Clear principal investigator"
+      },
+      "meta": {
+        "pi": "PI",
+        "period": "Period",
+        "collecting": "Collected by",
+        "ongoing": "ongoing"
+      }
     }
+  },
+  "validation": {
+    "temporalRange": "The period end is earlier than its start. Enter a date on or after the start."
   }
 }
