@@ -78,14 +78,33 @@ export const identityHandlers = [
     if (!target) fail("NOT_FOUND");
     const patch = await body<{ roles?: Schemas["OrgRole"][]; status?: Schemas["ActiveStatus"] }>(request);
     if (patch.roles === undefined && patch.status === undefined) fail("VALIDATION_FAILED", "empty patch");
+    const platformAdmin = user.platform_roles.includes("PLATFORM_ADMIN");
+    const isSelf = target.user_id === user.user_id;
     if (patch.roles) {
+      // PLATFORM_ADMIN is not an organization role; duplicates are a validation error (M01 §6).
       if (patch.roles.some((r) => !(ENUMS.OrgRole as readonly string[]).includes(r))) fail("ROLE_NOT_ASSIGNABLE");
-      target.org_roles = [...new Set(patch.roles)];
+      if (new Set(patch.roles).size !== patch.roles.length) fail("VALIDATION_FAILED", "duplicate roles", { fields: [{ field: "roles", reason: "DUPLICATE" }] });
+    }
+    if (patch.status !== undefined && !(ENUMS.ActiveStatus as readonly string[]).includes(patch.status)) fail("VALIDATION_FAILED", "invalid status", { fields: [{ field: "status", reason: "INVALID" }] });
+    const nextRoles = patch.roles ?? target.org_roles;
+    const nextStatus = patch.status ?? target.membership_status;
+    const losesAdmin = target.org_roles.includes("ORG_ADMIN") && target.membership_status === "ACTIVE" && !(nextRoles.includes("ORG_ADMIN") && nextStatus === "ACTIVE");
+    if (!platformAdmin) {
+      // An ORG_ADMIN can neither drop their own ORG_ADMIN role nor disable themselves; the last ACTIVE ORG_ADMIN is PLATFORM_ADMIN-only.
+      if (isSelf && (losesAdmin || nextStatus === "DISABLED")) fail("ROLE_NOT_ASSIGNABLE");
+      const activeAdmins = db.users.filter((u) => u.organization_id === orgId && u.membership_status === "ACTIVE" && u.org_roles.includes("ORG_ADMIN"));
+      if (losesAdmin && activeAdmins.length <= 1) fail("ROLE_NOT_ASSIGNABLE");
+    }
+    const rolesChanged = [...nextRoles].sort().join() !== [...target.org_roles].sort().join();
+    const statusChanged = nextStatus !== target.membership_status;
+    if (!rolesChanged && !statusChanged) return HttpResponse.json(membershipView(target));
+    if (rolesChanged) {
+      target.org_roles = [...nextRoles];
       recordAudit(db, { action: "ADMIN_ROLE_CHANGED", actor: user, resource: { type: "MEMBERSHIP", id: target.user_id, owner_organization_id: orgId }, details: { roles: target.org_roles } });
     }
-    if (patch.status) {
-      target.membership_status = patch.status;
-      if (patch.status === "DISABLED") {
+    if (statusChanged) {
+      target.membership_status = nextStatus;
+      if (nextStatus === "DISABLED") {
         for (const g of db.grants.filter((g) => g.subject_user_id === target.user_id && g.status === "ACTIVE")) {
           g.status = "REVOKED";
           g.revoked_at = nowIso();

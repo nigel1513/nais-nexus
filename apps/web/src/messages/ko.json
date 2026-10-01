@@ -516,7 +516,8 @@
     "result": {
       "SUCCESS": "성공",
       "DENIED": "거부"
-    }
+    },
+    "count": "{count}건 표시 중"
   },
   "settings": {
     "title": "설정",
@@ -550,7 +551,8 @@
     "saved": "변경했습니다.",
     "selfDemotionTitle": "본인 권한 해제 확인",
     "selfDemotionWarning": "본인의 기관 관리자 권한을 해제하면 이 화면에 다시 들어올 수 없습니다. 정말 해제하시겠습니까?",
-    "selfDemotionConfirm": "해제"
+    "selfDemotionConfirm": "해제",
+    "selfLocked": "본인의 기관 관리자 역할과 상태는 직접 변경할 수 없습니다."
   },
   "reserved": {
     "marketplace": "AI Marketplace",

@@ -115,6 +115,47 @@ describe("identity mocks", () => {
     expect(getDb().grants.find((g) => g.access_grant_id === GRANT.seed)?.status).toBe("REVOKED");
   });
 
+  describe("updateOrganizationMember rules (M01 §6)", () => {
+    const patch = (organizationId: string, userId: string, body: { roles?: ("ORG_ADMIN" | "DATA_STEWARD" | "RESOURCE_MANAGER")[]; status?: "ACTIVE" | "DISABLED" }) =>
+      unwrap(api.PATCH("/organizations/{organization_id}/members/{user_id}", { params: { path: { organization_id: organizationId, user_id: userId } }, body }));
+    const adminAudits = () => getDb().audit.filter((e) => e.action === "ADMIN_ROLE_CHANGED").length;
+
+    it("an ORG_ADMIN cannot remove their own ORG_ADMIN role or disable themselves (422 ROLE_NOT_ASSIGNABLE)", async () => {
+      as(USER.aAdmin);
+      await expect(patch(ORG.a, USER.aAdmin, { roles: [] })).rejects.toMatchObject({ status: 422, code: "ROLE_NOT_ASSIGNABLE" });
+      await expect(patch(ORG.a, USER.aAdmin, { status: "DISABLED" })).rejects.toMatchObject({ status: 422, code: "ROLE_NOT_ASSIGNABLE" });
+      expect(getDb().users.find((u) => u.user_id === USER.aAdmin)).toMatchObject({ org_roles: ["ORG_ADMIN"], membership_status: "ACTIVE" });
+    });
+
+    it("PLATFORM_ADMIN and duplicate roles are rejected before anything changes", async () => {
+      as(USER.aAdmin);
+      const before = adminAudits();
+      await expect(patch(ORG.a, USER.aResearcher, { roles: ["PLATFORM_ADMIN" as never] })).rejects.toMatchObject({ status: 422, code: "ROLE_NOT_ASSIGNABLE" });
+      await expect(patch(ORG.a, USER.aResearcher, { roles: ["DATA_STEWARD", "DATA_STEWARD"] })).rejects.toMatchObject({ status: 422, code: "VALIDATION_FAILED" });
+      expect(adminAudits()).toBe(before);
+    });
+
+    it("a change that changes nothing is a 200 without an audit event; a real change is audited", async () => {
+      as(USER.aAdmin);
+      const before = adminAudits();
+      await patch(ORG.a, USER.aResearcher, { roles: [], status: "ACTIVE" });
+      expect(adminAudits()).toBe(before);
+      await patch(ORG.a, USER.aResearcher, { roles: ["DATA_STEWARD"] });
+      expect(adminAudits()).toBe(before + 1);
+    });
+
+    it("PLATFORM_ADMIN may remove the last ORG_ADMIN, including their own role", async () => {
+      as(USER.admin);
+      const updated = await patch(ORG.nais, USER.admin, { roles: [] });
+      expect(updated).toMatchObject({ roles: [] });
+    });
+
+    it("another organization's admin gets 403", async () => {
+      as(USER.aAdmin);
+      await expect(patch(ORG.b, USER.bResearcher, { roles: ["DATA_STEWARD"] })).rejects.toMatchObject({ status: 403, code: "FORBIDDEN" });
+    });
+  });
+
   it("listUsers matches display name or email prefix", async () => {
     as(USER.aResearcher);
     const page = (await unwrap(api.GET("/users", { params: { query: { q: "b.re" } } }))) as Page<IdentityPublicProfile>;
