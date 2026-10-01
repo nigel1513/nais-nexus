@@ -42,6 +42,14 @@ def _budget(settings: AuditSettings) -> timedelta:
     return timedelta(seconds=settings.smtp_timeout_seconds * _TIMEOUTS_PER_MESSAGE)
 
 
+SEND_BATCH_SIZE = 50
+
+
+def max_lease_ms(settings: AuditSettings, batch_size: int = SEND_BATCH_SIZE) -> int:
+    """Longest a send run can legitimately take: the lease it claims for a full batch (also the actor time limit)."""
+    return int((batch_size * _budget(settings) + _LEASE_MARGIN).total_seconds() * 1000)
+
+
 class EmailSender(Protocol):
     def send(self, message: EmailMessage) -> None: ...
 
@@ -144,7 +152,7 @@ def send_pending_emails(
     settings: AuditSettings,
     *,
     now: Callable[[], datetime] = clock.now,
-    batch_size: int = 50,
+    batch_size: int = SEND_BATCH_SIZE,
 ) -> SendResult:
     sent = retried = failed = 0
     e = email_deliveries.c

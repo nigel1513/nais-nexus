@@ -1,10 +1,12 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from dramatiq.brokers.stub import StubBroker
 from sqlalchemy import text
 
-from api.modules.audit import MODULE, email_queue
+from api.modules.audit import MODULE, email_queue, jobs
+from api.modules.audit.email import max_lease_ms
 from api.modules.audit.handlers import notifier
 from api.modules.audit.jobs import SEND_ACTOR_NAME, purge_notifications, register_worker
 from api.modules.audit.settings import AuditSettings
@@ -25,6 +27,10 @@ def test_register_worker_declares_actor_and_jobs() -> None:
         register_worker(broker, scheduler)
         assert SEND_ACTOR_NAME in broker.get_declared_actors()
         assert scheduler.job_names == ["audit.send_emails", "audit.purge_notifications"]
+        options = broker.get_actor(SEND_ACTOR_NAME).options
+        assert options["max_retries"] == 0
+        assert options["time_limit"] == max_lease_ms(AuditSettings())  # 50 * (10s * 6) + 60s
+        assert broker.get_actor(SEND_ACTOR_NAME).queue_name == "audit"
     finally:
         email_queue.set_send_actor(None)
 
@@ -42,7 +48,7 @@ def test_notifier_commit_enqueues_actor_message(db: PgUrls) -> None:
     try:
         register_worker(broker, Scheduler())
         run(db, notifier, envelope("project.member.added.v1"))
-        assert broker.queues["default"].qsize() == 1
+        assert broker.queues["audit"].qsize() == 1
     finally:
         email_queue.set_send_actor(None)
 
@@ -108,3 +114,13 @@ def test_purge_job_failure_is_isolated_by_scheduler() -> None:
     scheduler.every(1, "b", lambda: ran.append("b"), run_immediately=True)
     assert scheduler.run_pending() == ["a", "b"]
     assert ran == ["b"]
+
+
+def test_purge_runs_on_first_scheduler_tick(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(jobs, "_purge_job", lambda: None)
+    broker, scheduler = StubBroker(), Scheduler()
+    try:
+        register_worker(broker, scheduler)
+        assert scheduler.run_pending() == ["audit.purge_notifications"]  # send scan waits its 300 s interval
+    finally:
+        email_queue.set_send_actor(None)
