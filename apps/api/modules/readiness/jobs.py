@@ -4,7 +4,6 @@ The actor is defined at import time: the platform sets the broker BEFORE importi
 """
 
 import logging
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -44,7 +43,6 @@ SWEEP_INTERVAL_S = 600.0
 _PENDING = "readiness.pending_jobs"
 _LISTENING = "readiness.listening"
 _SETTINGS = get_readiness_settings()
-_CONCURRENCY = threading.BoundedSemaphore(_SETTINGS.worker_concurrency)
 EMPTY_SUMMARY = {"pass": 0, "warning": 0, "fail": 0, "not_applicable": 0}
 
 
@@ -331,13 +329,12 @@ def _retry_when(retries: int, exc: BaseException) -> bool:
 )
 def run_validation_actor(validation_id: str) -> None:
     vid = UUID(validation_id)
-    # time_limit also counts the wait for this semaphore, so run workers with --threads equal to
-    # READINESS_WORKER_CONCURRENCY (then the wait is zero); more threads than permits would eat the time budget.
-    with _CONCURRENCY:  # READINESS_WORKER_CONCURRENCY runs per worker process
-        try:
-            run_validation(vid)
-        except TimeLimitExceeded:
-            _fail(vid, f"RUN_TIMEOUT: exceeded {_SETTINGS.run_timeout_seconds}s")
+    # Runs on the dedicated readiness worker (READINESS_WORKER_CONCURRENCY threads), so time_limit measures
+    # actual run time only.
+    try:
+        run_validation(vid)
+    except TimeLimitExceeded:
+        _fail(vid, f"RUN_TIMEOUT: exceeded {_SETTINGS.run_timeout_seconds}s")
 
 
 # ---------------------------------------------------------------- enqueue after commit

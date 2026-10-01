@@ -498,3 +498,11 @@ def test_time_limit_fails_the_run_with_run_timeout(
     jobs.run_validation_actor.fn(str(vid))
     assert row(db, vid)["error"] == f"RUN_TIMEOUT: exceeded {jobs._SETTINGS.run_timeout_seconds}s"
     assert events(db)[-1]["payload"]["run_status"] == "FAILED"
+
+
+def test_readiness_declares_a_dedicated_worker_queue() -> None:
+    from api.modules.readiness import MODULE
+    from api.modules.readiness.settings import get_readiness_settings
+
+    assert dict(MODULE.dedicated_queues) == {jobs.QUEUE: get_readiness_settings().worker_concurrency}
+    assert not hasattr(jobs, "_CONCURRENCY")

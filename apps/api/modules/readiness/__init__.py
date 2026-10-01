@@ -3,9 +3,10 @@
 from pathlib import Path
 
 from api.modules.readiness import handlers  # noqa: F401  - registers @subscribe handlers at import
-from api.modules.readiness.jobs import register_worker
+from api.modules.readiness.jobs import QUEUE, register_worker
 from api.modules.readiness.query import wire
 from api.modules.readiness.router import router
+from api.modules.readiness.settings import get_readiness_settings
 from api.platform.modules import ModuleSpec
 
 MODULE = ModuleSpec(
@@ -15,4 +16,5 @@ MODULE = ModuleSpec(
     migrations_dir=Path(__file__).parent / "migrations",
     wire=wire,
     register_worker=register_worker,
+    dedicated_queues={QUEUE: get_readiness_settings().worker_concurrency},
 )

@@ -4,10 +4,11 @@ import logging
 import signal
 import threading
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import dramatiq
 from dramatiq import Worker
+from dramatiq.common import q_name
 
 from api.platform import relay
 from api.platform.broker import configure_broker
@@ -26,6 +27,7 @@ class WorkerRuntime:
     broker: dramatiq.Broker
     scheduler: Scheduler
     modules: list[ModuleSpec]
+    dedicated_queues: dict[str, int] = field(default_factory=dict)
 
 
 def build_worker(
@@ -47,7 +49,26 @@ def build_worker(
     # Handlers subscribe at import time: a module must import its handler modules from its package __init__,
     # otherwise its events are relayed with no handler and silently marked dispatched.
     logger.info("event subscriptions", extra={"subscriptions": registry.table()})
-    return WorkerRuntime(broker=chosen, scheduler=scheduler, modules=specs)
+    dedicated: dict[str, int] = {}
+    for spec in specs:
+        dedicated.update(spec.dedicated_queues)
+    return WorkerRuntime(broker=chosen, scheduler=scheduler, modules=specs, dedicated_queues=dedicated)
+
+
+def make_actor_workers(runtime: WorkerRuntime, settings: Settings) -> list[Worker]:
+    """One Worker per dedicated queue group plus a general Worker for every other declared queue.
+
+    Dramatiq treats an empty/None `queues` set as "all queues", so a worker is only built for a non-empty set.
+    """
+    declared = {q_name(q) for q in runtime.broker.get_declared_queues()}  # delay queues follow their queue
+    workers: list[Worker] = []
+    for queue, threads in runtime.dedicated_queues.items():
+        if queue in declared:
+            workers.append(Worker(runtime.broker, queues={queue}, worker_threads=threads))
+    rest = declared - set(runtime.dedicated_queues)
+    if rest:
+        workers.append(Worker(runtime.broker, queues=rest, worker_threads=settings.worker_threads))
+    return workers
 
 
 def supervise(stop: threading.Event, threads: Sequence[threading.Thread], *, poll_s: float = 1.0) -> int:
@@ -85,12 +106,21 @@ def main() -> None:
     ]
     for thread in threads:
         thread.start()
-    actor_worker = Worker(runtime.broker, worker_threads=settings.worker_threads)
-    actor_worker.start()
+    actor_workers = make_actor_workers(runtime, settings)
+    for actor_worker in actor_workers:
+        actor_worker.start()
+        logger.info(
+            "actor worker started",
+            extra={
+                "queues": sorted(actor_worker.consumer_whitelist or []),
+                "threads": actor_worker.worker_threads,
+            },
+        )
     try:
         code = supervise(stop, threads)
     finally:
-        actor_worker.stop(timeout=settings.worker_shutdown_timeout_ms)
+        for actor_worker in actor_workers:
+            actor_worker.stop(timeout=settings.worker_shutdown_timeout_ms)
         for thread in threads:
             thread.join(timeout=10)
     raise SystemExit(code)

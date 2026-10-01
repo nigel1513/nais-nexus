@@ -57,11 +57,11 @@ used when a single file exceeds the parser's size limit. `overall_status` is nul
 - **Broker outage after commit**: the Dramatiq message is enqueued after the DB commit (outbox-safe). If Redis is
   down at that moment the API still answers 202 and the row stays `QUEUED` until the sweeper marks it
   `FAILED(STALE_JOB)` after 1 h.
-- **Worker threads**: the actor's `time_limit` also covers the wait for the `READINESS_WORKER_CONCURRENCY`
-  semaphore (default 2 concurrent runs per worker process). Run the worker with `worker_threads` (platform
-  setting `WORKER_THREADS`, default 4) equal to `READINESS_WORKER_CONCURRENCY`, otherwise queued runs spend their
-  time budget waiting. `docker-compose.yml` starts `python -m api.worker` with the platform default; aligning it is
-  an integration carry (not part of this module).
+- **Worker threads**: `python -m api.worker` starts two Dramatiq workers: a dedicated one that consumes only the
+  `readiness` queue (and its delay queue) with `READINESS_WORKER_CONCURRENCY` threads (default 2), and the general
+  worker for every other queue with `WORKER_THREADS`. The module declares this via
+  `ModuleSpec.dedicated_queues`. Readiness runs therefore never occupy the shared threads, and the actor's
+  `time_limit` measures actual run time only (no semaphore wait).
 - **Concurrent requests** race on `uq_validation_inflight` / `uq_validation_reuse`; the service re-decides up to 3
   times and then answers a generic `503 DEPENDENCY_UNAVAILABLE`.
 - **Performance (M05-AT-15)**: `READINESS_PERF=1 uv run pytest apps/api/modules/readiness/tests/test_perf.py`

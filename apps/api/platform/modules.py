@@ -1,8 +1,8 @@
 """Module plug-in contract (D-036). Each module defines MODULE = ModuleSpec(...) in its __init__.py."""
 
 import importlib
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -44,6 +44,9 @@ class ModuleSpec:
     wire: Callable[[], None] | None = None
     register_worker: "Callable[[dramatiq.Broker, Scheduler], None] | None" = None
     seed: "Callable[[Session], None] | None" = None
+    # queue -> threads: the worker consumes these queues with their own Dramatiq Worker so heavy jobs cannot
+    # occupy (or be starved by) the shared worker threads.
+    dedicated_queues: Mapping[str, int] = field(default_factory=dict)
 
 
 def discover_modules(names: Iterable[str] = DEFAULT_MODULE_ORDER) -> list[ModuleSpec]:
