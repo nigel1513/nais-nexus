@@ -18,6 +18,7 @@ def _profiles_select() -> Select[Any]:
     return select(
         users.c.user_id,
         users.c.display_name,
+        users.c.national_researcher_number,
         users.c.status.label("user_status"),
         memberships.c.status.label("membership_status"),
         memberships.c.organization_id,
@@ -37,6 +38,7 @@ def _profile(row: Any) -> IdentityPublicProfile:
         organization_id=row.organization_id,
         organization_name=row.organization_name,
         status="ACTIVE" if active else "DISABLED",
+        national_researcher_number=row.national_researcher_number,
     )
 
 

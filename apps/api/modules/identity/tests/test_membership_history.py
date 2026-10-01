@@ -27,8 +27,8 @@ def move_researcher_to_b(urls: PgUrls) -> None:
         )
         conn.execute(
             text(
-                "INSERT INTO identity.organization_memberships (membership_id, user_id, organization_id)"
-                " VALUES (gen_random_uuid(), :u, :o)"
+                "INSERT INTO identity.organization_memberships (membership_id, user_id, organization_id, roles)"
+                " VALUES (gen_random_uuid(), :u, :o, '{DATA_STEWARD}')"
             ),
             {"u": RESEARCHER.user_id, "o": INST_B},
         )
@@ -41,6 +41,9 @@ def test_history_rows_never_duplicate_reads(seeded: PgUrls) -> None:
     profiles = port.get_public_profiles([RESEARCHER.user_id])
     assert profiles[RESEARCHER.user_id].organization_id == INST_B
     assert port.is_active_user(RESEARCHER.user_id)
+    assert port.has_org_role(RESEARCHER.user_id, INST_B, "DATA_STEWARD")
+    assert not port.has_org_role(RESEARCHER.user_id, INST_A, "DATA_STEWARD")
+    assert RESEARCHER.user_id not in port.list_users_with_org_role(INST_A, "DATA_STEWARD")
     client = make_client(seeded)
     me = client.get("/api/v1/me", headers=bearer(token_for(RESEARCHER.email, org_code="inst-b")))
     assert me.status_code == 200, me.text

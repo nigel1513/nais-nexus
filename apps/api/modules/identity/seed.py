@@ -67,6 +67,7 @@ def _seed_user(session: Session, user: SeedUser, correlation_id: UUID) -> None:
             email=user.email,
             display_name=user.display_name,
             platform_roles=list(user.platform_roles),
+            national_researcher_number=user.national_researcher_number,
         )
         .on_conflict_do_nothing(index_elements=[users.c.user_id])
         .returning(users.c.user_id)
@@ -82,6 +83,11 @@ def _seed_user(session: Session, user: SeedUser, correlation_id: UUID) -> None:
                 status="ACTIVE",
                 updated_at=clock.now(),
             )
+        )
+        session.execute(
+            update(users)
+            .where(users.c.user_id == user.user_id, users.c.national_researcher_number.is_(None))
+            .values(national_researcher_number=user.national_researcher_number)
         )
     roles = sorted(user.org_roles)
     session.execute(

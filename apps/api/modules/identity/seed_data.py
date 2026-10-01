@@ -29,6 +29,7 @@ class SeedUser:
     org_roles: tuple[str, ...] = ()
     platform_roles: tuple[str, ...] = ()
     membership_status: str = "ACTIVE"
+    national_researcher_number: str | None = None
 
     @property
     def keycloak_sub(self) -> str:
@@ -44,11 +45,37 @@ ORGANIZATIONS: tuple[SeedOrganization, ...] = (
 USERS: tuple[SeedUser, ...] = (
     SeedUser(fixed_id("101"), "admin@nais.local", "NAIS Admin", "nais", ("ORG_ADMIN",), ("PLATFORM_ADMIN",)),
     SeedUser(fixed_id("a01"), "a.admin@inst-a.local", "A Admin", "inst-a", ("ORG_ADMIN",)),
-    SeedUser(fixed_id("a02"), "a.researcher@inst-a.local", "A Researcher", "inst-a"),
-    SeedUser(fixed_id("a03"), "a.steward@inst-a.local", "A Steward", "inst-a", ("DATA_STEWARD",)),
+    SeedUser(
+        fixed_id("a02"),
+        "a.researcher@inst-a.local",
+        "A Researcher",
+        "inst-a",
+        national_researcher_number="10000001",
+    ),
+    SeedUser(
+        fixed_id("a03"),
+        "a.steward@inst-a.local",
+        "A Steward",
+        "inst-a",
+        ("DATA_STEWARD",),
+        national_researcher_number="10000003",
+    ),
     SeedUser(fixed_id("b01"), "b.admin@inst-b.local", "B Admin", "inst-b", ("ORG_ADMIN",)),
-    SeedUser(fixed_id("b02"), "b.researcher@inst-b.local", "B Researcher", "inst-b"),
-    SeedUser(fixed_id("b03"), "b.steward@inst-b.local", "B Steward", "inst-b", ("DATA_STEWARD",)),
+    SeedUser(
+        fixed_id("b02"),
+        "b.researcher@inst-b.local",
+        "B Researcher",
+        "inst-b",
+        national_researcher_number="10000002",
+    ),
+    SeedUser(
+        fixed_id("b03"),
+        "b.steward@inst-b.local",
+        "B Steward",
+        "inst-b",
+        ("DATA_STEWARD",),
+        national_researcher_number="10000004",
+    ),
     SeedUser(
         fixed_id("b04"), "b.disabled@inst-b.local", "B Disabled", "inst-b", membership_status="DISABLED"
     ),

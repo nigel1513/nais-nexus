@@ -24,6 +24,7 @@ def get_me(session: Session, user_id: UUID) -> MeOut:
             users.c.email,
             users.c.status,
             users.c.platform_roles,
+            users.c.national_researcher_number,
             memberships.c.roles,
             organizations.c.organization_id,
             organizations.c.code,
@@ -47,6 +48,7 @@ def get_me(session: Session, user_id: UUID) -> MeOut:
         ),
         org_roles=sorted(row.roles),
         platform_roles=sorted(row.platform_roles),
+        national_researcher_number=row.national_researcher_number,
     )
 
 
@@ -142,6 +144,7 @@ def search_users(
         select(
             users.c.user_id,
             users.c.display_name,
+            users.c.national_researcher_number,
             memberships.c.organization_id,
             organizations.c.name.label("organization_name"),
         )
@@ -180,6 +183,7 @@ def search_users(
             organization_id=r.organization_id,
             organization_name=r.organization_name,
             status="ACTIVE",
+            national_researcher_number=r.national_researcher_number,
         )
         for r in rows
     ]
