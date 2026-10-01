@@ -252,3 +252,32 @@ def change_member_role(
         EventActor.for_user(user),
     )
     return updated
+
+
+def remove_member(session: Session, user: CurrentUser, project_id: UUID, target_user_id: UUID) -> None:
+    leaving = target_user_id == user.user_id
+    access = _mutable(session, user, project_id, allow_archived=leaving)  # locks the project row first
+    member = repo.active_member(session, project_id, target_user_id)
+    if member is None:
+        raise ApiError(ErrorCode.PROJECT_MEMBER_NOT_FOUND)
+    if not leaving and not roles.can_manage_member(access.my_role, member["role"]):
+        raise ApiError(ErrorCode.FORBIDDEN)  # self-leave deliberately skips can_manage_member
+    if roles.drops_an_owner(member["role"], None) and repo.count_active_owners(session, project_id) <= 1:
+        raise ApiError(ErrorCode.PROJECT_LAST_OWNER)
+    now = clock.now()
+    if not repo.remove_member(session, member["project_member_id"], removed_by=user.user_id, now=now):
+        raise ApiError(ErrorCode.PROJECT_MEMBER_NOT_FOUND)
+    repo.drop_org_member(session, project_id, member["organization_id"])
+    repo.touch_project(session, project_id, now=now)
+    outbox.write(
+        session,
+        "project.member.removed.v1",
+        {
+            "project_id": str(project_id),
+            "user_id": str(target_user_id),
+            "organization_id": str(member["organization_id"]),
+            "removed_by": str(user.user_id),
+            "reason": None,
+        },
+        EventActor.for_user(user),
+    )

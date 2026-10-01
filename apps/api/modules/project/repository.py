@@ -170,12 +170,14 @@ def set_member_role(session: Session, project_member_id: UUID, role: str) -> Row
     )
 
 
-def remove_member(session: Session, project_member_id: UUID, *, removed_by: UUID, now: datetime) -> None:
-    session.execute(
+def remove_member(session: Session, project_member_id: UUID, *, removed_by: UUID, now: datetime) -> bool:
+    """Soft-delete an ACTIVE member; False when no ACTIVE row matched (nothing was removed)."""
+    result = session.execute(
         update(m)
         .where(m.c.project_member_id == project_member_id, m.c.status == ACTIVE)
         .values(status=REMOVED, removed_at=now, removed_by=removed_by)
     )
+    return bool(result.rowcount)  # type: ignore[attr-defined]
 
 
 def count_active_members(session: Session, project_id: UUID) -> int:

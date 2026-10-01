@@ -3,7 +3,7 @@
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 
 from api.modules.project import repository as repo
 from api.modules.project import service, views
@@ -114,3 +114,16 @@ def update_project_member_role(
 ) -> dict[str, Any]:
     member = service.change_member_role(session, user, project_id, user_id, body.role)
     return views.members_view(identity, [member])[0]
+
+
+@router.delete(
+    "/projects/{project_id}/members/{user_id}",
+    status_code=204,
+    response_class=Response,
+    operation_id="removeProjectMember",
+)
+def remove_project_member(
+    project_id: UUID, user_id: UUID, user: CurrentUserDep, session: SessionDep
+) -> Response:
+    service.remove_member(session, user, project_id, user_id)
+    return Response(status_code=204)
