@@ -32,3 +32,7 @@ Resolved: MSW handlers run server-side at /mock-api/v1 (no service worker over p
 
 ## Carry-forward to M09 execution (from M02 Task 12 review)
 Audit visibility for a given project_id: use `project_id in ProjectQueryPort.list_project_ids_for_member(user)` (includes ARCHIVED projects), never `is_active_member` (False for archived) — otherwise members lose the audit trail of archived projects.
+
+## Carry-forward to M04 (Wave 2, from M02 final review)
+- `project.member.removed.v1` is also emitted when a member leaves an ARCHIVED project (grants already revoked at archive) → revocation handling must be idempotent.
+- `ProjectQueryPort.get_member_role` returns roles for ARCHIVED projects; authorization must use `is_active_member` (False for archived).
