@@ -1516,6 +1516,84 @@
           }
         }
       }
+    },
+    {
+      "title": "identity.user.updated.v1",
+      "description": "Self-service profile fields changed (e.g. NTIS researcher number).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "identity.user.updated.v1"
+        },
+        "producer": {
+          "const": "identity"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "user_id",
+            "organization_id",
+            "changed_fields"
+          ],
+          "properties": {
+            "user_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "changed_fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "catalog.dataset.metadata_changed.v1",
+      "description": "Non-policy dataset metadata or contributors changed (Audit DATASET_UPDATED; M11 index input).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "catalog.dataset.metadata_changed.v1"
+        },
+        "producer": {
+          "const": "catalog"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dataset_id",
+            "owner_organization_id",
+            "changed_fields"
+          ],
+          "properties": {
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "changed_fields": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
     }
   ],
   "$defs": {

@@ -87,6 +87,9 @@ AUDIT_RULES: dict[str, AuditRule] = {
     "catalog.dataset.policy_changed.v1": AuditRule(
         A.POLICY_CHANGED, R.DATASET, "dataset_id", owner_key="owner_organization_id"
     ),
+    "catalog.dataset.metadata_changed.v1": AuditRule(
+        A.DATASET_UPDATED, R.DATASET, "dataset_id", owner_key="owner_organization_id"
+    ),
     "catalog.dataset.version_published.v1": AuditRule(
         A.DATASET_VERSION_PUBLISHED,
         R.DATASET_VERSION,
@@ -164,7 +167,7 @@ AUDIT_RULES: dict[str, AuditRule] = {
 
 # Consumed but intentionally not audited: still claimed as audit_writer so they are not reprocessed.
 NOT_AUDITED: frozenset[str] = frozenset(
-    {"governance.access.expiring_soon.v1", "readiness.validation.started.v1"}
+    {"governance.access.expiring_soon.v1", "identity.user.updated.v1", "readiness.validation.started.v1"}
 )
 
 # 04_SECURITY_GOVERNANCE §6 required audit actions.

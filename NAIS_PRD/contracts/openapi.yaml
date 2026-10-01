@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: NAIS AI-OS / Research Commons API
-  version: 1.2.0
+  version: 1.3.0
   description: |
     P0 contract. Owner: Agent 0 (Platform). Changes only via CONTRACT_CHANGE_REQUEST.md.
 
@@ -54,6 +54,18 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error", description: "JIT provisioning email conflict (CONFLICT)" }
+    patch:
+      tags: [identity]
+      operationId: updateMe
+      description: Self-service profile fields. `national_researcher_number` is the NTIS 국가연구자번호 (8 digits); null clears it. Emits identity.user.updated.v1.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/MeUpdate" } } }
+      responses:
+        "200": { description: Updated caller, content: { application/json: { schema: { $ref: "#/components/schemas/Me" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error", description: "NTIS number already registered by another user (CONFLICT)" }
+        "422": { $ref: "#/components/responses/Error" }
   /users:
     get:
       tags: [identity]
@@ -75,6 +87,22 @@ paths:
                   - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/IdentityPublicProfile" } } } }
         "401": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
+  /users/{user_id}/transfer:
+    parameters: [ { $ref: "#/components/parameters/UserId" } ]
+    post:
+      tags: [identity]
+      operationId: transferUserOrganization
+      description: PLATFORM_ADMIN only. Ends the user's current membership (kept as history) and starts one in organization_id; updates the Keycloak org_code attribute. Emits identity.membership.changed.v1 for both memberships. Same target org = idempotent 200.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UserTransfer" } } }
+      responses:
+        "200": { description: New current membership, content: { application/json: { schema: { $ref: "#/components/schemas/OrganizationMembership" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error", description: "Keycloak admin API unavailable (DEPENDENCY_UNAVAILABLE); nothing changed" }
   /organizations:
     get:
       tags: [identity]
@@ -300,6 +328,13 @@ paths:
         - { name: purpose, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/Purpose" } } }
         - { name: keyword, in: query, style: form, explode: true, schema: { type: array, items: { type: string } } }
         - { name: readiness_status, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/ReadinessOverall" } } }
+        - { name: subject, in: query, style: form, explode: true, schema: { type: array, items: { type: string } }, description: SUBJECT vocabulary codes (any of) }
+        - { name: material, in: query, style: form, explode: true, schema: { type: array, items: { type: string } } }
+        - { name: method, in: query, style: form, explode: true, schema: { type: array, items: { type: string } } }
+        - { name: collecting_organization_id, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/Id" } } }
+        - { name: principal_investigator_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: temporal_from, in: query, schema: { type: string, format: date }, description: "Data period overlap: dataset temporal_end >= temporal_from (missing end = open-ended)" }
+        - { name: temporal_to, in: query, schema: { type: string, format: date }, description: "Data period overlap: dataset temporal_start <= temporal_to" }
         - { name: sort, in: query, schema: { type: string, enum: [relevance, updated_desc, title_asc], default: relevance } }
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -353,6 +388,68 @@ paths:
         "200": { description: Policy view, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetPolicyView" } } } }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+  /datasets/{dataset_id}/contributors:
+    parameters: [ { $ref: "#/components/parameters/DatasetId" } ]
+    get:
+      tags: [catalog]
+      operationId: listDatasetContributors
+      description: Visible datasets only (D-012). Each contributor carries the affiliation at the time they were added.
+      responses:
+        "200": { description: Contributors, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/DatasetContributor" } } } } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [catalog]
+      operationId: putDatasetContributors
+      description: Owner-org DATA_STEWARD. Replaces the whole list; unchanged (user_id, role) pairs keep their stored affiliation. Emits catalog.dataset.metadata_changed.v1 when the list changes.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetContributorsPut" } } }
+      responses:
+        "200": { description: Contributors, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/DatasetContributor" } } } } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /datasets/{dataset_id}/metadata.jsonld:
+    parameters: [ { $ref: "#/components/parameters/DatasetId" } ]
+    get:
+      tags: [catalog]
+      operationId: getDatasetJsonLd
+      description: Machine-readable metadata (schema.org Dataset + DCAT + PROV context) for M11 / AI use. Visibility per D-012. Emails only when contact_email_public.
+      responses:
+        "200":
+          description: JSON-LD document
+          content:
+            application/ld+json: { schema: { $ref: "#/components/schemas/DatasetJsonLd" } }
+            application/json: { schema: { $ref: "#/components/schemas/DatasetJsonLd" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /vocabulary/{scheme}:
+    parameters:
+      - { name: scheme, in: path, required: true, schema: { $ref: "#/components/schemas/VocabularyScheme" } }
+    get:
+      tags: [catalog]
+      operationId: listVocabulary
+      description: All active terms of a controlled vocabulary (no pagination), ordered by parent_code then code.
+      responses:
+        "200": { description: Terms, content: { application/json: { schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/VocabularyTerm" } } } } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [catalog]
+      operationId: createVocabularyTerm
+      description: PLATFORM_ADMIN only. Adds a term (code unique within the scheme).
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/VocabularyTermCreate" } } }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/VocabularyTerm" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
   /datasets/{dataset_id}/versions:
     parameters: [ { $ref: "#/components/parameters/DatasetId" } ]
     get:
@@ -481,6 +578,27 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /dataset-files/{file_id}/profile:
+    parameters: [ { name: file_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } } ]
+    get:
+      tags: [catalog]
+      operationId: getFileProfile
+      description: Data Explorer column summary of a tabular file (names, types, units, descriptions, concept IRIs, missing ratio, distinct count). Visible to everyone who can see the version; never contains raw values (D-018).
+      responses:
+        "200": { description: Profile, content: { application/json: { schema: { $ref: "#/components/schemas/FileProfile" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /dataset-files/{file_id}/preview:
+    parameters: [ { name: file_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } } ]
+    get:
+      tags: [catalog]
+      operationId: getFilePreview
+      description: Data Explorer distributions (histograms, min/max/mean, top values) and the first 100 rows (cells ≤ 200 chars). Requires download permission (owner organization member, PUBLIC dataset, ACTIVE grant, PLATFORM_ADMIN); otherwise 403 with details.reason DOWNLOAD_PERMISSION_REQUIRED.
+      responses:
+        "200": { description: Preview, content: { application/json: { schema: { $ref: "#/components/schemas/FilePreview" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
 
   # ---------------------------------------------------------------- governance (M04)
   /access-requests:
@@ -876,7 +994,7 @@ components:
     AuditAction:
       type: string
       enum: [LOGIN, USER_CREATED, ORGANIZATION_CREATED, ADMIN_ROLE_CHANGED, PROJECT_CREATED, PROJECT_ARCHIVED, PROJECT_MEMBER_ADDED, PROJECT_MEMBER_REMOVED, PROJECT_MEMBER_ROLE_CHANGED,
-             DATASET_CREATED, DATASET_VERSION_PUBLISHED, POLICY_CHANGED, ACCESS_REQUESTED, ACCESS_REVIEW_STARTED, ACCESS_APPROVED, ACCESS_REJECTED, ACCESS_CHANGES_REQUESTED, ACCESS_WITHDRAWN,
+             DATASET_CREATED, DATASET_VERSION_PUBLISHED, DATASET_UPDATED, POLICY_CHANGED, ACCESS_REQUESTED, ACCESS_REVIEW_STARTED, ACCESS_APPROVED, ACCESS_REJECTED, ACCESS_CHANGES_REQUESTED, ACCESS_WITHDRAWN,
              ACCESS_REVOKED, ACCESS_EXPIRED, FILE_DOWNLOADED, DOWNLOAD_DENIED, READINESS_VALIDATION_COMPLETED]
     NotificationType:
       type: string
@@ -892,6 +1010,7 @@ components:
         organization_id: { $ref: "#/components/schemas/Id" }
         organization_name: { type: string }
         status: { $ref: "#/components/schemas/ActiveStatus" }
+        national_researcher_number: { type: [string, "null"], pattern: "^[0-9]{8}$" }
     OrganizationSummary:
       type: object
       required: [organization_id, code, name, type]
@@ -921,6 +1040,7 @@ components:
         roles: { type: array, items: { $ref: "#/components/schemas/OrgRole" } }
         status: { $ref: "#/components/schemas/ActiveStatus" }
         updated_at: { $ref: "#/components/schemas/Timestamp" }
+        started_at: { $ref: "#/components/schemas/Timestamp" }
     Me:
       type: object
       required: [user_id, display_name, email, status, organization, org_roles, platform_roles]
@@ -932,7 +1052,21 @@ components:
         organization: { $ref: "#/components/schemas/OrganizationSummary" }
         org_roles: { type: array, items: { $ref: "#/components/schemas/OrgRole" } }
         platform_roles: { type: array, items: { $ref: "#/components/schemas/PlatformRole" } }
+        national_researcher_number: { type: [string, "null"], pattern: "^[0-9]{8}$" }
 
+    MeUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        national_researcher_number: { type: [string, "null"], pattern: "^[0-9]{8}$", description: "NTIS 국가연구자번호; null clears" }
+    UserTransfer:
+      type: object
+      additionalProperties: false
+      required: [organization_id]
+      properties:
+        organization_id: { $ref: "#/components/schemas/Id" }
+        roles: { type: array, items: { $ref: "#/components/schemas/OrgRole" }, uniqueItems: true, default: [] }
     # ---------- projects
     ProjectSummary:
       type: object
@@ -1015,10 +1149,149 @@ components:
         allowed_purposes: { type: array, items: { $ref: "#/components/schemas/Purpose" }, minItems: 1 }
         approval_required: { type: boolean, description: "P0: always true for CONTROLLED/SENSITIVE; ignored for PUBLIC/INTERNAL" }
         max_grant_days: { type: integer, minimum: 1, maximum: 365, description: "SENSITIVE <= 30" }
+    VocabularyScheme: { type: string, enum: [SUBJECT, METHOD, MATERIAL] }
+    UpdateFrequency: { type: string, enum: [ONCE, MONTHLY, QUARTERLY, YEARLY, IRREGULAR] }
+    ContributorRole: { type: string, enum: [CO_INVESTIGATOR, DATA_COLLECTOR, DATA_CURATOR] }
+    VocabularyTerm:
+      type: object
+      required: [scheme, code, label_ko, label_en]
+      properties:
+        scheme: { $ref: "#/components/schemas/VocabularyScheme" }
+        code: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }
+        label_ko: { type: string }
+        label_en: { type: string }
+        iri: { type: [string, "null"], pattern: "^https?://\\S+$" }
+        parent_code: { type: [string, "null"] }
+    VocabularyTermCreate:
+      type: object
+      additionalProperties: false
+      required: [code, label_ko, label_en]
+      properties:
+        code: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }
+        label_ko: { type: string, minLength: 1, maxLength: 200 }
+        label_en: { type: string, minLength: 1, maxLength: 200 }
+        iri: { type: string, pattern: "^https?://\\S+$" }
+        parent_code: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }
+    OrganizationRef:
+      type: object
+      required: [organization_id, name]
+      properties:
+        organization_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ], description: "null for an organization outside the council (free-text name)" }
+        name: { type: string }
+    DatasetPerson:
+      type: object
+      required: [user_id, display_name, status, affiliation]
+      properties:
+        user_id: { $ref: "#/components/schemas/Id" }
+        display_name: { type: string }
+        national_researcher_number: { type: [string, "null"] }
+        status: { $ref: "#/components/schemas/ActiveStatus" }
+        affiliation: { $ref: "#/components/schemas/OrganizationRef", description: "Organization at the time the person was assigned (당시 소속)" }
+        current_organization: { oneOf: [ { $ref: "#/components/schemas/OrganizationRef" }, { type: "null" } ], description: "Current organization (null if unknown)" }
+        email: { type: string, format: email, description: "Only on people.steward_contact and only when contact_email_public" }
+    DatasetContributor:
+      allOf:
+        - $ref: "#/components/schemas/DatasetPerson"
+        - type: object
+          required: [role]
+          properties:
+            role: { $ref: "#/components/schemas/ContributorRole" }
+    DatasetContributorsPut:
+      type: object
+      additionalProperties: false
+      required: [contributors]
+      properties:
+        contributors:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [user_id, role]
+            properties:
+              user_id: { $ref: "#/components/schemas/Id" }
+              role: { $ref: "#/components/schemas/ContributorRole" }
+    DatasetPeople:
+      type: object
+      required: [principal_investigator, steward_contact, contributors, steward_contact_absent]
+      properties:
+        principal_investigator: { oneOf: [ { $ref: "#/components/schemas/DatasetPerson" }, { type: "null" } ] }
+        steward_contact: { oneOf: [ { $ref: "#/components/schemas/DatasetPerson" }, { type: "null" } ] }
+        contributors: { type: array, items: { $ref: "#/components/schemas/DatasetContributor" } }
+        steward_contact_absent: { type: boolean, description: "Steward contact unset, disabled, or no longer a member of the owner organization (담당자 재지정 필요)" }
+    RelatedPublication:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        doi: { type: string, pattern: "^10\\.\\d{4,9}/\\S+$" }
+        url: { type: string, pattern: "^https?://\\S+$" }
+    DatasetJsonLd:
+      type: object
+      required: ["@context", "@type", "@id", name]
+      additionalProperties: true
+      properties:
+        "@context": { type: object }
+        "@type": { type: array, items: { type: string } }
+        "@id": { type: string, format: uri }
+        name: { type: string }
+    FilePreviewStatus: { type: string, enum: [PENDING, READY, FAILED, UNSUPPORTED] }
+    ColumnProfile:
+      type: object
+      required: [name, type, missing_ratio, distinct_count]
+      properties:
+        name: { type: string }
+        type: { type: string, enum: [string, integer, number, boolean, date, datetime], description: "Declared in _schema.json, else inferred from the sample" }
+        unit: { type: [string, "null"] }
+        description: { type: [string, "null"] }
+        concept_iri: { type: [string, "null"] }
+        missing_ratio: { type: number, minimum: 0, maximum: 1 }
+        distinct_count: { type: integer, minimum: 0 }
+        distinct_capped: { type: boolean, description: "true when distinct values exceeded the 1,000 counting cap (distinct_count is then a lower bound)" }
+    FileProfile:
+      type: object
+      required: [file_id, path, status, columns]
+      properties:
+        file_id: { $ref: "#/components/schemas/Id" }
+        path: { type: string }
+        status: { $ref: "#/components/schemas/FilePreviewStatus" }
+        failure_code: { type: [string, "null"], enum: [UNPARSEABLE, TIMEOUT, GENERATION_FAILED, null] }
+        generated_at: { type: [string, "null"], format: date-time }
+        format: { type: string, enum: [csv, tsv, parquet] }
+        rows_sampled: { type: integer }
+        truncated: { type: boolean, description: "Sample stopped at the row/byte limit" }
+        columns_truncated: { type: boolean }
+        columns: { type: array, items: { $ref: "#/components/schemas/ColumnProfile" } }
+    ColumnDistribution:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [numeric, categorical, other] }
+        min: { type: [number, "null"] }
+        max: { type: [number, "null"] }
+        mean: { type: [number, "null"] }
+        histogram:
+          type: array
+          items: { type: object, required: [lower, upper, count], properties: { lower: { type: number }, upper: { type: number }, count: { type: integer } } }
+        top_values:
+          type: array
+          items: { type: object, required: [value, count], properties: { value: { type: string }, count: { type: integer } } }
+    FilePreview:
+      type: object
+      required: [file_id, status, header, rows, rows_truncated, columns]
+      properties:
+        file_id: { $ref: "#/components/schemas/Id" }
+        status: { $ref: "#/components/schemas/FilePreviewStatus" }
+        header: { type: array, items: { type: string } }
+        rows: { type: array, maxItems: 100, items: { type: array, items: { type: [string, "null"], maxLength: 200 } } }
+        rows_truncated: { type: boolean }
+        columns: { type: array, items: { $ref: "#/components/schemas/ColumnDistribution" } }
     DatasetCreate:
       type: object
       additionalProperties: false
-      required: [owner_organization_id, title, description, access_level, license, allowed_purposes]
+      required: [owner_organization_id, title, description, access_level, license, allowed_purposes, principal_investigator_id, data_steward_contact_id]
       properties:
         owner_organization_id: { $ref: "#/components/schemas/Id" }
         title: { type: string, minLength: 3, maxLength: 300 }
@@ -1032,6 +1305,23 @@ components:
         max_grant_days: { type: integer, minimum: 1, maximum: 365, default: 180 }
         contact_email: { type: string, format: email }
         provenance: { type: string, maxLength: 10000, description: "How the data was produced (instrument, method, source)" }
+        subtitle: { type: string, maxLength: 160, description: "One-line summary shown under the title (Data Card)" }
+        principal_investigator_id: { $ref: "#/components/schemas/Id" }
+        data_steward_contact_id: { $ref: "#/components/schemas/Id" }
+        contact_email_public: { type: boolean, default: false }
+        project_title: { type: string, maxLength: 300 }
+        project_code: { type: string, maxLength: 64 }
+        funding_agency: { type: string, maxLength: 200 }
+        subject_codes: { type: array, items: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }, maxItems: 5, uniqueItems: true }
+        method_codes: { type: array, items: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }, maxItems: 10, uniqueItems: true }
+        material_codes: { type: array, items: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }, maxItems: 20, uniqueItems: true }
+        method_detail: { type: string, maxLength: 4000 }
+        temporal_start: { type: string, format: date }
+        temporal_end: { type: string, format: date }
+        collecting_organization_id: { $ref: "#/components/schemas/Id" }
+        collecting_organization_name: { type: string, minLength: 1, maxLength: 200 }
+        update_frequency: { $ref: "#/components/schemas/UpdateFrequency" }
+        related_publications: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/RelatedPublication" } }
     DatasetUpdate:
       type: object
       additionalProperties: false
@@ -1049,6 +1339,23 @@ components:
         contact_email: { type: string, format: email }
         provenance: { type: string, maxLength: 10000 }
         status: { $ref: "#/components/schemas/DatasetStatus" }
+        subtitle: { type: [string, "null"], maxLength: 160 }
+        principal_investigator_id: { $ref: "#/components/schemas/Id" }
+        data_steward_contact_id: { $ref: "#/components/schemas/Id" }
+        contact_email_public: { type: boolean }
+        project_title: { type: [string, "null"], maxLength: 300 }
+        project_code: { type: [string, "null"], maxLength: 64 }
+        funding_agency: { type: [string, "null"], maxLength: 200 }
+        subject_codes: { type: array, items: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }, maxItems: 5, uniqueItems: true }
+        method_codes: { type: array, items: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }, maxItems: 10, uniqueItems: true }
+        material_codes: { type: array, items: { type: string, pattern: "^[A-Z0-9_]{2,64}$" }, maxItems: 20, uniqueItems: true }
+        method_detail: { type: [string, "null"], maxLength: 4000 }
+        temporal_start: { type: [string, "null"], format: date }
+        temporal_end: { type: [string, "null"], format: date }
+        collecting_organization_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        collecting_organization_name: { type: [string, "null"], minLength: 1, maxLength: 200 }
+        update_frequency: { $ref: "#/components/schemas/UpdateFrequency" }
+        related_publications: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/RelatedPublication" } }
     Dataset:
       type: object
       required: [dataset_id, owner_organization_id, title, description, access_level, license, policy, status, created_at, updated_at]
@@ -1071,6 +1378,28 @@ components:
         created_by: { $ref: "#/components/schemas/Id" }
         created_at: { $ref: "#/components/schemas/Timestamp" }
         updated_at: { $ref: "#/components/schemas/Timestamp" }
+        subtitle: { type: [string, "null"] }
+        people: { $ref: "#/components/schemas/DatasetPeople" }
+        contact_email_public: { type: boolean }
+        project_title: { type: [string, "null"] }
+        project_code: { type: [string, "null"] }
+        funding_agency: { type: [string, "null"] }
+        subject_codes: { type: array, items: { type: string } }
+        method_codes: { type: array, items: { type: string } }
+        material_codes: { type: array, items: { type: string } }
+        method_detail: { type: [string, "null"] }
+        temporal_start: { type: [string, "null"], format: date }
+        temporal_end: { type: [string, "null"], format: date }
+        collecting_organization: { oneOf: [ { $ref: "#/components/schemas/OrganizationRef" }, { type: "null" } ] }
+        update_frequency: { $ref: "#/components/schemas/UpdateFrequency" }
+        related_publications: { type: array, items: { $ref: "#/components/schemas/RelatedPublication" } }
+        stats:
+          type: object
+          description: Derived from the latest published version (no input)
+          properties:
+            file_count: { type: integer }
+            total_bytes: { type: integer }
+            media_types: { type: array, items: { type: string } }
     DatasetVersionSummary:
       type: object
       required: [dataset_version_id, version_label, status]
@@ -1170,6 +1499,12 @@ components:
         latest_version_label: { type: [string, "null"] }
         readiness_overall: { oneOf: [ { $ref: "#/components/schemas/ReadinessOverall" }, { type: "null" } ] }
         updated_at: { $ref: "#/components/schemas/Timestamp" }
+        subtitle: { type: [string, "null"] }
+        principal_investigator_name: { type: [string, "null"] }
+        temporal_start: { type: [string, "null"], format: date }
+        temporal_end: { type: [string, "null"], format: date }
+        subject_codes: { type: array, items: { type: string } }
+        collecting_organization_name: { type: [string, "null"] }
     FacetBucket:
       type: object
       required: [value, count]
@@ -1193,6 +1528,10 @@ components:
                 purpose: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
                 keyword: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
                 readiness_status: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+                subject: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+                collecting_organization_id: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+                material: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
+                method: { type: array, items: { $ref: "#/components/schemas/FacetBucket" } }
 
     # ---------- governance
     AccessRequestCreate:

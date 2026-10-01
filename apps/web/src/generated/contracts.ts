@@ -218,6 +218,7 @@ export const ENUMS = {
     "PROJECT_MEMBER_ROLE_CHANGED",
     "DATASET_CREATED",
     "DATASET_VERSION_PUBLISHED",
+    "DATASET_UPDATED",
     "POLICY_CHANGED",
     "ACCESS_REQUESTED",
     "ACCESS_REVIEW_STARTED",
@@ -240,5 +241,28 @@ export const ENUMS = {
     "ACCESS_EXPIRING",
     "ACCESS_REVOKED",
     "DATASET_PUBLISHED"
+  ],
+  "VocabularyScheme": [
+    "SUBJECT",
+    "METHOD",
+    "MATERIAL"
+  ],
+  "UpdateFrequency": [
+    "ONCE",
+    "MONTHLY",
+    "QUARTERLY",
+    "YEARLY",
+    "IRREGULAR"
+  ],
+  "ContributorRole": [
+    "CO_INVESTIGATOR",
+    "DATA_COLLECTOR",
+    "DATA_CURATOR"
+  ],
+  "FilePreviewStatus": [
+    "PENDING",
+    "READY",
+    "FAILED",
+    "UNSUPPORTED"
   ]
 } as const;

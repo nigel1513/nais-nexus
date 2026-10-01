@@ -50,7 +50,8 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /** @description Self-service profile fields. `national_researcher_number` is the NTIS 국가연구자번호 (8 digits); null clears it. Emits identity.user.updated.v1. */
+        patch: operations["updateMe"];
         trace?: never;
     };
     "/users": {
@@ -64,6 +65,25 @@ export interface paths {
         get: operations["listUsers"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/users/{user_id}/transfer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description PLATFORM_ADMIN only. Ends the user's current membership (kept as history) and starts one in organization_id; updates the Keycloak org_code attribute. Emits identity.membership.changed.v1 for both memberships. Same target org = idempotent 200. */
+        post: operations["transferUserOrganization"];
         delete?: never;
         options?: never;
         head?: never;
@@ -295,6 +315,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/datasets/{dataset_id}/contributors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        /** @description Visible datasets only (D-012). Each contributor carries the affiliation at the time they were added. */
+        get: operations["listDatasetContributors"];
+        /** @description Owner-org DATA_STEWARD. Replaces the whole list; unchanged (user_id, role) pairs keep their stored affiliation. Emits catalog.dataset.metadata_changed.v1 when the list changes. */
+        put: operations["putDatasetContributors"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/metadata.jsonld": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        /** @description Machine-readable metadata (schema.org Dataset + DCAT + PROV context) for M11 / AI use. Visibility per D-012. Emails only when contact_email_public. */
+        get: operations["getDatasetJsonLd"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vocabulary/{scheme}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scheme: components["schemas"]["VocabularyScheme"];
+            };
+            cookie?: never;
+        };
+        /** @description All active terms of a controlled vocabulary (no pagination), ordered by parent_code then code. */
+        get: operations["listVocabulary"];
+        put?: never;
+        /** @description PLATFORM_ADMIN only. Adds a term (code unique within the scheme). */
+        post: operations["createVocabularyTerm"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/datasets/{dataset_id}/versions": {
         parameters: {
             query?: never;
@@ -424,6 +503,44 @@ export interface paths {
         put?: never;
         /** @description Owner-org DATA_STEWARD. Requires >=1 file and all files VERIFIED. Version becomes immutable. Emits catalog.dataset.version_published.v1. */
         post: operations["publishDatasetVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dataset-files/{file_id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** @description Data Explorer column summary of a tabular file (names, types, units, descriptions, concept IRIs, missing ratio, distinct count). Visible to everyone who can see the version; never contains raw values (D-018). */
+        get: operations["getFileProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dataset-files/{file_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        /** @description Data Explorer distributions (histograms, min/max/mean, top values) and the first 100 rows (cells ≤ 200 chars). Requires download permission (owner organization member, PUBLIC dataset, ACTIVE grant, PLATFORM_ADMIN); otherwise 403 with details.reason DOWNLOAD_PERMISSION_REQUIRED. */
+        get: operations["getFilePreview"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -835,7 +952,7 @@ export interface components {
         /** @enum {string} */
         ResourceType: "USER" | "ORGANIZATION" | "MEMBERSHIP" | "PROJECT" | "PROJECT_MEMBER" | "DATASET" | "DATASET_VERSION" | "DATASET_FILE" | "ACCESS_REQUEST" | "ACCESS_GRANT" | "READINESS_VALIDATION";
         /** @enum {string} */
-        AuditAction: "LOGIN" | "USER_CREATED" | "ORGANIZATION_CREATED" | "ADMIN_ROLE_CHANGED" | "PROJECT_CREATED" | "PROJECT_ARCHIVED" | "PROJECT_MEMBER_ADDED" | "PROJECT_MEMBER_REMOVED" | "PROJECT_MEMBER_ROLE_CHANGED" | "DATASET_CREATED" | "DATASET_VERSION_PUBLISHED" | "POLICY_CHANGED" | "ACCESS_REQUESTED" | "ACCESS_REVIEW_STARTED" | "ACCESS_APPROVED" | "ACCESS_REJECTED" | "ACCESS_CHANGES_REQUESTED" | "ACCESS_WITHDRAWN" | "ACCESS_REVOKED" | "ACCESS_EXPIRED" | "FILE_DOWNLOADED" | "DOWNLOAD_DENIED" | "READINESS_VALIDATION_COMPLETED";
+        AuditAction: "LOGIN" | "USER_CREATED" | "ORGANIZATION_CREATED" | "ADMIN_ROLE_CHANGED" | "PROJECT_CREATED" | "PROJECT_ARCHIVED" | "PROJECT_MEMBER_ADDED" | "PROJECT_MEMBER_REMOVED" | "PROJECT_MEMBER_ROLE_CHANGED" | "DATASET_CREATED" | "DATASET_VERSION_PUBLISHED" | "DATASET_UPDATED" | "POLICY_CHANGED" | "ACCESS_REQUESTED" | "ACCESS_REVIEW_STARTED" | "ACCESS_APPROVED" | "ACCESS_REJECTED" | "ACCESS_CHANGES_REQUESTED" | "ACCESS_WITHDRAWN" | "ACCESS_REVOKED" | "ACCESS_EXPIRED" | "FILE_DOWNLOADED" | "DOWNLOAD_DENIED" | "READINESS_VALIDATION_COMPLETED";
         /** @enum {string} */
         NotificationType: "PROJECT_INVITATION" | "ACCESS_SUBMITTED" | "ACCESS_APPROVED" | "ACCESS_REJECTED" | "ACCESS_CHANGES_REQUESTED" | "ACCESS_EXPIRING" | "ACCESS_REVOKED" | "DATASET_PUBLISHED";
         IdentityPublicProfile: {
@@ -844,6 +961,7 @@ export interface components {
             organization_id: components["schemas"]["Id"];
             organization_name?: string;
             status: components["schemas"]["ActiveStatus"];
+            national_researcher_number?: string | null;
         };
         OrganizationSummary: {
             organization_id: components["schemas"]["Id"];
@@ -870,6 +988,7 @@ export interface components {
             roles: components["schemas"]["OrgRole"][];
             status: components["schemas"]["ActiveStatus"];
             updated_at?: components["schemas"]["Timestamp"];
+            started_at?: components["schemas"]["Timestamp"];
         };
         Me: {
             user_id: components["schemas"]["Id"];
@@ -880,6 +999,16 @@ export interface components {
             organization: components["schemas"]["OrganizationSummary"];
             org_roles: components["schemas"]["OrgRole"][];
             platform_roles: components["schemas"]["PlatformRole"][];
+            national_researcher_number?: string | null;
+        };
+        MeUpdate: {
+            /** @description NTIS 국가연구자번호; null clears */
+            national_researcher_number?: string | null;
+        };
+        UserTransfer: {
+            organization_id: components["schemas"]["Id"];
+            /** @default [] */
+            roles: components["schemas"]["OrgRole"][];
         };
         ProjectSummary: {
             project_id: components["schemas"]["Id"];
@@ -953,6 +1082,135 @@ export interface components {
             /** @description SENSITIVE <= 30 */
             max_grant_days: number;
         };
+        /** @enum {string} */
+        VocabularyScheme: "SUBJECT" | "METHOD" | "MATERIAL";
+        /** @enum {string} */
+        UpdateFrequency: "ONCE" | "MONTHLY" | "QUARTERLY" | "YEARLY" | "IRREGULAR";
+        /** @enum {string} */
+        ContributorRole: "CO_INVESTIGATOR" | "DATA_COLLECTOR" | "DATA_CURATOR";
+        VocabularyTerm: {
+            scheme: components["schemas"]["VocabularyScheme"];
+            code: string;
+            label_ko: string;
+            label_en: string;
+            iri?: string | null;
+            parent_code?: string | null;
+        };
+        VocabularyTermCreate: {
+            code: string;
+            label_ko: string;
+            label_en: string;
+            iri?: string;
+            parent_code?: string;
+        };
+        OrganizationRef: {
+            /** @description null for an organization outside the council (free-text name) */
+            organization_id: components["schemas"]["Id"] | null;
+            name: string;
+        };
+        DatasetPerson: {
+            user_id: components["schemas"]["Id"];
+            display_name: string;
+            national_researcher_number?: string | null;
+            status: components["schemas"]["ActiveStatus"];
+            /** @description Organization at the time the person was assigned (당시 소속) */
+            affiliation: components["schemas"]["OrganizationRef"];
+            /** @description Current organization (null if unknown) */
+            current_organization?: components["schemas"]["OrganizationRef"] | null;
+            /**
+             * Format: email
+             * @description Only on people.steward_contact and only when contact_email_public
+             */
+            email?: string;
+        };
+        DatasetContributor: components["schemas"]["DatasetPerson"] & {
+            role: components["schemas"]["ContributorRole"];
+        };
+        DatasetContributorsPut: {
+            contributors: {
+                user_id: components["schemas"]["Id"];
+                role: components["schemas"]["ContributorRole"];
+            }[];
+        };
+        DatasetPeople: {
+            principal_investigator: components["schemas"]["DatasetPerson"] | null;
+            steward_contact: components["schemas"]["DatasetPerson"] | null;
+            contributors: components["schemas"]["DatasetContributor"][];
+            /** @description Steward contact unset, disabled, or no longer a member of the owner organization (담당자 재지정 필요) */
+            steward_contact_absent: boolean;
+        };
+        RelatedPublication: {
+            title: string;
+            doi?: string;
+            url?: string;
+        };
+        DatasetJsonLd: {
+            "@context": Record<string, never>;
+            "@type": string[];
+            /** Format: uri */
+            "@id": string;
+            name: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** @enum {string} */
+        FilePreviewStatus: "PENDING" | "READY" | "FAILED" | "UNSUPPORTED";
+        ColumnProfile: {
+            name: string;
+            /**
+             * @description Declared in _schema.json, else inferred from the sample
+             * @enum {string}
+             */
+            type: "string" | "integer" | "number" | "boolean" | "date" | "datetime";
+            unit?: string | null;
+            description?: string | null;
+            concept_iri?: string | null;
+            missing_ratio: number;
+            distinct_count: number;
+            /** @description true when distinct values exceeded the 1,000 counting cap (distinct_count is then a lower bound) */
+            distinct_capped?: boolean;
+        };
+        FileProfile: {
+            file_id: components["schemas"]["Id"];
+            path: string;
+            status: components["schemas"]["FilePreviewStatus"];
+            /** @enum {string|null} */
+            failure_code?: "UNPARSEABLE" | "TIMEOUT" | "GENERATION_FAILED" | null;
+            /** Format: date-time */
+            generated_at?: string | null;
+            /** @enum {string} */
+            format?: "csv" | "tsv" | "parquet";
+            rows_sampled?: number;
+            /** @description Sample stopped at the row/byte limit */
+            truncated?: boolean;
+            columns_truncated?: boolean;
+            columns: components["schemas"]["ColumnProfile"][];
+        };
+        ColumnDistribution: {
+            name: string;
+            /** @enum {string} */
+            kind: "numeric" | "categorical" | "other";
+            min?: number | null;
+            max?: number | null;
+            mean?: number | null;
+            histogram?: {
+                lower: number;
+                upper: number;
+                count: number;
+            }[];
+            top_values?: {
+                value: string;
+                count: number;
+            }[];
+        };
+        FilePreview: {
+            file_id: components["schemas"]["Id"];
+            status: components["schemas"]["FilePreviewStatus"];
+            header: string[];
+            rows: (string | null)[][];
+            rows_truncated: boolean;
+            columns: components["schemas"]["ColumnDistribution"][];
+        };
         DatasetCreate: {
             owner_organization_id: components["schemas"]["Id"];
             title: string;
@@ -978,6 +1236,27 @@ export interface components {
             contact_email?: string;
             /** @description How the data was produced (instrument, method, source) */
             provenance?: string;
+            /** @description One-line summary shown under the title (Data Card) */
+            subtitle?: string;
+            principal_investigator_id: components["schemas"]["Id"];
+            data_steward_contact_id: components["schemas"]["Id"];
+            /** @default false */
+            contact_email_public: boolean;
+            project_title?: string;
+            project_code?: string;
+            funding_agency?: string;
+            subject_codes?: string[];
+            method_codes?: string[];
+            material_codes?: string[];
+            method_detail?: string;
+            /** Format: date */
+            temporal_start?: string;
+            /** Format: date */
+            temporal_end?: string;
+            collecting_organization_id?: components["schemas"]["Id"];
+            collecting_organization_name?: string;
+            update_frequency?: components["schemas"]["UpdateFrequency"];
+            related_publications?: components["schemas"]["RelatedPublication"][];
         };
         DatasetUpdate: {
             title?: string;
@@ -993,6 +1272,25 @@ export interface components {
             contact_email?: string;
             provenance?: string;
             status?: components["schemas"]["DatasetStatus"];
+            subtitle?: string | null;
+            principal_investigator_id?: components["schemas"]["Id"];
+            data_steward_contact_id?: components["schemas"]["Id"];
+            contact_email_public?: boolean;
+            project_title?: string | null;
+            project_code?: string | null;
+            funding_agency?: string | null;
+            subject_codes?: string[];
+            method_codes?: string[];
+            material_codes?: string[];
+            method_detail?: string | null;
+            /** Format: date */
+            temporal_start?: string | null;
+            /** Format: date */
+            temporal_end?: string | null;
+            collecting_organization_id?: components["schemas"]["Id"] | null;
+            collecting_organization_name?: string | null;
+            update_frequency?: components["schemas"]["UpdateFrequency"];
+            related_publications?: components["schemas"]["RelatedPublication"][];
         };
         Dataset: {
             dataset_id: components["schemas"]["Id"];
@@ -1013,6 +1311,29 @@ export interface components {
             created_by?: components["schemas"]["Id"];
             created_at: components["schemas"]["Timestamp"];
             updated_at: components["schemas"]["Timestamp"];
+            subtitle?: string | null;
+            people?: components["schemas"]["DatasetPeople"];
+            contact_email_public?: boolean;
+            project_title?: string | null;
+            project_code?: string | null;
+            funding_agency?: string | null;
+            subject_codes?: string[];
+            method_codes?: string[];
+            material_codes?: string[];
+            method_detail?: string | null;
+            /** Format: date */
+            temporal_start?: string | null;
+            /** Format: date */
+            temporal_end?: string | null;
+            collecting_organization?: components["schemas"]["OrganizationRef"] | null;
+            update_frequency?: components["schemas"]["UpdateFrequency"];
+            related_publications?: components["schemas"]["RelatedPublication"][];
+            /** @description Derived from the latest published version (no input) */
+            stats?: {
+                file_count?: number;
+                total_bytes?: number;
+                media_types?: string[];
+            };
         };
         DatasetVersionSummary: {
             dataset_version_id: components["schemas"]["Id"];
@@ -1094,6 +1415,14 @@ export interface components {
             latest_version_label?: string | null;
             readiness_overall?: components["schemas"]["ReadinessOverall"] | null;
             updated_at?: components["schemas"]["Timestamp"];
+            subtitle?: string | null;
+            principal_investigator_name?: string | null;
+            /** Format: date */
+            temporal_start?: string | null;
+            /** Format: date */
+            temporal_end?: string | null;
+            subject_codes?: string[];
+            collecting_organization_name?: string | null;
         };
         FacetBucket: {
             value: string;
@@ -1109,6 +1438,10 @@ export interface components {
                 purpose?: components["schemas"]["FacetBucket"][];
                 keyword?: components["schemas"]["FacetBucket"][];
                 readiness_status?: components["schemas"]["FacetBucket"][];
+                subject?: components["schemas"]["FacetBucket"][];
+                collecting_organization_id?: components["schemas"]["FacetBucket"][];
+                material?: components["schemas"]["FacetBucket"][];
+                method?: components["schemas"]["FacetBucket"][];
             };
         };
         AccessRequestCreate: {
@@ -1394,6 +1727,34 @@ export interface operations {
             409: components["responses"]["Error"];
         };
     };
+    updateMe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated caller */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Me"];
+                };
+            };
+            401: components["responses"]["Error"];
+            /** @description NTIS number already registered by another user (CONFLICT) */
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
     listUsers: {
         parameters: {
             query?: {
@@ -1422,6 +1783,38 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             422: components["responses"]["Error"];
+        };
+    };
+    transferUserOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: components["parameters"]["UserId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserTransfer"];
+            };
+        };
+        responses: {
+            /** @description New current membership */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationMembership"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            /** @description Keycloak admin API unavailable (DEPENDENCY_UNAVAILABLE); nothing changed */
+            503: components["responses"]["Error"];
         };
     };
     listOrganizations: {
@@ -1806,6 +2199,16 @@ export interface operations {
                 purpose?: components["schemas"]["Purpose"][];
                 keyword?: string[];
                 readiness_status?: components["schemas"]["ReadinessOverall"][];
+                /** @description SUBJECT vocabulary codes (any of) */
+                subject?: string[];
+                material?: string[];
+                method?: string[];
+                collecting_organization_id?: components["schemas"]["Id"][];
+                principal_investigator_id?: components["schemas"]["Id"];
+                /** @description Data period overlap: dataset temporal_end >= temporal_from (missing end = open-ended) */
+                temporal_from?: string;
+                /** @description Data period overlap: dataset temporal_start <= temporal_to */
+                temporal_to?: string;
                 sort?: "relevance" | "updated_desc" | "title_asc";
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
@@ -1934,6 +2337,146 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    listDatasetContributors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Contributors */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DatasetContributor"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    putDatasetContributors: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetContributorsPut"];
+            };
+        };
+        responses: {
+            /** @description Contributors */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["DatasetContributor"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getDatasetJsonLd: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description JSON-LD document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/ld+json": components["schemas"]["DatasetJsonLd"];
+                    "application/json": components["schemas"]["DatasetJsonLd"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listVocabulary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scheme: components["schemas"]["VocabularyScheme"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Terms */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["VocabularyTerm"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    createVocabularyTerm: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scheme: components["schemas"]["VocabularyScheme"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VocabularyTermCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VocabularyTerm"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     listDatasetVersions: {
@@ -2170,6 +2713,55 @@ export interface operations {
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    getFileProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileProfile"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getFilePreview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                file_id: components["schemas"]["Id"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FilePreview"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
         };
     };
     listAccessRequests: {

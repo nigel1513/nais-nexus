@@ -22,7 +22,10 @@ function NewDataset() {
       ownerName={me.organization.name}
       onSubmit={async (values) => {
         // owner_organization_id is always the steward's own organization (M10 §7.5).
-        const ds = await create.mutateAsync(toDatasetCreate(values, me.organization.organization_id));
+        // Stage 1 web plan replaces this with pickers (the creating steward is a valid default).
+        const ds = await create.mutateAsync(
+          toDatasetCreate(values, me.organization.organization_id, { principalInvestigatorId: me.user_id, stewardContactId: me.user_id }),
+        );
         toast(t("data.new.created"));
         router.push(`/commons/data/${ds.dataset_id}?created=1`);
       }}

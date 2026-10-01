@@ -105,6 +105,14 @@ EXPECTED = {
         ORG_B,
         None,
     ),
+    "catalog.dataset.metadata_changed.v1": (
+        "DATASET_UPDATED",
+        "SUCCESS",
+        "DATASET",
+        UUID(PAYLOADS["catalog.dataset.created.v1"]["dataset_id"]),
+        ORG_B,
+        None,
+    ),
     "catalog.dataset.version_published.v1": (
         "DATASET_VERSION_PUBLISHED",
         "SUCCESS",
@@ -155,10 +163,10 @@ EXPECTED = {
 }
 
 
-def test_index_json_lists_exactly_the_26_consumed_types() -> None:
+def test_index_json_lists_exactly_the_28_consumed_types() -> None:
     index = json.loads((get_settings().contracts_dir / "events" / "index.json").read_text(encoding="utf-8"))
     types = {e["event_type"] for e in index["events"]}
-    assert len(types) == 26
+    assert len(types) == 28
     assert types == set(AUDIT_RULES) | NOT_AUDITED == {e.value for e in EventType}
     assert not set(AUDIT_RULES) & NOT_AUDITED
 

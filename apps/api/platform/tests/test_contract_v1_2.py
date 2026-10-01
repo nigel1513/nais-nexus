@@ -1,18 +1,17 @@
-"""W1-D3: openapi 1.2.0 declares every status the Wave 1 modules return, plus the M10 optional fields."""
+"""W1-D3: openapi 1.2.0 declares every status the Wave 1 modules return, plus the M10 optional fields.
 
-import importlib.util
-import shutil
-from pathlib import Path
+The 1.2.0 edit script is historical (frozen); 1.3.0+ changes are hand edits checked by test_contract_v1_3.py.
+"""
+
 from typing import Any
 
 import pytest
 import yaml
 
-from api.platform.settings import REPO_ROOT, Settings
+from api.platform.settings import Settings
 from api.platform.testing.contracts import assert_matches_response
 
 ERROR_BODY = {"error": {"code": "NOT_FOUND", "message": "x", "trace_id": "0" * 32, "details": {}}}
-SCRIPT = REPO_ROOT / "packages" / "contracts" / "changes" / "openapi_1_2_0.py"
 EXPECTED = {
     "listOrganizationMembers": {"404"},
     "listUsers": {"422"},
@@ -50,8 +49,9 @@ def _operations(spec: dict[str, Any]) -> dict[str, dict[str, Any]]:
     }
 
 
-def test_contract_version_is_1_2_0() -> None:
-    assert _spec()["info"]["version"] == "1.2.0"
+def test_contract_version_is_at_least_1_2_0() -> None:
+    major, minor, _ = (int(p) for p in _spec()["info"]["version"].split("."))
+    assert (major, minor) >= (1, 2)
 
 
 def test_every_secured_operation_declares_401() -> None:
@@ -112,14 +112,3 @@ def test_generated_models_have_the_optional_fields() -> None:
     assert AccessGrant.model_fields["subject_display_name"].is_required() is False
     assert AccessGrant.model_fields["project_name"].is_required() is False
     assert ProjectSummary.model_fields["lead_organization_name"].is_required() is False
-
-
-def test_contract_edit_script_is_idempotent(tmp_path: Path) -> None:
-    copy = tmp_path / "openapi.yaml"
-    shutil.copy(Settings().contracts_dir / "openapi.yaml", copy)
-    spec_ = importlib.util.spec_from_file_location("openapi_1_2_0", SCRIPT)
-    assert spec_ is not None and spec_.loader is not None
-    module = importlib.util.module_from_spec(spec_)
-    spec_.loader.exec_module(module)
-    module.main(copy)
-    assert copy.read_bytes() == (Settings().contracts_dir / "openapi.yaml").read_bytes()

@@ -31,6 +31,7 @@ class IdentityPublicProfile(BaseModel):
     organization_id: UUID
     organization_name: str | None = None
     status: ActiveStatus
+    national_researcher_number: str | None = None
 
 
 class IdentityQueryPort(Protocol):

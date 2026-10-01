@@ -38,7 +38,7 @@ describe("catalog mocks", () => {
 
   it("only DATA_STEWARD of the owner org can register datasets; SENSITIVE is capped at 30 days", async () => {
     as(USER.aResearcher);
-    const base = { owner_organization_id: getDb().organizations[1]!.organization_id, title: "New set", description: "d", license: "CC-BY-4.0", allowed_purposes: ["ACADEMIC_RESEARCH" as const], max_grant_days: 90 };
+    const base = { owner_organization_id: getDb().organizations[1]!.organization_id, title: "New set", description: "d", license: "CC-BY-4.0", allowed_purposes: ["ACADEMIC_RESEARCH" as const], max_grant_days: 90, principal_investigator_id: USER.aSteward, data_steward_contact_id: USER.aSteward, contact_email_public: false };
     await expect(unwrap(api.POST("/datasets", { body: { ...base, access_level: "CONTROLLED" } }))).rejects.toMatchObject({ code: "FORBIDDEN" });
     as(USER.aSteward);
     await expect(unwrap(api.POST("/datasets", { body: { ...base, access_level: "SENSITIVE", max_grant_days: 60 } }))).rejects.toMatchObject({ code: "INVALID_POLICY" });

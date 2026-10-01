@@ -120,7 +120,7 @@ function requireDraft(v: StoredVersion) {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Mirrors schemas.py (DatasetCreateIn / DatasetUpdateIn): collects every violation as details.fields[{field, reason}]. */
-function validateDataset(input: Partial<Schemas["DatasetCreate"]> & { status?: string }, partial: boolean) {
+function validateDataset(input: (Partial<Schemas["DatasetCreate"]> | Schemas["DatasetUpdate"]) & { status?: string }, partial: boolean) {
   const fields: Field[] = [];
   const text = (name: string, value: unknown, min: number, max: number) => {
     if (typeof value !== "string" || value.length < min || value.length > max) fields.push({ field: name, reason: "LENGTH" });

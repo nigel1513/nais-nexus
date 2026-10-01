@@ -55,5 +55,33 @@
     "mockUser": "User",
     "signIn": "Sign in",
     "signOut": "Sign out"
+  },
+  "enums": {
+    "VocabularyScheme": {
+      "SUBJECT": "Research field",
+      "METHOD": "Collection method",
+      "MATERIAL": "Measured target"
+    },
+    "UpdateFrequency": {
+      "ONCE": "One-off",
+      "MONTHLY": "Monthly",
+      "QUARTERLY": "Quarterly",
+      "YEARLY": "Yearly",
+      "IRREGULAR": "Irregular"
+    },
+    "ContributorRole": {
+      "CO_INVESTIGATOR": "Co-investigator",
+      "DATA_COLLECTOR": "Data collector",
+      "DATA_CURATOR": "Data curator"
+    },
+    "AuditAction": {
+      "DATASET_UPDATED": "Dataset updated"
+    },
+    "FilePreviewStatus": {
+      "PENDING": "Pending",
+      "READY": "Ready",
+      "FAILED": "Failed",
+      "UNSUPPORTED": "Unsupported"
+    }
   }
 }

@@ -1,5 +1,5 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "events": [
     {
       "event_type": "identity.organization.created.v1",
@@ -130,6 +130,16 @@
       "event_type": "readiness.validation.completed.v1",
       "producer": "readiness",
       "description": "Validation run finished (run_status COMPLETED or FAILED)."
+    },
+    {
+      "event_type": "identity.user.updated.v1",
+      "producer": "identity",
+      "description": "Self-service profile fields changed (e.g. NTIS researcher number)."
+    },
+    {
+      "event_type": "catalog.dataset.metadata_changed.v1",
+      "producer": "catalog",
+      "description": "Non-policy dataset metadata or contributors changed (Audit DATASET_UPDATED; M11 index input)."
     }
   ]
 }

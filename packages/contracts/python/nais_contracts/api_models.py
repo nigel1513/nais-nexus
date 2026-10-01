@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from datetime import date
-from enum import StrEnum
+from datetime import date as date_aliased
+from enum import Enum, StrEnum
 from typing import Any, Literal
 from uuid import UUID
 
@@ -16,6 +16,7 @@ from pydantic import (
     EmailStr,
     Field,
     RootModel,
+    confloat,
     conint,
     constr,
 )
@@ -206,6 +207,7 @@ class AuditAction(StrEnum):
     PROJECT_MEMBER_ROLE_CHANGED = 'PROJECT_MEMBER_ROLE_CHANGED'
     DATASET_CREATED = 'DATASET_CREATED'
     DATASET_VERSION_PUBLISHED = 'DATASET_VERSION_PUBLISHED'
+    DATASET_UPDATED = 'DATASET_UPDATED'
     POLICY_CHANGED = 'POLICY_CHANGED'
     ACCESS_REQUESTED = 'ACCESS_REQUESTED'
     ACCESS_REVIEW_STARTED = 'ACCESS_REVIEW_STARTED'
@@ -237,6 +239,7 @@ class IdentityPublicProfile(BaseModel):
     organization_id: Id
     organization_name: str | None = None
     status: ActiveStatus
+    national_researcher_number: constr(pattern=r'^[0-9]{8}$') | None = None
 
 
 class OrganizationSummary(BaseModel):
@@ -262,6 +265,7 @@ class OrganizationMembership(BaseModel):
     roles: list[OrgRole]
     status: ActiveStatus
     updated_at: Timestamp | None = None
+    started_at: Timestamp | None = None
 
 
 class Me(BaseModel):
@@ -272,6 +276,24 @@ class Me(BaseModel):
     organization: OrganizationSummary
     org_roles: list[OrgRole]
     platform_roles: list[PlatformRole]
+    national_researcher_number: constr(pattern=r'^[0-9]{8}$') | None = None
+
+
+class MeUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    national_researcher_number: constr(pattern=r'^[0-9]{8}$') | None = Field(
+        None, description='NTIS 국가연구자번호; null clears'
+    )
+
+
+class UserTransfer(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    organization_id: Id
+    roles: list[OrgRole] | None = []
 
 
 class ProjectSummary(BaseModel):
@@ -302,8 +324,8 @@ class Organization1(BaseModel):
 class Project(ProjectSummary):
     description: str
     keywords: list[str] | None = None
-    start_date: date | None = None
-    end_date: date | None = None
+    start_date: date_aliased | None = None
+    end_date: date_aliased | None = None
     organizations: list[Organization1]
     created_by: Id | None = None
     created_at: Timestamp
@@ -322,8 +344,8 @@ class ProjectCreate(BaseModel):
     description: constr(max_length=10000)
     visibility: ProjectVisibility | None = None
     keywords: list[Keyword] | None = Field(None, max_length=20)
-    start_date: date | None = None
-    end_date: date | None = None
+    start_date: date_aliased | None = None
+    end_date: date_aliased | None = None
 
 
 class ProjectUpdate(BaseModel):
@@ -334,8 +356,8 @@ class ProjectUpdate(BaseModel):
     description: constr(max_length=10000) | None = None
     visibility: ProjectVisibility | None = None
     keywords: list[Keyword] | None = Field(None, max_length=20)
-    start_date: date | None = None
-    end_date: date | None = None
+    start_date: date_aliased | None = None
+    end_date: date_aliased | None = None
 
 
 class ProjectMember(BaseModel):
@@ -361,6 +383,226 @@ class DatasetPolicyView(BaseModel):
     max_grant_days: conint(ge=1, le=365) = Field(..., description='SENSITIVE <= 30')
 
 
+class VocabularyScheme(StrEnum):
+    SUBJECT = 'SUBJECT'
+    METHOD = 'METHOD'
+    MATERIAL = 'MATERIAL'
+
+
+class UpdateFrequency(StrEnum):
+    ONCE = 'ONCE'
+    MONTHLY = 'MONTHLY'
+    QUARTERLY = 'QUARTERLY'
+    YEARLY = 'YEARLY'
+    IRREGULAR = 'IRREGULAR'
+
+
+class ContributorRole(StrEnum):
+    CO_INVESTIGATOR = 'CO_INVESTIGATOR'
+    DATA_COLLECTOR = 'DATA_COLLECTOR'
+    DATA_CURATOR = 'DATA_CURATOR'
+
+
+class VocabularyTerm(BaseModel):
+    scheme: VocabularyScheme
+    code: constr(pattern=r'^[A-Z0-9_]{2,64}$')
+    label_ko: str
+    label_en: str
+    iri: constr(pattern=r'^https?://\S+$') | None = None
+    parent_code: str | None = None
+
+
+class VocabularyTermCreate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    code: constr(pattern=r'^[A-Z0-9_]{2,64}$')
+    label_ko: constr(min_length=1, max_length=200)
+    label_en: constr(min_length=1, max_length=200)
+    iri: constr(pattern=r'^https?://\S+$') | None = None
+    parent_code: constr(pattern=r'^[A-Z0-9_]{2,64}$') | None = None
+
+
+class OrganizationRef(BaseModel):
+    organization_id: Id | None = Field(
+        ..., description='null for an organization outside the council (free-text name)'
+    )
+    name: str
+
+
+class DatasetPerson(BaseModel):
+    user_id: Id
+    display_name: str
+    national_researcher_number: str | None = None
+    status: ActiveStatus
+    affiliation: OrganizationRef = Field(
+        ..., description='Organization at the time the person was assigned (당시 소속)'
+    )
+    current_organization: OrganizationRef | None = Field(
+        None, description='Current organization (null if unknown)'
+    )
+    email: EmailStr | None = Field(
+        None,
+        description='Only on people.steward_contact and only when contact_email_public',
+    )
+
+
+class DatasetContributor(DatasetPerson):
+    role: ContributorRole
+
+
+class Contributor(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    user_id: Id
+    role: ContributorRole
+
+
+class DatasetContributorsPut(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    contributors: list[Contributor] = Field(..., max_length=50)
+
+
+class DatasetPeople(BaseModel):
+    principal_investigator: DatasetPerson | None
+    steward_contact: DatasetPerson | None
+    contributors: list[DatasetContributor]
+    steward_contact_absent: bool = Field(
+        ...,
+        description='Steward contact unset, disabled, or no longer a member of the owner organization (담당자 재지정 필요)',
+    )
+
+
+class RelatedPublication(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    title: constr(min_length=1, max_length=300)
+    doi: constr(pattern=r'^10\.\d{4,9}/\S+$') | None = None
+    url: constr(pattern=r'^https?://\S+$') | None = None
+
+
+class DatasetJsonLd(BaseModel):
+    model_config = ConfigDict(
+        extra='allow',
+    )
+    field_context: dict[str, Any] = Field(..., alias='@context')
+    field_type: list[str] = Field(..., alias='@type')
+    field_id: AnyUrl = Field(..., alias='@id')
+    name: str
+
+
+class FilePreviewStatus(StrEnum):
+    PENDING = 'PENDING'
+    READY = 'READY'
+    FAILED = 'FAILED'
+    UNSUPPORTED = 'UNSUPPORTED'
+
+
+class Type(StrEnum):
+    string = 'string'
+    integer = 'integer'
+    number = 'number'
+    boolean = 'boolean'
+    date = 'date'
+    datetime = 'datetime'
+
+
+class ColumnProfile(BaseModel):
+    name: str
+    type: Type = Field(
+        ..., description='Declared in _schema.json, else inferred from the sample'
+    )
+    unit: str | None = None
+    description: str | None = None
+    concept_iri: str | None = None
+    missing_ratio: confloat(ge=0.0, le=1.0)
+    distinct_count: conint(ge=0)
+    distinct_capped: bool | None = Field(
+        None,
+        description='true when distinct values exceeded the 1,000 counting cap (distinct_count is then a lower bound)',
+    )
+
+
+class FailureCode(Enum):
+    UNPARSEABLE = 'UNPARSEABLE'
+    TIMEOUT = 'TIMEOUT'
+    GENERATION_FAILED = 'GENERATION_FAILED'
+    NoneType_None = None
+
+
+class Format(StrEnum):
+    csv = 'csv'
+    tsv = 'tsv'
+    parquet = 'parquet'
+
+
+class FileProfile(BaseModel):
+    file_id: Id
+    path: str
+    status: FilePreviewStatus
+    failure_code: FailureCode | None = None
+    generated_at: AwareDatetime | None = None
+    format: Format | None = None
+    rows_sampled: int | None = None
+    truncated: bool | None = Field(
+        None, description='Sample stopped at the row/byte limit'
+    )
+    columns_truncated: bool | None = None
+    columns: list[ColumnProfile]
+
+
+class Kind(StrEnum):
+    numeric = 'numeric'
+    categorical = 'categorical'
+    other = 'other'
+
+
+class HistogramItem(BaseModel):
+    lower: float
+    upper: float
+    count: int
+
+
+class TopValue(BaseModel):
+    value: str
+    count: int
+
+
+class ColumnDistribution(BaseModel):
+    name: str
+    kind: Kind
+    min: float | None = None
+    max: float | None = None
+    mean: float | None = None
+    histogram: list[HistogramItem] | None = None
+    top_values: list[TopValue] | None = None
+
+
+class FilePreview(BaseModel):
+    file_id: Id
+    status: FilePreviewStatus
+    header: list[str]
+    rows: list[list[constr(max_length=200) | None]] = Field(..., max_length=100)
+    rows_truncated: bool
+    columns: list[ColumnDistribution]
+
+
+class SubjectCode(RootModel[constr(pattern=r'^[A-Z0-9_]{2,64}$')]):
+    root: constr(pattern=r'^[A-Z0-9_]{2,64}$')
+
+
+class MethodCode(RootModel[constr(pattern=r'^[A-Z0-9_]{2,64}$')]):
+    root: constr(pattern=r'^[A-Z0-9_]{2,64}$')
+
+
+class MaterialCode(RootModel[constr(pattern=r'^[A-Z0-9_]{2,64}$')]):
+    root: constr(pattern=r'^[A-Z0-9_]{2,64}$')
+
+
 class DatasetCreate(BaseModel):
     model_config = ConfigDict(
         extra='forbid',
@@ -379,6 +621,25 @@ class DatasetCreate(BaseModel):
     provenance: constr(max_length=10000) | None = Field(
         None, description='How the data was produced (instrument, method, source)'
     )
+    subtitle: constr(max_length=160) | None = Field(
+        None, description='One-line summary shown under the title (Data Card)'
+    )
+    principal_investigator_id: Id
+    data_steward_contact_id: Id
+    contact_email_public: bool | None = False
+    project_title: constr(max_length=300) | None = None
+    project_code: constr(max_length=64) | None = None
+    funding_agency: constr(max_length=200) | None = None
+    subject_codes: list[SubjectCode] | None = Field(None, max_length=5)
+    method_codes: list[MethodCode] | None = Field(None, max_length=10)
+    material_codes: list[MaterialCode] | None = Field(None, max_length=20)
+    method_detail: constr(max_length=4000) | None = None
+    temporal_start: date_aliased | None = None
+    temporal_end: date_aliased | None = None
+    collecting_organization_id: Id | None = None
+    collecting_organization_name: constr(min_length=1, max_length=200) | None = None
+    update_frequency: UpdateFrequency | None = None
+    related_publications: list[RelatedPublication] | None = Field(None, max_length=20)
 
 
 class DatasetUpdate(BaseModel):
@@ -397,6 +658,29 @@ class DatasetUpdate(BaseModel):
     contact_email: EmailStr | None = None
     provenance: constr(max_length=10000) | None = None
     status: DatasetStatus | None = None
+    subtitle: constr(max_length=160) | None = None
+    principal_investigator_id: Id | None = None
+    data_steward_contact_id: Id | None = None
+    contact_email_public: bool | None = None
+    project_title: constr(max_length=300) | None = None
+    project_code: constr(max_length=64) | None = None
+    funding_agency: constr(max_length=200) | None = None
+    subject_codes: list[SubjectCode] | None = Field(None, max_length=5)
+    method_codes: list[MethodCode] | None = Field(None, max_length=10)
+    material_codes: list[MaterialCode] | None = Field(None, max_length=20)
+    method_detail: constr(max_length=4000) | None = None
+    temporal_start: date_aliased | None = None
+    temporal_end: date_aliased | None = None
+    collecting_organization_id: Id | None = None
+    collecting_organization_name: constr(min_length=1, max_length=200) | None = None
+    update_frequency: UpdateFrequency | None = None
+    related_publications: list[RelatedPublication] | None = Field(None, max_length=20)
+
+
+class Stats(BaseModel):
+    file_count: int | None = None
+    total_bytes: int | None = None
+    media_types: list[str] | None = None
 
 
 class DatasetVersionSummary(BaseModel):
@@ -491,6 +775,12 @@ class DatasetSearchHit(BaseModel):
     latest_version_label: str | None = None
     readiness_overall: ReadinessOverall | None = None
     updated_at: Timestamp | None = None
+    subtitle: str | None = None
+    principal_investigator_name: str | None = None
+    temporal_start: date_aliased | None = None
+    temporal_end: date_aliased | None = None
+    subject_codes: list[str] | None = None
+    collecting_organization_name: str | None = None
 
 
 class FacetBucket(BaseModel):
@@ -505,6 +795,10 @@ class Facets(BaseModel):
     purpose: list[FacetBucket] | None = None
     keyword: list[FacetBucket] | None = None
     readiness_status: list[FacetBucket] | None = None
+    subject: list[FacetBucket] | None = None
+    collecting_organization_id: list[FacetBucket] | None = None
+    material: list[FacetBucket] | None = None
+    method: list[FacetBucket] | None = None
 
 
 class DatasetSearchResult(PageEnvelope):
@@ -701,13 +995,13 @@ class Result(StrEnum):
     DENIED = 'DENIED'
 
 
-class Type(StrEnum):
+class Type1(StrEnum):
     USER = 'USER'
     SYSTEM = 'SYSTEM'
 
 
 class Actor(BaseModel):
-    type: Type
+    type: Type1
     user_id: Id | None = None
     display_name: str | None = None
     organization_id: Id | None = None
@@ -764,6 +1058,24 @@ class Dataset(BaseModel):
     created_by: Id | None = None
     created_at: Timestamp
     updated_at: Timestamp
+    subtitle: str | None = None
+    people: DatasetPeople | None = None
+    contact_email_public: bool | None = None
+    project_title: str | None = None
+    project_code: str | None = None
+    funding_agency: str | None = None
+    subject_codes: list[str] | None = None
+    method_codes: list[str] | None = None
+    material_codes: list[str] | None = None
+    method_detail: str | None = None
+    temporal_start: date_aliased | None = None
+    temporal_end: date_aliased | None = None
+    collecting_organization: OrganizationRef | None = None
+    update_frequency: UpdateFrequency | None = None
+    related_publications: list[RelatedPublication] | None = None
+    stats: Stats | None = Field(
+        None, description='Derived from the latest published version (no input)'
+    )
 
 
 class DatasetVersion(DatasetVersionSummary):

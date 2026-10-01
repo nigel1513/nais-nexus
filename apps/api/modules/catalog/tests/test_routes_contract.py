@@ -76,8 +76,9 @@ def test_no_catalog_response_carries_a_download_url() -> None:
         for status, response in responses.items():
             if str(status).startswith("2"):
                 _url_contexts(spec, response, operation_id, set(), found)
-        # the only URLs a catalog operation returns are presigned *upload* URLs inside UploadSession
-        assert found <= {"UploadSession"}, (operation_id, found)
+        # the only URLs a catalog operation returns are presigned *upload* URLs inside UploadSession;
+        # RelatedPublication.url is an author-supplied external link, not a storage URL.
+        assert found <= {"UploadSession", "RelatedPublication"}, (operation_id, found)
 
 
 def test_only_the_storage_port_presigns_downloads() -> None:

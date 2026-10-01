@@ -41,7 +41,11 @@ export const emptyDatasetForm: DatasetFormValues = {
 
 const optional = (s: string) => (s.trim() ? s.trim() : undefined);
 
-export function toDatasetCreate(v: DatasetFormValues, ownerOrganizationId: string): Schemas["DatasetCreate"] {
+export function toDatasetCreate(
+  v: DatasetFormValues,
+  ownerOrganizationId: string,
+  people: { principalInvestigatorId: string; stewardContactId: string },
+): Schemas["DatasetCreate"] {
   return {
     owner_organization_id: ownerOrganizationId,
     title: v.title.trim(),
@@ -55,11 +59,14 @@ export function toDatasetCreate(v: DatasetFormValues, ownerOrganizationId: strin
     max_grant_days: v.max_grant_days,
     contact_email: optional(v.contact_email),
     provenance: optional(v.provenance),
+    principal_investigator_id: people.principalInvestigatorId,
+    data_steward_contact_id: people.stewardContactId,
+    contact_email_public: false,
   };
 }
 
 export function toDatasetUpdate(v: DatasetFormValues): Schemas["DatasetUpdate"] {
-  const create = toDatasetCreate(v, "");
+  const create = toDatasetCreate(v, "", { principalInvestigatorId: "", stewardContactId: "" });
   return {
     title: create.title,
     description: create.description,

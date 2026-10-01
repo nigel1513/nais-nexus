@@ -130,9 +130,11 @@ describe("mock API ↔ openapi.yaml", () => {
     await call(A, "post", "/notifications/read-all", { status: 204 });
     await call(A, "post", "/projects/{project_id}/archive", { path: P, status: 200 });
 
+    // Wave 1.5 Stage 1 operations are mocked by the web plan (2026-10-01-w15-s1-web.md Task 1), which deletes this list.
+    const PENDING_W15 = new Set(["updateMe", "transferUserOrganization", "listVocabulary", "createVocabularyTerm", "listDatasetContributors", "putDatasetContributors", "getDatasetJsonLd", "getFileProfile", "getFilePreview"]);
     const METHODS = ["get", "post", "put", "patch", "delete"];
     const all = Object.values(doc.paths).flatMap((item) => Object.entries(item).filter(([m]) => METHODS.includes(m)).map(([, op]) => op.operationId));
-    expect(all).toHaveLength(49);
-    expect(all.filter((id) => !exercised.has(id))).toEqual([]);
+    expect(all).toHaveLength(58);
+    expect(all.filter((id) => !exercised.has(id) && !PENDING_W15.has(id))).toEqual([]);
   });
 });

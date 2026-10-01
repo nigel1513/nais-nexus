@@ -126,6 +126,16 @@ PAYLOADS: dict[str, dict[str, Any]] = {
         "previous": _policy_prev,
         "current": _policy_cur,
     },
+    "catalog.dataset.metadata_changed.v1": {
+        "dataset_id": S(DATASET_BATTERY),
+        "owner_organization_id": S(ORG_B),
+        "changed_fields": ["title"],
+    },
+    "identity.user.updated.v1": {
+        "user_id": S(A_RESEARCHER),
+        "organization_id": S(ORG_A),
+        "changed_fields": ["national_researcher_number"],
+    },
     "catalog.dataset.version_published.v1": {
         "dataset_id": S(DATASET_BATTERY),
         "dataset_version_id": S(VERSION_ID),

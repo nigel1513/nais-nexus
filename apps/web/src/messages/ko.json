@@ -772,6 +772,7 @@
       "PROJECT_MEMBER_ROLE_CHANGED": "프로젝트 멤버 역할 변경",
       "DATASET_CREATED": "데이터셋 등록",
       "DATASET_VERSION_PUBLISHED": "데이터셋 버전 게시",
+      "DATASET_UPDATED": "데이터셋 정보 수정",
       "POLICY_CHANGED": "정책 변경",
       "ACCESS_REQUESTED": "접근 요청",
       "ACCESS_REVIEW_STARTED": "검토 시작",
@@ -794,6 +795,29 @@
       "ACCESS_EXPIRING": "권한 만료 임박",
       "ACCESS_REVOKED": "권한 회수",
       "DATASET_PUBLISHED": "데이터셋 게시"
+    },
+    "VocabularyScheme": {
+      "SUBJECT": "연구 분야",
+      "METHOD": "수집 방법",
+      "MATERIAL": "측정 대상"
+    },
+    "UpdateFrequency": {
+      "ONCE": "일회성",
+      "MONTHLY": "월간",
+      "QUARTERLY": "분기",
+      "YEARLY": "연간",
+      "IRREGULAR": "수시"
+    },
+    "ContributorRole": {
+      "CO_INVESTIGATOR": "공동연구자",
+      "DATA_COLLECTOR": "데이터 수집자",
+      "DATA_CURATOR": "데이터 정제·관리자"
+    },
+    "FilePreviewStatus": {
+      "PENDING": "생성 대기",
+      "READY": "준비됨",
+      "FAILED": "생성 실패",
+      "UNSUPPORTED": "미리보기 미지원"
     }
   }
 }

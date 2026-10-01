@@ -29,6 +29,8 @@ class EventType(StrEnum):
     GOVERNANCE_DOWNLOAD_DENIED_V1 = "governance.download.denied.v1"
     READINESS_VALIDATION_STARTED_V1 = "readiness.validation.started.v1"
     READINESS_VALIDATION_COMPLETED_V1 = "readiness.validation.completed.v1"
+    IDENTITY_USER_UPDATED_V1 = "identity.user.updated.v1"
+    CATALOG_DATASET_METADATA_CHANGED_V1 = "catalog.dataset.metadata_changed.v1"
 
 
 PRODUCER: dict[EventType, str] = {
@@ -58,4 +60,6 @@ PRODUCER: dict[EventType, str] = {
     EventType.GOVERNANCE_DOWNLOAD_DENIED_V1: "governance",
     EventType.READINESS_VALIDATION_STARTED_V1: "readiness",
     EventType.READINESS_VALIDATION_COMPLETED_V1: "readiness",
+    EventType.IDENTITY_USER_UPDATED_V1: "identity",
+    EventType.CATALOG_DATASET_METADATA_CHANGED_V1: "catalog",
 }
