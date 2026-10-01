@@ -136,7 +136,11 @@ export const governanceHandlers = [
     if (r.status === "SUBMITTED") {
       transition(r, "UNDER_REVIEW", user);
       recordAudit(db, { action: "ACCESS_REVIEW_STARTED", actor: user, resource: { type: "ACCESS_REQUEST", id: r.access_request_id, owner_organization_id: r.owner_organization_id }, project_id: r.project_id });
-    } else if (r.status !== "UNDER_REVIEW") fail("ACCESS_REQUEST_INVALID_STATE");
+    } else if (r.status === "UNDER_REVIEW") {
+      // Idempotent only for the reviewer who started the review.
+      const starter = [...(r.history ?? [])].reverse().find((h) => h.status === "UNDER_REVIEW")?.by_user_id;
+      if (starter !== user.user_id) fail("ACCESS_REQUEST_INVALID_STATE");
+    } else fail("ACCESS_REQUEST_INVALID_STATE");
     return HttpResponse.json(r);
   }),
 
@@ -274,8 +278,9 @@ export const governanceHandlers = [
     const db = getDb();
     const g = db.grants.find((x) => x.access_grant_id === params.access_grant_id);
     const ds = g && db.datasets.find((d) => d.dataset_id === g.dataset_id);
-    if (!g || !ds || ds.owner_organization_id !== user.organization_id) fail("NOT_FOUND");
-    if (!user.org_roles.includes("DATA_STEWARD") && !user.org_roles.includes("ORG_ADMIN")) fail("FORBIDDEN");
+    const ownerOrg = !!ds && ds.owner_organization_id === user.organization_id;
+    if (!g || !ds || !(ownerOrg || g.subject_user_id === user.user_id)) fail("NOT_FOUND");
+    if (!ownerOrg || !(user.org_roles.includes("DATA_STEWARD") || user.org_roles.includes("ORG_ADMIN"))) fail("FORBIDDEN");
     if (effective(g).status !== "ACTIVE") fail("ACCESS_GRANT_NOT_ACTIVE");
     const { reason } = await body<{ reason: string }>(request);
     if (!reason?.trim() || reason.length > 2000) validationFailed("reason", "LENGTH");
@@ -288,15 +293,26 @@ export const governanceHandlers = [
   http.post(`${API}/dataset-versions/:version_id/download-session`, async ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
-    // Steps 1-2: version/dataset visible (INTERNAL of other orgs stays 404).
-    const { v, ds } = visibleVersion(db, String(params.version_id), user);
     const input = await body<Schemas["DownloadSessionCreate"]>(request);
     const projectId = input.project_id ?? null;
-    // D-017: every refusal from step 3 on is audited as DOWNLOAD_DENIED before the error is returned.
+    const versionId = String(params.version_id);
+    // D-017: every refusal, from step 1 on, is audited as DOWNLOAD_DENIED before the error is returned.
+    const audit = (code: string, ownerOrg: string | null) =>
+      recordAudit(db, { action: "DOWNLOAD_DENIED", result: "DENIED", reason: code, actor: user, resource: { type: "DATASET_VERSION", id: versionId, owner_organization_id: ownerOrg }, project_id: projectId, policy_version: POLICY_VERSION });
+    // Steps 1-2: version/dataset visible and ACTIVE (INTERNAL of other orgs and WITHDRAWN datasets stay 404).
+    let found: ReturnType<typeof visibleVersion>;
+    try {
+      found = visibleVersion(db, versionId, user);
+    } catch (e) {
+      audit("NOT_FOUND", null);
+      throw e;
+    }
+    const { v, ds } = found;
     const deny = (code: string, message?: string, details?: Record<string, unknown>): never => {
-      recordAudit(db, { action: "DOWNLOAD_DENIED", result: "DENIED", reason: code, actor: user, resource: { type: "DATASET_VERSION", id: v.dataset_version_id, owner_organization_id: ds.owner_organization_id }, project_id: projectId, policy_version: POLICY_VERSION });
+      audit(code, ds.owner_organization_id);
       return fail(code, message, details);
     };
+    if (ds.status !== "ACTIVE") deny("NOT_FOUND");
     if (v.status !== "PUBLISHED") deny("DATASET_VERSION_NOT_PUBLISHED");
     const verified = v.files.filter((f) => f.status === "VERIFIED");
     const missing = (input.file_ids ?? []).filter((id) => !verified.some((f) => f.file_id === id));

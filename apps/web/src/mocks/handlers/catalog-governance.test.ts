@@ -376,4 +376,67 @@ describe("governance rules (M04 §6)", () => {
     const own = await unwrap(api.POST("/projects", { body: { name: "Steward Project", description: "자기 기관 데이터" } }));
     await expect(unwrap(api.POST("/access-requests", { body: { ...base, project_id: own.project_id } }))).rejects.toMatchObject({ code: "ACCESS_NOT_REQUIRED" });
   });
+
+  describe("edge rules (Task 6 review)", () => {
+    const dlBody = { project_id: PROJECT.seed };
+    const denials = () => getDb().audit.filter((e) => e.action === "DOWNLOAD_DENIED");
+
+    it("download-session on a WITHDRAWN dataset is 404 and audited", async () => {
+      getDb().datasets.find((d) => d.dataset_id === DATASET.battery)!.status = "WITHDRAWN";
+      as(USER.aResearcher);
+      await expect(unwrap(api.POST("/dataset-versions/{version_id}/download-session", { params: { path: { version_id: VERSION.battery } }, body: dlBody }))).rejects.toMatchObject({ status: 404 });
+      expect(denials().some((e) => e.resource.id === VERSION.battery)).toBe(true);
+    });
+
+    it("download-session refusals at step 1 (invisible/unknown version) are audited too", async () => {
+      as(USER.aResearcher);
+      await expect(unwrap(api.POST("/dataset-versions/{version_id}/download-session", { params: { path: { version_id: VERSION.qcLogs } }, body: {} }))).rejects.toMatchObject({ status: 404 });
+      expect(denials().some((e) => e.resource.id === VERSION.qcLogs && e.actor.user_id === USER.aResearcher)).toBe(true);
+    });
+
+    it("revoke by a grant's subject (visible, no steward role) is 403, not 404", async () => {
+      as(USER.aResearcher);
+      await expect(unwrap(api.POST("/access-grants/{access_grant_id}/revoke", { params: { path: { access_grant_id: GRANT.seed } }, body: { reason: "x" } }))).rejects.toMatchObject({ status: 403 });
+      as(USER.aSteward); // unrelated org: invisible
+      await expect(unwrap(api.POST("/access-grants/{access_grant_id}/revoke", { params: { path: { access_grant_id: GRANT.seed } }, body: { reason: "x" } }))).rejects.toMatchObject({ status: 404 });
+    });
+
+    it("start-review is idempotent only for the reviewer who started it", async () => {
+      as(USER.aResearcher);
+      const project = await unwrap(api.POST("/projects", { body: { name: "Review Study", description: "검토" } }));
+      const req = await unwrap(
+        api.POST("/access-requests", {
+          body: { dataset_id: DATASET.battery, project_id: project.project_id, purpose: "ACADEMIC_RESEARCH", purpose_detail: detail, operations: ["READ"], requested_days: 30 },
+        }),
+      );
+      const path = { access_request_id: req.access_request_id };
+      as(USER.bSteward);
+      await unwrap(api.POST("/access-requests/{access_request_id}/start-review", { params: { path } }));
+      const again = await unwrap(api.POST("/access-requests/{access_request_id}/start-review", { params: { path } }));
+      expect(again.status).toBe("UNDER_REVIEW");
+      const second = { ...getDb().users.find((u) => u.user_id === USER.bSteward)!, user_id: crypto.randomUUID(), email: "second.steward@example.org" };
+      getDb().users.push(second);
+      as(second.user_id);
+      await expect(unwrap(api.POST("/access-requests/{access_request_id}/start-review", { params: { path } }))).rejects.toMatchObject({ code: "ACCESS_REQUEST_INVALID_STATE" });
+    });
+
+    it("upload-session rejects a missing media_type with 422", async () => {
+      as(USER.aSteward);
+      const body = { files: [{ path: "a.csv", size_bytes: 10, sha256: "d".repeat(64) }] } as never;
+      await expect(unwrap(api.POST("/dataset-versions/{version_id}/upload-session", { params: { path: { version_id: VERSION.electrolyte } }, body }))).rejects.toMatchObject({
+        status: 422,
+        details: { fields: [{ field: "files.0.media_type" }] },
+      });
+    });
+
+    it("PATCH dataset accepts only DatasetUpdate keys", async () => {
+      as(USER.bSteward);
+      const body = { title: "Renamed", owner_organization_id: crypto.randomUUID() } as never;
+      await expect(unwrap(api.PATCH("/datasets/{dataset_id}", { params: { path: { dataset_id: DATASET.battery } }, body }))).rejects.toMatchObject({
+        status: 422,
+        details: { fields: [{ field: "owner_organization_id", reason: "UNKNOWN_FIELD" }] },
+      });
+      expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)!.title).not.toBe("Renamed");
+    });
+  });
 });

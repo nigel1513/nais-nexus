@@ -235,6 +235,11 @@ function uploadSessionView(s: StoredUploadSession): Schemas["UploadSession"] {
   };
 }
 
+const DATASET_UPDATE_KEYS = new Set([
+  "title", "description", "keywords", "domain", "access_level", "license", "usage_policy",
+  "allowed_purposes", "max_grant_days", "contact_email", "provenance", "status",
+]);
+
 function validateUploadFiles(files: Schemas["UploadSessionCreate"]["files"]) {
   const problems: Field[] = [];
   const seen = new Set<string>();
@@ -248,6 +253,7 @@ function validateUploadFiles(files: Schemas["UploadSessionCreate"]["files"]) {
     else if (seen.has(f.path)) reason = "DUPLICATE_PATH";
     seen.add(f.path);
     if (reason) problems.push({ field: `files.${i}.path`, reason });
+    if (typeof f.media_type !== "string" || !f.media_type.trim()) problems.push({ field: `files.${i}.media_type`, reason: "REQUIRED" });
     if (!Number.isInteger(f.size_bytes) || f.size_bytes < 1) problems.push({ field: `files.${i}.size_bytes`, reason: "OUT_OF_RANGE" });
     if (!/^[a-f0-9]{64}$/.test(f.sha256 ?? "")) problems.push({ field: `files.${i}.sha256`, reason: "INVALID" });
   });
@@ -369,8 +375,12 @@ export const catalogHandlers = [
   http.patch(`${API}/datasets/:dataset_id`, async ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
-    const patch = await body<Schemas["DatasetUpdate"]>(request);
-    if (!Object.keys(patch).length) invalid([{ field: "body", reason: "EMPTY" }]);
+    const raw = await body<Schemas["DatasetUpdate"]>(request);
+    if (!Object.keys(raw).length) invalid([{ field: "body", reason: "EMPTY" }]);
+    // Only DatasetUpdate keys are accepted (no mass assignment of owner/ids/timestamps).
+    const unknown = Object.keys(raw).filter((k) => !DATASET_UPDATE_KEYS.has(k));
+    if (unknown.length) invalid(unknown.map((field) => ({ field, reason: "UNKNOWN_FIELD" })));
+    const patch = raw;
     validateDataset(patch, true);
     const ds = visibleDataset(db, String(params.dataset_id), user);
     requireSteward(user, ds);
