@@ -1,7 +1,7 @@
 # 연구 데이터 포털 고도화 설계 (Wave 1.5)
 
 - 날짜: 2026-10-01
-- 대상 모듈: M03 Data Catalog(백엔드), M09 Audit/Notification(알림 유형), M10 Web Portal(화면)
+- 대상 모듈: M01 Identity(연구자 식별번호), M03 Data Catalog(백엔드), M09 Audit/Notification(알림 유형), M10 Web Portal(화면)
 - 계약: `NAIS_PRD/contracts/openapi.yaml` 1.2.0 → **1.3.0**, events schema에 신규 이벤트 추가
 - 선행 조건: Wave 1 완료(`feat/wave1`). 이 작업은 Wave 2(M04) 전에 수행한다.
 
@@ -22,6 +22,8 @@
    유래(derived-from) 연결**을 쓴다.
 6. **데이터 정보**: 데이터 기간(언제부터 언제까지의 데이터인지), 수집 기관, 수집 방법·장비, 측정 대상.
 7. 메타데이터는 **AI 활용 가능하게** 설계한다(구조화, 표준 어휘, JSON-LD 내보내기, 변경 이벤트, 영구 식별자).
+8. **문의는 문의자와 담당자 두 사람만** 볼 수 있다(기관 관리자·플랫폼 관리자도 열람 불가).
+9. 사람마다 **연구자 등록번호** 개념의 식별번호를 둔다(국가연구자번호, ORCID).
 
 ### 범위 밖 (이번에 하지 않음)
 - 자연어 질의·AI 검색 기능 자체(M11 P1). 이번에는 그 기반이 되는 메타데이터만 만든다.
@@ -42,6 +44,19 @@
 | 발행 시 동결 | 아래 신규 메타데이터는 모두 `metadata_snapshot`(D-029)에 포함. 발행된 버전의 메타데이터는 변하지 않는다 |
 
 ## 3. 데이터 모델 (M03 `catalog` 스키마, 마이그레이션 `catalog_0002`)
+
+### 3.0 연구자 식별번호 (M01 `identity` 스키마, 마이그레이션 `identity_0002`)
+`identity.users` 추가 컬럼(모두 선택):
+| column | type | 규칙 |
+|---|---|---|
+| national_researcher_number | text | 국가연구자번호(NTIS) 8자리 숫자 `^[0-9]{8}$`, UNIQUE(값이 있을 때) |
+| orcid | text | `^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$` + ISO 7064 MOD 11-2 체크섬, UNIQUE(값이 있을 때) |
+
+- 입력: 본인이 `/settings`에서 등록·수정(`updateMe`). 형식·체크섬 오류는 `VALIDATION_FAILED`, 중복은 `CONFLICT`.
+- 노출: `IdentityPublicProfile`에 두 필드 추가 → 데이터 상세의 연구책임자·담당자·공동연구자 카드, 인용(DataCite `nameIdentifier`), JSON-LD(`schema:identifier`, ORCID는 `https://orcid.org/{id}` IRI)에 표시.
+- `metadata_snapshot`에는 발행 시점의 사람 정보(user_id, 표시명, 소속, 두 식별번호)를 함께 동결한다.
+- 이벤트: `identity.user.updated.v1`(필드 목록만) — 향후 M11 색인 갱신용.
+
 
 ### 3.1 통제 어휘
 `catalog.vocabulary_terms`
@@ -138,7 +153,9 @@
 | created_at, updated_at | timestamptz | |
 
 `catalog.inquiry_messages` (`message_id`, `inquiry_id`, `author_id`, `body` 1..4000, `created_at`; 수정·삭제 불가)
-- 조회 권한: 문의자, 수신 담당자, 소유 기관 DATA_STEWARD·ORG_ADMIN, PLATFORM_ADMIN.
+- 조회·답변 권한: **문의자(asker)와 수신 담당자(recipient) 두 사람만**. 소유 기관 DATA_STEWARD·ORG_ADMIN, PLATFORM_ADMIN도 열람할 수 없다. 그 외 사용자는 404(존재 은닉).
+- 담당자가 바뀌어도 기존 문의의 수신자는 바뀌지 않는다(새 문의부터 새 담당자). 수신자가 비활성화되면 문의자에게 "담당자 부재" 안내를 표시하고 새 문의를 권한다.
+- 감사(M09)에는 문의 ID·데이터셋·당사자 ID만 남고 제목·본문은 남기지 않는다. 감사 열람 규칙상 기관 관리자가 '문의가 있었다'는 사실은 볼 수 있으나 내용은 볼 수 없다.
 - 이메일 공개(`contact_email_public=true`)는 문의와 별개로 상세 화면 담당자 카드에 이메일을 노출.
 
 ## 4. API (openapi 1.3.0 추가·변경)
@@ -186,7 +203,7 @@
 ## 8. 단계 (각 단계 = 구현 계획 1개, Wave 1과 같은 태스크·리뷰 방식)
 | 단계 | 범위 | 완료 기준 |
 |---|---|---|
-| 1 연구 메타데이터 | 어휘, datasets 추가 컬럼, 공동연구자, 스냅샷 확장, metadata_changed 이벤트, JSON-LD(데이터셋), 검색 v2, 상세·폼·검색 화면 | seed 5개 데이터셋에 PI·기간 등 표시, 기간/분야 검색 동작, JSON-LD가 schema.org 검증기 통과 |
+| 1 연구 메타데이터 | 연구자 식별번호(M01), 어휘, datasets 추가 컬럼, 공동연구자, 스냅샷 확장, metadata_changed 이벤트, JSON-LD(데이터셋), 검색 v2, 상세·폼·검색 화면 | seed 5개 데이터셋에 PI·기간 등 표시, 기간/분야 검색 동작, JSON-LD가 schema.org 검증기 통과 |
 | 2 버전 이력 | change_note 필수, previous_version, diff API·화면, 인용(text/bibtex/datacite), 이전 버전 다운로드 동선 | 두 버전 비교 화면, 인용 복사 |
 | 3 원본/정제 계보 | 파일 role, processing_steps, raw 규칙, lineage, 발행 검증, 계보 탭, JSON-LD에 PROV 포함 | 원본+정제 / 정제본만 / 별도 데이터셋 유래 3가지 시나리오 동작 |
 | 4 문의 | 문의 테이블·API·이벤트, M09 알림 유형, 문의함·상세 문의 탭, 이메일 공개 토글 | 문의→알림·메일→답변→알림 흐름, 권한 밖 사용자 404 |
