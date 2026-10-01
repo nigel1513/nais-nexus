@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Query
 from api.modules.project import repository as repo
 from api.modules.project import service, views
 from api.modules.project.identity import IdentityQueryPort, get_identity_port
-from api.modules.project.schemas import ProjectCreateIn
+from api.modules.project.schemas import ProjectCreateIn, ProjectUpdateIn
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 from api.platform.pagination import PageParams, build_page, page_params
@@ -63,3 +63,17 @@ def list_projects(
         for row in result.items
     ]
     return {"items": items, "page": result.page.model_dump()}
+
+
+@router.patch("/projects/{project_id}", operation_id="updateProject")
+def update_project(
+    project_id: UUID, body: ProjectUpdateIn, user: CurrentUserDep, session: SessionDep, identity: IdentityDep
+) -> dict[str, Any]:
+    return views.detail_view(session, identity, service.update_project(session, user, project_id, body))
+
+
+@router.post("/projects/{project_id}/archive", operation_id="archiveProject")
+def archive_project(
+    project_id: UUID, user: CurrentUserDep, session: SessionDep, identity: IdentityDep
+) -> dict[str, Any]:
+    return views.detail_view(session, identity, service.archive_project(session, user, project_id))

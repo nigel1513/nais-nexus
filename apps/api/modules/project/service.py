@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from api.modules.project import repository as repo
 from api.modules.project import roles
-from api.modules.project.schemas import ProjectCreateIn
+from api.modules.project.schemas import ProjectCreateIn, ProjectUpdateIn
 from api.platform import clock
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
@@ -123,3 +123,38 @@ def decode_after(cursor: list[Any] | None) -> tuple[datetime, UUID] | None:
         return updated_at, UUID(project_id_raw)
     except (TypeError, ValueError, AttributeError) as exc:
         raise _validation_error("cursor", "INVALID_CURSOR", "Invalid pagination cursor.") from exc
+
+
+def _reload(session: Session, project_id: UUID, my_role: str | None) -> ProjectAccess:
+    project = repo.get_project(session, project_id)
+    assert project is not None  # locked by this transaction
+    return ProjectAccess(project, my_role)
+
+
+def update_project(
+    session: Session, user: CurrentUser, project_id: UUID, patch: ProjectUpdateIn
+) -> ProjectAccess:
+    access = _mutable(session, user, project_id)
+    if not roles.can_edit_project(access.my_role):
+        raise ApiError(ErrorCode.FORBIDDEN)
+    values = patch.model_dump(exclude_unset=True)
+    visibility = values.get("visibility", access.project["visibility"])
+    if visibility != access.project["visibility"] and not roles.can_change_visibility(access.my_role):
+        raise ApiError(ErrorCode.FORBIDDEN, "Only PROJECT_OWNER can change visibility.")
+    _check_dates(
+        values.get("start_date", access.project["start_date"]),
+        values.get("end_date", access.project["end_date"]),
+    )
+    repo.update_project(session, project_id, values, now=clock.now())
+    return _reload(session, project_id, access.my_role)
+
+
+def archive_project(session: Session, user: CurrentUser, project_id: UUID) -> ProjectAccess:
+    access = _mutable(
+        session, user, project_id
+    )  # locked; an already ARCHIVED project -> 409, archived_at untouched
+    if not roles.can_archive(access.my_role):
+        raise ApiError(ErrorCode.FORBIDDEN)
+    repo.archive_project(session, project_id, now=clock.now())
+    outbox.write(session, "project.archived.v1", {"project_id": str(project_id)}, EventActor.for_user(user))
+    return _reload(session, project_id, access.my_role)
