@@ -29,3 +29,6 @@ Resolved: OpenSearch testcontainer for search tests; S3 tests use running Seawee
 ## M10 (plan: 2026-10-01-wave1-m10-web.md, 18 tasks; paper-checked only, not executed)
 Shared changes: root pnpm-lock.yaml (approve); CI web job (Agent 0, at integration); Keycloak nais-web client (M01 plan covers it); optional openapi: AccessGrant.subject_display_name/project_name, ProjectSummary.lead_organization_name; compose web service + .env WEB_API_MOCKING/AUTH_TRUST_HOST (pre-approved).
 Resolved: MSW handlers run server-side at /mock-api/v1 (no service worker over plain HTTP); hand-written stateful handlers for all 49 ops + Ajv contract test; mock switch build-time via WEB_API_MOCKING build arg+env (default enabled); logout via back-channel; nonce CSP + real-API E2E deferred to Wave 2; download panel on version page.
+
+## Carry-forward to M09 execution (from M02 Task 12 review)
+Audit visibility for a given project_id: use `project_id in ProjectQueryPort.list_project_ids_for_member(user)` (includes ARCHIVED projects), never `is_active_member` (False for archived) — otherwise members lose the audit trail of archived projects.
