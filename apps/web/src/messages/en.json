@@ -83,5 +83,15 @@
       "FAILED": "Failed",
       "UNSUPPORTED": "Unsupported"
     }
+  },
+  "data": {
+    "card": {
+      "aiReady": "AI-ready {score}/10",
+      "aiReadyUnverified": "AI-ready not verified"
+    },
+    "people": {
+      "atTheTime": " (at the time)",
+      "now": "now {org}"
+    }
   }
 }

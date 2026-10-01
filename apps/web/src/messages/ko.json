@@ -288,6 +288,14 @@
       "labelHint": "영문, 숫자, . _ - (32자 이하), 예: v1, 2026.09",
       "changeNote": "변경 내용",
       "create": "버전 만들기"
+    },
+    "card": {
+      "aiReady": "AI-ready {score}/10",
+      "aiReadyUnverified": "AI-ready 미검증"
+    },
+    "people": {
+      "atTheTime": " (당시 소속)",
+      "now": "현재 {org}"
     }
   },
   "version": {
