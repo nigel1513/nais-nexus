@@ -34,7 +34,7 @@ export default defineConfig({
     : {
         command: `corepack pnpm build && corepack pnpm exec next start --port ${port}`,
         url: `http://localhost:${port}`,
-        reuseExistingServer: true,
+        reuseExistingServer: !process.env.CI,
         timeout: 300_000,
         env: {
           NEXT_PUBLIC_API_MOCKING: "enabled",

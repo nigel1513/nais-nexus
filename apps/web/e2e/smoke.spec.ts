@@ -45,9 +45,9 @@ test("keyboard: the skip link is the first tab stop and moves focus to main", as
   await expect(page.locator("main#main")).toBeFocused();
 });
 
-test("no secure-context-only APIs needed: dashboard renders without a service-unavailable error", async ({ page, context, baseURL }) => {
+test("no secure-context-only APIs needed: dashboard renders without a service-unavailable error", async ({ page, context, baseURL }, testInfo) => {
   const secure = await page.goto("/").then(() => page.evaluate(() => window.isSecureContext));
-  if (new URL(baseURL!).hostname !== "localhost") expect(secure).toBe(false);
+  expect(secure).toBe(testInfo.project.name !== "chromium-insecure-origin");
   await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
   await page.goto("/commons");
   await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();

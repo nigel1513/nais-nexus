@@ -77,13 +77,13 @@ suite runs a second Playwright project, `chromium-insecure-origin`, against `htt
 Default: `corepack pnpm e2e` builds the app in mock mode, starts it on :3100 and runs both projects.
 
 Browser install: `corepack pnpm exec playwright install chromium`. If the download or system libraries are unavailable, run in the
-official image instead (use the same version as `corepack pnpm exec playwright --version`; with 1.55.0 shown here):
+official image instead (use the same version as `corepack pnpm exec playwright --version`; 1.63.0 at the time of writing):
 
 ```bash
 # portal already running, e.g. behind the gateway on :21051 (or `next start --port 3100` with PLAYWRIGHT_BASE_URL=http://localhost:3100)
 docker run --rm --network host -v "$PWD/../..:/repo" -w /repo/apps/web \
-  -e PLAYWRIGHT_BASE_URL=http://localhost:21051 mcr.microsoft.com/playwright:v1.55.0-noble \
-  npx --yes playwright@1.55.0 test
+  -e PLAYWRIGHT_BASE_URL=http://localhost:21051 mcr.microsoft.com/playwright:v1.63.0-noble \
+  npx --yes playwright@1.63.0 test
 ```
 
 `--network host` makes `nais.test` (mapped to 127.0.0.1 inside Chromium) reach the same portal. When pointing at a portal that enforces
