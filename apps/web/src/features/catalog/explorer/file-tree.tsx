@@ -3,6 +3,7 @@ import { useTranslations } from "next-intl";
 import type { DatasetFile } from "@/shared/api/types";
 import { formatBytes } from "@/shared/lib/format";
 
+// Role badges (DatasetFile.role) arrive with Stage 3; nothing role-related is shown here yet.
 export function FileTree({ files, currentId, onSelect }: { files: DatasetFile[]; currentId?: string; onSelect: (id: string) => void }) {
   const t = useTranslations();
   const sorted = [...files].sort((a, b) => a.path.localeCompare(b.path));

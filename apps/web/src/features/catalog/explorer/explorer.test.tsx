@@ -2,7 +2,8 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
-import { DATASET, USER } from "@/mocks/fixtures";
+import { getDb } from "@/mocks/db";
+import { DATASET, USER, VERSION } from "@/mocks/fixtures";
 import { server } from "../../../../tests/msw";
 import { renderScreen } from "../../../../tests/render";
 import { DatasetDetailScreen } from "../dataset-detail-screen";
@@ -76,10 +77,42 @@ describe("Data Explorer", () => {
     expect(await ex.findByRole("cell", { name: "x" })).toBeInTheDocument();
   });
 
-  it("renders the column description table for every tabular file", async () => {
+  it("renders the column description table with rows from every tabular file", async () => {
+    const db = getDb();
+    const v = db.versions.find((x) => x.dataset_version_id === VERSION.battery)!;
+    const src = v.files.find((f) => f.path === "data/measurements.csv")!;
+    const copyId = "00000000-0000-4000-8000-0000000000aa";
+    v.files.push({ ...src, file_id: copyId, path: "data/second.csv" });
+    db.previews[copyId] = db.previews[src.file_id]!;
     open(USER.bResearcher);
     const table = await screen.findByRole("table", { name: "열 설명표" });
-    await within(table).findByRole("cell", { name: "temperature_c" });
-    expect(within(table).getAllByRole("row").length).toBeGreaterThan(5);
+    await within(table).findAllByRole("cell", { name: "data/second.csv" });
+    const paths = within(table).getAllByRole("cell", { name: /^data\// }).map((c) => c.textContent);
+    expect(paths).toContain("data/measurements.csv");
+    expect(paths).toContain("data/second.csv");
+  });
+
+  it("polls a PENDING preview until it is READY", async () => {
+    let calls = 0;
+    server.use(
+      http.get("*/mock-api/v1/dataset-files/:id/preview", ({ params }) =>
+        ++calls === 1
+          ? HttpResponse.json({ file_id: params.id, status: "PENDING", header: [], rows: [], rows_truncated: false, columns: [] })
+          : HttpResponse.json({ file_id: params.id, status: "READY", header: ["a"], rows: [["zz"]], rows_truncated: false, columns: [] }),
+      ),
+    );
+    open(USER.bResearcher);
+    const ex = await explorer();
+    await userEvent.click(await ex.findByRole("radio", { name: "Compact" }));
+    expect(await ex.findByText("미리보기를 준비하고 있습니다…")).toBeInTheDocument();
+    expect(await ex.findByRole("cell", { name: "zz" }, { timeout: 9000 })).toBeInTheDocument();
+  }, 20000);
+
+  it("falls back to a generic message for an unknown failure code", async () => {
+    server.use(http.get("*/mock-api/v1/dataset-files/:id/profile", ({ params }) => HttpResponse.json({ file_id: params.id, path: "x.csv", status: "FAILED", failure_code: "NEW_CODE", columns: [] })));
+    open(USER.bResearcher);
+    const ex = await explorer();
+    await userEvent.click(await ex.findByRole("radio", { name: "Column" }));
+    expect(await ex.findByText("미리보기를 만들지 못했습니다")).toBeInTheDocument();
   });
 });

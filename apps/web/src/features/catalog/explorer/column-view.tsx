@@ -9,7 +9,8 @@ export function ProfileStatus({ profile }: { profile: FileProfile }) {
   if (profile.status === "PENDING") return <p role="status" className="text-sm text-muted-foreground">{t("data.explorer.pending")}</p>;
   if (profile.status === "UNSUPPORTED") return <p role="status" className="text-sm text-muted-foreground">{t("data.explorer.unsupported")}</p>;
   if (profile.status === "FAILED") {
-    const code = profile.failure_code ?? "GENERATION_FAILED";
+    const known = ["UNPARSEABLE", "TIMEOUT", "GENERATION_FAILED"];
+    const code = profile.failure_code && known.includes(profile.failure_code) ? profile.failure_code : "GENERATION_FAILED";
     return <p role="alert" className="text-sm text-destructive">{t(`data.explorer.failed.${code}`)}</p>;
   }
   return null;

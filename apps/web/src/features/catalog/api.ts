@@ -191,6 +191,7 @@ export function useGetFilePreview(fileId: string) {
     queryKey: ["getFilePreview", { fileId }],
     enabled: ready && !!fileId,
     retry: (count, error) => !(error instanceof ApiError && error.status === 403) && count < 1,
+    refetchInterval: (query) => (query.state.data?.status === "PENDING" ? 5000 : false),
     queryFn: async () => (await unwrap(api.GET("/dataset-files/{file_id}/preview", { params: { path: { file_id: fileId } } }))) as FilePreview,
   });
 }
