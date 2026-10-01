@@ -29,7 +29,9 @@ def reindex_all(deps: CatalogDeps, *, chunk: int = 200) -> str:
     index.swap_alias(new_index)
     # Changes committed while we were loading went to the old index: queue everything once more.
     with deps.session_factory() as session, session.begin():
-        for dataset_id in ids:
+        # Re-select: datasets created during the load are in neither the new index nor the snapshot.
+        current: list[UUID] = list(session.execute(select(datasets.c.dataset_id)).scalars())
+        for dataset_id in current:
             enqueue_index(session, dataset_id)
     return new_index
 

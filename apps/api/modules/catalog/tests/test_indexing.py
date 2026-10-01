@@ -1,4 +1,5 @@
 import logging
+import threading
 from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -9,6 +10,7 @@ import httpx
 import pytest
 
 from api.modules.catalog.reindex import reindex_all
+from api.modules.catalog.repo import enqueue_index
 from api.modules.catalog.search.drain import backoff_seconds, drain_index_queue
 from api.modules.catalog.search.opensearch import OpenSearchIndex, SearchUnavailable
 from api.modules.catalog.testing import RecordingSearchIndex
@@ -163,3 +165,69 @@ def test_next_index_name_does_not_treat_client_errors_as_no_indices(search_index
     search_index._request = bad  # type: ignore[method-assign]
     with pytest.raises(SearchUnavailable):
         search_index.next_index_name()
+
+
+def test_reindex_all_requeues_datasets_created_during_the_load(
+    search_api: CatalogApi, db: PgUrls, search_index: OpenSearchIndex
+) -> None:
+    first = create_dataset(search_api)["dataset_id"]
+    drain_index_queue(search_api.deps)
+    late: list[str] = []
+
+    class RacingIndex:
+        """Delegates to the real index; a dataset is created and drained into the OLD index just before the swap."""
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(search_index, name)
+
+        def swap_alias(self, new_index: str) -> list[str]:
+            late.append(create_dataset(search_api, title="Created during load")["dataset_id"])
+            drain_index_queue(search_api.deps)  # goes to the old index through the alias, row deleted
+            return search_index.swap_alias(new_index)
+
+    reindex_all(replace(search_api.deps, search=RacingIndex()))  # type: ignore[arg-type]
+    assert {str(r["dataset_id"]) for r in rows(db, "SELECT dataset_id FROM catalog.index_queue")} == {
+        first,
+        late[0],
+    }
+    assert fetch(search_index, late[0]) is None  # not in the new index yet
+    drain_index_queue(search_api.deps)
+    assert fetch(search_index, late[0]) is not None
+
+
+def test_enqueue_during_a_running_drain_is_not_lost(api: CatalogApi, db: PgUrls) -> None:
+    started, release = threading.Event(), threading.Event()
+
+    class BlockingIndex(RecordingSearchIndex):
+        def bulk(
+            self, upserts: Sequence[Mapping[Any, Any]], deletes: Sequence[str], *, index: str | None = None
+        ) -> None:
+            started.set()
+            assert release.wait(20)
+            super().bulk(upserts, deletes, index=index)
+
+    api.use(replace(api.deps, search=BlockingIndex()))
+    dataset_id = create_dataset(api)["dataset_id"]
+    errors: list[Exception] = []
+
+    def concurrent_change() -> None:
+        try:
+            with api.deps.session_factory() as session, session.begin():
+                enqueue_index(session, UUID(dataset_id))  # blocks on the row lock held by the drain
+        except Exception as exc:
+            errors.append(exc)
+
+    drainer = threading.Thread(target=drain_index_queue, args=(api.deps,), daemon=True)
+    drainer.start()
+    assert started.wait(20)
+    writer = threading.Thread(target=concurrent_change, daemon=True)
+    writer.start()
+    writer.join(1)
+    assert writer.is_alive()  # waiting for the drain's row lock
+    release.set()
+    drainer.join(20)
+    writer.join(20)
+    assert not drainer.is_alive() and not writer.is_alive() and errors == []
+    assert [str(r["dataset_id"]) for r in rows(db, "SELECT dataset_id FROM catalog.index_queue")] == [
+        dataset_id
+    ]
