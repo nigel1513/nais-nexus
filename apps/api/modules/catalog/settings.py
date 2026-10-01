@@ -1,0 +1,34 @@
+"""Catalog configuration (M03 §11). Env names are the field names upper-cased."""
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+MIB = 1024 * 1024
+
+
+class CatalogSettings(BaseSettings):
+    model_config = SettingsConfigDict(extra="ignore")
+
+    nais_public_base_url: str = "http://localhost:21051"
+    opensearch_url: str = "http://nais:nais@localhost:21056"
+    catalog_index_alias: str = "nais-datasets"
+    storage_org_codes: str = "nais,inst-a,inst-b"
+    storage_presign_ttl_seconds: int = 300
+    upload_url_ttl_seconds: int = 3600
+    upload_session_ttl_seconds: int = 3600
+    storage_multipart_threshold_bytes: int = 64 * MIB
+    catalog_multipart_part_size_bytes: int = 64 * MIB
+    catalog_sync_verify_max_bytes: int = 256 * MIB
+    malware_scanner: str = "noop"
+    catalog_index_batch_size: int = 200
+    catalog_opensearch_timeout_seconds: float = 5.0
+
+    @property
+    def storage_org_code_list(self) -> list[str]:
+        return [code.strip() for code in self.storage_org_codes.split(",") if code.strip()]
+
+
+@lru_cache(maxsize=1)
+def get_catalog_settings() -> CatalogSettings:
+    return CatalogSettings()
