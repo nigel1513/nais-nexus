@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Response
 from api.modules.catalog.deps import CatalogDepsDep
 from api.modules.catalog.schemas import UploadCompleteIn
 from api.modules.catalog.service import completion as service
+from api.modules.catalog.service.uploads import run_cleanups
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 
@@ -32,7 +33,13 @@ def complete_upload_session(
     "/dataset-versions/{version_id}/files/{file_id}", operation_id="deleteDraftFile", status_code=204
 )
 def delete_draft_file(
-    version_id: UUID, file_id: UUID, session: SessionDep, user: CurrentUserDep, deps: CatalogDepsDep
+    version_id: UUID,
+    file_id: UUID,
+    background: BackgroundTasks,
+    session: SessionDep,
+    user: CurrentUserDep,
+    deps: CatalogDepsDep,
 ) -> Response:
-    service.delete_draft_file(session, deps, user, version_id, file_id)
+    target = service.delete_draft_file(session, deps, user, version_id, file_id)
+    background.add_task(run_cleanups, deps, [target])  # after SessionDep committed
     return Response(status_code=204)

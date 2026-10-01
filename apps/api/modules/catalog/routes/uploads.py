@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
 from api.modules.catalog.deps import CatalogDepsDep
 from api.modules.catalog.schemas import UploadSessionCreateIn
@@ -18,11 +18,16 @@ router = APIRouter(tags=["catalog"])
 def create_upload_session(
     version_id: UUID,
     body: UploadSessionCreateIn,
+    background: BackgroundTasks,
     session: SessionDep,
     user: CurrentUserDep,
     deps: CatalogDepsDep,
 ) -> dict[str, Any]:
-    return service.create_upload_session(session, deps, user, version_id, body)
+    result, orphans = service.create_upload_session(session, deps, user, version_id, body)
+    if orphans:
+        # Background tasks run after the response, i.e. after SessionDep committed (never inside the transaction).
+        background.add_task(service.run_cleanups, deps, orphans)
+    return result
 
 
 @router.get("/upload-sessions/{upload_session_id}", operation_id="getUploadSession")

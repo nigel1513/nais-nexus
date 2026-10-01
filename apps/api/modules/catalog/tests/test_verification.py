@@ -13,7 +13,7 @@ from api.modules.catalog import verification
 from api.modules.catalog.interfaces import ScanResult
 from api.modules.catalog.objects import ObjectMissing
 from api.modules.catalog.testing import MemoryObjectStore
-from api.modules.catalog.tests.support import insert_dataset, insert_file, insert_version, rows
+from api.modules.catalog.tests.support import execute, insert_dataset, insert_file, insert_version, rows
 from api.modules.catalog.verification import (
     Outcome,
     RangeReader,
@@ -22,6 +22,7 @@ from api.modules.catalog.verification import (
     verify_in_session,
 )
 from api.platform.db import session_factory
+from api.platform.ids import new_id
 from api.platform.testing.fixtures import PgUrls
 
 HDF5 = b"\x89HDF\r\n\x1a\n"
@@ -180,14 +181,45 @@ def test_range_reader_seeks_and_reads() -> None:
     assert reader.tell() == 5
 
 
+def _session_of(db: PgUrls, file_id: UUID) -> UUID:
+    row = rows(db, "SELECT upload_session_id FROM catalog.dataset_files WHERE file_id = :id", id=file_id)[0]
+    return UUID(str(row["upload_session_id"]))
+
+
+def test_apply_outcome_ignores_a_row_reused_by_a_newer_session(db: PgUrls) -> None:  # ABA guard
+    version_id = insert_version(db, insert_dataset(db))
+    file_id = insert_file(db, version_id, path="a.csv", status="UPLOADED")
+    read_session = _session_of(db, file_id)
+    new_session = new_id()
+    execute(
+        db,
+        "INSERT INTO catalog.upload_sessions (upload_session_id, dataset_version_id, status, created_by,"
+        " expires_at) VALUES (:s, :v, 'OPEN', :v, now() + interval '1 hour')",
+        s=new_session,
+        v=version_id,
+    )
+    execute(
+        db,
+        "UPDATE catalog.dataset_files SET upload_session_id = :s, status = 'UPLOADED' WHERE file_id = :f",
+        s=new_session,
+        f=file_id,
+    )
+    with session_factory(db.app)() as session, session.begin():
+        assert apply_outcome(session, file_id, read_session, Outcome("FAILED", "CHECKSUM_MISMATCH")) is False
+    assert rows(db, "SELECT status FROM catalog.dataset_files WHERE file_id = :f", f=file_id) == [
+        {"status": "UPLOADED"}
+    ]
+
+
 def test_apply_outcome_only_touches_uploaded_rows(db: PgUrls) -> None:
     version_id = insert_version(db, insert_dataset(db))
     uploaded = insert_file(db, version_id, path="a.csv", status="UPLOADED")
     failed = insert_file(db, version_id, path="b.csv", status="FAILED")
+    up_session = _session_of(db, uploaded)
     with session_factory(db.app)() as session, session.begin():
-        assert apply_outcome(session, uploaded, Outcome("VERIFIED", None, "SKIPPED")) is True
-        assert apply_outcome(session, uploaded, Outcome("FAILED", "CHECKSUM_MISMATCH")) is False
-        assert apply_outcome(session, failed, Outcome("VERIFIED")) is False
+        assert apply_outcome(session, uploaded, up_session, Outcome("VERIFIED", None, "SKIPPED")) is True
+        assert apply_outcome(session, uploaded, up_session, Outcome("FAILED", "CHECKSUM_MISMATCH")) is False
+        assert apply_outcome(session, failed, up_session, Outcome("VERIFIED")) is False
     [row] = rows(db, "SELECT status, verified_at FROM catalog.dataset_files WHERE file_id = :id", id=uploaded)
     assert row["status"] == "VERIFIED" and row["verified_at"] is not None
     assert isinstance(uploaded, UUID)

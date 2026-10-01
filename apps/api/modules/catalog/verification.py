@@ -240,7 +240,8 @@ def evaluate_object(
     return Outcome("VERIFIED", None, scan.status)
 
 
-def apply_outcome(session: Session, file_id: UUID, outcome: Outcome) -> bool:
+def apply_outcome(session: Session, file_id: UUID, upload_session_id: UUID, outcome: Outcome) -> bool:
+    """Guarded by the upload session the verify run read: a duplicate message for a re-used file row (ABA) is a no-op."""
     now = clock.now()
     values: dict[str, Any] = {
         "status": outcome.status,
@@ -252,7 +253,11 @@ def apply_outcome(session: Session, file_id: UUID, outcome: Outcome) -> bool:
         values["verified_at"] = now
     result = session.execute(
         update(dataset_files)
-        .where(dataset_files.c.file_id == file_id, dataset_files.c.status == "UPLOADED")
+        .where(
+            dataset_files.c.file_id == file_id,
+            dataset_files.c.status == "UPLOADED",
+            dataset_files.c.upload_session_id == upload_session_id,
+        )
         .values(**values)
     )
     return rowcount(result) == 1
@@ -268,7 +273,7 @@ def verify_in_session(session: Session, deps: "CatalogDeps", f: Mapping[Any, Any
         path=f["path"],
         scanner=deps.scanner,
     )
-    if apply_outcome(session, f["file_id"], outcome) and outcome.failed:
+    if apply_outcome(session, f["file_id"], f["upload_session_id"], outcome) and outcome.failed:
         # The delete precedes the caller's commit. If the tx rolls back, a retry finds the object missing and ends
         # FAILED/OBJECT_MISSING, the same terminal outcome.
         store.delete(f["storage_key"])  # M03 §5.2: a file that fails verification is removed from storage

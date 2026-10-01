@@ -66,7 +66,14 @@ def test_get_version_exposes_files_in_path_order_and_the_snapshot(api: CatalogAp
     assert (view.status, view.version_label, view.owner_organization_id) == ("PUBLISHED", "v1", ORG_B)
     assert [f.path for f in view.files] == ["B.md", "data/a.csv", "data/b.csv"]
     assert all(f.status == "VERIFIED" and f.storage_bucket == "nais-inst-b" for f in view.files)
-    assert view.files[1].storage_key == f"datasets/{dataset_id}/{version_id}/data/a.csv"
+    [stored] = rows(
+        db,
+        "SELECT upload_session_id FROM catalog.dataset_files WHERE dataset_version_id = :v AND path = 'data/a.csv'",
+        v=version_id,
+    )
+    assert view.files[1].storage_key == (
+        f"datasets/{dataset_id}/{version_id}/{stored['upload_session_id']}/data/a.csv"
+    )
     assert (
         view.metadata_snapshot is not None
         and view.metadata_snapshot["title"] == "Battery Cycling Measurements"

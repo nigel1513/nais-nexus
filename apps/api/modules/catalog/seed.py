@@ -70,7 +70,7 @@ def _seed_one(session: Session, deps: CatalogDeps, item: SeedDataset) -> None:
         )
     )
     for path, data in sorted(fixture_files(item.fixture).items()):
-        key = storage_key(item.dataset_id, item.version_id, path)
+        key = storage_key(item.dataset_id, item.version_id, item.session_id, path)
         media_type = ALLOWED_MEDIA_TYPES[extension(path)]
         store.put(key, data, media_type)
         session.execute(

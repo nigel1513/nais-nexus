@@ -15,7 +15,12 @@ from api.modules.catalog.errors import dependency_errors
 from api.modules.catalog.objects import MultipartFailed, ObjectStore
 from api.modules.catalog.repo import load_dataset, load_version, must, rowcount
 from api.modules.catalog.schemas import UploadCompleteIn
-from api.modules.catalog.service.uploads import abort_quietly, upload_session_response
+from api.modules.catalog.service.uploads import (
+    StorageCleanup,
+    abort_quietly,
+    cleanup_target,
+    upload_session_response,
+)
 from api.modules.catalog.tables import dataset_files, upload_sessions
 from api.modules.catalog.verification import verify_in_session
 from api.platform import clock
@@ -163,7 +168,8 @@ def complete_upload_session(
 
 def delete_draft_file(
     session: Session, deps: CatalogDeps, user: CurrentUser, version_id: UUID, file_id: UUID
-) -> None:
+) -> StorageCleanup:
+    """Returns the object to remove; the route deletes it after the transaction committed."""
     version, _ = steward_version(session, user, version_id, for_update=True)
     require_draft(version)
     f = (
@@ -188,8 +194,4 @@ def delete_draft_file(
         if sess is not None and sess["status"] == "OPEN" and sess["expires_at"] > clock.now():
             raise ApiError(ErrorCode.CONFLICT, "The file is still being uploaded in an open session.")
     session.execute(delete(dataset_files).where(dataset_files.c.file_id == file_id))
-    with dependency_errors():
-        store = deps.storage.for_bucket(f["storage_bucket"])
-        if f["status"] in ("PENDING", "FAILED") and f["multipart_upload_id"]:
-            abort_quietly(store, f["storage_key"], f["multipart_upload_id"])
-        store.delete(f["storage_key"])
+    return cleanup_target(f)

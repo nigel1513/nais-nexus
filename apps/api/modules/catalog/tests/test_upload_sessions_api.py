@@ -35,7 +35,8 @@ def test_small_file_gets_a_presigned_put_on_the_gateway(
     assert upload["method"] == "PUT"
     url = urlsplit(upload["url"])
     assert url.netloc == "localhost:21051"
-    assert url.path == f"/nais-inst-b/datasets/{dataset_id}/{version_id}/data/a.csv"
+    session_id = body["upload_session_id"]
+    assert url.path == f"/nais-inst-b/datasets/{dataset_id}/{version_id}/{session_id}/data/a.csv"
     assert upload["headers"] == {
         "Content-Type": "text/csv",
         "x-amz-checksum-sha256": base64.b64encode(bytes.fromhex(sha(KIB_CSV))).decode(),
@@ -43,7 +44,7 @@ def test_small_file_gets_a_presigned_put_on_the_gateway(
     row = file_row(db, item["file_id"])
     assert (row["storage_bucket"], row["storage_key"]) == (
         "nais-inst-b",
-        f"datasets/{dataset_id}/{version_id}/data/a.csv",
+        f"datasets/{dataset_id}/{version_id}/{session_id}/data/a.csv",
     )
     assert row["multipart_upload_id"] is None
 

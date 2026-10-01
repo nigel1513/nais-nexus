@@ -47,7 +47,13 @@ def verify_file_job(file_id: UUID, *, deps: CatalogDeps) -> str | None:
         scanner=deps.scanner,
     )
     with deps.session_factory() as session, session.begin():
-        applied = apply_outcome(session, file_id, outcome)
+        # Global lock order: version -> upload session -> file (as completeUploadSession / deleteDraftFile).
+        session.execute(
+            select(dataset_versions.c.dataset_version_id)
+            .where(dataset_versions.c.dataset_version_id == row["dataset_version_id"])
+            .with_for_update(read=True)
+        )
+        applied = apply_outcome(session, file_id, row["upload_session_id"], outcome)
     if not applied:
         return None
     if outcome.failed:
@@ -172,11 +178,30 @@ def requeue_stale_uploads(
     """Re-send UPLOADED files left behind by a lost verify message or an exhausted/dead-lettered verify run."""
     now = clock.now()
     with deps.session_factory() as session, session.begin():
+        # Global lock order: version -> upload session -> file. Candidates are read unlocked, their versions locked
+        # (skipping versions a writer holds), and only then the file rows.
+        candidates = session.execute(
+            select(dataset_files.c.file_id, dataset_files.c.dataset_version_id)
+            .where(dataset_files.c.status == "UPLOADED", dataset_files.c.updated_at < now - older_than)
+            .limit(limit)
+        ).all()
+        locked_versions: list[UUID] = list(
+            session.execute(
+                select(dataset_versions.c.dataset_version_id)
+                .where(dataset_versions.c.dataset_version_id.in_({vid for _, vid in candidates}))
+                .order_by(dataset_versions.c.dataset_version_id)
+                .with_for_update(read=True, skip_locked=True)
+            ).scalars()
+        )
         file_ids: list[UUID] = list(
             session.execute(
                 select(dataset_files.c.file_id)
-                .where(dataset_files.c.status == "UPLOADED", dataset_files.c.updated_at < now - older_than)
-                .limit(limit)
+                .where(
+                    dataset_files.c.file_id.in_([fid for fid, _ in candidates]),
+                    dataset_files.c.dataset_version_id.in_(locked_versions),
+                    dataset_files.c.status == "UPLOADED",
+                    dataset_files.c.updated_at < now - older_than,
+                )
                 .with_for_update(skip_locked=True)
             ).scalars()
         )

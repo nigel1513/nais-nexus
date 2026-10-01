@@ -92,6 +92,7 @@ def insert_file(
         urls, "SELECT dataset_id FROM catalog.dataset_versions WHERE dataset_version_id = :v", v=version_id
     )[0]["dataset_id"]
     file_id = new_id()
+    session_id = _upload_session(urls, version_id)
     execute(
         urls,
         "INSERT INTO catalog.dataset_files (file_id, dataset_version_id, upload_session_id, path, size_bytes, sha256,"
@@ -99,12 +100,12 @@ def insert_file(
         " :bucket, :key, :status)",
         id=file_id,
         v=version_id,
-        s=_upload_session(urls, version_id),
+        s=session_id,
         path=path,
         size=size,
         sha=sha,
         bucket=bucket,
-        key=storage_key(dataset_id, version_id, path),
+        key=storage_key(dataset_id, version_id, session_id, path),
         status=status,
     )
     return file_id

@@ -126,7 +126,7 @@ def test_policy_event_shape() -> None:
 
 
 def test_small_helpers() -> None:
-    assert storage_key("d", "v", "data/a.csv") == "datasets/d/v/data/a.csv"
+    assert storage_key("d", "v", "s", "data/a.csv") == "datasets/d/v/s/data/a.csv"
     assert checksum_b64(hashlib.sha256(b"").hexdigest()) == "47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU="
     assert part_count(100 * 1024 * 1024, 64 * 1024 * 1024) == 2
     assert part_count(64 * 1024 * 1024, 64 * 1024 * 1024) == 1

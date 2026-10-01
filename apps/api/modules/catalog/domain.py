@@ -167,8 +167,11 @@ def manifest_sha256(files: Iterable[tuple[str, int, str]]) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def storage_key(dataset_id: UUID | str, version_id: UUID | str, path: str) -> str:
-    return f"datasets/{dataset_id}/{version_id}/{path}"
+def storage_key(
+    dataset_id: UUID | str, version_id: UUID | str, upload_session_id: UUID | str, path: str
+) -> str:
+    """D-039: one key per upload session, so a live presigned PUT of an earlier upload never hits a later object."""
+    return f"datasets/{dataset_id}/{version_id}/{upload_session_id}/{path}"
 
 
 def checksum_b64(sha256_hex: str) -> str:

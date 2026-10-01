@@ -2,6 +2,7 @@
 
 import logging
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 from uuid import UUID
@@ -88,6 +89,34 @@ def _validate_files(files: Sequence[UploadFileIn], settings: CatalogSettings) ->
         )
 
 
+@dataclass(frozen=True)
+class StorageCleanup:
+    """An object (and optional multipart upload) to remove best-effort AFTER the transaction committed."""
+
+    bucket: str
+    key: str
+    multipart_upload_id: str | None = None
+
+
+def cleanup_target(f: Mapping[Any, Any]) -> StorageCleanup:
+    upload_id = f["multipart_upload_id"] if f["status"] in ("PENDING", "FAILED") else None
+    return StorageCleanup(f["storage_bucket"], f["storage_key"], upload_id)
+
+
+def run_cleanups(deps: CatalogDeps, targets: Sequence[StorageCleanup]) -> None:
+    """Background task (runs after SessionDep committed): never raises, a leftover object is only an orphan."""
+    for target in targets:
+        try:
+            store = deps.storage.for_bucket(target.bucket)
+            if target.multipart_upload_id:
+                abort_quietly(store, target.key, target.multipart_upload_id)
+            store.delete(target.key)
+        except Exception:
+            logger.warning(
+                "could not clean up an orphaned object", extra={"storage_key": target.key}, exc_info=True
+            )
+
+
 def upload_instructions(store: ObjectStore, f: Mapping[Any, Any], ttl: int) -> dict[str, Any]:
     if f["multipart_upload_id"]:
         part_size = int(f["part_size_bytes"])
@@ -126,7 +155,10 @@ def upload_session_response(session: Session, deps: CatalogDeps, upload_session_
         .mappings()
         .all()
     )
-    is_open = sess["status"] == "OPEN" and sess["expires_at"] > clock.now()
+    now = clock.now()
+    is_open = sess["status"] == "OPEN" and sess["expires_at"] > now
+    # D-039: a presigned URL never outlives its session.
+    url_ttl = min(deps.settings.upload_url_ttl_seconds, int((sess["expires_at"] - now).total_seconds()))
     items: list[dict[str, Any]] = []
     for f in files:
         item: dict[str, Any] = {
@@ -135,14 +167,14 @@ def upload_session_response(session: Session, deps: CatalogDeps, upload_session_
             "status": f["status"],
             "failure_code": f["failure_code"],
         }
-        if is_open and f["status"] == "PENDING":
+        if is_open and url_ttl > 0 and f["status"] == "PENDING":
             store = deps.storage.for_bucket(f["storage_bucket"])
-            item["upload"] = upload_instructions(store, f, deps.settings.upload_url_ttl_seconds)
+            item["upload"] = upload_instructions(store, f, url_ttl)
         items.append(item)
     return {
         "upload_session_id": sess["upload_session_id"],
         "dataset_version_id": sess["dataset_version_id"],
-        "status": sess["status"],
+        "status": "EXPIRED" if sess["status"] == "OPEN" and sess["expires_at"] <= now else sess["status"],
         "expires_at": sess["expires_at"],
         "files": items,
     }
@@ -167,7 +199,8 @@ def _existing_rows(session: Session, version_id: UUID, paths: Sequence[str]) -> 
 
 def create_upload_session(
     session: Session, deps: CatalogDeps, user: CurrentUser, version_id: UUID, body: UploadSessionCreateIn
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[StorageCleanup]]:
+    """Returns the response and the old objects of re-used rows, to be removed after commit."""
     version, ds = steward_version(session, user, version_id, for_update=True)
     require_draft(version)
     settings = deps.settings
@@ -196,6 +229,7 @@ def create_upload_session(
             f"A version holds at most {MAX_FILES_PER_VERSION} files.",
             {"fields": [{"field": "files", "reason": "TOO_MANY_FILES"}]},
         )
+    orphans: list[StorageCleanup] = []
     with dependency_errors():
         store = org_store(deps, ds)
         upload_session_id = new_id()
@@ -210,7 +244,7 @@ def create_upload_session(
             )
         )
         for spec in body.files:
-            key = storage_key(ds["dataset_id"], version_id, spec.path)
+            key = storage_key(ds["dataset_id"], version_id, upload_session_id, spec.path)
             media_type = canonical_media_type(spec.media_type)
             multipart = spec.size_bytes > settings.storage_multipart_threshold_bytes
             values: dict[str, Any] = {
@@ -240,12 +274,12 @@ def create_upload_session(
                     )
                 )
                 continue
-            if old["status"] in ("PENDING", "FAILED") and old["multipart_upload_id"]:
-                abort_quietly(store, old["storage_key"], old["multipart_upload_id"])
+            if old["storage_key"] != key:
+                orphans.append(cleanup_target(old))
             session.execute(
                 update(dataset_files).where(dataset_files.c.file_id == old["file_id"]).values(**values)
             )
-        return upload_session_response(session, deps, upload_session_id)
+        return upload_session_response(session, deps, upload_session_id), orphans
 
 
 def get_upload_session(
