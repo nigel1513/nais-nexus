@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, Query
 from api.modules.project import repository as repo
 from api.modules.project import service, views
 from api.modules.project.identity import IdentityQueryPort, get_identity_port
-from api.modules.project.schemas import ProjectCreateIn, ProjectUpdateIn
+from api.modules.project.schemas import MemberAddIn, ProjectCreateIn, ProjectUpdateIn
+from api.modules.project.settings import ProjectSettings, get_project_settings
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 from api.platform.pagination import PageParams, build_page, page_params
@@ -17,6 +18,7 @@ router = APIRouter(tags=["projects"])
 
 IdentityDep = Annotated[IdentityQueryPort, Depends(get_identity_port)]
 PageDep = Annotated[PageParams, Depends(page_params)]
+SettingsDep = Annotated[ProjectSettings, Depends(get_project_settings)]
 
 
 @router.post("/projects", status_code=201, operation_id="createProject")
@@ -77,3 +79,25 @@ def archive_project(
     project_id: UUID, user: CurrentUserDep, session: SessionDep, identity: IdentityDep
 ) -> dict[str, Any]:
     return views.detail_view(session, identity, service.archive_project(session, user, project_id))
+
+
+@router.get("/projects/{project_id}/members", operation_id="listProjectMembers")
+def list_project_members(
+    project_id: UUID, user: CurrentUserDep, session: SessionDep, identity: IdentityDep
+) -> dict[str, Any]:
+    return {"items": views.members_view(identity, service.read_members(session, user, project_id))}
+
+
+@router.post("/projects/{project_id}/members", status_code=201, operation_id="addProjectMember")
+def add_project_member(
+    project_id: UUID,
+    body: MemberAddIn,
+    user: CurrentUserDep,
+    session: SessionDep,
+    identity: IdentityDep,
+    settings: SettingsDep,
+) -> dict[str, Any]:
+    member = service.add_member(
+        session, user, identity, project_id, body, max_members=settings.project_max_members
+    )
+    return views.members_view(identity, [member])[0]

@@ -4,6 +4,7 @@ Every mutation first locks the projects row (SELECT ... FOR UPDATE) and only the
 to one project are serialized and "count(ACTIVE PROJECT_OWNER) >= 1" holds under concurrent requests (AT-14).
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
@@ -14,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from api.modules.project import repository as repo
 from api.modules.project import roles
-from api.modules.project.schemas import ProjectCreateIn, ProjectUpdateIn
+from api.modules.project.identity import IdentityQueryPort
+from api.modules.project.schemas import MemberAddIn, ProjectCreateIn, ProjectUpdateIn
 from api.platform import clock
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
@@ -158,3 +160,64 @@ def archive_project(session: Session, user: CurrentUser, project_id: UUID) -> Pr
     repo.archive_project(session, project_id, now=clock.now())
     outbox.write(session, "project.archived.v1", {"project_id": str(project_id)}, EventActor.for_user(user))
     return _reload(session, project_id, access.my_role)
+
+
+def read_members(session: Session, user: CurrentUser, project_id: UUID) -> Sequence[RowMapping]:
+    """ACTIVE members. Non-members get 404 whatever the visibility (M02 §6 listProjectMembers)."""
+    if repo.get_project(session, project_id) is None:
+        raise ApiError(ErrorCode.NOT_FOUND)
+    if repo.member_role(session, project_id, user.user_id) is None and not user.is_platform_admin:
+        raise ApiError(ErrorCode.NOT_FOUND)
+    return repo.list_active_members(session, project_id)
+
+
+def add_member(
+    session: Session,
+    user: CurrentUser,
+    identity: IdentityQueryPort,
+    project_id: UUID,
+    data: MemberAddIn,
+    *,
+    max_members: int,
+) -> RowMapping:
+    access = _mutable(session, user, project_id)  # locks the project row before any member-row work
+    if data.role not in roles.PROJECT_ROLES:
+        raise _validation_error("role", "INVALID_ROLE", "Unknown project role.")
+    if not roles.can_manage_member(access.my_role, data.role):
+        raise ApiError(ErrorCode.FORBIDDEN)
+    if repo.member_role(session, project_id, data.user_id) is not None:
+        raise ApiError(ErrorCode.PROJECT_MEMBER_EXISTS)
+    profile = identity.get_public_profile(data.user_id)
+    if profile is None or not identity.is_active_user(data.user_id):
+        raise _validation_error("user_id", "USER_NOT_ACTIVE", "User does not exist or is not active.")
+    if repo.count_active_members(session, project_id) >= max_members:
+        raise _validation_error(
+            "user_id", "PROJECT_MAX_MEMBERS", f"A project can have at most {max_members} members."
+        )
+    organization_id = profile.organization_id
+    now = clock.now()
+    member = repo.insert_member(
+        session,
+        project_id=project_id,
+        user_id=data.user_id,
+        organization_id=organization_id,
+        role=data.role,
+        added_by=user.user_id,
+        now=now,
+    )
+    repo.add_org_member(session, project_id, organization_id)
+    repo.touch_project(session, project_id, now=now)
+    outbox.write(
+        session,
+        "project.member.added.v1",
+        {
+            "project_id": str(project_id),
+            "project_name": access.project["name"],
+            "user_id": str(data.user_id),
+            "organization_id": str(organization_id),
+            "role": data.role,
+            "added_by": str(user.user_id),
+        },
+        EventActor.for_user(user),
+    )
+    return member
