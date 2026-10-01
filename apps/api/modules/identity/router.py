@@ -5,9 +5,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
-from api.modules.identity import directory
+from api.modules.identity import directory, members
 from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary
-from api.modules.identity.schemas import MeOut, OrganizationOut
+from api.modules.identity.schemas import MembershipOut, MemberUpdateIn, MeOut, OrganizationOut
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 from api.platform.pagination import Page, PageParams, page_params
@@ -42,3 +42,19 @@ def list_organizations(
 @router.get("/organizations/{organization_id}", operation_id="getOrganization")
 def get_organization(organization_id: UUID, user: CurrentUserDep, session: SessionDep) -> OrganizationOut:
     return directory.get_organization(session, organization_id)
+
+
+@router.get("/organizations/{organization_id}/members", operation_id="listOrganizationMembers")
+def list_organization_members(
+    organization_id: UUID, user: CurrentUserDep, session: SessionDep, paging: Paging
+) -> Page[MembershipOut]:
+    members.ensure_organization(session, organization_id)
+    members.ensure_org_admin(user, organization_id)
+    return members.list_members(session, organization_id, paging)
+
+
+@router.patch("/organizations/{organization_id}/members/{user_id}", operation_id="updateOrganizationMember")
+def update_organization_member(
+    organization_id: UUID, user_id: UUID, body: MemberUpdateIn, user: CurrentUserDep, session: SessionDep
+) -> MembershipOut:
+    return members.update_member(session, user, organization_id, user_id, body)
