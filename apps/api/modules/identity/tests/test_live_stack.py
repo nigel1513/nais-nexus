@@ -116,3 +116,50 @@ def test_authorization_code_without_pkce_is_rejected() -> None:  # M01-AT-16
     assert "error=invalid_request" in location and "code_challenge_method" in location
     accepted = authorize(code_challenge=PKCE_CHALLENGE, code_challenge_method="S256")
     assert accepted.status_code == 200  # the login page
+
+
+API = f"{BASE}/api/v1"
+
+
+def api_get(path: str, token: str | None, **params: Any) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    return httpx.get(f"{API}{path}", params=params, headers=headers, timeout=10)
+
+
+def test_me_through_gateway_for_each_institute() -> None:  # M01-AT-01
+    from api.platform.testing.contracts import assert_matches_response
+
+    for email, code in (("a.researcher@inst-a.local", "inst-a"), ("b.researcher@inst-b.local", "inst-b")):
+        response = api_get("/me", access_token(email))
+        assert response.status_code == 200, response.text
+        assert_matches_response("getMe", 200, response.json())
+        assert response.json()["organization"]["code"] == code
+
+
+def test_platform_admin_through_gateway() -> None:
+    body = api_get("/me", access_token("admin@nais.local")).json()
+    assert body["platform_roles"] == ["PLATFORM_ADMIN"] and body["organization"]["code"] == "nais"
+
+
+def test_disabled_member_logs_in_but_is_blocked() -> (
+    None
+):  # M01-AT-05 (/projects, /datasets arrive with M02/M03)
+    response = api_get("/me", access_token("b.disabled@inst-b.local"))
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "MEMBERSHIP_DISABLED"
+
+
+def test_bad_tokens_are_401_through_gateway() -> None:  # M01-AT-08
+    token = access_token("a.researcher@inst-a.local")
+    header, payload, signature = token.split(".")
+    tampered = f"{header}.{payload}.{signature[:-4]}AAAA"
+    for candidate in (tampered, None):
+        response = api_get("/me", candidate)
+        assert response.status_code == 401
+        assert response.json()["error"]["code"] == "UNAUTHENTICATED"
+
+
+def test_directory_through_gateway() -> None:  # M01-AT-14
+    body = api_get("/users", access_token("a.researcher@inst-a.local"), q="b.").json()
+    assert [item["display_name"] for item in body["items"]] == ["B Admin", "B Researcher", "B Steward"]
+    assert all("email" not in item for item in body["items"])
