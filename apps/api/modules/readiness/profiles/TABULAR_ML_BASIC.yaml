@@ -1,0 +1,30 @@
+profile_id: TABULAR_ML_BASIC
+version: "1.0.0"
+name: 표 형식 ML 학습 준비 점검
+description: 표 형식 파일(csv/tsv/parquet)이 있는 version에 자동 실행. 스키마·타입·결측·단위까지 점검한다.
+checks:
+  - { check_id: metadata.completeness, severity: REQUIRED }
+  - { check_id: provenance.presence, severity: REQUIRED }
+  - { check_id: policy.license_usage, severity: REQUIRED }
+  - { check_id: integrity.file_checksum, severity: REQUIRED }
+  - { check_id: schema.presence, severity: REQUIRED }
+  - { check_id: schema.datatype_validity, severity: REQUIRED }
+  - { check_id: data.missing_values, severity: RECOMMENDED }
+  - { check_id: semantics.units_codebook, severity: REQUIRED }
+  - { check_id: semantics.mapping_status, severity: RECOMMENDED }
+parameters:
+  sample_max_rows: 100000
+  sample_max_bytes: 268435456
+  max_tabular_files: 50
+  checksum_max_total_bytes: 10737418240
+  description_min_length: 50
+  provenance_min_length: 50
+  usage_policy_min_length: 20
+  datatype_warn_ratio: 0.0
+  datatype_fail_ratio: 0.01
+  malformed_rows_fail_ratio: 0.001
+  missing_warn_ratio: 0.05
+  missing_fail_ratio: 0.5
+  missing_overall_warn_ratio: 0.05
+  unit_missing_fail_ratio: 0.2
+  mapping_pass_ratio: 0.8
