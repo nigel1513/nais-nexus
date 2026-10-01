@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from api.modules.audit import ports as audit_ports
 from api.modules.audit.mapping import NOT_AUDITED, to_audit_record
+from api.modules.audit.notification_rules import build_drafts
+from api.modules.audit.notifications import deliver
 from api.modules.audit.tables import audit_events
 from api.platform import event_bus
 from api.platform.event_bus import Handler, HandlerRegistry, claim_event
@@ -53,7 +55,15 @@ def audit_writer(session: Session, event: EventEnvelope) -> None:
     )
 
 
-HANDLERS: tuple[Handler, ...] = (audit_writer,)
+def notifier(session: Session, event: EventEnvelope) -> None:
+    if not claim_event(session, SCHEMA, event, handler="notifier"):
+        return
+    drafts = build_drafts(event)
+    if drafts:
+        deliver(session, event, drafts)
+
+
+HANDLERS: tuple[Handler, ...] = (audit_writer, notifier)
 
 
 def register(registry: HandlerRegistry) -> None:
