@@ -16,11 +16,14 @@ export async function transferSession(
   const put: Put = deps.put ?? ((url, body, headers, onProgress, signal) => putWithProgress(url, body, headers, onProgress, undefined, signal));
   const parts: CompleteParts = [];
   const pending = session.files.filter((f) => f.status === "PENDING" || f.status === "FAILED");
-  for (const f of pending) {
+  // The server only hands out upload instructions for PENDING files: a FAILED file has none and needs a new session
+  // (the caller splits those off); it must not fail the whole batch.
+  const todo = pending.filter((f) => f.upload || f.status !== "FAILED");
+  for (const f of todo) {
     if (!byPath.has(f.path)) throw new Error(`No local file for ${f.path}`);
     if (!f.upload) throw new Error(`No upload target for ${f.path}`);
   }
-  const tasks = pending.map((f) => async () => {
+  const tasks = todo.map((f) => async () => {
     const local = byPath.get(f.path)!;
     const upload = f.upload!;
     if (upload.method === "PUT") {

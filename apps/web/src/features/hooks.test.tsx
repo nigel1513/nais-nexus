@@ -7,7 +7,7 @@ import { DATASET, PROJECT, USER, VERSION } from "@/mocks/fixtures";
 import { makeQueryClient } from "@/shared/api/query-client";
 import { server } from "../../tests/msw";
 import { setMockUser } from "../../tests/render";
-import { useCreateDatasetVersion, usePublishDatasetVersion, useSearchDatasets } from "./catalog/api";
+import { useCreateDatasetVersion, useGetDatasetVersion, usePublishDatasetVersion, useSearchDatasets } from "./catalog/api";
 import { useApproveAccessRequest, useCreateAccessRequest, useListAccessRequests, useStartAccessReview } from "./governance/api";
 import { useCreateProject, useGetProject, useListProjects } from "./projects/api";
 import { useDeleteDraftFile } from "./upload/api";
@@ -198,6 +198,46 @@ describe("readiness polling", () => {
     renderHook(() => useGetReadiness(VERSION.sensors, { intervalMs: 5 }), { wrapper: wrapper() });
     await wait(300);
     expect(n.calls).toBeLessThanOrEqual(5); // 4 quick polls, then 30 s back-off
+  });
+});
+
+describe("version detail polling", () => {
+  const versionUrl = "*/mock-api/v1/dataset-versions/:id";
+  const serve = (status: string) => {
+    const n = { calls: 0 };
+    server.use(
+      http.get(versionUrl, async ({ params }) => {
+        n.calls++;
+        const { getDb } = await import("@/mocks/db");
+        const v = getDb().versions.find((x) => x.dataset_version_id === params.id)!;
+        return HttpResponse.json({ ...v, files: [{ file_id: "00000000-0000-7000-8000-0000000f0001", path: "a.csv", size_bytes: 3, sha256: "a".repeat(64), media_type: "text/csv", status }] });
+      }),
+    );
+    return n;
+  };
+
+  it("does not poll forever for PENDING rows nobody is uploading", async () => {
+    setMockUser(USER.aSteward);
+    const n = serve("PENDING");
+    const { result } = renderHook(() => useGetDatasetVersion(VERSION.electrolyte, { pollMs: 20 }), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await wait(200);
+    expect(n.calls).toBe(1);
+  });
+
+  it("polls PENDING rows while a local upload is in progress", async () => {
+    setMockUser(USER.aSteward);
+    const n = serve("PENDING");
+    const { result } = renderHook(() => useGetDatasetVersion(VERSION.electrolyte, { pollMs: 20, pollPending: true }), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    await waitFor(() => expect(n.calls).toBeGreaterThan(2));
+  });
+
+  it("polls while the server is verifying UPLOADED files", async () => {
+    setMockUser(USER.aSteward);
+    const n = serve("UPLOADED");
+    renderHook(() => useGetDatasetVersion(VERSION.electrolyte, { pollMs: 20 }), { wrapper: wrapper() });
+    await waitFor(() => expect(n.calls).toBeGreaterThan(2));
   });
 });
 

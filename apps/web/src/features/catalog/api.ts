@@ -46,14 +46,17 @@ export function useListDatasetVersions(datasetId: string) {
   });
 }
 
-/** `pollMs`: refetch while any file is still being verified (UPLOADED → VERIFIED, M10 §9.6). */
-export function useGetDatasetVersion(versionId: string, { pollMs }: { pollMs?: number } = {}) {
+/**
+ * `pollMs`: refetch while the server is verifying files (UPLOADED → VERIFIED, M10 §9.6). PENDING rows only count while a
+ * local upload is running (`pollPending`): PENDING rows of a cancelled/expired session never settle by themselves.
+ */
+export function useGetDatasetVersion(versionId: string, { pollMs, pollPending = false }: { pollMs?: number; pollPending?: boolean } = {}) {
   const ready = useAuthReady();
   return useQuery({
     queryKey: ["getDatasetVersion", { versionId }],
     enabled: ready,
     refetchInterval: pollMs
-      ? (query) => (query.state.status !== "error" && query.state.data?.files.some((f) => f.status === "UPLOADED" || f.status === "PENDING") ? pollMs : false)
+      ? (query) => (query.state.status !== "error" && query.state.data?.files.some((f) => f.status === "UPLOADED" || (pollPending && f.status === "PENDING")) ? pollMs : false)
       : false,
     queryFn: async () => (await unwrap(api.GET("/dataset-versions/{version_id}", { params: { path: { version_id: versionId } } }))) as DatasetVersion,
   });

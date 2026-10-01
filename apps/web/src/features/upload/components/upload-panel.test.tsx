@@ -33,9 +33,16 @@ beforeEach(() => {
   transfer.mockResolvedValue([]);
 });
 
-/** complete answers "still verifying": the file stays PENDING server-side until the test (or the worker) settles it. */
+/** complete answers "still verifying": the file is UPLOADED server-side until the test (or the worker) settles it. */
 const pendingComplete = http.post("*/mock-api/v1/upload-sessions/:id/complete", ({ params }) => {
-  const session = { ...getDb().uploadSessions.find((x) => x.upload_session_id === params.id)! } as Record<string, unknown>;
+  const stored = getDb().uploadSessions.find((x) => x.upload_session_id === params.id)!;
+  const rows = getDb().versions.find((v) => v.dataset_version_id === stored.dataset_version_id)!.files;
+  for (const f of stored.files) {
+    f.status = "UPLOADED";
+    const row = rows.find((r) => r.file_id === f.file_id);
+    if (row) row.status = "UPLOADED";
+  }
+  const session = { ...stored } as Record<string, unknown>;
   delete session.created_by;
   return HttpResponse.json(session);
 });
@@ -112,13 +119,12 @@ describe("UploadPanel state machine", () => {
     expect(within(region).getByText("실패")).toBeInTheDocument();
   });
 
-  it("a PENDING result from complete is updated by polling to VERIFIED", async () => {
+  it("an UPLOADED result from complete is updated by polling to VERIFIED", async () => {
     server.use(pendingComplete);
     mount();
     const region = await pick(csv("a.csv"));
     await start(region);
-    expect(await within(region).findByText("검증 중")).toBeInTheDocument();
-    getDb().versions.find((v) => v.dataset_version_id === VERSION.electrolyte)!.files.forEach((f) => (f.status = "VERIFIED"));
+    // the (mock) worker verifies UPLOADED files when the version is read; the panel follows via polling
     expect(await within(region).findByText("검증됨", {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
@@ -143,5 +149,58 @@ describe("UploadPanel state machine", () => {
     await start(region);
     await waitFor(() => expect(bodies).toHaveLength(2));
     expect(bodies[1]!.files.map((f) => f.path)).toEqual(["b.csv"]);
+  });
+
+  it("a 503 at complete keeps the session: retry re-fetches it and resumes without CONFLICT", async () => {
+    const created: unknown[] = [];
+    const fetched: string[] = [];
+    server.use(
+      http.post("*/mock-api/v1/upload-sessions/:id/complete", () => HttpResponse.json({ error: { code: "DEPENDENCY_UNAVAILABLE", message: "x", details: {}, trace_id: "t" } }, { status: 503 }), { once: true }),
+      http.post("*/mock-api/v1/dataset-versions/:id/upload-session", async ({ request }) => {
+        created.push(await request.clone().json());
+        return undefined;
+      }),
+      http.get("*/mock-api/v1/upload-sessions/:id", ({ params }) => {
+        fetched.push(String(params.id));
+        return undefined;
+      }),
+    );
+    mount();
+    const region = await pick(csv("a.csv"));
+    await start(region);
+    expect(await within(region).findByRole("alert")).toBeInTheDocument();
+    await start(region);
+    expect(await within(region).findByText("검증됨")).toBeInTheDocument();
+    expect(within(region).queryByRole("alert")).not.toBeInTheDocument();
+    expect(created).toHaveLength(1);
+    expect(fetched).toHaveLength(1);
+  });
+
+  it("on resume a FAILED file without an upload target goes to a new session", async () => {
+    const created: { files: { path: string }[] }[] = [];
+    server.use(
+      http.post("*/mock-api/v1/dataset-versions/:id/upload-session", async ({ request }) => {
+        created.push((await request.clone().json()) as { files: { path: string }[] });
+        return undefined;
+      }),
+    );
+    transfer.mockRejectedValueOnce(new Error("boom"));
+    mount();
+    const region = await pick(csv("a.csv"), csv("b.csv"));
+    await start(region);
+    expect(await within(region).findByRole("alert")).toBeInTheDocument();
+    const db = getDb();
+    const session = db.uploadSessions.find((s) => s.dataset_version_id === VERSION.electrolyte)!;
+    const b = session.files.find((f) => f.path === "b.csv")!;
+    b.status = "FAILED";
+    db.versions.find((v) => v.dataset_version_id === VERSION.electrolyte)!.files.find((f) => f.path === "b.csv")!.status = "FAILED";
+    transfer.mockResolvedValue([]);
+    await start(region);
+    await waitFor(() => expect(created).toHaveLength(2));
+    expect(created[1]!.files.map((f) => f.path)).toEqual(["b.csv"]);
+    await waitFor(() => expect(within(region).queryByRole("alert")).not.toBeInTheDocument());
+    const sessions = transfer.mock.calls.map((c) => (c[0] as { upload_session_id: string }).upload_session_id);
+    expect(sessions[1]).toBe(sessions[0]); // resumed the first session
+    expect(sessions[2]).not.toBe(sessions[0]); // FAILED file went to a new one
   });
 });

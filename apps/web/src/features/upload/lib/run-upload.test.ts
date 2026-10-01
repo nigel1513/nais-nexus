@@ -105,4 +105,12 @@ describe("transferSession", () => {
     await expect(transferSession(s, prep, { put, signal: ctl.signal, sleep: async () => {} })).rejects.toThrow(/abort/i);
     expect(put.mock.calls.length).toBeLessThanOrEqual(3);
   });
+
+  it("skips FAILED files without an upload target instead of failing the whole batch", async () => {
+    const s = session();
+    s.files = [s.files[0]!, { file_id: "f9", path: "b.csv", status: "FAILED" }];
+    const put = vi.fn().mockResolvedValue({ etag: null });
+    await transferSession(s, prepared(), { put, sleep: async () => {} });
+    expect(put).toHaveBeenCalledTimes(1);
+  });
 });

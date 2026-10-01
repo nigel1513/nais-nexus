@@ -7,7 +7,7 @@ import type { UploadSession } from "@/shared/api/types";
 import { asApiError } from "@/shared/api/errors";
 import { formatBytes } from "@/shared/lib/format";
 import { ErrorView } from "@/shared/ui/state-views";
-import { useCompleteUploadSession, useCreateUploadSession } from "../api";
+import { fetchUploadSession, useCompleteUploadSession, useCreateUploadSession } from "../api";
 import { hashFile } from "../lib/hash-client";
 import { mediaTypeFor, suggestPath, uploadMessageParams, validatePath, validateSelection, type SelectionIssue } from "../lib/paths";
 import { transferSession, type PreparedFile } from "../lib/run-upload";
@@ -20,14 +20,15 @@ let seq = 0;
 export function UploadPanel({ versionId }: { versionId: string }) {
   const t = useTranslations();
   const limits = uploadMessageParams();
-  const version = useGetDatasetVersion(versionId, { pollMs: 1500 });
+  const [busy, setBusy] = useState(false);
+  const version = useGetDatasetVersion(versionId, { pollMs: 1500, pollPending: busy });
   const abortRef = useRef<AbortController | null>(null);
-  // A cancelled run leaves its session open on the server (its paths stay PENDING), so the next start resumes it.
+  // A cancelled or failed run leaves its session open on the server (its paths stay PENDING), so the next start resumes it
+  // (instructions are re-fetched: URLs may have gone stale). Dropped on UPLOAD_SESSION_EXPIRED.
   const resumeRef = useRef<UploadSession | null>(null);
   const createSession = useCreateUploadSession(versionId);
   const complete = useCompleteUploadSession(versionId);
   const [rows, setRows] = useState<Row[]>([]);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [expired, setExpired] = useState(false);
   const [announce, setAnnounce] = useState("");
@@ -115,37 +116,62 @@ export function UploadPanel({ versionId }: { versionId: string }) {
         patch(r.key, { sha256: sha, status: "hashed", progress: 0 });
         prepared.push({ file: r.file, path: r.path, size: r.size, sha256: sha, media_type: r.media_type });
       }
+      // Resume the kept session when it is still open: its PENDING (or retryable FAILED) files with upload instructions
+      // continue there, everything else (e.g. FAILED files, which have no instructions) goes to a new session.
+      const groups: { session: UploadSession; files: PreparedFile[] }[] = [];
+      let fresh = prepared;
       const resumable = resumeRef.current;
       resumeRef.current = null;
-      const session =
-        resumable && prepared.every((p) => resumable.files.some((f) => f.path === p.path && (f.status === "PENDING" || f.status === "FAILED")))
-          ? resumable
-          : await createSession.mutateAsync({
-              files: prepared.map(({ path, size, sha256, media_type }) => ({ path, size_bytes: size, sha256, media_type })),
-            });
-      sessionRef = session;
+      if (resumable) {
+        sessionRef = resumable; // a failure while re-fetching (not "gone") keeps it for the next attempt
+        const live = await fetchUploadSession(resumable.upload_session_id).catch((e) => {
+          const code = asApiError(e).code;
+          if (code === "NOT_FOUND" || code === "UPLOAD_SESSION_EXPIRED") return null;
+          throw e;
+        });
+        sessionRef = null;
+        if (live && live.status === "OPEN") {
+          const usable = prepared.filter((p) => live.files.some((f) => f.path === p.path && (f.status === "PENDING" || f.status === "FAILED") && f.upload));
+          if (usable.length) {
+            groups.push({ session: live, files: usable });
+            fresh = prepared.filter((p) => !usable.includes(p));
+          }
+        }
+      }
+      if (fresh.length) {
+        const session = await createSession.mutateAsync({ files: fresh.map(({ path, size, sha256, media_type }) => ({ path, size_bytes: size, sha256, media_type })) });
+        groups.push({ session, files: fresh });
+      }
       const keyByPath = new Map(targets.map((r) => [r.path, r]));
       for (const r of targets) patch(r.key, { status: "uploading", progress: 0 });
-      const parts = await transferSession(session, prepared, {
-        signal: controller.signal,
-        onProgress: (path, bytes) => {
-          const row = keyByPath.get(path);
-          if (row) patch(row.key, { progress: row.size ? Math.min(1, bytes / row.size) : 1 });
-        },
-      });
-      const result = await complete.mutateAsync({ uploadSessionId: session.upload_session_id, parts });
-      for (const f of result.files) {
-        const row = keyByPath.get(f.path);
-        if (row) patch(row.key, { status: f.status, failure: f.failure_code ?? (f.status === "FAILED" ? "UNKNOWN" : null), progress: 1 });
+      let total = 0;
+      let failedCount = 0;
+      for (const { session, files } of groups) {
+        sessionRef = session;
+        const parts = await transferSession(session, files, {
+          signal: controller.signal,
+          onProgress: (path, bytes) => {
+            const row = keyByPath.get(path);
+            if (row) patch(row.key, { progress: row.size ? Math.min(1, bytes / row.size) : 1 });
+          },
+        });
+        const result = await complete.mutateAsync({ uploadSessionId: session.upload_session_id, parts });
+        sessionRef = null;
+        const mine = new Set(files.map((f) => f.path));
+        for (const f of result.files.filter((x) => mine.has(x.path))) {
+          const row = keyByPath.get(f.path);
+          if (row) patch(row.key, { status: f.status, failure: f.failure_code ?? (f.status === "FAILED" ? "UNKNOWN" : null), progress: 1 });
+          total++;
+          if (f.status === "FAILED") failedCount++;
+        }
       }
-      const failedCount = result.files.filter((f) => f.status === "FAILED").length;
-      setAnnounce(failedCount ? t("upload.announce.partial", { failed: failedCount }) : t("upload.announce.done", { count: result.files.length }));
+      setAnnounce(failedCount ? t("upload.announce.partial", { failed: failedCount }) : t("upload.announce.done", { count: total }));
     } catch (e) {
-      if (controller.signal.aborted) resumeRef.current = sessionRef;
-      else {
-        if (asApiError(e).code === "UPLOAD_SESSION_EXPIRED") setExpired(true);
-        setError(e);
-      }
+      const expiredNow = !controller.signal.aborted && asApiError(e).code === "UPLOAD_SESSION_EXPIRED";
+      // Any failure after the session exists keeps it for resume, except an expired one (restart creates a new session).
+      resumeRef.current = expiredNow ? null : sessionRef;
+      if (expiredNow) setExpired(true);
+      if (!controller.signal.aborted) setError(e);
       setRows((prev) => prev.map((r) => (r.status === "hashing" || r.status === "uploading" ? { ...r, status: "ready" } : r)));
     } finally {
       setBusy(false);

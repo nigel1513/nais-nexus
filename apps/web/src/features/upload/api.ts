@@ -42,3 +42,8 @@ export function useDeleteDraftFile(versionId: string) {
     onSuccess: invalidate,
   });
 }
+
+/** Fresh upload instructions for a session kept for resume (presigned URLs and per-file status go stale). */
+export async function fetchUploadSession(uploadSessionId: string): Promise<UploadSession> {
+  return (await unwrap(api.GET("/upload-sessions/{upload_session_id}", { params: { path: { upload_session_id: uploadSessionId } } }))) as UploadSession;
+}
