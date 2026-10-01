@@ -4,6 +4,7 @@ import { getSession, SessionProvider, signIn, useSession } from "next-auth/react
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createApiErrorHandler, sessionGuardStorage } from "@/features/auth/on-api-error";
+import { applyRefreshedToken } from "@/features/auth/refresh-session";
 import { useAccessTokenBridge } from "@/features/auth/use-auth-ready";
 import { makeQueryClient } from "@/shared/api/query-client";
 import { getAccessToken } from "@/shared/api/client";
@@ -35,7 +36,7 @@ function ApiProviders({ children }: { children: ReactNode }) {
         const s = await getSession();
         return s ? { accessToken: s.accessToken, error: s.error } : null;
       },
-      onRefreshed: () => void holder.client?.invalidateQueries(),
+      onRefreshed: (token) => void (holder.client && applyRefreshedToken(holder.client, token)),
       signIn: () => {
         const callbackUrl = window.location.pathname + window.location.search;
         if (isMocking()) routerRef.current.push(`/mock-login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
@@ -43,7 +44,7 @@ function ApiProviders({ children }: { children: ReactNode }) {
       },
       goBlocked: (code) => routerRef.current.push(`/blocked?code=${encodeURIComponent(code)}`),
     });
-    holder.client = makeQueryClient({ onError: handler.onError, onSuccess: handler.onSuccess });
+    holder.client = makeQueryClient({ onError: handler.onError });
     return { client: holder.client, handler };
   });
   return (

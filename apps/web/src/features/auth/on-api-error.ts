@@ -51,13 +51,15 @@ export interface ApiErrorDeps {
   /** Real mode: re-read the session (server refreshes a near-expiry token). Absent in mock mode. */
   refreshSession?: () => Promise<{ accessToken?: string; error?: string } | null>;
   getToken?: () => string | undefined;
-  onRefreshed?: () => void;
+  /** Receives the refreshed access token; must install it BEFORE retrying (see applyRefreshedToken). */
+  onRefreshed?: (accessToken: string) => void;
 }
 
 /**
  * Global reaction to API failures.
  * 401 on a protected path: one session refresh first; sign in only when the token did not change or the refresh failed.
- * A second attempt within LOOP_WINDOW_MS ends at /blocked instead of looping. Concurrent 401s are one episode.
+ * A second attempt within LOOP_WINDOW_MS ends at /blocked instead of looping. The guard is never reset by successes
+ * (an unrelated 200 during the redirect must not re-arm a loop); it simply expires. Concurrent 401s are one episode.
  * Never acts from /blocked or the auth routes; public pages never force a login.
  */
 export function createApiErrorHandler(deps: ApiErrorDeps) {
@@ -77,7 +79,7 @@ export function createApiErrorHandler(deps: ApiErrorDeps) {
       const before = deps.getToken?.();
       const session = await deps.refreshSession().catch(() => null);
       if (session && !session.error && session.accessToken && session.accessToken !== before) {
-        deps.onRefreshed?.();
+        deps.onRefreshed?.(session.accessToken);
         return;
       }
     }
@@ -95,11 +97,6 @@ export function createApiErrorHandler(deps: ApiErrorDeps) {
       } else if (isBlockedCode(error.code)) {
         deps.goBlocked(error.code);
       }
-    },
-    /** A successful API response proves the session works: reset the loop guard and the episode. */
-    onSuccess(): void {
-      episodeAt = -Infinity;
-      deps.storage.clear();
     },
     /** Auth.js flagged RefreshFailed: same guarded sign-in path (protected pages only). */
     onSessionFailed(): void {

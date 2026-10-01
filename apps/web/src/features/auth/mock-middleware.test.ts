@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { NextRequest } from "next/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mockMiddleware } from "./mock-middleware";
 
 describe("mock-mode middleware", () => {
@@ -20,5 +20,15 @@ describe("mock-mode middleware", () => {
   it("ignores public routes", () => {
     const res = mockMiddleware(new NextRequest("http://localhost:3000/", { headers: { host: "localhost:21051" } }));
     expect(res.headers.get("x-middleware-next")).toBe("1");
+  });
+
+  it("redirects on the external host the browser used (NAIS_EXTERNAL_HOST placeholder)", () => {
+    vi.stubEnv("NAIS_EXTERNAL_HOST", "example-external-host");
+    try {
+      const res = mockMiddleware(new NextRequest("http://0.0.0.0:3000/commons", { headers: { host: "example-external-host:21051" } }));
+      expect(res.headers.get("location")).toBe("http://example-external-host:21051/mock-login?callbackUrl=%2Fcommons");
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

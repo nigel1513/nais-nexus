@@ -34,17 +34,19 @@ describe("global API error handling (Task 4 carry)", () => {
     expect(deps.goBlocked).toHaveBeenCalledExactlyOnceWith("UNAUTHENTICATED");
   });
 
-  it("the guard resets after a success and after the window", async () => {
-    const a = setup();
-    a.h.onError(err(401, "UNAUTHENTICATED"));
+  it("an unrelated success during the redirect does not re-arm the loop (no reset on success)", async () => {
+    const { deps, h, advance } = setup();
+    h.onError(err(401, "UNAUTHENTICATED"));
     await flush();
-    a.h.onSuccess();
-    a.advance(EPISODE_MS + 1);
-    a.h.onError(err(401, "UNAUTHENTICATED"));
+    expect(deps.signIn).toHaveBeenCalledTimes(1);
+    advance(EPISODE_MS + 1_000); // a public endpoint answered 200 meanwhile: nothing to call, nothing is cleared
+    h.onError(err(401, "UNAUTHENTICATED"));
     await flush();
-    expect(a.deps.signIn).toHaveBeenCalledTimes(2);
-    expect(a.deps.goBlocked).not.toHaveBeenCalled();
+    expect(deps.signIn).toHaveBeenCalledTimes(1);
+    expect(deps.goBlocked).toHaveBeenCalledExactlyOnceWith("UNAUTHENTICATED");
+  });
 
+  it("the guard expires after the window", async () => {
     const b = setup();
     b.h.onError(err(401, "UNAUTHENTICATED"));
     await flush();
@@ -52,13 +54,14 @@ describe("global API error handling (Task 4 carry)", () => {
     b.h.onError(err(401, "UNAUTHENTICATED"));
     await flush();
     expect(b.deps.signIn).toHaveBeenCalledTimes(2);
+    expect(b.deps.goBlocked).not.toHaveBeenCalled();
   });
 
   it("tries one session refresh first and signs in only if the token did not change", async () => {
     const refreshed = setup("/commons", { getToken: () => "old", refreshSession: vi.fn().mockResolvedValue({ accessToken: "new" }), onRefreshed: vi.fn() });
     refreshed.h.onError(err(401, "UNAUTHENTICATED"));
     await flush();
-    expect(refreshed.deps.onRefreshed).toHaveBeenCalled();
+    expect(refreshed.deps.onRefreshed).toHaveBeenCalledWith("new");
     expect(refreshed.deps.signIn).not.toHaveBeenCalled();
 
     const same = setup("/commons", { getToken: () => "old", refreshSession: vi.fn().mockResolvedValue({ accessToken: "old" }) });
