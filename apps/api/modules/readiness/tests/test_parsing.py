@@ -1,15 +1,24 @@
 import io
+import itertools
+import re
+import time
+import tracemalloc
+from typing import Any
 
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
+from api.modules.readiness.engine import parsing
 from api.modules.readiness.engine.parsing import (
     ColumnPlan,
     FilePlan,
     FileStats,
     FileTimeout,
+    FileTooLarge,
+    RangeReader,
     is_valid_value,
+    open_parquet_range,
     profile_csv,
     profile_parquet,
 )
@@ -179,3 +188,310 @@ def test_not_a_parquet_file_is_an_encoding_error() -> None:
         deadline=no_deadline,
     )
     assert stats.encoding_error is True
+
+
+# ------------------------------------------------------------------ fix round 1 (M05-R8): hostile files
+
+
+_OLD_NUMBER = re.compile(r"[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?")
+
+
+def test_number_language_is_unchanged() -> None:
+    for n in range(0, 7):
+        for chars in itertools.product("01.+-eE", repeat=n):
+            value = "".join(chars)
+            assert is_valid_value("number", value) is (_OLD_NUMBER.fullmatch(value) is not None), value
+
+
+@pytest.mark.parametrize("declared", ["integer", "number", "date", "datetime", "boolean"])
+def test_hostile_long_values_are_rejected_fast(declared: str) -> None:
+    started = time.perf_counter()
+    assert is_valid_value(declared, "9" * 100_000 + "x") is False
+    assert is_valid_value(declared, "1" * 600) is False  # over the value-length cap
+    assert time.perf_counter() - started < 0.5
+
+
+def test_blank_lines_honor_the_deadline() -> None:
+    calls = 0
+
+    def expiring() -> None:
+        nonlocal calls
+        calls += 1
+        if calls > 50:
+            raise FileTimeout()
+
+    started = time.perf_counter()
+    with pytest.raises(FileTimeout):
+        profile_csv(
+            io.BytesIO(b"a\n" + b"\n" * 2_000_000),
+            path="d.csv",
+            delimiter=",",
+            plan=FilePlan(),
+            max_rows=10,
+            max_bytes=1 << 28,
+            deadline=expiring,
+        )
+    assert time.perf_counter() - started < 1.0
+
+
+def test_blank_lines_stop_at_the_byte_limit() -> None:
+    started = time.perf_counter()
+    stats = _csv(b"a,b\n" + b"\n" * 2_000_000, max_bytes=1000)
+    assert stats.truncated is True and stats.sampled_rows == 0
+    assert time.perf_counter() - started < 1.0
+
+
+def test_oversized_field_rows_stop_at_the_row_limit() -> None:
+    data = b"a\n" + (b"x" * 200_000 + b"\n") * 50
+    stats = _csv(data, max_rows=1)
+    assert (stats.truncated, stats.rows_read, stats.malformed_rows) == (True, 1, 1)
+
+
+def _peak_over_baseline(data: bytes) -> tuple[FileStats, int]:
+    stream = io.BytesIO(data)
+    tracemalloc.start()
+    try:
+        stats = _csv_stream(stream)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    return stats, peak
+
+
+def _csv_stream(stream: io.BytesIO) -> FileStats:
+    return profile_csv(
+        stream,
+        path="d.csv",
+        delimiter=",",
+        plan=FilePlan(),
+        max_rows=100_000,
+        max_bytes=1 << 28,
+        deadline=no_deadline,
+    )
+
+
+def test_newline_free_body_is_bounded() -> None:
+    stats, peak = _peak_over_baseline(b"a\n" + b"x" * 20_000_000)
+    assert stats.encoding_error is True
+    assert peak < 8 << 20
+
+
+def test_newline_free_header_is_bounded() -> None:
+    stats, peak = _peak_over_baseline(b"x" * 20_000_000)
+    assert stats.encoding_error is True
+    assert peak < 8 << 20
+
+
+def test_unterminated_quote_is_bounded() -> None:
+    stats, peak = _peak_over_baseline(b'a\n"' + b"xxxxxxxxx\n" * 2_000_000)
+    assert peak < 8 << 20
+    assert stats.truncated or stats.malformed_rows > 0
+
+
+def test_single_column_blank_line_is_an_empty_cell() -> None:
+    stats = _csv(b"a\n1\n\n2\n", FilePlan(columns={"a": ColumnPlan("integer")}))
+    assert (stats.sampled_rows, stats.columns["a"].missing) == (3, 1)
+
+
+def test_blank_first_line_is_a_header_error() -> None:
+    stats = _csv(b"\na,b\n1,2\n")
+    assert stats.header_error is True and stats.sampled_rows == 0 and stats.header == ()
+    assert _csv(b"a,b\n1,2\n").header_error is False
+
+
+class _Ranges:
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        self.requests: list[tuple[int, int]] = []
+
+    def __call__(self, start: int, end: int) -> io.BytesIO:
+        self.requests.append((start, end))
+        return io.BytesIO(self.data[start : end + 1])
+
+
+def test_range_reader_caps_every_read_and_checks_the_deadline() -> None:
+    data = bytes(range(256)) * 100
+    ranges = _Ranges(data)
+    ticks = 0
+
+    def deadline() -> None:
+        nonlocal ticks
+        ticks += 1
+
+    reader = RangeReader(ranges, len(data), deadline=deadline, max_read=1000)
+    reader.seek(500)
+    buf = bytearray(10_000)
+    assert reader.readinto(buf) == 1000
+    assert bytes(buf[:1000]) == data[500:1500]
+    reader.seek(-10, io.SEEK_END)
+    assert reader.read(100) == data[-10:]
+    assert all(end - start + 1 <= 1000 for start, end in ranges.requests)
+    assert ticks == 2
+
+
+def test_parquet_through_range_reader_matches_in_memory() -> None:
+    table = pa.table({"n": pa.array(range(50), pa.int64())})
+    data = _parquet(table).getvalue()
+    ranges = _Ranges(data)
+    stats = profile_parquet(
+        open_parquet_range(ranges, len(data), deadline=no_deadline, max_read=256),
+        path="t.parquet",
+        plan=FilePlan(),
+        max_rows=100,
+        max_bytes=1 << 20,
+        deadline=no_deadline,
+    )
+    assert stats.sampled_rows == 50 and stats.truncated is False
+    assert max(end - start + 1 for start, end in ranges.requests) <= 1 << 20
+
+
+class _Plain(io.RawIOBase):
+    """Non-seekable stream."""
+
+    def __init__(self, data: bytes) -> None:
+        self._inner = io.BytesIO(data)
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return False
+
+    def readinto(self, b: Any) -> int:
+        return self._inner.readinto(b)
+
+
+def test_non_seekable_stream_over_the_cap_fails_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: list[Any] = []
+    real = parsing.tempfile.SpooledTemporaryFile
+
+    def recording(*args: Any, **kwargs: Any) -> Any:
+        spool = real(*args, **kwargs)
+        created.append(spool)
+        return spool
+
+    monkeypatch.setattr(parsing.tempfile, "SpooledTemporaryFile", recording)
+    with pytest.raises(FileTooLarge):
+        profile_parquet(
+            _Plain(b"x" * 5000),  # type: ignore[arg-type]
+            path="t.parquet",
+            plan=FilePlan(),
+            max_rows=10,
+            max_bytes=100,
+            deadline=no_deadline,
+            max_spool_bytes=1000,
+        )
+    assert created and all(s.closed for s in created)
+
+
+def test_spool_is_closed_on_deadline_and_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    created: list[Any] = []
+    real = parsing.tempfile.SpooledTemporaryFile
+
+    def recording(*args: Any, **kwargs: Any) -> Any:
+        spool = real(*args, **kwargs)
+        created.append(spool)
+        return spool
+
+    monkeypatch.setattr(parsing.tempfile, "SpooledTemporaryFile", recording)
+
+    def expired() -> None:
+        raise FileTimeout()
+
+    data = _parquet(pa.table({"n": pa.array(range(10), pa.int32())})).getvalue()
+    with pytest.raises(FileTimeout):
+        profile_parquet(
+            _Plain(data),  # type: ignore[arg-type]
+            path="t.parquet",
+            plan=FilePlan(),
+            max_rows=10,
+            max_bytes=1 << 20,
+            deadline=expired,
+        )
+    stats = profile_parquet(
+        _Plain(data),  # type: ignore[arg-type]
+        path="t.parquet",
+        plan=FilePlan(),
+        max_rows=10,
+        max_bytes=1 << 20,
+        deadline=no_deadline,
+    )
+    assert stats.sampled_rows == 10
+    assert len(created) == 2 and all(s.closed for s in created)
+
+
+def test_storage_errors_are_not_masked_as_encoding_errors() -> None:
+    data = _parquet(pa.table({"n": pa.array(range(10), pa.int32())})).getvalue()
+
+    class Failing(io.BytesIO):
+        def __init__(self) -> None:
+            super().__init__(data)
+            self.armed = False
+
+        def read(self, size: int | None = -1) -> bytes:
+            if self.tell() < len(data) - 200:  # footer reads succeed, column data fails
+                raise TimeoutError("storage timeout")
+            return super().read(size)
+
+        def readinto(self, b: Any) -> int:
+            if self.tell() < len(data) - 200:
+                raise TimeoutError("storage timeout")
+            return super().readinto(b)
+
+    with pytest.raises(TimeoutError):
+        profile_parquet(
+            Failing(), path="t.parquet", plan=FilePlan(), max_rows=10, max_bytes=1 << 20, deadline=no_deadline
+        )
+
+
+def test_corrupt_row_group_is_an_encoding_error_with_partial_stats() -> None:
+    table = pa.table({"n": pa.array(range(3000), pa.int64())})
+    sink = io.BytesIO()
+    pq.write_table(table, sink, row_group_size=1500, compression="none")
+    data = bytearray(sink.getvalue())
+    # Corrupt the data of the last row group (column chunk bytes just before the footer).
+    footer_len = int.from_bytes(data[-8:-4], "little")
+    end = len(data) - 8 - footer_len
+    for i in range(end - 40, end):
+        data[i] = 0xFF
+    stats = profile_parquet(
+        io.BytesIO(bytes(data)),
+        path="t.parquet",
+        plan=FilePlan(),
+        max_rows=100_000,
+        max_bytes=1 << 20,
+        deadline=no_deadline,
+    )
+    assert stats.encoding_error is True
+    assert 0 < stats.sampled_rows < 3000
+
+
+def test_parquet_batches_are_small_and_max_rows_zero_is_safe() -> None:
+    table = pa.table({"n": pa.array(range(5000), pa.int64())})
+    sink = io.BytesIO()
+    pq.write_table(table, sink, row_group_size=5000)
+    sink.seek(0)
+    stats = profile_parquet(
+        sink, path="t.parquet", plan=FilePlan(), max_rows=100_000, max_bytes=8000, deadline=no_deadline
+    )
+    assert stats.truncated is True and stats.sampled_rows < 5000  # stopped by bytes within one row group
+    zero = profile_parquet(
+        _parquet(table), path="t.parquet", plan=FilePlan(), max_rows=0, max_bytes=100, deadline=no_deadline
+    )
+    assert (zero.sampled_rows, zero.truncated) == (0, True)
+
+
+def test_parquet_duplicate_column_names_are_reported() -> None:
+    table = pa.Table.from_arrays(
+        [pa.array([1, 2]), pa.array([3, 4]), pa.array([5, 6])], names=["a", "b", "a"]
+    )
+    stats = profile_parquet(
+        _parquet(table),
+        path="t.parquet",
+        plan=FilePlan(),
+        max_rows=10,
+        max_bytes=1 << 20,
+        deadline=no_deadline,
+    )
+    assert stats.header == ("a", "b", "a") and stats.duplicate_columns == ["a"]
+    assert stats.sampled_rows == 2

@@ -7,7 +7,6 @@ iter_batches in row-group order. Sample = first `sample_max_rows` data rows with
 import csv
 import io
 import re
-import shutil
 import tempfile
 from collections import Counter
 from collections.abc import Callable
@@ -17,15 +16,24 @@ from typing import IO, Any, BinaryIO
 
 DEFAULT_MISSING = frozenset({"", "NA", "N/A", "null", "NULL", "NaN"})
 FIRST_ROWS_LIMIT = 10
+MAX_TYPED_VALUE_LENGTH = 512  # longer non-string values are invalid without matching (no hostile regex input)
+MAX_LINE_BYTES = 1 << 20  # one physical CSV line; longer => the file is not parseable (encoding_error)
+READ_CHUNK = 1 << 16  # every single read of a stream is at most this
+PARQUET_BATCH_ROWS = 1024
+DEFAULT_MAX_SPOOL_BYTES = 1 << 30
 
 _INTEGER = re.compile(r"[+-]?[0-9]+")
-_NUMBER = re.compile(r"[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?")
+_NUMBER = re.compile(r"[+-]?([0-9]+(\.[0-9]*)?|\.[0-9]+)([eE][+-]?[0-9]+)?")  # unambiguous: no backtracking
 _BOOLEAN = frozenset({"true", "false", "True", "False", "TRUE", "FALSE", "1", "0"})
 _DATE = re.compile(r"([0-9]{4})-([0-9]{2})-([0-9]{2})")
 _DATETIME = re.compile(
     r"([0-9]{4})-([0-9]{2})-([0-9]{2})[Tt]([0-9]{2}):([0-9]{2}):([0-9]{2})(\.[0-9]+)?"
     r"([Zz]|[+-]([0-9]{2}):([0-9]{2}))"
 )
+
+
+class FileTooLarge(Exception):
+    """A non-seekable parquet stream exceeded the spool cap: the file cannot be profiled."""
 
 
 class FileTimeout(Exception):
@@ -45,6 +53,8 @@ def _real_date(y: str, m: str, d: str) -> bool:
 
 def is_valid_value(declared_type: str, value: str) -> bool:
     """09 §3.3 type rules on a non-missing CSV string (ASCII digits only)."""
+    if declared_type != "string" and len(value) > MAX_TYPED_VALUE_LENGTH:
+        return False
     if declared_type == "integer":
         return _INTEGER.fullmatch(value) is not None
     if declared_type == "number":
@@ -94,6 +104,7 @@ class FileStats:
     truncated: bool = False
     malformed_rows: int = 0
     encoding_error: bool = False
+    header_error: bool = False  # CSV: first line blank or unreadable (09 §1.4 header required)
     columns: dict[str, ColumnStats] = field(default_factory=dict)
     parquet_types: dict[str, str] | None = None  # column -> arrow type string (parquet only)
     parquet_numeric: tuple[str, ...] = ()  # parquet columns of integer/floating/decimal type
@@ -119,6 +130,47 @@ def _record(stats: ColumnStats, plan: ColumnPlan | None, value: str, row_number:
         stats.undefined_codes += 1
 
 
+class _Raw(io.RawIOBase):
+    """Binary source for the CSV text layer: every read is capped and checks the deadline."""
+
+    def __init__(self, source: BinaryIO, deadline: Deadline) -> None:
+        self._source = source
+        self._deadline = deadline
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, b: Any) -> int:
+        self._deadline()
+        chunk = self._source.read(min(len(b), READ_CHUNK))
+        n = len(chunk)
+        b[:n] = chunk
+        return n
+
+
+class _Lines:
+    """Bounded physical-line iterator for csv.reader; counts the bytes of every line it hands out."""
+
+    def __init__(self, text: io.TextIOWrapper, cap: int) -> None:
+        self._text = text
+        self._cap = cap
+        self.bytes = 0
+        self.overflow = False
+
+    def __iter__(self) -> "_Lines":
+        return self
+
+    def __next__(self) -> str:
+        line = self._text.readline(self._cap + 1)
+        if not line:
+            raise StopIteration
+        if len(line) > self._cap:
+            self.overflow = True
+            raise StopIteration
+        self.bytes += len(line.encode("utf-8"))
+        return line
+
+
 def profile_csv(
     stream: BinaryIO,
     *,
@@ -129,14 +181,29 @@ def profile_csv(
     max_bytes: int,
     deadline: Deadline,
 ) -> FileStats:
+    """Limits and the deadline are checked on every line (blank and malformed lines included).
+
+    A physical line longer than min(max_bytes, 1 MiB) makes the file unparseable: `encoding_error`.
+    """
     stats = FileStats(path=path)
-    text = io.TextIOWrapper(stream, encoding="utf-8-sig", newline="")
-    reader = csv.reader(text, delimiter=delimiter, quotechar='"')
-    consumed = 0
+    text = io.TextIOWrapper(io.BufferedReader(_Raw(stream, deadline)), encoding="utf-8-sig", newline="")
+    lines = _Lines(text, max(1, min(max_bytes, MAX_LINE_BYTES)))
+    reader = csv.reader(lines, delimiter=delimiter, quotechar='"')
     try:
+        deadline()
         try:
             header = next(reader)
         except StopIteration:
+            stats.encoding_error = lines.overflow
+            return stats
+        except csv.Error:
+            stats.header_error = True
+            return stats
+        if lines.overflow:
+            stats.encoding_error = True
+            return stats
+        if not header:  # blank first line: the header is required on line 1
+            stats.header_error = True
             return stats
         stats.header = tuple(header)
         index: dict[str, int] = {}
@@ -145,24 +212,34 @@ def profile_csv(
         stats.columns = {name: ColumnStats() for name in index}
         slots = [(name, i, plan.columns.get(name)) for name, i in index.items()]
         width = len(header)
+        lines.bytes = 0  # the byte budget covers data lines only
+        prev = 0
         while True:
+            deadline()
+            row: list[str] | None
             try:
                 row = next(reader)
             except StopIteration:
+                stats.encoding_error = lines.overflow
                 break
             except csv.Error:
+                row = None  # e.g. field larger than the csv field limit
+            if lines.overflow:
+                stats.encoding_error = True
+                break
+            before, prev = prev, lines.bytes
+            if before >= max_bytes or (row != [] and stats.rows_read >= max_rows):
+                stats.truncated = True
+                break
+            if row is None:
                 stats.rows_read += 1
                 stats.malformed_rows += 1
                 continue
             if not row:
-                continue  # blank line: not a data row
-            if stats.rows_read >= max_rows or consumed >= max_bytes:
-                stats.truncated = True
-                break
+                if width != 1:
+                    continue  # blank line: not a data row
+                row = [""]  # single column: a blank line is one empty cell
             stats.rows_read += 1
-            consumed += sum(len(v.encode("utf-8")) for v in row) + len(row)
-            if stats.rows_read % 1000 == 0:
-                deadline()
             if len(row) != width:
                 stats.malformed_rows += 1
                 continue
@@ -178,6 +255,65 @@ def profile_csv(
 
 
 # ---------------------------------------------------------------- parquet
+
+
+class RangeReader(io.RawIOBase):
+    """Seekable read-only view over a ranged source (`CatalogReadPort.open_stream(file, byte_range=...)`).
+
+    `open_range(start, end)` returns a stream of the inclusive byte range. Every single read is capped at
+    `max_read` bytes and checks the deadline, so a parquet file is never pulled whole.
+    """
+
+    def __init__(
+        self,
+        open_range: Callable[[int, int], BinaryIO],
+        size: int,
+        *,
+        deadline: Deadline,
+        max_read: int = 1 << 20,
+    ) -> None:
+        self._open_range = open_range
+        self._size = size
+        self._deadline = deadline
+        self._max_read = max_read
+        self._pos = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    def tell(self) -> int:
+        return self._pos
+
+    def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+        base = {io.SEEK_SET: 0, io.SEEK_CUR: self._pos, io.SEEK_END: self._size}[whence]
+        self._pos = max(0, base + offset)
+        return self._pos
+
+    def readinto(self, b: Any) -> int:
+        n = min(len(b), self._max_read, self._size - self._pos)
+        if n <= 0:
+            return 0
+        self._deadline()
+        source = self._open_range(self._pos, self._pos + n - 1)
+        try:
+            data = source.read(n)
+        finally:
+            source.close()
+        got = len(data[:n])
+        b[:got] = data[:got]
+        self._pos += got
+        return got
+
+
+def open_parquet_range(
+    open_range: Callable[[int, int], BinaryIO], size: int, *, deadline: Deadline, max_read: int = 1 << 20
+) -> BinaryIO:
+    """Buffered RangeReader, ready for profile_parquet."""
+    reader = RangeReader(open_range, size, deadline=deadline, max_read=max_read)
+    return io.BufferedReader(reader, buffer_size=max_read)
 
 
 def _arrow_compatible(declared_type: str, arrow_type: Any) -> bool:
@@ -206,67 +342,138 @@ def is_numeric_arrow_type(arrow_type: Any) -> bool:
     return bool(t.is_integer(arrow_type) or t.is_floating(arrow_type) or t.is_decimal(arrow_type))
 
 
-def _seekable(stream: BinaryIO) -> IO[bytes]:
-    if stream.seekable():
-        return stream
-    spooled = tempfile.SpooledTemporaryFile(max_size=64 * 1024 * 1024)  # noqa: SIM115 - returned to caller
-    shutil.copyfileobj(stream, spooled)
-    spooled.seek(0)
+def _is_corrupt(exc: Exception) -> bool:
+    """Genuinely undecodable parquet content. Storage/network/OS errors are NOT corruption."""
+    import pyarrow as pa
+
+    if isinstance(exc, pa.ArrowInvalid | pa.ArrowNotImplementedError):
+        return True
+    # pyarrow raises a bare OSError (no errno) for corrupt pages; real I/O failures carry an errno.
+    return type(exc) is OSError and exc.errno is None
+
+
+def _spool(stream: BinaryIO, cap: int, deadline: Deadline) -> IO[bytes]:
+    spooled = tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024)  # noqa: SIM115 - closed by the caller
+    try:
+        total = 0
+        while True:
+            deadline()
+            chunk = stream.read(READ_CHUNK)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > cap:
+                raise FileTooLarge
+            spooled.write(chunk)
+        spooled.seek(0)
+    except BaseException:
+        spooled.close()
+        raise
     return spooled
 
 
+def _codes_value(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return None  # other types never match a code
+
+
 def profile_parquet(
-    stream: BinaryIO, *, path: str, plan: FilePlan, max_rows: int, max_bytes: int, deadline: Deadline
+    stream: BinaryIO,
+    *,
+    path: str,
+    plan: FilePlan,
+    max_rows: int,
+    max_bytes: int,
+    deadline: Deadline,
+    max_spool_bytes: int = DEFAULT_MAX_SPOOL_BYTES,
 ) -> FileStats:
+    """`stream` should be seekable (see `open_parquet_range`). A non-seekable stream is spooled to a
+    temporary file capped at `max_spool_bytes` (FileTooLarge when exceeded), always closed afterwards."""
     import pyarrow.parquet as pq
 
+    spool: IO[bytes] | None = None
+    try:
+        source: Any = stream
+        if not stream.seekable():
+            spool = source = _spool(stream, max_spool_bytes, deadline)
+        return _profile_parquet(pq, source, path, plan, max_rows, max_bytes, deadline)
+    finally:
+        if spool is not None:
+            spool.close()
+
+
+def _profile_parquet(
+    pq: Any, source: Any, path: str, plan: FilePlan, max_rows: int, max_bytes: int, deadline: Deadline
+) -> FileStats:
     stats = FileStats(path=path)
     try:
-        parquet = pq.ParquetFile(_seekable(stream))
-    except Exception:  # not a parquet file: same verdict as an undecodable CSV
+        parquet = pq.ParquetFile(source)
+    except Exception as exc:
+        if not _is_corrupt(exc):
+            raise
         stats.encoding_error = True
         return stats
     schema = parquet.schema_arrow
     stats.header = tuple(schema.names)
     stats.parquet_types = {f.name: str(f.type) for f in schema}
     stats.parquet_numeric = tuple(sorted(f.name for f in schema if is_numeric_arrow_type(f.type)))
-    stats.columns = {name: ColumnStats() for name in dict.fromkeys(schema.names)}
+    first_index: dict[str, int] = {}
+    for i, name in enumerate(schema.names):
+        first_index.setdefault(name, i)  # duplicates are reported via duplicate_columns
+    stats.columns = {name: ColumnStats() for name in first_index}
     compatible = {
-        f.name: _arrow_compatible(plan.columns[f.name].declared_type or "string", f.type)
-        for f in schema
-        if f.name in plan.columns
+        name: _arrow_compatible(plan.columns[name].declared_type or "string", schema.field(i).type)
+        for name, i in first_index.items()
+        if name in plan.columns
     }
+    if max_rows <= 0:
+        stats.truncated = parquet.metadata.num_rows > 0
+        return stats
     consumed = 0
-    for batch in parquet.iter_batches(batch_size=min(max_rows, 65536)):
-        deadline()
-        if stats.rows_read >= max_rows or consumed >= max_bytes:
-            stats.truncated = True
-            break
-        take = min(batch.num_rows, max_rows - stats.rows_read)
-        if take < batch.num_rows:
-            stats.truncated = True
-            batch = batch.slice(0, take)
-        first_row = stats.rows_read + 1
-        stats.rows_read += take
-        stats.sampled_rows += take
-        consumed += batch.nbytes
-        for name, col_stats in stats.columns.items():
-            column = batch.column(schema.get_field_index(name))
-            col_stats.missing += column.null_count
-            col_plan = plan.columns.get(name)
-            if col_plan is None:
-                continue
-            for offset, value in enumerate(column.to_pylist()):
-                if value is None:
+    try:
+        for batch in parquet.iter_batches(batch_size=PARQUET_BATCH_ROWS):
+            deadline()
+            if stats.rows_read >= max_rows or consumed >= max_bytes:
+                stats.truncated = True
+                break
+            take = min(batch.num_rows, max_rows - stats.rows_read)
+            if take < batch.num_rows:
+                stats.truncated = True
+                batch = batch.slice(0, take)
+            first_row = stats.rows_read + 1
+            stats.rows_read += take
+            stats.sampled_rows += take
+            consumed += batch.nbytes
+            for name, i in first_index.items():
+                col_stats = stats.columns[name]
+                column = batch.column(i)
+                col_stats.missing += column.null_count
+                col_plan = plan.columns.get(name)
+                if col_plan is None:
                     continue
+                non_null = len(column) - column.null_count
                 if col_plan.declared_type is not None:
-                    col_stats.checked += 1
+                    col_stats.checked += non_null
                     if not compatible[name]:
-                        col_stats.invalid += 1
+                        col_stats.invalid += non_null
                         if len(col_stats.first_invalid_rows) < FIRST_ROWS_LIMIT:
-                            col_stats.first_invalid_rows.append(first_row + offset)
-                if col_plan.codes is not None and str(value) not in col_plan.codes:
-                    col_stats.undefined_codes += 1
+                            for offset, valid in enumerate(column.is_valid().to_pylist()):
+                                if valid:
+                                    col_stats.first_invalid_rows.append(first_row + offset)
+                                    if len(col_stats.first_invalid_rows) >= FIRST_ROWS_LIMIT:
+                                        break
+                if col_plan.codes is not None:
+                    for value in column.to_pylist():
+                        if value is not None and _codes_value(value) not in col_plan.codes:
+                            col_stats.undefined_codes += 1
+    except Exception as exc:
+        if not _is_corrupt(exc):
+            raise
+        stats.encoding_error = True  # corrupt row group: keep the partial stats gathered so far
+        return stats
     if not stats.truncated and parquet.metadata.num_rows > stats.rows_read:
         stats.truncated = True
     return stats
