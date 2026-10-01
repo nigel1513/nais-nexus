@@ -1,16 +1,26 @@
 import hashlib
 import io
 import stat
+import struct
 import zipfile
+from types import SimpleNamespace
+from typing import BinaryIO
 from uuid import UUID
 
 import pytest
 
 from api.modules.catalog import verification
 from api.modules.catalog.interfaces import ScanResult
+from api.modules.catalog.objects import ObjectMissing
 from api.modules.catalog.testing import MemoryObjectStore
 from api.modules.catalog.tests.support import insert_dataset, insert_file, insert_version, rows
-from api.modules.catalog.verification import Outcome, RangeReader, apply_outcome, evaluate_object
+from api.modules.catalog.verification import (
+    Outcome,
+    RangeReader,
+    apply_outcome,
+    evaluate_object,
+    verify_in_session,
+)
 from api.platform.db import session_factory
 from api.platform.testing.fixtures import PgUrls
 
@@ -181,3 +191,134 @@ def test_apply_outcome_only_touches_uploaded_rows(db: PgUrls) -> None:
     [row] = rows(db, "SELECT status, verified_at FROM catalog.dataset_files WHERE file_id = :id", id=uploaded)
     assert row["status"] == "VERIFIED" and row["verified_at"] is not None
     assert isinstance(uploaded, UUID)
+
+
+class RecordingStore(MemoryObjectStore):
+    def __init__(self, bucket: str) -> None:
+        super().__init__(bucket)
+        self.max_range = 0
+
+    def read_range(self, key: str, start: int, end: int) -> bytes:
+        self.max_range = max(self.max_range, end - start + 1)
+        return super().read_range(key, start, end)
+
+
+def _zip64_eocd(entries: int, directory_size: int, record_offset: int) -> bytes:
+    record = struct.pack("<4sQHHIIQQQQ", b"PK\x06\x06", 44, 45, 45, 0, 0, entries, entries, directory_size, 0)
+    locator = struct.pack("<4sIQI", b"PK\x06\x07", 0, record_offset, 1)
+    eocd = struct.pack("<4sHHHHIIH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0)
+    return record + locator + eocd
+
+
+def test_zip64_huge_central_directory_is_unsafe_without_a_large_read() -> None:
+    body = b"PK\x03\x04" + b"\x00" * (40 * 1024 * 1024)
+    data = body + _zip64_eocd(1, 40 * 1024 * 1024, len(body))
+    store = RecordingStore("b")
+    store.put("k", data, "x")
+    outcome = evaluate_object(
+        store,
+        key="k",
+        size=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+        path="a.zip",
+        scanner=Scanner("SKIPPED"),
+    )
+    assert outcome == Outcome("FAILED", "ARCHIVE_UNSAFE")
+    assert store.max_range <= verification.ZIP_MAX_CENTRAL_DIRECTORY
+
+
+def test_zip64_too_many_entries_and_missing_locator_are_unsafe() -> None:
+    body = b"PK\x03\x04" + b"\x00" * 100
+    assert run("a.zip", body + _zip64_eocd(10**9, 100, len(body))) == Outcome("FAILED", "ARCHIVE_UNSAFE")
+    eocd = struct.pack("<4sHHHHIIH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0)
+    assert run("a.zip", body + eocd) == Outcome("FAILED", "ARCHIVE_UNSAFE")
+
+
+def test_legitimate_zip64_archive_is_verified(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(zipfile, "ZIP_FILECOUNT_LIMIT", 1)
+    raw = make_zip({"a.txt": b"hello", "b.txt": b"world"})
+    monkeypatch.undo()
+    assert b"PK\x06\x06" in raw  # zip64 end of central directory was written
+    index = raw.rfind(b"PK\x05\x06")
+    patched = raw[:index] + struct.pack(
+        "<4sHHHHIIH", b"PK\x05\x06", 0, 0, 0xFFFF, 0xFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0
+    )
+    assert run("z.zip", patched).status == "VERIFIED"
+
+
+def test_oversized_object_stops_streaming_early() -> None:
+    class CountingStore(MemoryObjectStore):
+        read_bytes = 0
+
+        def open_stream(self, key: str, byte_range: tuple[int, int] | None = None) -> BinaryIO:
+            inner = super().open_stream(key, byte_range)
+            outer = self
+
+            class Body(io.BytesIO):
+                def read(self, n: int | None = -1) -> bytes:
+                    chunk = inner.read(n)
+                    outer.read_bytes += len(chunk)
+                    return chunk
+
+            return Body()
+
+    store = CountingStore("b")
+    store.put("k", b"x" * (4 * verification.HASH_CHUNK), "x")
+    outcome = evaluate_object(store, key="k", size=10, sha256="0" * 64, path="a.txt", scanner=Scanner())
+    assert outcome == Outcome("FAILED", "SIZE_MISMATCH")
+    assert store.read_bytes == verification.HASH_CHUNK
+
+
+def test_object_vanishing_during_sniff_or_zip_pass_is_object_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    def vanish(store: object, key: str, size: int) -> bool:
+        raise ObjectMissing(key)
+
+    monkeypatch.setattr(verification, "zip_is_safe", vanish)
+    assert run("a.zip", make_zip({"a.txt": b"x"})) == Outcome("FAILED", "OBJECT_MISSING")
+
+
+def test_unexpected_scan_status_fails_closed() -> None:
+    assert run("a.csv", b"a,b\n", scanner=Scanner("ERROR")) == Outcome(
+        "FAILED", "MALWARE_DETECTED", "SKIPPED"
+    )
+
+
+def _verify(
+    db: PgUrls, outcome_data: bytes, *, declared: bytes, status: str = "UPLOADED", pre_apply: bool = False
+) -> tuple[Outcome, bool]:
+    version_id = insert_version(db, insert_dataset(db))
+    file_id = insert_file(
+        db,
+        version_id,
+        path="a.csv",
+        size=len(declared),
+        sha=hashlib.sha256(declared).hexdigest(),
+        status=status,
+    )
+    f = rows(db, "SELECT * FROM catalog.dataset_files WHERE file_id = :id", id=file_id)[0]
+    store = MemoryObjectStore(f["storage_bucket"])
+    store.put(f["storage_key"], outcome_data, "text/csv")
+    deps = SimpleNamespace(
+        storage=SimpleNamespace(for_bucket=lambda bucket: store), scanner=Scanner("SKIPPED")
+    )
+    with session_factory(db.app)() as session, session.begin():
+        outcome = verify_in_session(session, deps, f)  # type: ignore[arg-type]
+    return outcome, f["storage_key"] in store.objects
+
+
+def test_verify_in_session_deletes_object_on_failure(db: PgUrls) -> None:
+    outcome, present = _verify(db, b"zzzz", declared=b"a,b\n")
+    assert outcome == Outcome("FAILED", "CHECKSUM_MISMATCH")
+    assert present is False
+
+
+def test_verify_in_session_keeps_verified_object(db: PgUrls) -> None:
+    outcome, present = _verify(db, b"a,b\n", declared=b"a,b\n")
+    assert outcome.status == "VERIFIED"
+    assert present is True
+
+
+def test_verify_in_session_keeps_object_when_row_is_no_longer_uploaded(db: PgUrls) -> None:
+    outcome, present = _verify(db, b"zzzz", declared=b"a,b\n", status="VERIFIED")
+    assert outcome.failed
+    assert present is True

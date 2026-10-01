@@ -118,7 +118,7 @@ class RangeReader(io.RawIOBase):
 
 
 def _eocd_ok(store: ObjectStore, key: str, size: int) -> bool:
-    """Reject archives whose end-of-central-directory declares too many entries or a huge directory,
+    """Reject archives whose (zip64) end-of-central-directory declares too many entries or a huge directory,
     before zipfile loads the directory into memory."""
     tail_len = min(size, 22 + 65535)
     tail = store.read_range(key, size - tail_len, size - 1)
@@ -127,9 +127,20 @@ def _eocd_ok(store: ObjectStore, key: str, size: int) -> bool:
         return False
     entries = int(struct.unpack("<H", tail[index + 10 : index + 12])[0])
     directory_size = int(struct.unpack("<I", tail[index + 12 : index + 16])[0])
-    if entries != 0xFFFF and entries > ZIP_MAX_ENTRIES:
-        return False
-    return directory_size == 0xFFFFFFFF or directory_size <= ZIP_MAX_CENTRAL_DIRECTORY
+    offset = int(struct.unpack("<I", tail[index + 16 : index + 20])[0])
+    if entries == 0xFFFF or directory_size == 0xFFFFFFFF or offset == 0xFFFFFFFF:
+        locator = tail[max(index - 20, 0) : index]
+        if len(locator) != 20 or locator[:4] != b"PK\x06\x07":
+            return False
+        record_offset = int(struct.unpack("<Q", locator[8:16])[0])
+        if record_offset + 56 > size:
+            return False
+        record = store.read_range(key, record_offset, record_offset + 55)
+        if len(record) != 56 or record[:4] != b"PK\x06\x06":
+            return False
+        entries = int(struct.unpack("<Q", record[32:40])[0])
+        directory_size = int(struct.unpack("<Q", record[40:48])[0])
+    return entries <= ZIP_MAX_ENTRIES and directory_size <= ZIP_MAX_CENTRAL_DIRECTORY
 
 
 def _entry_name_unsafe(name: str) -> bool:
@@ -168,40 +179,52 @@ def zip_is_safe(store: ObjectStore, key: str, size: int) -> bool:
     return True
 
 
-def evaluate_object(
-    store: ObjectStore, *, key: str, size: int, sha256: str, path: str, scanner: MalwareScannerPort
-) -> Outcome:
-    ext = extension(path)
+def _hash_and_head(store: ObjectStore, key: str, size: int) -> tuple[str, bytes, bytes, int]:
     digest = hashlib.sha256()
     head = b""
     tail = b""
     seen = 0
+    body = store.open_stream(key)
     try:
-        body = store.open_stream(key)
-        try:
-            while chunk := body.read(HASH_CHUNK):
-                digest.update(chunk)
-                if len(head) < SNIFF_BYTES:
-                    head += chunk[: SNIFF_BYTES - len(head)]
-                tail = (tail + chunk)[-4:]
-                seen += len(chunk)
-        finally:
-            body.close()
+        while chunk := body.read(HASH_CHUNK):
+            digest.update(chunk)
+            if len(head) < SNIFF_BYTES:
+                head += chunk[: SNIFF_BYTES - len(head)]
+            tail = (tail + chunk)[-4:]
+            seen += len(chunk)
+            if seen > size:
+                break  # already a size mismatch; do not stream the rest of an oversized object
+    finally:
+        body.close()
+    return digest.hexdigest(), head, tail, seen
+
+
+def evaluate_object(
+    store: ObjectStore, *, key: str, size: int, sha256: str, path: str, scanner: MalwareScannerPort
+) -> Outcome:
+    ext = extension(path)
+    try:
+        hexdigest, head, tail, seen = _hash_and_head(store, key, size)
+        if seen != size:
+            return Outcome("FAILED", "SIZE_MISMATCH")
+        if hexdigest != sha256.strip():
+            return Outcome("FAILED", "CHECKSUM_MISMATCH")
+        if not sniff(ext, head, tail, size):
+            return Outcome("FAILED", "TYPE_MISMATCH")
+        if ext == ".zip" and not zip_is_safe(store, key, size):
+            return Outcome("FAILED", "ARCHIVE_UNSAFE")
     except ObjectMissing:
         return Outcome("FAILED", "OBJECT_MISSING")
     except BotoCoreError as exc:
         raise StorageUnavailable(str(exc)) from exc
-    if seen != size:
-        return Outcome("FAILED", "SIZE_MISMATCH")
-    if digest.hexdigest() != sha256.strip():
-        return Outcome("FAILED", "CHECKSUM_MISMATCH")
-    if not sniff(ext, head, tail, size):
-        return Outcome("FAILED", "TYPE_MISMATCH")
-    if ext == ".zip" and not zip_is_safe(store, key, size):
-        return Outcome("FAILED", "ARCHIVE_UNSAFE")
     scan = scanner.scan(store.bucket, key)
     if scan.status == "INFECTED":
         return Outcome("FAILED", "MALWARE_DETECTED", "INFECTED")
+    if scan.status not in ("CLEAN", "SKIPPED"):
+        # Unknown scanner verdict: fail closed. No dedicated failure code exists, so MALWARE_DETECTED is used and
+        # scan_status stays SKIPPED (the DB CHECK only allows CLEAN/INFECTED/SKIPPED).
+        logger.error("catalog scanner returned unexpected status", extra={"status": str(scan.status)})
+        return Outcome("FAILED", "MALWARE_DETECTED", "SKIPPED")
     return Outcome("VERIFIED", None, scan.status)
 
 
@@ -234,6 +257,8 @@ def verify_in_session(session: Session, deps: "CatalogDeps", f: Mapping[Any, Any
         scanner=deps.scanner,
     )
     if apply_outcome(session, f["file_id"], outcome) and outcome.failed:
+        # The delete precedes the caller's commit. If the tx rolls back, a retry finds the object missing and ends
+        # FAILED/OBJECT_MISSING, the same terminal outcome.
         store.delete(f["storage_key"])  # M03 §5.2: a file that fails verification is removed from storage
     logger.info(
         "catalog file verified",
