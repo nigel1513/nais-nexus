@@ -1,15 +1,96 @@
 "use client";
-import { Button, Card, CardContent, CardHeader, CardTitle, EmptyState } from "@nais/ui";
+import { Button, Card, CardContent, CardHeader, CardTitle, EmptyState, Input, Label } from "@nais/ui";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useLocale, useTranslations } from "next-intl";
+import { useUpdateMe } from "@/features/organizations/api";
 import { useListNotifications, useMarkAllNotificationsRead, useMarkNotificationRead } from "@/features/notifications/api";
 import { LOCALE_COOKIE } from "@/shared/config";
 import { safeInternalPath } from "@/shared/lib/links";
 import { useMeData } from "@/shared/hooks/use-me";
 import { DateTime } from "@/shared/ui/date-text";
+import { useToast } from "@/shared/ui/toast";
+import { useErrorText } from "@/shared/api/use-error-text";
+import { asApiError } from "@/shared/api/errors";
 import { PageHeader } from "@/shared/ui/page-header";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
+
+const NTIS_PATTERN = /^[0-9]{8}$/;
+
+function NtisForm({ current }: { current: string | null }) {
+  const t = useTranslations();
+  const toast = useToast();
+  const errorText = useErrorText();
+  const update = useUpdateMe();
+  const [value, setValue] = useState(current ?? "");
+  const [error, setError] = useState<string | null>(null);
+
+  const send = (next: string | null) =>
+    update.mutate(next, {
+      onSuccess: () => {
+        setError(null);
+        if (next === null) setValue("");
+        toast(t("settings.ntis.saved"));
+      },
+      onError: (e) => {
+        const err = asApiError(e);
+        if (err.code === "CONFLICT") setError(t("settings.ntis.duplicate"));
+        else if (err.code === "VALIDATION_FAILED") setError(t("settings.ntis.format"));
+        else toast(errorText(e), "error");
+      },
+    });
+
+  return (
+    <form
+      className="mt-4 flex flex-col gap-1"
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault();
+        const v = value.trim();
+        if (!NTIS_PATTERN.test(v)) {
+          setError(t("settings.ntis.format"));
+          return;
+        }
+        send(v);
+      }}
+    >
+      <Label htmlFor="ntis-number">{t("settings.ntis.label")}</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          id="ntis-number"
+          className="w-40"
+          inputMode="numeric"
+          pattern="[0-9]{8}"
+          maxLength={8}
+          value={value}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "ntis-hint ntis-error" : "ntis-hint"}
+          onChange={(e) => {
+            setValue(e.target.value);
+            setError(null);
+          }}
+        />
+        <Button size="sm" type="submit" disabled={update.isPending}>
+          {t("settings.ntis.save")}
+        </Button>
+        {current ? (
+          <Button size="sm" type="button" variant="ghost" disabled={update.isPending} onClick={() => send(null)}>
+            {t("settings.ntis.remove")}
+          </Button>
+        ) : null}
+      </div>
+      <p id="ntis-hint" className="text-xs text-muted-foreground">
+        {t("settings.ntis.hint")}
+      </p>
+      {error ? (
+        <p id="ntis-error" role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+    </form>
+  );
+}
 
 export function SettingsScreen() {
   const t = useTranslations();
@@ -45,6 +126,7 @@ export function SettingsScreen() {
               <dt className="text-muted-foreground">{t("settings.roles")}</dt>
               <dd>{[...me.org_roles.map((r) => t(`enums.OrgRole.${r}`)), ...me.platform_roles.map((r) => t(`enums.PlatformRole.${r}`))].join(", ") || "—"}</dd>
             </dl>
+            <NtisForm key={me.national_researcher_number ?? ""} current={me.national_researcher_number ?? null} />
             <p className="mt-3 text-xs text-muted-foreground">{t("settings.profileHint")}</p>
           </CardContent>
         </Card>

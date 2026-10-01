@@ -690,7 +690,16 @@
     "notificationList": "알림 목록",
     "unread": "읽지 않음",
     "open": "열기",
-    "markRead": "읽음 처리"
+    "markRead": "읽음 처리",
+    "ntis": {
+      "label": "국가연구자번호 (NTIS)",
+      "hint": "NTIS에 등록된 8자리 번호",
+      "save": "번호 저장",
+      "remove": "번호 삭제",
+      "format": "8자리 숫자로 입력하세요.",
+      "duplicate": "이미 다른 사용자가 등록한 번호입니다.",
+      "saved": "저장했습니다."
+    }
   },
   "org": {
     "title": "{name} 기관 관리",
@@ -712,7 +721,18 @@
     "selfDemotionConfirm": "해제",
     "selfLocked": "본인의 기관 관리자 역할과 상태는 직접 변경할 수 없습니다.",
     "selfStatusLocked": "본인의 상태는 직접 변경할 수 없습니다.",
-    "lastAdminError": "기관의 마지막 기관 관리자는 플랫폼 관리자만 해제할 수 있습니다."
+    "lastAdminError": "기관의 마지막 기관 관리자는 플랫폼 관리자만 해제할 수 있습니다.",
+    "transfer": {
+      "title": "기관 이동",
+      "user": "이동할 사용자",
+      "target": "이동할 기관",
+      "choose": "기관 선택",
+      "submit": "이동",
+      "confirmTitle": "{name} 님을 {org}(으)로 이동",
+      "warning": "이전 기관의 역할과 접근 권한은 종료되고, 사용자는 다시 로그인해야 합니다. 과거 데이터에는 당시 소속이 그대로 남습니다.",
+      "confirm": "이동 확인",
+      "done": "{name} 님을 {org}(으)로 옮겼습니다."
+    }
   },
   "reserved": {
     "marketplace": "AI Marketplace",

@@ -62,3 +62,26 @@ test("protected routes redirect with a relative Location and never reflect a for
   expect(res.status()).toBe(307);
   expect(res.headers()["location"]).toBe("/mock-login?callbackUrl=%2Fcommons%2Fdata%3Fq%3Dx");
 });
+
+const BATTERY = "00000000-0000-7000-8000-000000002001";
+
+test("Data Card: explorer, gated preview and JSON-LD download work on any origin", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b02", url: baseURL! }]); // B Researcher (owner organization)
+  await page.goto(`/commons/data/${BATTERY}`);
+  await expect(page.getByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /AI-ready/ })).toBeVisible();
+  await page.getByRole("radio", { name: "Compact" }).check();
+  await expect(page.getByRole("table", { name: /미리보기/ })).toBeVisible();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "JSON-LD" }).first().click();
+  expect((await download).suggestedFilename()).toMatch(/\.jsonld$/);
+  expect(await seriousViolations(page)).toEqual([]);
+  await expect(page.getByText("DEPENDENCY_UNAVAILABLE")).toHaveCount(0);
+});
+
+test("Data Card: a visitor without permission sees the gated notice", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000a01", url: baseURL! }]); // A Admin, no grant
+  await page.goto(`/commons/data/${BATTERY}`);
+  await page.getByRole("radio", { name: "Detail" }).check();
+  await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
+});

@@ -7,6 +7,7 @@ import { PageHeader } from "@/shared/ui/page-header";
 import { RequireRole } from "@/shared/ui/require-role";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { MemberRow } from "./components/member-row";
+import { TransferCard } from "./components/transfer-card";
 
 function Members() {
   const t = useTranslations();
@@ -51,6 +52,7 @@ export function OrganizationScreen() {
       <PageHeader title={t("org.title", { name: me.organization.name })} description={t("org.description")} />
       <RequireRole anyOf={["ORG_ADMIN"]}>
         <Members />
+        {me.platform_roles.includes("PLATFORM_ADMIN") ? <TransferCard /> : null}
       </RequireRole>
     </>
   );
