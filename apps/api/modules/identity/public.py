@@ -1,7 +1,7 @@
-"""M01 public surface for other modules: read DTOs (+ IdentityQueryPort, added with the query adapter).
+"""M01 public surface for other modules: read DTOs and IdentityQueryPort (the port is defined here).
 
-Field-identical to openapi components IdentityPublicProfile / OrganizationSummary. Other modules use only these,
-CurrentUser, and IdentityQueryPort; they never read identity.* tables.
+DTOs are field-identical to openapi components IdentityPublicProfile / OrganizationSummary. Other modules use
+only these, CurrentUser, and IdentityQueryPort; they never read identity.* tables.
 """
 
 from typing import Literal, Protocol
@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict
 
 OrganizationType = Literal["RESEARCH_INSTITUTE", "UNIVERSITY", "COMPANY", "PLATFORM_OPERATOR"]
 ActiveStatus = Literal["ACTIVE", "DISABLED"]
+OrgRole = Literal["ORG_ADMIN", "DATA_STEWARD", "RESOURCE_MANAGER"]
 
 
 class OrganizationSummary(BaseModel):
@@ -45,9 +46,9 @@ class IdentityQueryPort(Protocol):
         """User ACTIVE and membership ACTIVE."""
         ...
 
-    def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool: ...
+    def has_org_role(self, user_id: UUID, organization_id: UUID, role: OrgRole) -> bool: ...
 
-    def list_users_with_org_role(self, organization_id: UUID, role: str) -> list[UUID]:
+    def list_users_with_org_role(self, organization_id: UUID, role: OrgRole) -> list[UUID]:
         """ACTIVE users with an ACTIVE membership holding role (M09 notification recipients)."""
         ...
 

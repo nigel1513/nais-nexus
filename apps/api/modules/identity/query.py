@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import Select, and_, any_, literal, select
 from sqlalchemy.orm import Session
 
-from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary
+from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary, OrgRole
 from api.modules.identity.resolver import SessionFactory
 from api.modules.identity.tables import memberships, organizations, users
 from api.platform.db import session_scope
@@ -77,7 +77,7 @@ class SqlIdentityQuery:
         with self._read() as session:
             return self._exists(session, users.c.user_id == user_id, _BOTH_ACTIVE)
 
-    def has_org_role(self, user_id: UUID, organization_id: UUID, role: str) -> bool:
+    def has_org_role(self, user_id: UUID, organization_id: UUID, role: OrgRole) -> bool:
         with self._read() as session:
             return self._exists(
                 session,
@@ -87,7 +87,7 @@ class SqlIdentityQuery:
                 _BOTH_ACTIVE,
             )
 
-    def list_users_with_org_role(self, organization_id: UUID, role: str) -> list[UUID]:
+    def list_users_with_org_role(self, organization_id: UUID, role: OrgRole) -> list[UUID]:
         with self._read() as session:
             rows = session.execute(
                 select(users.c.user_id)
