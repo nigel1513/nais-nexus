@@ -124,3 +124,10 @@ def create_dataset(api: CatalogApi, user: str = "b.steward", **overrides: Any) -
     assert response.status_code == 201, response.text
     created: dict[str, Any] = response.json()
     return created
+
+
+def new_draft(api: CatalogApi, user: str = "b.steward", **dataset_overrides: Any) -> tuple[str, str]:
+    dataset_id = create_dataset(api, user, **dataset_overrides)["dataset_id"]
+    response = api.post(user, f"/datasets/{dataset_id}/versions", json={"version_label": "v1"})
+    assert response.status_code == 201, response.text
+    return dataset_id, response.json()["dataset_version_id"]
