@@ -1,0 +1,15 @@
+**/node_modules
+**/.next
+**/__pycache__
+.git
+.venv
+.env
+apps/api
+docs
+infra
+tests
+NAIS_PRD
+NAIS_PRD_COMBINED.md
+packages/contracts/python
+apps/web/test-results
+apps/web/playwright-report

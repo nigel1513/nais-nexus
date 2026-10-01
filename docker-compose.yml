@@ -38,6 +38,27 @@ services:
     <<: *api-image
     command: ["python", "-m", "api.worker"]
 
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_MOCKING: ${WEB_API_MOCKING:-enabled}
+    image: nais/web:dev
+    env_file: .env
+    environment:
+      # Runtime must match the build arg (env_file's NEXT_PUBLIC_API_MOCKING=disabled is for Wave 2).
+      NEXT_PUBLIC_API_MOCKING: ${WEB_API_MOCKING:-enabled}
+      AUTH_TRUST_HOST: "true"
+      NAIS_EXTERNAL_HOST: ${NAIS_EXTERNAL_HOST:-localhost}
+      AUTH_ALLOWED_HOSTS: ${AUTH_ALLOWED_HOSTS:-localhost:21051}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/robots.txt"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
   postgres:
     image: postgres:16
     environment:
