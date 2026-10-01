@@ -1,12 +1,16 @@
 "use client";
 import { Checkbox } from "@nais/ui";
 import { useTranslations } from "next-intl";
+import { useVocabularyLabels } from "../api";
+import type { VocabularyScheme } from "@/shared/api/types";
 import type { FacetBucket, SearchPage } from "@/shared/api/types";
 
-export const FACETS = ["access_level", "owner_organization_id", "purpose", "keyword", "readiness_status"] as const;
+export const FACETS = ["access_level", "owner_organization_id", "purpose", "keyword", "readiness_status", "subject", "material", "method", "collecting_organization_id"] as const;
 export type FacetKey = (typeof FACETS)[number];
 
 const ENUM_OF: Partial<Record<FacetKey, string>> = { access_level: "AccessLevel", purpose: "Purpose", readiness_status: "ReadinessOverall" };
+
+const SCHEME_OF: Partial<Record<FacetKey, VocabularyScheme>> = { subject: "SUBJECT", material: "MATERIAL", method: "METHOD" };
 
 export function FacetPanel({
   facets,
@@ -18,7 +22,9 @@ export function FacetPanel({
   onToggle: (key: FacetKey, value: string) => void;
 }) {
   const t = useTranslations();
-  const label = (key: FacetKey, b: FacetBucket) => (ENUM_OF[key] ? t(`enums.${ENUM_OF[key]}.${b.value}`) : (b.label ?? b.value));
+  const vocab = useVocabularyLabels();
+  const label = (key: FacetKey, b: FacetBucket) =>
+    ENUM_OF[key] ? t(`enums.${ENUM_OF[key]}.${b.value}`) : SCHEME_OF[key] ? vocab(SCHEME_OF[key], b.value) : (b.label ?? b.value);
   return (
     <aside aria-label={t("data.search.filters")} className="flex flex-col gap-4">
       {FACETS.map((key) => {

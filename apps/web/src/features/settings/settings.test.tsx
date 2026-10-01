@@ -148,3 +148,67 @@ describe("ReservedScreen", () => {
     expect(document.body.textContent).not.toMatch(/P1|Wave|개발|예정/);
   });
 });
+
+describe("NTIS number and institute transfer (Wave 1.5)", () => {
+  it("saves the NTIS researcher number and reports duplicates", async () => {
+    renderScreen(<SettingsScreen />, { user: USER.aAdmin, path: "/settings" });
+    const input = await screen.findByLabelText("국가연구자번호 (NTIS)");
+    await userEvent.type(input, "1234");
+    await userEvent.click(screen.getByRole("button", { name: "번호 저장" }));
+    expect(await screen.findByText("8자리 숫자로 입력하세요.")).toBeInTheDocument();
+    await userEvent.clear(input);
+    await userEvent.type(input, "10000002"); // b.researcher's number in the seed
+    await userEvent.click(screen.getByRole("button", { name: "번호 저장" }));
+    expect(await screen.findByText("이미 다른 사용자가 등록한 번호입니다.")).toBeInTheDocument();
+    await userEvent.clear(input);
+    await userEvent.type(input, "12345678");
+    await userEvent.click(screen.getByRole("button", { name: "번호 저장" }));
+    expect(await screen.findByText("저장했습니다.")).toBeInTheDocument();
+    expect(getDb().users.find((u) => u.user_id === USER.aAdmin)?.national_researcher_number).toBe("12345678");
+  });
+
+  it("deleting the number sends null (not an empty string)", async () => {
+    renderScreen(<SettingsScreen />, { user: USER.aResearcher, path: "/settings" });
+    expect(await screen.findByLabelText("국가연구자번호 (NTIS)")).toHaveValue("10000001");
+    await userEvent.click(screen.getByRole("button", { name: "번호 삭제" }));
+    expect(await screen.findByText("저장했습니다.")).toBeInTheDocument();
+    expect(getDb().users.find((u) => u.user_id === USER.aResearcher)?.national_researcher_number).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "번호 삭제" })).not.toBeInTheDocument());
+  });
+
+  it("platform admin moves a user to another institute", async () => {
+    renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
+    const card = await screen.findByRole("region", { name: "기관 이동" });
+    await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "A R");
+    await userEvent.click(await within(card).findByRole("option", { name: /A Researcher/ }));
+    await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "Institute B");
+    await userEvent.click(within(card).getByRole("button", { name: "이동" }));
+    await userEvent.click(await screen.findByRole("button", { name: "이동 확인" }));
+    expect(await screen.findByText(/A Researcher 님을 Institute B\(으\)로 옮겼습니다/)).toBeInTheDocument();
+  });
+
+  it("a 503 from the transfer shows a retry message", async () => {
+    server.use(http.post("*/mock-api/v1/users/:id/transfer", () => apiError(503, "DEPENDENCY_UNAVAILABLE")));
+    renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
+    const card = await screen.findByRole("region", { name: "기관 이동" });
+    await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "A R");
+    await userEvent.click(await within(card).findByRole("option", { name: /A Researcher/ }));
+    await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "Institute B");
+    await userEvent.click(within(card).getByRole("button", { name: "이동" }));
+    await userEvent.click(await screen.findByRole("button", { name: "이동 확인" }));
+    expect(await within(card).findByRole("alert")).toHaveTextContent("다시 시도하세요");
+  });
+
+  it("a PLATFORM_ADMIN without ORG_ADMIN still sees the transfer card", async () => {
+    getDb().users.find((u) => u.user_id === USER.admin)!.org_roles = [];
+    renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
+    expect(await screen.findByRole("region", { name: "기관 이동" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "멤버" })).not.toBeInTheDocument();
+  });
+
+  it("non-platform-admins do not see the transfer card", async () => {
+    renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
+    await screen.findByRole("heading", { name: "멤버" });
+    expect(screen.queryByRole("region", { name: "기관 이동" })).not.toBeInTheDocument();
+  });
+});

@@ -31,6 +31,16 @@ export type DownloadSession = Schemas["DownloadSession"];
 export type ReadinessProfile = Schemas["ReadinessProfile"];
 export type ReadinessValidation = Schemas["ReadinessValidation"];
 export type ReadinessCheckResult = Schemas["ReadinessCheckResult"];
+export type DatasetPerson = Schemas["DatasetPerson"];
+export type DatasetContributor = Schemas["DatasetContributor"];
+export type DatasetContributorsPut = Schemas["DatasetContributorsPut"];
+export type DatasetPeople = Schemas["DatasetPeople"];
+export type VocabularyScheme = Schemas["VocabularyScheme"];
+export type VocabularyTerm = Schemas["VocabularyTerm"];
+export type FileProfile = Schemas["FileProfile"];
+export type FilePreview = Schemas["FilePreview"];
+export type ColumnProfile = Schemas["ColumnProfile"];
+export type ColumnDistribution = Schemas["ColumnDistribution"];
 export type AuditEvent = Schemas["AuditEvent"];
 export type AppNotification = Schemas["Notification"];
 

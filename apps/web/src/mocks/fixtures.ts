@@ -1,6 +1,8 @@
 import type { Schemas } from "@/shared/api/types";
+import { profileCsv, SEED_MEASUREMENTS_CSV, type Hint } from "./previews";
 import { buildResult } from "./readiness-results";
 import { SEED_FILES } from "./seed-files";
+import { VOCABULARY } from "./vocabulary";
 import type { MockDb, MockUser, StoredDataset, StoredValidation, StoredVersion } from "./types";
 
 /**
@@ -29,14 +31,14 @@ export const REQUEST = { seedApproved: sid("3001") } as const;
 export const GRANT = { seed: sid("4001") } as const;
 
 const users: Omit<MockUser, "updated_at">[] = [
-  { user_id: USER.admin, display_name: "NAIS Admin", email: "admin@nais.local", organization_id: ORG.nais, org_roles: ["ORG_ADMIN"], platform_roles: ["PLATFORM_ADMIN"], status: "ACTIVE", membership_status: "ACTIVE" },
-  { user_id: USER.aAdmin, display_name: "A Admin", email: "a.admin@inst-a.local", organization_id: ORG.a, org_roles: ["ORG_ADMIN"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE" },
-  { user_id: USER.aResearcher, display_name: "A Researcher", email: "a.researcher@inst-a.local", organization_id: ORG.a, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE" },
-  { user_id: USER.aSteward, display_name: "A Steward", email: "a.steward@inst-a.local", organization_id: ORG.a, org_roles: ["DATA_STEWARD"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE" },
-  { user_id: USER.bAdmin, display_name: "B Admin", email: "b.admin@inst-b.local", organization_id: ORG.b, org_roles: ["ORG_ADMIN"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE" },
-  { user_id: USER.bResearcher, display_name: "B Researcher", email: "b.researcher@inst-b.local", organization_id: ORG.b, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE" },
-  { user_id: USER.bSteward, display_name: "B Steward", email: "b.steward@inst-b.local", organization_id: ORG.b, org_roles: ["DATA_STEWARD"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE" },
-  { user_id: USER.bDisabled, display_name: "B Disabled", email: "b.disabled@inst-b.local", organization_id: ORG.b, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "DISABLED" },
+  { user_id: USER.admin, display_name: "NAIS Admin", email: "admin@nais.local", organization_id: ORG.nais, org_roles: ["ORG_ADMIN"], platform_roles: ["PLATFORM_ADMIN"], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
+  { user_id: USER.aAdmin, display_name: "A Admin", email: "a.admin@inst-a.local", organization_id: ORG.a, org_roles: ["ORG_ADMIN"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
+  { user_id: USER.aResearcher, display_name: "A Researcher", email: "a.researcher@inst-a.local", organization_id: ORG.a, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000001", history: [] },
+  { user_id: USER.aSteward, display_name: "A Steward", email: "a.steward@inst-a.local", organization_id: ORG.a, org_roles: ["DATA_STEWARD"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000003", history: [] },
+  { user_id: USER.bAdmin, display_name: "B Admin", email: "b.admin@inst-b.local", organization_id: ORG.b, org_roles: ["ORG_ADMIN"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
+  { user_id: USER.bResearcher, display_name: "B Researcher", email: "b.researcher@inst-b.local", organization_id: ORG.b, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000002", history: [] },
+  { user_id: USER.bSteward, display_name: "B Steward", email: "b.steward@inst-b.local", organization_id: ORG.b, org_roles: ["DATA_STEWARD"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000004", history: [] },
+  { user_id: USER.bDisabled, display_name: "B Disabled", email: "b.disabled@inst-b.local", organization_id: ORG.b, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "DISABLED", national_researcher_number: null, history: [] },
 ];
 
 /** Mock login choices (M10 §13: "seed 사용자 선택 드롭다운"). */
@@ -62,6 +64,72 @@ function metadataFor(fixture: Fixture) {
   if (fixture === "missing_provenance") m.provenance = null;
   return m;
 }
+
+/** Research columns of a brand-new dataset (backend insert_dataset defaults). */
+export function emptyResearch() {
+  return {
+    subtitle: null as string | null,
+    principal_investigator_id: null as string | null,
+    principal_investigator_org_id: null as string | null,
+    data_steward_contact_id: null as string | null,
+    data_steward_contact_org_id: null as string | null,
+    contact_email_public: false,
+    project_title: null as string | null,
+    project_code: null as string | null,
+    funding_agency: null as string | null,
+    subject_codes: [] as string[],
+    method_codes: [] as string[],
+    material_codes: [] as string[],
+    method_detail: null as string | null,
+    temporal_start: null as string | null,
+    temporal_end: null as string | null,
+    collecting_organization_id: null as string | null,
+    collecting_organization_name: null as string | null,
+    update_frequency: "ONCE" as Schemas["UpdateFrequency"],
+    related_publications: [] as Schemas["RelatedPublication"][],
+  };
+}
+
+/** Mirror of apps/api/modules/catalog/seed_data.py RESEARCH + PEOPLE (PI and steward contact belong to the owner org). */
+const PEOPLE = { [ORG.a]: [USER.aResearcher, USER.aSteward], [ORG.b]: [USER.bResearcher, USER.bSteward] } as Record<string, [string, string]>;
+const RESEARCH: Record<string, Partial<ReturnType<typeof emptyResearch>>> = {
+  [DATASET.battery]: {
+    subtitle: "연료전지 고분자 막 시편 1,000개의 온도·압력 측정",
+    subject_codes: ["ENERGY", "MATERIALS"],
+    material_codes: ["POLYMER_MEMBRANE", "ELECTROLYTE"],
+    method_codes: ["SENSOR_LOGGING"],
+    method_detail: "환경 챔버 EC-200, 1분 간격 자동 계측",
+    temporal_start: "2026-01-01",
+    temporal_end: "2026-01-01",
+    collecting_organization_id: ORG.b,
+    project_title: "연료전지 막 내구성 평가",
+    project_code: "NST-2026-0001",
+    funding_agency: "국가과학기술연구회",
+    update_frequency: "ONCE",
+    contact_email_public: true,
+  },
+  [DATASET.openMaterials]: {
+    subtitle: "공개 재료 물성 측정값 (2024–2025)",
+    subject_codes: ["MATERIALS"],
+    material_codes: ["METAL_ALLOY", "CERAMIC"],
+    method_codes: ["XRD"],
+    temporal_start: "2024-01-01",
+    temporal_end: "2025-12-31",
+    collecting_organization_id: ORG.b,
+    update_frequency: "YEARLY",
+  },
+  [DATASET.qcLogs]: { subject_codes: ["MATERIALS"], method_codes: ["SENSOR_LOGGING"], temporal_start: "2025-07-01", collecting_organization_id: ORG.b, update_frequency: "MONTHLY" },
+  [DATASET.sensors]: {},
+  [DATASET.electrolyte]: {
+    subject_codes: ["ENERGY", "CHEMISTRY"],
+    material_codes: ["ELECTROLYTE"],
+    method_codes: ["ELECTROCHEM_CYCLING"],
+    temporal_start: "2026-03-01",
+    temporal_end: "2026-06-30",
+    collecting_organization_name: "외부 위탁분석기관 K-Lab",
+    update_frequency: "IRREGULAR",
+  },
+};
 
 function policy(dataset_id: string, owner: string, level: Schemas["AccessLevel"], purposes: Schemas["Purpose"][], maxDays: number): Schemas["DatasetPolicyView"] {
   return {
@@ -122,6 +190,12 @@ export function createSeed(now: Date): MockDb {
     owner_organization_name: ORG_NAME[d.owner],
     title: d.title,
     ...metadataFor(d.fixture),
+    ...emptyResearch(),
+    principal_investigator_id: PEOPLE[d.owner]![0],
+    principal_investigator_org_id: d.owner,
+    data_steward_contact_id: PEOPLE[d.owner]![1],
+    data_steward_contact_org_id: d.owner,
+    ...RESEARCH[d.id],
     access_level: d.level,
     policy: policy(d.id, d.owner, d.level, d.purposes, d.maxDays),
     status: "ACTIVE",
@@ -148,6 +222,22 @@ export function createSeed(now: Date): MockDb {
       created_at: seedTime,
     };
   });
+
+  // 10_SEED_DATA §5 _schema.json hints; _codebook.csv starts with "_" so it is not tabular.
+  const seedHints: Record<string, Hint> = {
+    sample_id: { type: "string" },
+    temperature_c: { type: "number", unit: "Cel", description: "시편 온도", concept_iri: "http://qudt.org/vocab/quantitykind/Temperature" },
+    pressure_kpa: { type: "number", unit: "kPa", description: "챔버 압력", concept_iri: "http://qudt.org/vocab/quantitykind/Pressure" },
+    material: { type: "string" },
+    measured_at: { type: "datetime" },
+  };
+  const previews: MockDb["previews"] = {};
+  for (const v of versions.filter((x) => x.status === "PUBLISHED")) {
+    const file = v.files.find((f) => f.path === "data/measurements.csv");
+    if (!file) continue;
+    const { columns, preview, rowsSampled, truncated, columnsTruncated } = profileCsv(SEED_MEASUREMENTS_CSV, file.path, seedHints);
+    previews[file.file_id] = { status: "READY", column_profile: { format: "csv", rows_sampled: rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at: seedTime };
+  }
 
   const uploadSessions: Schemas["UploadSession"][] = seedDatasets
     .filter((d) => d.fixture !== null)
@@ -332,6 +422,10 @@ export function createSeed(now: Date): MockDb {
     grants,
     validations,
     audit: seedAudit,
+    contributors: [],
+    vocabulary: [...VOCABULARY],
+    previews,
+    objects: {},
     notifications: [
       // M09 §7.3 templates; 10_SEED_DATA §7: a.researcher's inbox holds exactly one ACCESS_EXPIRING.
       { notification_id: sid("7001"), user_id: USER.aResearcher, type: "ACCESS_EXPIRING", title: `"Battery Cycling Measurements" 접근 권한이 ${expiresText} UTC에 만료됩니다`, link: "/commons/access?tab=grants", read: false, created_at: at(20) },

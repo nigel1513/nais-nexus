@@ -7,6 +7,7 @@ import { PageHeader } from "@/shared/ui/page-header";
 import { RequireRole } from "@/shared/ui/require-role";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { MemberRow } from "./components/member-row";
+import { TransferCard } from "./components/transfer-card";
 
 function Members() {
   const t = useTranslations();
@@ -46,12 +47,17 @@ function Members() {
 export function OrganizationScreen() {
   const t = useTranslations();
   const me = useMeData();
+  const orgAdmin = me.org_roles.includes("ORG_ADMIN");
+  const platformAdmin = me.platform_roles.includes("PLATFORM_ADMIN");
   return (
     <>
       <PageHeader title={t("org.title", { name: me.organization.name })} description={t("org.description")} />
-      <RequireRole anyOf={["ORG_ADMIN"]}>
-        <Members />
-      </RequireRole>
+      {orgAdmin || !platformAdmin ? (
+        <RequireRole anyOf={["ORG_ADMIN"]}>
+          <Members />
+        </RequireRole>
+      ) : null}
+      {platformAdmin ? <TransferCard /> : null}
     </>
   );
 }

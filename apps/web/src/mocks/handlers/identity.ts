@@ -15,6 +15,7 @@ export function meView(db: MockDb, u: MockUser): Schemas["Me"] {
     organization: { organization_id: org.organization_id, code: org.code, name: org.name, type: org.type },
     org_roles: u.org_roles,
     platform_roles: u.platform_roles,
+    national_researcher_number: u.national_researcher_number,
   };
 }
 
@@ -33,6 +34,24 @@ export const identityHandlers = [
 
   http.get(`${API}/me`, ({ request }) => HttpResponse.json(meView(getDb(), currentUser(request)))),
 
+  http.patch(`${API}/me`, async ({ request }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const input = await body<Schemas["MeUpdate"]>(request);
+    const keys = Object.keys(input ?? {});
+    if (!keys.length) validationFailed("body", "Value error, at least one field is required");
+    const unknown = keys.filter((k) => k !== "national_researcher_number");
+    if (unknown.length) fail("VALIDATION_FAILED", "Request validation failed.", { fields: unknown.map((field) => ({ field, reason: "Extra inputs are not permitted" })) });
+    const value = input.national_researcher_number;
+    if (value !== null && !(typeof value === "string" && /^[0-9]{8}$/.test(value))) validationFailed("national_researcher_number", "String should match pattern '^[0-9]{8}$'");
+    if (value && db.users.some((u) => u.user_id !== user.user_id && u.national_researcher_number === value)) {
+      fail("CONFLICT", "This NTIS researcher number belongs to another user.", { field: "national_researcher_number" });
+    }
+    user.national_researcher_number = value;
+    user.updated_at = nowIso();
+    return HttpResponse.json(meView(db, user));
+  }),
+
   http.get(`${API}/users`, ({ request }) => {
     currentUser(request);
     const db = getDb();
@@ -44,7 +63,7 @@ export const identityHandlers = [
       .filter((u) => u.status === "ACTIVE" && u.membership_status === "ACTIVE")
       .filter((u) => !org || u.organization_id === org)
       .filter((u) => !q || u.display_name.toLowerCase().includes(q) || u.email.toLowerCase().startsWith(q))
-      .map((u) => ({ user_id: u.user_id, display_name: u.display_name, organization_id: u.organization_id, organization_name: orgName(db, u.organization_id), status: u.status }));
+      .map((u) => ({ user_id: u.user_id, display_name: u.display_name, organization_id: u.organization_id, organization_name: orgName(db, u.organization_id), status: u.status, national_researcher_number: u.national_researcher_number }));
     return HttpResponse.json(paginate(items, url));
   }),
 
@@ -116,6 +135,31 @@ export const identityHandlers = [
       }
     }
     target.updated_at = nowIso();
+    return HttpResponse.json(membershipView(target));
+  }),
+
+  http.post(`${API}/users/:user_id/transfer`, async ({ request, params }) => {
+    const actor = currentUser(request);
+    const db = getDb();
+    const input = await body<Schemas["UserTransfer"]>(request);
+    if (typeof input.organization_id !== "string") validationFailed("organization_id", "Field required");
+    const roles = input.roles ?? [];
+    if (!Array.isArray(roles) || roles.some((r) => !(ENUMS.OrgRole as readonly string[]).includes(r))) validationFailed("roles", "Input should be 'ORG_ADMIN', 'DATA_STEWARD' or 'RESOURCE_MANAGER'");
+    if (!actor.platform_roles.includes("PLATFORM_ADMIN")) fail("FORBIDDEN", "Only a PLATFORM_ADMIN can transfer users between organizations.");
+    const target = db.users.find((u) => u.user_id === params.user_id);
+    if (!target) fail("NOT_FOUND");
+    if (!db.organizations.some((o) => o.organization_id === input.organization_id)) validationFailed("organization_id", "UNKNOWN_ORGANIZATION");
+    if (target.organization_id === input.organization_id) return HttpResponse.json(membershipView(target));
+    const now = nowIso();
+    const from = target.organization_id;
+    // The ended membership keeps its start; seed memberships began when the mock store was seeded (approximated by the last change).
+    target.history.push({ organization_id: from, started_at: target.history.at(-1)?.ended_at ?? target.updated_at, ended_at: now });
+    target.organization_id = input.organization_id;
+    target.org_roles = [...roles];
+    target.membership_status = "ACTIVE";
+    target.updated_at = now;
+    recordAudit(db, { action: "ADMIN_ROLE_CHANGED", actor, resource: { type: "MEMBERSHIP", id: target.user_id, owner_organization_id: from }, details: { transferred_to: input.organization_id, roles: [] } });
+    recordAudit(db, { action: "ADMIN_ROLE_CHANGED", actor, resource: { type: "MEMBERSHIP", id: target.user_id, owner_organization_id: input.organization_id }, details: { transferred_from: from, roles: target.org_roles } });
     return HttpResponse.json(membershipView(target));
   }),
 ];

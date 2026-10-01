@@ -97,6 +97,14 @@ docker run --rm --network host -v "$PWD/../..:/repo" -w /repo/apps/web \
 `--network host` makes `nais.test` (mapped to 127.0.0.1 inside Chromium) reach the same portal. When pointing at a portal that enforces
 host checks, add the test host to `AUTH_ALLOWED_HOSTS` (e.g. `nais.test:21051`).
 
+## Wave 1.5 Stage 1
+
+- **Data Card** (`/commons/data/[id]`): header with AI-ready score (0-10, expandable checks), About, metadata block with a JSON-LD download, people/steward side card with the affiliation at publish time vs. now, and a column description table.
+- **Data Explorer**: file tree plus Detail / Compact / Column views with up to 100 preview rows. Previews follow the access rule: owner organization and active grant holders see data, everyone else sees the notice "접근 승인 후 미리보기 가능". `PENDING` previews are polled; failures fall back to a generic message.
+- **Markdown safety**: dataset descriptions render through a restricted markdown subset (no raw HTML, no images, links only to http(s)/mailto with `rel="noopener noreferrer"`); nothing is injected with `dangerouslySetInnerHTML`.
+- **Mock profiler**: in mock mode only, `src/mocks` computes previews/column profiles from fixture CSVs; it is never imported by feature code, so the real-mode client bundle contains none of it (`NEXT_PUBLIC_API_MOCKING=disabled next build`, then `grep -rl profileCsv .next/static` finds nothing).
+- **Settings**: the NTIS researcher number (8 digits; clearing sends `null`; a duplicate is reported as a field error). PLATFORM_ADMINs also get an institute-transfer card on `/settings/organization` (confirmation required; the user must sign in again).
+
 ## Known limitations (Wave 1)
 
 - Real API integration, Keycloak login end-to-end and the 12-step golden E2E are Wave 2 (needs the `nais-web` Keycloak client from M01).

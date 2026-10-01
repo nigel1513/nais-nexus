@@ -5,6 +5,7 @@ import { catalogHandlers } from "./catalog";
 import { governanceHandlers } from "./governance";
 import { identityHandlers } from "./identity";
 import { notificationHandlers } from "./notifications";
+import { previewHandlers } from "./previews";
 import { projectHandlers } from "./projects";
 import { readinessHandlers } from "./readiness";
 import { storageHandlers } from "./storage";
@@ -20,6 +21,7 @@ export const handlers = [
   ...identityHandlers,
   ...projectHandlers,
   ...catalogHandlers,
+  ...previewHandlers,
   ...governanceHandlers,
   ...readinessHandlers,
   ...auditHandlers,

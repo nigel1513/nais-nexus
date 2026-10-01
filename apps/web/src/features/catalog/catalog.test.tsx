@@ -23,6 +23,49 @@ describe("DataSearchScreen", () => {
     expect(screen.queryByRole("link", { name: /Dataset 등록|데이터셋 등록/ })).not.toBeInTheDocument();
   });
 
+  it("filters by subject facet and shows PI, period and subtitle on cards", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    const card = (await screen.findByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).closest("article")!;
+    expect(within(card as HTMLElement).getByText("연료전지 고분자 막 시편 1,000개의 온도·압력 측정")).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText(/B Researcher/)).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText(/2026-01-01 – 2026-01-01/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("checkbox", { name: /^재료 \(/ }));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/commons/data?subject=MATERIALS", { scroll: false }));
+  });
+
+  it("offers material and method facets with vocabulary labels", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    expect(await screen.findByRole("group", { name: "소재" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "수집·분석 방법" })).toBeInTheDocument();
+    const box = within(screen.getByRole("group", { name: "소재" })).getAllByRole("checkbox")[0]!;
+    await userEvent.click(box);
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\?material=/), { scroll: false }));
+  });
+
+  it("applies a data-period filter and rejects an inverted range", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    await userEvent.type(await screen.findByLabelText("기간 시작"), "2026-01-01");
+    await userEvent.click(screen.getByRole("button", { name: "기간 적용" }));
+    await waitFor(() => expect(router.replace).toHaveBeenLastCalledWith("/commons/data?temporal_from=2026-01-01", { scroll: false }));
+    await userEvent.type(screen.getByLabelText("기간 끝"), "2025-01-01");
+    await userEvent.click(screen.getByRole("button", { name: "기간 적용" }));
+    expect(await screen.findByText(/기간의 끝이 시작보다 빠릅니다/)).toBeInTheDocument();
+  });
+
+  it("shows the server 422 TEMPORAL_RANGE from an edited URL as a field error", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?temporal_from=2026-05-01&temporal_to=2025-01-01" });
+    expect(await screen.findByText(/기간의 끝이 시작보다 빠릅니다/)).toBeInTheDocument();
+    expect(screen.getByLabelText("기간 시작")).toHaveValue("2026-05-01");
+    expect(screen.getByRole("status")).toHaveTextContent("데이터 기간을 바로잡으면 검색 결과가 표시됩니다.");
+  });
+
+  it("filters by principal investigator via the person picker", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    await userEvent.type(await screen.findByRole("combobox", { name: "사용자 검색" }), "Researcher");
+    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\?principal_investigator_id=/), { scroll: false }));
+  });
+
   it("empty result offers a filter reset", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?q=zzzz" });
     expect(await screen.findByText("조건에 맞는 데이터가 없습니다.")).toBeInTheDocument();
@@ -88,15 +131,17 @@ describe("DatasetNewScreen", () => {
     expect(days).toHaveAttribute("max", "30");
     expect(days).toHaveValue(30);
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.click(screen.getByRole("button", { name: "등록" }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "A R");
+    await userEvent.click(await screen.findByRole("option", { name: /A Researcher/ }));
+    await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\/[0-9a-f-]{36}\?created=1$/)));
     expect(getDb().datasets.find((d) => d.title === "Pilot Line Vibration")?.policy).toMatchObject({ access_level: "SENSITIVE", max_grant_days: 30 });
   });
 });
 
 describe("DatasetDetailScreen", () => {
-  const open = (user: string, datasetId: string) =>
-    renderScreen(<DatasetDetailScreen datasetId={datasetId} />, { user, path: `/commons/data/${datasetId}` });
+  const open = (user: string, datasetId: string, query = "") =>
+    renderScreen(<DatasetDetailScreen datasetId={datasetId} />, { user, path: `/commons/data/${datasetId}${query}` });
 
   it("grant holder gets a download CTA with expiry", async () => {
     open(USER.aResearcher, DATASET.battery);
@@ -140,7 +185,9 @@ describe("DatasetDetailScreen", () => {
     });
     open(USER.bResearcher, DATASET.sensors);
     expect(await screen.findByRole("link", { name: "요청 상태 보기" })).toHaveAttribute("href", `/commons/access/${request.access_request_id}`);
-    expect(screen.queryByRole("button", { name: "접근 요청" })).not.toBeInTheDocument();
+    // Scoped to the header CTA: the explorer's gated notice carries its own "접근 요청" button (P10).
+    const header = screen.getByRole("heading", { level: 1 }).closest("header")!;
+    expect(within(header).queryByRole("button", { name: "접근 요청" })).not.toBeInTheDocument();
   });
 
   it("PUBLIC data needs no request: download link, no request button", async () => {
@@ -180,11 +227,11 @@ describe("DatasetDetailScreen", () => {
 
   it("DRAFT versions are listed only for the owner organization's steward", async () => {
     getDb().datasets.find((d) => d.dataset_id === DATASET.electrolyte)!.access_level = "PUBLIC";
-    const { unmount } = open(USER.aResearcher, DATASET.electrolyte);
+    const { unmount } = open(USER.aResearcher, DATASET.electrolyte, "?tab=versions");
     await screen.findByRole("heading", { level: 1, name: "Electrolyte Screening (draft)" });
     expect(screen.queryByText("초안")).not.toBeInTheDocument();
     unmount();
-    open(USER.aSteward, DATASET.electrolyte);
+    open(USER.aSteward, DATASET.electrolyte, "?tab=versions");
     await screen.findByRole("heading", { level: 1, name: "Electrolyte Screening (draft)" });
     expect(await screen.findByText("초안")).toBeInTheDocument();
   });
@@ -222,10 +269,10 @@ describe("DatasetDetailScreen", () => {
     server.use(http.patch("*/mock-api/v1/datasets/:id", () => { patches += 1; return HttpResponse.json({}); }));
     open(USER.bSteward, DATASET.battery);
     await userEvent.click(await screen.findByRole("button", { name: "편집" }));
-    await userEvent.clear(screen.getByLabelText(/^분야/));
+    await userEvent.clear(screen.getByLabelText(/^이용 정책/));
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
     expect((await screen.findAllByText(/이 항목은 비울 수 없습니다/)).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText(/^분야/)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByLabelText(/^이용 정책/)).toHaveAttribute("aria-invalid", "true");
     expect(patches).toBe(0);
   });
 
@@ -240,5 +287,44 @@ describe("DatasetDetailScreen", () => {
     expect(dialog).toHaveTextContent("기존 권한에는 소급 적용되지 않습니다");
     await userEvent.click(within(dialog).getByRole("button", { name: "변경" }));
     await waitFor(() => expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.policy.max_grant_days).toBe(90));
+  });
+
+  it("typing over the PI without picking reverts to the current person on blur", async () => {
+    const piBefore = getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.principal_investigator_id;
+    open(USER.bSteward, DATASET.battery);
+    await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    const pi = screen.getByRole("combobox", { name: /연구책임자/ });
+    const original = (pi as HTMLInputElement).value;
+    expect(original).not.toBe("");
+    await userEvent.type(pi, "zz");
+    expect(pi).toHaveValue(`${original}zz`);
+    await userEvent.tab();
+    expect(pi).toHaveValue(original);
+    await userEvent.clear(screen.getByLabelText(/^제목/));
+    await userEvent.type(screen.getByLabelText(/^제목/), "Renamed Battery");
+    await userEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.title).toBe("Renamed Battery"));
+    expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.principal_investigator_id).toBe(piBefore);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not ask for the policy confirmation again when retrying after a contributors failure", async () => {
+    let puts = 0;
+    server.use(http.put("*/mock-api/v1/datasets/:id/contributors", () => { puts += 1; return puts === 1 ? HttpResponse.json({ code: "INTERNAL_ERROR", message: "boom", details: {} }, { status: 500 }) : HttpResponse.json({ items: [] }); }));
+    open(USER.bSteward, DATASET.battery);
+    await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    const days = screen.getByLabelText(/^최대 이용 기간/);
+    await userEvent.clear(days);
+    await userEvent.type(days, "90");
+    await userEvent.type(screen.getByRole("combobox", { name: "공동연구자 검색" }), "B R");
+    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.click(screen.getByRole("button", { name: "추가" }));
+    await userEvent.click(screen.getByRole("button", { name: "저장" }));
+    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "변경" }));
+    await waitFor(() => expect(puts).toBe(1));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await userEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(puts).toBe(2));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

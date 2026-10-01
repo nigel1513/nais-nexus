@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { useMemo } from "react";
 import { api, unwrap } from "@/shared/api/client";
 import { nextCursor } from "@/shared/api/pagination";
-import type { ActiveStatus, IdentityPublicProfile, Organization, OrganizationMembership, OrganizationSummary, OrgRole, Page } from "@/shared/api/types";
+import type { ActiveStatus, IdentityPublicProfile, Me, Organization, OrganizationMembership, OrganizationSummary, OrgRole, Page } from "@/shared/api/types";
 
 export function useListOrganizations() {
   const query = { limit: 100 };
@@ -58,5 +58,27 @@ export function useListUsers(q: string, organizationId?: string) {
     queryKey: ["listUsers", query],
     queryFn: async () => (await unwrap(api.GET("/users", { params: { query } }))) as Page<IdentityPublicProfile>,
     enabled: query.q.length >= 2,
+  });
+}
+
+/** NTIS researcher number: `null` clears it ("" is a 422 per MeUpdate). */
+export function useUpdateMe() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (national_researcher_number: string | null) => unwrap(api.PATCH("/me", { body: { national_researcher_number } })) as Promise<Me>,
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ["getMe"] }),
+  });
+}
+
+/** PLATFORM_ADMIN only: move a user to another institute (previous roles end; the user signs in again). */
+export function useTransferUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, organizationId }: { userId: string; organizationId: string }) =>
+      unwrap(api.POST("/users/{user_id}/transfer", { params: { path: { user_id: userId } }, body: { organization_id: organizationId, roles: [] } })) as Promise<OrganizationMembership>,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["listOrganizationMembers"] });
+      void qc.invalidateQueries({ queryKey: ["listUsers"] });
+    },
   });
 }

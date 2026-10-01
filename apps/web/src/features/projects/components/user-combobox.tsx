@@ -1,83 +1,10 @@
 "use client";
-import { cn, Input, Label } from "@nais/ui";
 import { useTranslations } from "next-intl";
-import { useId, useState } from "react";
-import { useListUsers } from "@/features/organizations/api";
+import { UserPicker } from "@/features/catalog/components/user-picker";
 import type { IdentityPublicProfile } from "@/shared/api/types";
-import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
 
-/** ARIA 1.2 combobox: type ≥2 chars, ArrowUp/Down to move, Enter to pick, Escape to close. */
+/** Project member search: the generic picker with the project label. */
 export function UserCombobox({ onChange }: { value: IdentityPublicProfile | null; onChange: (user: IdentityPublicProfile | null) => void }) {
   const t = useTranslations();
-  const id = useId();
-  const listId = `${id}-list`;
-  const [text, setText] = useState("");
-  const [open, setOpen] = useState(false);
-  const [active, setActive] = useState(0);
-  const debounced = useDebouncedValue(text, 250);
-  const users = useListUsers(debounced);
-  const options = users.data?.items ?? [];
-  const label = (u: IdentityPublicProfile) => `${u.display_name} (${u.organization_name ?? "—"})`;
-  const choose = (u: IdentityPublicProfile) => {
-    onChange(u);
-    setText(label(u));
-    setOpen(false);
-  };
-  const expanded = open && options.length > 0;
-
-  return (
-    <div className="relative flex min-w-64 flex-1 flex-col gap-1">
-      <Label htmlFor={id}>{t("projects.members.searchUser")}</Label>
-      <Input
-        id={id}
-        role="combobox"
-        aria-expanded={expanded}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        aria-activedescendant={expanded ? `${listId}-${active}` : undefined}
-        value={text}
-        placeholder={t("projects.members.searchPlaceholder")}
-        onChange={(e) => {
-          setText(e.target.value);
-          onChange(null);
-          setOpen(true);
-          setActive(0);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
-            e.preventDefault();
-            setOpen(true);
-            setActive((a) => Math.min(a + 1, Math.max(options.length - 1, 0)));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setActive((a) => Math.max(a - 1, 0));
-          } else if (e.key === "Enter" && expanded && options[active]) {
-            e.preventDefault();
-            choose(options[active]);
-          } else if (e.key === "Escape") setOpen(false);
-        }}
-      />
-      <p className="text-xs text-muted-foreground" aria-live="polite">
-        {debounced.trim().length < 2 ? t("projects.members.searchHint") : users.isFetching ? t("common.loading") : t("projects.members.resultCount", { count: options.length })}
-      </p>
-      <ul id={listId} role="listbox" aria-label={t("projects.members.searchUser")} className={cn("absolute top-16 z-20 w-full rounded-md border border-border bg-background shadow", !expanded && "hidden")}>
-        {options.map((u, i) => (
-          <li
-            key={u.user_id}
-            id={`${listId}-${i}`}
-            role="option"
-            tabIndex={-1}
-            aria-selected={i === active}
-            className={cn("cursor-pointer px-3 py-2 text-sm", i === active && "bg-muted")}
-            onMouseDown={(e) => {
-              e.preventDefault();
-              choose(u);
-            }}
-          >
-            {label(u)}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
+  return <UserPicker label={t("projects.members.searchUser")} onChange={onChange} />;
 }
