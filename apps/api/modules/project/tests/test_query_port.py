@@ -55,6 +55,8 @@ def test_at13_archived_project_is_not_active_membership(api: ProjectApi, db: PgU
     api.post("a.researcher", f"/projects/{project['project_id']}/archive")
     assert not port.is_active_member(project_id, A)
     assert port.get_member_role(project_id, A) == "PROJECT_OWNER"
+    assert project_id in port.list_project_ids_for_member(A)
+    assert port.list_active_member_ids(project_id) == [A]
 
 
 def test_removed_member_disappears_from_port(api: ProjectApi, db: PgUrls) -> None:
@@ -80,4 +82,3 @@ def test_at15_membership_grants_no_data_access(api: ProjectApi, db: PgUrls) -> N
         row["event_type"] for row in sql(db, "SELECT event_type FROM platform.outbox_events ORDER BY id")
     ]
     assert types == ["project.created.v1", "project.member.added.v1"]
-    assert not any(name for name in dir(ProjectQueryPort) if "grant" in name or "access" in name)

@@ -41,11 +41,14 @@ def _race(db: PgUrls, first: Callable[[Session], object], rival: Callable[[Sessi
             except ApiError as exc:
                 session.rollback()
                 outcome["code"] = exc.code.value
+            except Exception as exc:
+                session.rollback()
+                outcome["code"] = f"UNEXPECTED:{type(exc).__name__}"
 
     first_session = factory()
+    thread = threading.Thread(target=run_rival, daemon=True)
     try:
         first(first_session)
-        thread = threading.Thread(target=run_rival)
         thread.start()
         thread.join(timeout=1.0)
         assert thread.is_alive(), "rival must wait for the projects row lock"
@@ -54,7 +57,9 @@ def _race(db: PgUrls, first: Callable[[Session], object], rival: Callable[[Sessi
         assert not thread.is_alive()
     finally:
         first_session.close()
-    return outcome["code"]
+        if thread.is_alive():
+            thread.join(timeout=10)
+    return outcome.get("code", "NO_OUTCOME")
 
 
 def _owners(db: PgUrls, project_id: UUID) -> int:

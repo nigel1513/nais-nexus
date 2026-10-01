@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from api.modules.project import repository as repo
 from api.modules.project import roles
 from api.modules.project.identity import IdentityQueryPort
-from api.modules.project.schemas import MemberAddIn, ProjectCreateIn, ProjectUpdateIn
+from api.modules.project.schemas import MemberAddIn, ProjectCreateIn, ProjectUpdateIn, RoleName
 from api.platform import clock
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
@@ -181,8 +181,6 @@ def add_member(
     max_members: int,
 ) -> RowMapping:
     access = _mutable(session, user, project_id)  # locks the project row before any member-row work
-    if data.role not in roles.PROJECT_ROLES:
-        raise _validation_error("role", "INVALID_ROLE", "Unknown project role.")
     if not roles.can_manage_member(access.my_role, data.role):
         raise ApiError(ErrorCode.FORBIDDEN)
     if repo.member_role(session, project_id, data.user_id) is not None:
@@ -224,7 +222,7 @@ def add_member(
 
 
 def change_member_role(
-    session: Session, user: CurrentUser, project_id: UUID, target_user_id: UUID, role: str
+    session: Session, user: CurrentUser, project_id: UUID, target_user_id: UUID, role: RoleName
 ) -> RowMapping:
     access = _mutable(session, user, project_id)  # locks the project row before any member-row work
     member = repo.active_member(session, project_id, target_user_id)
