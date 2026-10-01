@@ -11,7 +11,7 @@ import pytest
 from dramatiq.brokers.stub import StubBroker
 from dramatiq.middleware import TimeLimitExceeded
 from sqlalchemy import select, text, update
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from api.modules.readiness import jobs
 from api.modules.readiness.catalog_port import StorageUnavailable, VersionView
@@ -154,6 +154,35 @@ def test_missing_object_fails_the_run(db: PgUrls, catalog: FixtureCatalog) -> No
     catalog.delete_object(view.dataset_version_id, "data/measurements.csv")
     assert jobs.run_validation(vid) == "FAILED"
     assert row(db, vid)["error"] == "FILE_NOT_FOUND: data/measurements.csv is missing in storage"
+
+
+def test_version_withdrawn_mid_run_fails_with_version_not_found(
+    db: PgUrls, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    vid = insert_queued(db, view)
+
+    def withdrawn_then_missing(*_: Any, **__: Any) -> Any:
+        catalog.replace_view(replace(view, status="WITHDRAWN"))
+        raise jobs.ObjectMissing("data/measurements.csv")
+
+    monkeypatch.setattr(jobs, "evaluate", withdrawn_then_missing)
+    assert jobs.run_validation(vid) == "FAILED"
+    assert row(db, vid)["error"].startswith("VERSION_NOT_FOUND")
+
+
+@pytest.mark.parametrize("exc_type", [OperationalError, InterfaceError])
+def test_db_connection_errors_during_evaluation_take_the_retry_path(
+    db: PgUrls, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch, exc_type: type[Exception]
+) -> None:
+    def boom(*_: Any, **__: Any) -> Any:
+        raise exc_type("stmt", {}, Exception("connection gone"))
+
+    monkeypatch.setattr(jobs, "evaluate", boom)
+    vid = insert_queued(db, catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B))
+    with pytest.raises(jobs.RetryableInfraError):
+        jobs.run_validation(vid)
+    assert row(db, vid)["run_status"] == "QUEUED"
 
 
 def test_unknown_version_fails_the_run(db: PgUrls, catalog: FixtureCatalog) -> None:

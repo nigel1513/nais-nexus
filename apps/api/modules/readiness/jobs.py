@@ -289,7 +289,7 @@ def run_validation(validation_id: UUID) -> str:
             file_timeout_s=_SETTINGS.file_timeout_seconds,
         )
         completed = _complete(validation_id, result)
-    except (StorageUnavailable, OperationalError, ports.PortNotProvided) as exc:
+    except (StorageUnavailable, *DB_ERRORS, ports.PortNotProvided) as exc:
         if row["attempt"] < MAX_ATTEMPTS:
             _db_retry(lambda: _requeue(validation_id))
             raise RetryableInfraError(type(exc).__name__) from exc
@@ -298,6 +298,13 @@ def run_validation(validation_id: UUID) -> str:
         )
     except ObjectMissing as exc:
         path = exc.args[0] if exc.args else "object"
+        try:
+            current = ports.get(CatalogQueryPort).get_version(row["dataset_version_id"])
+            withdrawn = current is None or current.status != "PUBLISHED"
+        except Exception:  # best effort: keep the original FILE_NOT_FOUND diagnosis
+            withdrawn = False
+        if withdrawn:  # withdrawn while we were reading it
+            return _fail(validation_id, "VERSION_NOT_FOUND: dataset version is missing or not published")
         return _fail(validation_id, f"FILE_NOT_FOUND: {path} is missing in storage")
     except FileTooLarge:
         return _fail(validation_id, "FILE_TOO_LARGE: a file exceeds the validation size limit")

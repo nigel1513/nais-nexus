@@ -41,6 +41,15 @@ def _catalog() -> CatalogQueryPort:
         raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "Catalog module is not installed.") from exc
 
 
+def _can_see_all_versions(user: CurrentUser, owner_organization_id: UUID) -> bool:
+    """Mirror of M03 access.can_see_all_versions (cross-module import is not allowed, D-038)."""
+    return (
+        user.is_platform_admin
+        or user.has_org_role(owner_organization_id, "DATA_STEWARD")
+        or user.has_org_role(owner_organization_id, "ORG_ADMIN")
+    )
+
+
 def _visible_version(user: CurrentUser, version_id: UUID) -> VersionView:
     """404 for unknown or invisible (D-012: invisible looks like missing). Any catalog failure is a generic 503."""
     catalog = _catalog()
@@ -97,6 +106,8 @@ def get_readiness(
     version = _visible_version(user, version_id)
     if version.status == "DRAFT":
         raise ApiError(ErrorCode.NOT_FOUND)
+    if version.status == "WITHDRAWN" and not _can_see_all_versions(user, version.owner_organization_id):
+        raise ApiError(ErrorCode.NOT_FOUND)  # same rule as M03 access.can_see_all_versions
     rows = latest_per_profile(session, version_id, profile_id)
     if profile_id is not None and not rows:
         raise ApiError(ErrorCode.READINESS_NOT_AVAILABLE)

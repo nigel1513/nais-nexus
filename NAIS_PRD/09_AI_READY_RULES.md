@@ -269,6 +269,7 @@ evidence
   "undefined_code_counts": []
 }
 ```
+추가 evidence 키 `missing_unit_ratio`: 단위 누락 숫자 필드 비율(소수 6자리 반올림, 표시용). 판정은 정확한 분수로 비교한다.
 message 예: `UCUM 단위로 해석할 수 없는 값이 2개 있습니다 (예: temperature_c: degC → Cel).`
 (`unit` 문자열은 스키마 메타데이터이므로 evidence 허용. 교정 제안은 번들 사전의 alias 표 `unit_aliases_v1.csv`에서만 결정론적으로 가져온다.)
 

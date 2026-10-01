@@ -349,19 +349,18 @@ def test_overlong_profile_id_is_a_validation_error(client: TestClient, catalog: 
     assert (response.status_code, error_code(response)) == (422, "VALIDATION_FAILED")
 
 
-def test_non_owner_reads_withdrawn_results_only_while_the_dataset_is_visible(
+def test_withdrawn_version_results_follow_m03_can_see_all_versions(
     client: TestClient, catalog: FixtureCatalog, db: PgUrls
 ) -> None:
-    """D-012: a withdrawn-only dataset is invisible to other institutions; with another PUBLISHED version the
-    withdrawn version's results stay readable (same rule as M03 can_see_dataset)."""
+    """M03 access.can_see_all_versions: only owner-org DATA_STEWARD / ORG_ADMIN and PLATFORM_ADMIN see a WITHDRAWN
+    version; everyone else gets 404, even when the dataset itself is visible to them."""
     view = _completed(client, catalog, db)
     catalog.replace_view(dataclasses.replace(view, status="WITHDRAWN"))
-    hidden = readiness(client, view.dataset_version_id, "a_researcher")
-    assert (hidden.status_code, error_code(hidden)) == (404, "NOT_FOUND")
-    assert readiness(client, view.dataset_version_id, "b_researcher").status_code == 200  # owner institution
     catalog.add_version(
         {"README.md": b"# x\n"}, clean_snapshot(), owner_organization_id=ORG_B, dataset_id=view.dataset_id
-    )
-    shown = readiness(client, view.dataset_version_id, "a_researcher")
-    assert shown.status_code == 200
-    assert len(shown.json()["items"]) == 2
+    )  # dataset stays visible to other institutions
+    for who in ("b_steward", "b_orgadmin", "admin"):
+        assert len(readiness(client, view.dataset_version_id, who).json()["items"]) == 2, who
+    for who in ("a_researcher", "a_steward", "b_researcher"):
+        hidden = readiness(client, view.dataset_version_id, who)
+        assert (hidden.status_code, error_code(hidden)) == (404, "NOT_FOUND"), who

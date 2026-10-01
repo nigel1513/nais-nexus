@@ -25,7 +25,10 @@ verdict (M05-AT-14 checks the imports).
   (D-029). Same fingerprint + COMPLETED => the result is reused, never re-run.
 - `result_sha256` = sha256 of canonical JSON of `checks + overall_status + summary`. Golden values live in
   `tests/fixtures/readiness/*/expected/*.json`; `test_golden.py` fails when a result changes. After a reviewed rule
-  change: bump the version, then `uv run python -m api.modules.readiness.selfcheck --record` and commit.
+  change: bump the version, then run `cd apps && uv run python -m api.modules.readiness.selfcheck --record` (or with `PYTHONPATH=apps`) and
+  commit. `--record` refuses to replace a changed hash when neither `VALIDATOR_VERSION` nor the profile version
+  differs from the expected file, and it records both versions. `test_profiles.py` pins each profile YAML's content
+  hash per version.
 
 ## Run outcomes
 `run_status=FAILED` means "could not validate" (storage down after 3 attempts, `FILE_NOT_FOUND`, `FILE_TIMEOUT`,
@@ -66,6 +69,15 @@ used when a single file exceeds the parser's size limit. `overall_status` is nul
   times and then answers a generic `503 DEPENDENCY_UNAVAILABLE`.
 - **Performance (M05-AT-15)**: `READINESS_PERF=1 uv run pytest apps/api/modules/readiness/tests/test_perf.py`
   writes a 1 GiB csv to tmp and checks the run finishes with `truncated=true`, 100000 sampled rows.
+
+## Known limitations
+- Parquet: memory is bounded per row group (not per allocation); a file with a huge row group can use a lot of RAM.
+- A single large file competes with the per-file deadline (`READINESS_FILE_TIMEOUT_SECONDS`, 600 s): at the measured
+  ~17 MB/s a file above roughly 10 GB fails with `FILE_TIMEOUT`.
+- `RangeReader` fetches at most 1 MiB per storage round trip (`max_read`); raising it is a tuning option but trades
+  memory per read, so it was left unchanged.
+- A version withdrawn while a run is in flight fails that run with `VERSION_NOT_FOUND`; reading results of a
+  WITHDRAWN version needs owner-org DATA_STEWARD / ORG_ADMIN or PLATFORM_ADMIN (same as M03), others get 404.
 
 ## Integration notes
 - **M03**: readiness looks up `CatalogQueryPort` and `CatalogReadPort` from `api.modules.catalog.public` (D-038; M03's
