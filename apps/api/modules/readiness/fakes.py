@@ -41,10 +41,19 @@ def _sha256_of(source: Path | bytes) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
+_ID_NAMESPACE = uuid.UUID("5f0c5a52-0000-5000-8000-000000000005")
+
+
+@dataclass
+class _Dataset:
+    owner_organization_id: UUID
+    access_level: str
+    status: str = "ACTIVE"
+
+
 @dataclass
 class _Entry:
     view: VersionView
-    access_level: str
     sources: dict[str, Path | bytes]  # storage_key -> content
 
 
@@ -56,6 +65,15 @@ class FixtureCatalog:
     reads: list[str] = field(default_factory=list)
     live_metadata: dict[UUID, dict[str, Any]] = field(default_factory=dict)  # dataset_id -> live metadata
     _versions: dict[UUID, _Entry] = field(default_factory=dict)
+    _datasets: dict[UUID, _Dataset] = field(default_factory=dict)
+    _counter: int = 0
+
+    def _next_id(self, kind: str) -> UUID:
+        self._counter += 1
+        return uuid.uuid5(_ID_NAMESPACE, f"{kind}-{self._counter}")
+
+    def withdraw_dataset(self, dataset_id: UUID) -> None:
+        self._datasets[dataset_id].status = "WITHDRAWN"
 
     def add_version(
         self,
@@ -67,9 +85,10 @@ class FixtureCatalog:
         dataset_id: UUID | None = None,
         dataset_version_id: UUID | None = None,
         access_level: str | None = None,
+        dataset_status: str | None = None,
     ) -> VersionView:
-        dataset_id = dataset_id or uuid.uuid4()
-        version_id = dataset_version_id or uuid.uuid4()
+        dataset_id = dataset_id or self._next_id("dataset")
+        version_id = dataset_version_id or self._next_id("version")
         refs: list[FileRef] = []
         sources: dict[str, Path | bytes] = {}
         for path in sorted(files, key=lambda p: p.encode("utf-8")):
@@ -88,20 +107,23 @@ class FixtureCatalog:
                     storage_key=key,
                 )
             )
-        published = status == "PUBLISHED"
+        has_content = status != "DRAFT"  # PUBLISHED and WITHDRAWN versions carry snapshot and manifest
         level = access_level or (snapshot or {}).get("access_level") or "INTERNAL"
-        snap = {**(snapshot or {}), "access_level": level} if published else None
+        snap = {**(snapshot or {}), "access_level": level} if has_content else None
         view = VersionView(
             dataset_version_id=version_id,
             dataset_id=dataset_id,
             owner_organization_id=owner_organization_id,
             version_label="v1",
             status=status,  # type: ignore[arg-type]
-            manifest_sha256=manifest_sha256(refs) if published else None,
+            manifest_sha256=manifest_sha256(refs) if has_content else None,
             metadata_snapshot=snap,
             files=tuple(refs),
         )
-        self._versions[version_id] = _Entry(view, level, sources)
+        dataset = self._datasets.setdefault(dataset_id, _Dataset(owner_organization_id, level))
+        if dataset_status is not None:
+            dataset.status = dataset_status
+        self._versions[version_id] = _Entry(view, sources)
         self.live_metadata[dataset_id] = dict(snap or snapshot or {})
         return view
 
@@ -124,35 +146,36 @@ class FixtureCatalog:
 
     # ---- CatalogQueryPort (full M03 Protocol, so it can be provided under the M03 key)
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None:
-        for entry in self._versions.values():
-            if entry.view.dataset_id != dataset_id:
-                continue
-            meta = self.live_metadata.get(dataset_id, {})
-            return DatasetPolicyView(
-                dataset_id=dataset_id,
-                owner_organization_id=entry.view.owner_organization_id,
-                access_level=entry.access_level,  # type: ignore[arg-type]
-                allowed_purposes=tuple(meta.get("allowed_purposes") or ()),
-                approval_required=entry.access_level in ("CONTROLLED", "SENSITIVE"),
-                max_grant_days=int(meta.get("max_grant_days") or 180),
-                status="ACTIVE",
-                title=str(meta.get("title") or ""),
-            )
-        return None
+        dataset = self._datasets.get(dataset_id)
+        if dataset is None:
+            return None
+        meta = self.live_metadata.get(dataset_id, {})
+        return DatasetPolicyView(
+            dataset_id=dataset_id,
+            owner_organization_id=dataset.owner_organization_id,
+            access_level=dataset.access_level,  # type: ignore[arg-type]
+            allowed_purposes=tuple(meta.get("allowed_purposes") or ()),
+            approval_required=dataset.access_level in ("CONTROLLED", "SENSITIVE"),
+            max_grant_days=int(meta.get("max_grant_days") or 180),
+            status=dataset.status,  # type: ignore[arg-type]
+            title=str(meta.get("title") or ""),
+        )
 
     def get_version(self, dataset_version_id: UUID) -> VersionView | None:
         entry = self._versions.get(dataset_version_id)
         return entry.view if entry else None
 
     def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool:
-        """D-012: INTERNAL metadata only for owner-org members (and platform admins); others for everyone."""
-        for entry in self._versions.values():
-            if entry.view.dataset_id != dataset_id:
-                continue
-            if entry.access_level != "INTERNAL":
-                return True
-            return ctx.is_platform_admin or ctx.organization_id == entry.view.owner_organization_id
-        return False
+        """Same rule as M03 access.can_see_dataset (D-012 + R3)."""
+        dataset = self._datasets.get(dataset_id)
+        if dataset is None:
+            return False
+        if ctx.is_platform_admin or ctx.organization_id == dataset.owner_organization_id:
+            return True
+        has_published = any(
+            e.view.dataset_id == dataset_id and e.view.status == "PUBLISHED" for e in self._versions.values()
+        )
+        return dataset.status == "ACTIVE" and dataset.access_level != "INTERNAL" and has_published
 
     # ---- CatalogReadPort
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO:
