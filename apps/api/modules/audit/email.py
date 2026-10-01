@@ -7,15 +7,16 @@ mid-send the row becomes due again after the lease (at-least-once, and the attem
 """
 
 import logging
+import re
 import smtplib
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from email.message import EmailMessage
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.orm import Session
 
 from api.modules.audit.settings import AuditSettings, get_audit_settings
@@ -32,6 +33,13 @@ BACKOFF: tuple[timedelta, ...] = (
 )
 MAX_ATTEMPTS = 5
 _LEASE_MARGIN = timedelta(seconds=60)
+_TIMEOUTS_PER_MESSAGE = (
+    6  # smtplib applies the timeout per socket operation (connect, EHLO, MAIL, RCPT, DATA, QUIT)
+)
+
+
+def _budget(settings: AuditSettings) -> timedelta:
+    return timedelta(seconds=settings.smtp_timeout_seconds * _TIMEOUTS_PER_MESSAGE)
 
 
 class EmailSender(Protocol):
@@ -75,13 +83,13 @@ def build_message(
     message["To"] = to_address
     message["Subject"] = title
     parts = [title, body, f"{settings.nais_public_base_url.rstrip('/')}{link}"]
-    message.set_content("\n\n".join(p for p in parts if p))
+    message.set_content("\n\n".join(p for p in parts if p), cte="quoted-printable")
     return message
 
 
 def _claim(
     factory: Callable[[], Session], settings: AuditSettings, now: Callable[[], datetime], batch_size: int
-) -> list[_Claimed]:
+) -> tuple[list[_Claimed], datetime]:
     e, n = email_deliveries.c, notifications.c
     with factory() as session, session.begin():
         rows = session.execute(
@@ -92,22 +100,42 @@ def _claim(
             .limit(batch_size)
             .with_for_update(of=email_deliveries, skip_locked=True)
         ).all()
-        if not rows:
-            return []
-        lease = now() + timedelta(seconds=settings.smtp_timeout_seconds * len(rows)) + _LEASE_MARGIN
+        lease_end = now() + len(rows) * _budget(settings) + _LEASE_MARGIN
         for row in rows:
             session.execute(
                 update(email_deliveries)
                 .where(e.email_delivery_id == row.email_delivery_id)
-                .values(attempts=row.attempts + 1, next_attempt_at=lease)
+                .values(attempts=row.attempts + 1, next_attempt_at=lease_end)
             )
-        return [
+        claimed = [
             _Claimed(r.email_delivery_id, r.to_address, r.attempts + 1, r.title, r.body, r.link) for r in rows
         ]
+        return claimed, lease_end
 
 
 def _describe(exc: Exception, to_address: str) -> str:
-    return repr(exc).replace(to_address, "<recipient>")[:2000]
+    return re.sub(re.escape(to_address), "<recipient>", repr(exc), flags=re.IGNORECASE)[:2000]
+
+
+def _release(factory: Callable[[], Session], rows: list[_Claimed], now: Callable[[], datetime]) -> None:
+    """Give unsent claims back without losing an attempt."""
+    e = email_deliveries.c
+    try:
+        with factory() as session, session.begin():
+            for row in rows:
+                session.execute(
+                    update(email_deliveries)
+                    .where(
+                        e.email_delivery_id == row.email_delivery_id,
+                        e.attempts == row.attempts,
+                        e.status == "PENDING",
+                    )
+                    .values(attempts=row.attempts - 1, next_attempt_at=now())
+                )
+    except Exception:
+        logger.warning(
+            "could not release unsent email claims; they become due after the lease", exc_info=True
+        )
 
 
 def send_pending_emails(
@@ -120,40 +148,58 @@ def send_pending_emails(
 ) -> SendResult:
     sent = retried = failed = 0
     e = email_deliveries.c
-    for row in _claim(factory, settings, now, batch_size):
-        values: dict[str, Any]
-        try:
-            sender.send(
-                build_message(
-                    to_address=row.to_address,
-                    title=row.title,
-                    body=row.body,
-                    link=row.link,
-                    settings=settings,
+    claimed, lease_end = _claim(factory, settings, now, batch_size)
+    budget = _budget(settings)
+    started = 0  # rows[:started] had send() called; they are never released (the mail may be out)
+    try:
+        for row in claimed:
+            if now() >= lease_end - budget:
+                break  # not enough lease left for a full exchange; a re-claim mid-send would duplicate mail
+            started += 1
+            values: dict[str, Any]
+            outcome: str
+            try:
+                sender.send(
+                    build_message(
+                        to_address=row.to_address,
+                        title=row.title,
+                        body=row.body,
+                        link=row.link,
+                        settings=settings,
+                    )
                 )
-            )
-        except Exception as exc:
-            # Log the id and exception type only: SMTP errors can embed the recipient address.
-            logger.warning(
-                "email send failed",
-                extra={"email_delivery_id": str(row.email_delivery_id), "error_type": type(exc).__name__},
-            )
-            values = {"last_error": _describe(exc, row.to_address)}
-            if row.attempts >= MAX_ATTEMPTS:
-                values["status"] = "FAILED"
-                failed += 1
+            except Exception as exc:
+                # Log the id and exception type only: SMTP errors can embed the recipient address.
+                logger.warning(
+                    "email send failed",
+                    extra={"email_delivery_id": str(row.email_delivery_id), "error_type": type(exc).__name__},
+                )
+                values = {"last_error": _describe(exc, row.to_address)}
+                if row.attempts >= MAX_ATTEMPTS:
+                    values["status"] = "FAILED"
+                    outcome = "failed"
+                else:
+                    values["next_attempt_at"] = now() + BACKOFF[row.attempts - 1]
+                    outcome = "retried"
             else:
-                values["next_attempt_at"] = now() + BACKOFF[row.attempts - 1]
-                retried += 1
-        else:
-            values = {"status": "SENT", "sent_at": now(), "last_error": None}
-            sent += 1
-        with factory() as session, session.begin():
-            session.execute(
-                update(email_deliveries)
-                .where(e.email_delivery_id == row.email_delivery_id, e.attempts == row.attempts)
-                .values(**values)
-            )
+                values = {"status": "SENT", "sent_at": now(), "last_error": None}
+                outcome = "sent"
+            with factory() as session, session.begin():
+                applied = cast(
+                    CursorResult[Any],
+                    session.execute(
+                        update(email_deliveries)
+                        .where(e.email_delivery_id == row.email_delivery_id, e.attempts == row.attempts)
+                        .values(**values)
+                    ),
+                ).rowcount
+            if applied:
+                sent += outcome == "sent"
+                retried += outcome == "retried"
+                failed += outcome == "failed"
+    finally:
+        if started < len(claimed):
+            _release(factory, claimed[started:], now)
     return SendResult(sent=sent, retried=retried, failed=failed)
 
 

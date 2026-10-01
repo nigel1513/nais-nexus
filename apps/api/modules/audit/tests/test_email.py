@@ -1,7 +1,11 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
 
 import pytest
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 from api.modules.audit.email import (
     MAX_ATTEMPTS,
@@ -120,7 +124,7 @@ class ReentrantSender(FakeSender):
                     "SELECT 1 FROM audit.email_deliveries FOR UPDATE NOWAIT",
                 )
                 self.row_locked = False
-            except Exception:
+            except OperationalError:
                 self.row_locked = True
         super().send(message)
 
@@ -134,3 +138,107 @@ def test_concurrent_worker_never_double_sends_and_holds_no_lock(db: PgUrls) -> N
     assert sender.row_locked is False
     assert len(sender.sent) == 1
     assert scalar(db, "SELECT attempts FROM audit.email_deliveries") == 1
+
+
+class Hook(FakeSender):
+    def __init__(self, hook: Callable[[EmailMessage], None]) -> None:
+        super().__init__()
+        self.hook = hook
+
+    def send(self, message: EmailMessage) -> None:
+        self.hook(message)
+        super().send(message)
+
+
+def _budget_s() -> float:
+    return SETTINGS.smtp_timeout_seconds * 6
+
+
+def test_stale_outcome_is_dropped_and_not_counted(db: PgUrls) -> None:
+    run(db, notifier, envelope("project.member.added.v1"))
+
+    def bump(_: EmailMessage) -> None:
+        with session_factory(db.app)() as s, s.begin():
+            s.execute(text("UPDATE audit.email_deliveries SET attempts = attempts + 1"))
+
+    at = datetime.now(UTC) + timedelta(seconds=5)
+    assert _send(db, Hook(bump), at) == SendResult(0, 0, 0)
+    [row] = fetch(db, "SELECT status, attempts FROM audit.email_deliveries")
+    assert (row["status"], row["attempts"]) == ("PENDING", 2)
+
+
+def test_lease_covers_budget_and_expires(db: PgUrls) -> None:
+    run(db, notifier, envelope("project.member.added.v1"))
+    at = datetime.now(UTC) + timedelta(seconds=5)
+    seen: list[datetime] = []
+    sender = Hook(lambda _: seen.append(scalar(db, "SELECT next_attempt_at FROM audit.email_deliveries")))
+    sender.down = True
+    assert _send(db, sender, at).retried == 1
+    assert seen[0] >= at + timedelta(seconds=_budget_s() + 60)
+    lease_end = seen[0]
+    # a crashed worker leaves the lease behind: simulate by restoring it, then it is due again only after it
+    run_sql(db, "UPDATE audit.email_deliveries SET next_attempt_at = :t", t=lease_end)
+    ok = FakeSender()
+    assert _send(db, ok, lease_end - timedelta(seconds=1)) == SendResult(0, 0, 0)
+    assert _send(db, ok, lease_end) == SendResult(sent=1)
+
+
+def run_sql(db: PgUrls, sql: str, **params: object) -> None:
+    with session_factory(db.app)() as s, s.begin():
+        s.execute(text(sql), params)
+
+
+def test_unsent_claims_released_when_outcome_transaction_raises(db: PgUrls) -> None:
+    for _ in range(3):
+        run(db, notifier, envelope("project.member.added.v1"))
+    assert scalar(db, "SELECT count(*) FROM audit.email_deliveries") == 3
+    real = session_factory(db.app)
+    calls = {"n": 0}
+
+    def factory() -> Session:
+        calls["n"] += 1
+        if calls["n"] == 2:  # first outcome transaction
+            raise RuntimeError("db gone")
+        return real()
+
+    at = datetime.now(UTC) + timedelta(seconds=5)
+    with pytest.raises(RuntimeError):
+        send_pending_emails(factory, FakeSender(), SETTINGS, now=lambda: at)
+    rows = fetch(db, "SELECT attempts, next_attempt_at FROM audit.email_deliveries")
+    assert sorted(r["attempts"] for r in rows) == [0, 0, 1]
+    assert sum(1 for r in rows if r["next_attempt_at"] <= at) == 2
+
+
+def test_batch_stops_and_releases_when_lease_runs_low(db: PgUrls) -> None:
+    for _ in range(2):
+        run(db, notifier, envelope("project.member.added.v1"))
+    clock_at = [datetime.now(UTC) + timedelta(seconds=5)]
+
+    def advance(_: EmailMessage) -> None:
+        clock_at[0] += timedelta(seconds=_budget_s() + 61)
+
+    sender = Hook(advance)
+    result = send_pending_emails(session_factory(db.app), sender, SETTINGS, now=lambda: clock_at[0])
+    assert result == SendResult(sent=1)
+    assert sorted(r["attempts"] for r in fetch(db, "SELECT attempts FROM audit.email_deliveries")) == [0, 1]
+
+
+def test_last_error_scrubs_address_case_insensitively_and_is_bounded(db: PgUrls) -> None:
+    run(db, notifier, envelope("project.member.added.v1"))
+
+    def boom(m: EmailMessage) -> None:
+        raise RuntimeError(f"rejected {str(m['To']).upper()} " + "x" * 5000)
+
+    at = datetime.now(UTC) + timedelta(seconds=5)
+    assert _send(db, Hook(boom), at).retried == 1
+    err = scalar(db, "SELECT last_error FROM audit.email_deliveries")
+    assert "b.researcher@inst-b.local" not in err.lower()
+    assert len(err) <= 2000
+
+
+def test_wire_encoding_is_ascii_safe_for_korean() -> None:
+    msg = build_message(to_address="x@y", title="제목", body="본문", link="/", settings=SETTINGS)
+    raw = msg.as_bytes()
+    assert raw.isascii()
+    assert b"Subject: =?utf-8?" in raw
+    assert b"Content-Transfer-Encoding: quoted-printable" in raw
