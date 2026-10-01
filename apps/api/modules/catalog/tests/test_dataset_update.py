@@ -56,9 +56,7 @@ def test_purpose_change_emits_policy_changed_only(api: CatalogApi, db: PgUrls) -
     }
 
 
-def test_noop_and_reordered_purposes_emit_no_policy_events(
-    api: CatalogApi, db: PgUrls
-) -> None:  # Review Focus 3
+def test_noop_and_reordered_purposes_emit_no_policy_events(api: CatalogApi, db: PgUrls) -> None:
     dataset_id = create_dataset(api)["dataset_id"]
     _clear_outbox(db)
     same = {

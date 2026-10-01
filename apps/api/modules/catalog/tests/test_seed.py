@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import io
 import json
 from uuid import UUID
@@ -6,7 +7,7 @@ from uuid import UUID
 from api.modules.catalog.public import CatalogQueryPort
 from api.modules.catalog.seed import seed
 from api.modules.catalog.seed_data import SEED_DATASETS
-from api.modules.catalog.seed_files import fixture_files, measurements_csv
+from api.modules.catalog.seed_files import FIXTURES, fixture_files, measurements_csv
 from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import outbox_events, rows
 from api.modules.catalog.tests.support_api import USERS, CatalogApi
@@ -95,3 +96,39 @@ def test_seed_check_visibility(api: CatalogApi, db: PgUrls) -> None:  # 10_SEED_
     view = port.get_version(UUID("00000000-0000-7000-8000-000000002101"))
     assert view is not None and view.metadata_snapshot is not None
     assert view.metadata_snapshot["title"] == "Battery Cycling Measurements"
+
+
+# W1-D5 golden: M05 imports fixture_files(); any byte change here silently breaks its readiness fixtures.
+GOLDEN_SHA256 = {
+    "clean_tabular": {
+        "README.md": ("88be8b70c07a95412db9b0b0ca1d2dc4bcd14be5755af580d6f2c820b182c7aa"),
+        "_codebook.csv": ("4265d09fed27a06f91d28383236e6757a520a2f4c9fd538c0383d832ee0489a9"),
+        "_schema.json": ("9491e70abaf9671da301335707a9b63f4c049f3c4b8a9f1fe1e111ba7f7251e3"),
+        "data/measurements.csv": ("eab038a6519381749bdf1fe3363c99baecbeeb349ed3b568c8524bd131127300"),
+    },
+    "missing_metadata": {
+        "README.md": ("88be8b70c07a95412db9b0b0ca1d2dc4bcd14be5755af580d6f2c820b182c7aa"),
+        "_codebook.csv": ("4265d09fed27a06f91d28383236e6757a520a2f4c9fd538c0383d832ee0489a9"),
+        "_schema.json": ("9491e70abaf9671da301335707a9b63f4c049f3c4b8a9f1fe1e111ba7f7251e3"),
+        "data/measurements.csv": ("eab038a6519381749bdf1fe3363c99baecbeeb349ed3b568c8524bd131127300"),
+    },
+    "invalid_units": {
+        "README.md": ("88be8b70c07a95412db9b0b0ca1d2dc4bcd14be5755af580d6f2c820b182c7aa"),
+        "_codebook.csv": ("4265d09fed27a06f91d28383236e6757a520a2f4c9fd538c0383d832ee0489a9"),
+        "_schema.json": ("a33e0ca6cd0dadd9b080cd581d6aa1ffc094a93817c0f924a9694fc954e6b95a"),
+        "data/measurements.csv": ("eab038a6519381749bdf1fe3363c99baecbeeb349ed3b568c8524bd131127300"),
+    },
+    "missing_provenance": {
+        "README.md": ("66c0ef10e36611103c3d660e1ac4de37a753267fbd7a4ce887b768c66f753d28"),
+        "_codebook.csv": ("4265d09fed27a06f91d28383236e6757a520a2f4c9fd538c0383d832ee0489a9"),
+        "_schema.json": ("9491e70abaf9671da301335707a9b63f4c049f3c4b8a9f1fe1e111ba7f7251e3"),
+        "data/measurements.csv": ("eab038a6519381749bdf1fe3363c99baecbeeb349ed3b568c8524bd131127300"),
+    },
+}
+
+
+def test_fixture_files_match_the_pinned_digests() -> None:
+    assert set(GOLDEN_SHA256) == set(FIXTURES)
+    for fixture in FIXTURES:
+        actual = {path: hashlib.sha256(data).hexdigest() for path, data in fixture_files(fixture).items()}
+        assert actual == GOLDEN_SHA256[fixture], fixture

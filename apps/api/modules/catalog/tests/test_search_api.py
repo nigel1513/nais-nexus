@@ -352,3 +352,29 @@ def test_at20_p95_under_1_5_seconds_with_10k_docs(search_index: OpenSearchIndex)
         latencies = sorted(pool.map(timed, queries))
     p95 = statistics.quantiles(latencies, n=20)[18]
     assert p95 < 1.5, f"p95={p95:.3f}s"
+
+
+def test_facets_never_count_what_the_user_cannot_see(search_api: CatalogApi, db: PgUrls) -> None:
+    internal = published(search_api, db, access_level="INTERNAL", keywords=["secretkw"])
+    draft_only = create_dataset(search_api, "b.steward", keywords=["draftkw"])["dataset_id"]
+    controlled = published(search_api, db, keywords=["openkw"])
+    own = published(search_api, db, user="a.steward", access_level="PUBLIC", keywords=["ownkw"])
+    index_now(search_api)
+    body = search(search_api, "a.researcher")
+    assert ids(body) == {controlled, own}
+    assert internal not in ids(body) and draft_only not in ids(body)
+    facets = body["facets"]
+    assert {b["value"]: b["count"] for b in facets["owner_organization_id"]} == {str(ORG_B): 1, str(ORG_A): 1}
+    assert {b["value"] for b in facets["keyword"]} == {"openkw", "ownkw"}
+    levels = {b["value"]: b["count"] for b in facets["access_level"]}
+    assert levels == {"CONTROLLED": 1, "PUBLIC": 1}
+
+
+def test_filters_cannot_widen_visibility(search_api: CatalogApi, db: PgUrls) -> None:
+    published(search_api, db, access_level="INTERNAL")
+    create_dataset(search_api, "b.steward")  # draft-only
+    index_now(search_api)
+    for params in ({"access_level": ["INTERNAL"]}, {"owner_organization_id": [str(ORG_B)]}):
+        body = search(search_api, "a.researcher", **params)
+        assert body["total"] == 0 and body["items"] == []
+        assert all(buckets == [] for buckets in body["facets"].values()), params
