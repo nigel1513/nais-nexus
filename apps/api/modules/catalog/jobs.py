@@ -1,16 +1,22 @@
 """Catalog background work (M03 §10). The verify actor is declared at import time (D-036)."""
 
 import logging
+from collections.abc import Mapping
+from datetime import timedelta
+from typing import Any
 from uuid import UUID
 
 import dramatiq
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.objects import StorageUnavailable
-from api.modules.catalog.tables import dataset_files
+from api.modules.catalog.search.drain import drain_index_queue
+from api.modules.catalog.service.uploads import abort_quietly
+from api.modules.catalog.tables import dataset_files, dataset_versions, upload_sessions
 from api.modules.catalog.verification import apply_outcome, evaluate_object
-from api.platform import ports
+from api.platform import clock, ports
+from api.platform.scheduler import Scheduler
 
 logger = logging.getLogger("nais.catalog.jobs")
 
@@ -68,3 +74,127 @@ def _retry_when(retries: int, exc: BaseException) -> bool:
 )
 def verify_file_actor(file_id: str) -> None:
     verify_file_job(UUID(file_id), deps=ports.get(CatalogDeps))
+
+
+DRAIN_INTERVAL_S = 2.0
+SWEEP_INTERVAL_S = 300.0
+
+
+def _cleanup_partial_upload(deps: CatalogDeps, f: Mapping[Any, Any]) -> None:
+    try:
+        store = deps.storage.for_bucket(f["storage_bucket"])
+        if f["multipart_upload_id"]:
+            abort_quietly(store, f["storage_key"], f["multipart_upload_id"])
+        store.delete(f["storage_key"])
+    except Exception:
+        logger.warning(
+            "could not clean up an expired upload", extra={"file_id": str(f["file_id"])}, exc_info=True
+        )
+
+
+def _expire_one(deps: CatalogDeps, upload_session_id: UUID, version_id: UUID) -> bool:
+    """Lock order matches completeUploadSession: version -> session -> files (all SKIP LOCKED, then re-check)."""
+    now = clock.now()
+    with deps.session_factory() as session, session.begin():
+        locked_version = session.execute(
+            select(dataset_versions.c.dataset_version_id)
+            .where(dataset_versions.c.dataset_version_id == version_id)
+            .with_for_update(skip_locked=True)
+        ).first()
+        if locked_version is None:
+            return False  # a writer holds the version; retry on the next sweep
+        sess = session.execute(
+            select(upload_sessions.c.upload_session_id)
+            .where(
+                upload_sessions.c.upload_session_id == upload_session_id,
+                upload_sessions.c.status == "OPEN",
+                upload_sessions.c.expires_at < now,
+            )
+            .with_for_update(skip_locked=True)
+        ).first()
+        if sess is None:
+            return False  # completed or expired meanwhile
+        pending = (
+            session.execute(
+                select(dataset_files)
+                .where(
+                    dataset_files.c.upload_session_id == upload_session_id,
+                    dataset_files.c.status == "PENDING",
+                )
+                .with_for_update()
+            )
+            .mappings()
+            .all()
+        )
+        for f in pending:
+            _cleanup_partial_upload(deps, f)
+        if pending:
+            session.execute(
+                update(dataset_files)
+                .where(dataset_files.c.file_id.in_([f["file_id"] for f in pending]))
+                .values(status="FAILED", failure_code="SESSION_EXPIRED", updated_at=now)
+            )
+        session.execute(
+            update(upload_sessions)
+            .where(upload_sessions.c.upload_session_id == upload_session_id)
+            .values(status="EXPIRED")
+        )
+    return True
+
+
+def expire_upload_sessions(deps: CatalogDeps, *, limit: int = 100) -> int:
+    """catalog.expire_upload_sessions (M03 §5.3, §10)."""
+    with deps.session_factory() as session:
+        candidates = session.execute(
+            select(upload_sessions.c.upload_session_id, upload_sessions.c.dataset_version_id)
+            .where(upload_sessions.c.status == "OPEN", upload_sessions.c.expires_at < clock.now())
+            .order_by(upload_sessions.c.expires_at)
+            .limit(limit)
+        ).all()
+    expired = sum(1 for sid, vid in candidates if _expire_one(deps, sid, vid))
+    if expired:
+        logger.info("expired upload sessions", extra={"count": expired})
+    return expired
+
+
+def requeue_stale_uploads(
+    deps: CatalogDeps, *, older_than: timedelta = timedelta(hours=2), limit: int = 500
+) -> int:
+    """Re-send UPLOADED files left behind by a lost verify message or an exhausted/dead-lettered verify run."""
+    now = clock.now()
+    with deps.session_factory() as session, session.begin():
+        file_ids: list[UUID] = list(
+            session.execute(
+                select(dataset_files.c.file_id)
+                .where(dataset_files.c.status == "UPLOADED", dataset_files.c.updated_at < now - older_than)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            ).scalars()
+        )
+        if file_ids:
+            session.execute(
+                update(dataset_files).where(dataset_files.c.file_id.in_(file_ids)).values(updated_at=now)
+            )
+    if file_ids:
+        deps.verification.enqueue(file_ids)
+        logger.warning("re-queued stale file verifications", extra={"count": len(file_ids)})
+    return len(file_ids)
+
+
+def _deps() -> CatalogDeps:
+    return ports.get(CatalogDeps)
+
+
+def _drain() -> None:
+    drain_index_queue(_deps())
+
+
+def _sweep() -> None:
+    deps = _deps()
+    expire_upload_sessions(deps)
+    requeue_stale_uploads(deps)
+
+
+def register_worker(broker: dramatiq.Broker, scheduler: Scheduler) -> None:
+    scheduler.every(DRAIN_INTERVAL_S, "catalog.index_drain", _drain)
+    scheduler.every(SWEEP_INTERVAL_S, "catalog.expire_upload_sessions", _sweep)

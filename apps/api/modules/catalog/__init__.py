@@ -6,6 +6,7 @@ from api.modules.catalog import (  # noqa: F401  (register @subscribe handlers a
     handlers,
     jobs,
 )
+from api.modules.catalog.jobs import register_worker
 from api.modules.catalog.router import router
 from api.modules.catalog.wiring import wire
 from api.platform.modules import ModuleSpec
@@ -16,4 +17,5 @@ MODULE = ModuleSpec(
     router=router,
     migrations_dir=Path(__file__).parent / "migrations",
     wire=wire,
+    register_worker=register_worker,
 )
