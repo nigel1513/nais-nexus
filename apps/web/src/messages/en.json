@@ -205,6 +205,54 @@
       "publicationAdd": "Add publication",
       "publicationRemove": "Remove publication",
       "contributorsSaveFailed": "Could not save contributors — try again from edit"
+    },
+    "explorer": {
+      "view": "View",
+      "files": "Files",
+      "noFiles": "No verified files",
+      "views": {
+        "detail": "Detail",
+        "compact": "Compact",
+        "column": "Column"
+      },
+      "pending": "Preparing the preview…",
+      "unsupported": "Not a tabular file",
+      "gated": "Preview available after access is approved",
+      "failed": {
+        "UNPARSEABLE": "The file could not be parsed",
+        "TIMEOUT": "Preview generation timed out",
+        "GENERATION_FAILED": "Could not generate the preview"
+      },
+      "columnSummary": "Column summary — {path}",
+      "previewTable": "Preview — {path}",
+      "previewRegion": "Preview table",
+      "columnTable": "Column descriptions table",
+      "sampled": "Based on the first {rows} rows",
+      "sampledTruncated": "Sample · first {rows} rows",
+      "rowsTruncated": "Only some rows are shown because of the size limit",
+      "distributionOmitted": "Distributions omitted",
+      "histogramLabel": "{name} distribution, {min}–{max}",
+      "distributionUnsupported": "Distribution not supported",
+      "stats": "min {min} · max {max} · mean {mean}",
+      "col": {
+        "name": "Name",
+        "type": "Type",
+        "unit": "Unit",
+        "description": "Description",
+        "concept": "Concept",
+        "missing": "Missing (%)",
+        "distinct": "Distinct",
+        "file": "File",
+        "column": "Column"
+      },
+      "statusShort": {
+        "PENDING": "Preparing",
+        "UNSUPPORTED": "Not tabular",
+        "FAILED": "Failed"
+      },
+      "columnsTruncated": "Only some columns are shown",
+      "showMore": "Show more",
+      "empty": "No tabular files"
     }
   },
   "validation": {

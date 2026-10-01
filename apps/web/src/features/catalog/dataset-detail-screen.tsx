@@ -18,6 +18,8 @@ import { DataCardHeader } from "./data-card/header";
 import { MetadataBlock } from "./data-card/metadata-block";
 import { pickVersion } from "./data-card/pick-version";
 import { SideCard } from "./data-card/side-card";
+import { ColumnTable } from "./explorer/column-table";
+import { DataExplorer } from "./explorer/data-explorer";
 import { contributorsChanged, fromDataset, toDatasetUpdate } from "./schemas";
 
 export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
@@ -91,18 +93,18 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
             </TabsList>
             <TabsContent value="card" className="flex flex-col gap-8">
               <About description={d.description} />
-              {/* Task 5: <DataExplorer /> fills this region. */}
               <section aria-labelledby="explorer-title">
                 <h2 id="explorer-title" className="mb-2 text-lg font-semibold">
                   {t("data.card.explorerTitle")}
                 </h2>
-                <p className="text-sm text-muted-foreground">{t("data.card.explorerFiles", { count: selected?.file_count ?? d.stats?.file_count ?? 0 })}</p>
+                <p className="mb-3 text-sm text-muted-foreground">{t("data.card.explorerFiles", { count: selected?.file_count ?? d.stats?.file_count ?? 0 })}</p>
+                {selected ? <DataExplorer dataset={d} versionId={selected.dataset_version_id} /> : null}
               </section>
-              {/* Task 5: column description table fills this region. */}
               <section aria-labelledby="columns-title" data-testid="column-table-slot" id="column-table-slot">
                 <h2 id="columns-title" className="mb-2 text-lg font-semibold">
                   {t("data.card.columnsTitle")}
                 </h2>
+                {selected ? <ColumnTable versionId={selected.dataset_version_id} /> : null}
               </section>
               <MetadataBlock dataset={d} />
               <ActivitySummary versions={versionItems} />

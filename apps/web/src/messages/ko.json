@@ -398,6 +398,54 @@
       "updateFrequency": "갱신 주기",
       "publications": "관련 논문",
       "legacyContact": "대표 이메일(이전)"
+    },
+    "explorer": {
+      "view": "보기 방식",
+      "files": "파일",
+      "noFiles": "확인된 파일이 없습니다",
+      "views": {
+        "detail": "Detail",
+        "compact": "Compact",
+        "column": "Column"
+      },
+      "pending": "미리보기를 준비하고 있습니다…",
+      "unsupported": "표 형식 파일이 아닙니다",
+      "gated": "접근 승인 후 미리보기 가능",
+      "failed": {
+        "UNPARSEABLE": "파일을 해석할 수 없습니다",
+        "TIMEOUT": "미리보기 생성 시간이 초과되었습니다",
+        "GENERATION_FAILED": "미리보기를 만들지 못했습니다"
+      },
+      "columnSummary": "열 요약 — {path}",
+      "previewTable": "미리보기 — {path}",
+      "previewRegion": "미리보기 표",
+      "columnTable": "열 설명표",
+      "sampled": "앞 {rows}행 기준",
+      "sampledTruncated": "표본 · 앞 {rows}행 기준",
+      "rowsTruncated": "용량 제한으로 일부 행만 표시",
+      "distributionOmitted": "분포 정보 생략",
+      "histogramLabel": "{name} 분포, {min}–{max}",
+      "distributionUnsupported": "분포 미지원",
+      "stats": "최소 {min} · 최대 {max} · 평균 {mean}",
+      "col": {
+        "name": "이름",
+        "type": "타입",
+        "unit": "단위",
+        "description": "설명",
+        "concept": "개념",
+        "missing": "결측률 (%)",
+        "distinct": "고유값",
+        "file": "파일",
+        "column": "열"
+      },
+      "statusShort": {
+        "PENDING": "준비 중",
+        "UNSUPPORTED": "표 형식 아님",
+        "FAILED": "생성 실패"
+      },
+      "columnsTruncated": "일부 열만 표시",
+      "showMore": "더 보기",
+      "empty": "표 형식 파일이 없습니다"
     }
   },
   "version": {

@@ -167,13 +167,21 @@ export function usePutDatasetContributors(datasetId: string) {
   });
 }
 
+const fileProfileQuery = (fileId: string) => ({
+  queryKey: ["getFileProfile", { fileId }] as const,
+  refetchInterval: (query: { state: { data?: FileProfile } }) => (query.state.data?.status === "PENDING" ? 5000 : false),
+  queryFn: async () => (await unwrap(api.GET("/dataset-files/{file_id}/profile", { params: { path: { file_id: fileId } } }))) as FileProfile,
+});
+
 export function useGetFileProfile(fileId: string) {
   const ready = useAuthReady();
-  return useQuery({
-    queryKey: ["getFileProfile", { fileId }],
-    enabled: ready && !!fileId,
-    queryFn: async () => (await unwrap(api.GET("/dataset-files/{file_id}/profile", { params: { path: { file_id: fileId } } }))) as FileProfile,
-  });
+  return useQuery({ ...fileProfileQuery(fileId), enabled: ready && !!fileId });
+}
+
+/** One profile query per file, sharing the cache (and polling) with useGetFileProfile. */
+export function useGetFileProfiles(fileIds: string[]) {
+  const ready = useAuthReady();
+  return useQueries({ queries: fileIds.map((id) => ({ ...fileProfileQuery(id), enabled: ready })) });
 }
 
 /** 403 DOWNLOAD_PERMISSION_REQUIRED is an expected answer, not worth retrying. */
