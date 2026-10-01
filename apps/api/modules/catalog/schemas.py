@@ -8,6 +8,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictInt,
     StringConstraints,
     field_validator,
     model_validator,
@@ -25,7 +26,7 @@ Keywords = Annotated[list[Keyword], Field(max_length=30)]
 LongText = Annotated[str, StringConstraints(max_length=10000)]
 License = Annotated[str, StringConstraints(min_length=1, max_length=200)]
 Purposes = Annotated[list[PurposeIn], Field(min_length=1)]
-GrantDays = Annotated[int, Field(ge=1, le=365)]
+GrantDays = Annotated[StrictInt, Field(ge=1, le=365)]
 
 
 class StrictIn(BaseModel):

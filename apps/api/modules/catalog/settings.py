@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIB = 1024 * 1024
@@ -14,15 +15,15 @@ class CatalogSettings(BaseSettings):
     opensearch_url: str = "http://nais:nais@localhost:21056"
     catalog_index_alias: str = "nais-datasets"
     storage_org_codes: str = "nais,inst-a,inst-b"
-    storage_presign_ttl_seconds: int = 300
-    upload_url_ttl_seconds: int = 3600
-    upload_session_ttl_seconds: int = 3600
-    storage_multipart_threshold_bytes: int = 64 * MIB
-    catalog_multipart_part_size_bytes: int = 64 * MIB
-    catalog_sync_verify_max_bytes: int = 256 * MIB
+    storage_presign_ttl_seconds: int = Field(300, gt=0)
+    upload_url_ttl_seconds: int = Field(3600, gt=0)
+    upload_session_ttl_seconds: int = Field(3600, gt=0)
+    storage_multipart_threshold_bytes: int = Field(64 * MIB, gt=0)
+    catalog_multipart_part_size_bytes: int = Field(64 * MIB, gt=0)
+    catalog_sync_verify_max_bytes: int = Field(256 * MIB, gt=0)
     malware_scanner: str = "noop"
-    catalog_index_batch_size: int = 200
-    catalog_opensearch_timeout_seconds: float = 5.0
+    catalog_index_batch_size: int = Field(200, gt=0)
+    catalog_opensearch_timeout_seconds: float = Field(5.0, gt=0)
 
     @property
     def storage_org_code_list(self) -> list[str]:

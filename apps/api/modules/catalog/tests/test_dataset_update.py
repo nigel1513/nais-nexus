@@ -164,3 +164,10 @@ def test_concurrent_modification_is_a_conflict(
     )
     title = rows(db, "SELECT title FROM catalog.datasets WHERE dataset_id = :id", id=dataset_id)[0]["title"]
     assert title == "Battery Cycling Measurements"
+
+
+@pytest.mark.parametrize("value", [True, "30", 30.0])
+def test_max_grant_days_must_be_a_strict_int(api: CatalogApi, value: object) -> None:
+    dataset_id = create_dataset(api)["dataset_id"]
+    response = api.patch("b.steward", f"/datasets/{dataset_id}", json={"max_grant_days": value})
+    assert response.status_code == 422

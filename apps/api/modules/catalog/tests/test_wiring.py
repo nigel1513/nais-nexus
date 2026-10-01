@@ -2,6 +2,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from pydantic import ValidationError
 
 from api.modules.catalog import MODULE, wiring
 from api.modules.catalog.adapters.identity import FakeIdentityPort, IdentityQueryAdapter
@@ -11,6 +12,7 @@ from api.modules.catalog.deps import CatalogDeps, get_deps
 from api.modules.catalog.interfaces import OrganizationSummary
 from api.modules.catalog.objects import StorageRegistry
 from api.modules.catalog.search.opensearch import OpenSearchIndex
+from api.modules.catalog.settings import CatalogSettings
 from api.modules.catalog.tests.support import ORG_A, ORG_B, ORG_NAIS
 from api.modules.identity import public as identity_public
 from api.modules.identity.public import IdentityQueryPort
@@ -91,3 +93,17 @@ def test_scanner_selection() -> None:
     assert build_scanner("noop").scan("nais-inst-b", "k").status == "SKIPPED"
     with pytest.raises(ValueError, match="clamav"):
         build_scanner("clamav")
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "upload_url_ttl_seconds",
+        "upload_session_ttl_seconds",
+        "catalog_multipart_part_size_bytes",
+        "catalog_index_batch_size",
+    ],
+)
+def test_settings_numbers_must_be_positive(field: str) -> None:
+    with pytest.raises(ValidationError):
+        CatalogSettings(**{field: 0})
