@@ -5,6 +5,8 @@ The actor is defined at import time: the platform sets the broker BEFORE importi
 
 import logging
 import threading
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -13,7 +15,7 @@ from uuid import UUID
 import dramatiq
 from dramatiq.middleware import TimeLimitExceeded
 from sqlalchemy import ColumnElement, RowMapping, delete, event, or_, select, update
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, InterfaceError, OperationalError
 from sqlalchemy.orm import Session
 
 from api.modules.readiness.catalog_port import (
@@ -60,8 +62,35 @@ class RetryableInfraError(Exception):
     """Raised after putting the run back to QUEUED so Dramatiq retries the message."""
 
 
+class _ReuseConflict(Exception):
+    """A concurrent identical run COMPLETED first (uq_validation_reuse): ours must not be stored as a second one."""
+
+
 class _Superseded(Exception):
     """The row left RUNNING while we evaluated (e.g. swept as stale): discard our result."""
+
+
+DB_ERRORS = (OperationalError, InterfaceError)
+DB_RETRIES = 3
+DB_RETRY_DELAY_S = 0.5
+
+
+def _db_retry[T](fn: Callable[[], T]) -> T:
+    """Recovery writes (requeue / fail) retry briefly in-process; a DB that stays down becomes a retryable infra
+    error for Dramatiq (never a non-retryable crash that strands the row until the sweeper)."""
+    for attempt in range(DB_RETRIES):
+        try:
+            return fn()
+        except DB_ERRORS as exc:
+            if attempt == DB_RETRIES - 1:
+                raise RetryableInfraError(type(exc).__name__) from exc
+            time.sleep(DB_RETRY_DELAY_S * (attempt + 1))
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def _fail(validation_id: UUID, error: str) -> str:
+    """Fail the run; "FAILED" only if this call did it, else "SKIPPED" (someone else already ended the run)."""
+    return "FAILED" if _db_retry(lambda: fail_run(validation_id, error)) else "SKIPPED"
 
 
 def _session() -> Session:
@@ -234,19 +263,27 @@ def _complete(validation_id: UUID, result: ValidationResult) -> bool:
             "validation left RUNNING during evaluation", extra={"validation_id": str(validation_id)}
         )
         return False
+    except IntegrityError as exc:
+        if "uq_validation_reuse" not in str(exc.orig):
+            raise
+        logger.warning("identical validation already COMPLETED", extra={"validation_id": str(validation_id)})
+        raise _ReuseConflict() from exc
     return True
 
 
 def run_validation(validation_id: UUID) -> str:
-    """One delivery of the job. Returns the resulting run_status, or "SKIPPED" when there was nothing to do."""
-    row = start_run(validation_id)
+    """One delivery of the job. Returns the resulting run_status, or "SKIPPED" when there was nothing to do
+    (duplicate delivery, run already ended by someone else)."""
+    try:
+        row = start_run(validation_id)
+    except DB_ERRORS as exc:  # nothing was claimed: the row is still QUEUED, let Dramatiq redeliver
+        raise RetryableInfraError(type(exc).__name__) from exc
     if row is None:
         return "SKIPPED"
     try:
         version = ports.get(CatalogQueryPort).get_version(row["dataset_version_id"])
         if version is None or version.status != "PUBLISHED" or version.metadata_snapshot is None:
-            fail_run(validation_id, "VERSION_NOT_FOUND: dataset version is missing or not published")
-            return "FAILED"
+            return _fail(validation_id, "VERSION_NOT_FOUND: dataset version is missing or not published")
         result = evaluate(
             version,
             PROFILES[row["profile_id"]],
@@ -256,24 +293,25 @@ def run_validation(validation_id: UUID) -> str:
         completed = _complete(validation_id, result)
     except (StorageUnavailable, OperationalError, ports.PortNotProvided) as exc:
         if row["attempt"] < MAX_ATTEMPTS:
-            _requeue(validation_id)
+            _db_retry(lambda: _requeue(validation_id))
             raise RetryableInfraError(type(exc).__name__) from exc
-        fail_run(validation_id, f"STORAGE_UNAVAILABLE: {type(exc).__name__} after {MAX_ATTEMPTS} attempts")
-        return "FAILED"
+        return _fail(
+            validation_id, f"STORAGE_UNAVAILABLE: {type(exc).__name__} after {MAX_ATTEMPTS} attempts"
+        )
     except ObjectMissing as exc:
         path = exc.args[0] if exc.args else "object"
-        fail_run(validation_id, f"FILE_NOT_FOUND: {path} is missing in storage")
-        return "FAILED"
+        return _fail(validation_id, f"FILE_NOT_FOUND: {path} is missing in storage")
     except FileTooLarge:
-        fail_run(validation_id, "FILE_TOO_LARGE: a file exceeds the validation size limit")
-        return "FAILED"
+        return _fail(validation_id, "FILE_TOO_LARGE: a file exceeds the validation size limit")
     except FileTimeout:
-        fail_run(validation_id, f"FILE_TIMEOUT: parsing exceeded {_SETTINGS.file_timeout_seconds}s")
-        return "FAILED"
+        return _fail(validation_id, f"FILE_TIMEOUT: parsing exceeded {_SETTINGS.file_timeout_seconds}s")
+    except _ReuseConflict:
+        return _fail(
+            validation_id, "INTERNAL_ERROR: an identical validation already COMPLETED (reuse conflict)"
+        )
     except Exception as exc:
         logger.exception("readiness evaluation crashed", extra={"validation_id": str(validation_id)})
-        fail_run(validation_id, f"INTERNAL_ERROR: {type(exc).__name__}")
-        return "FAILED"
+        return _fail(validation_id, f"INTERNAL_ERROR: {type(exc).__name__}")
     return "COMPLETED" if completed else "SKIPPED"
 
 
@@ -293,11 +331,13 @@ def _retry_when(retries: int, exc: BaseException) -> bool:
 )
 def run_validation_actor(validation_id: str) -> None:
     vid = UUID(validation_id)
+    # time_limit also counts the wait for this semaphore, so run workers with --threads equal to
+    # READINESS_WORKER_CONCURRENCY (then the wait is zero); more threads than permits would eat the time budget.
     with _CONCURRENCY:  # READINESS_WORKER_CONCURRENCY runs per worker process
         try:
             run_validation(vid)
         except TimeLimitExceeded:
-            fail_run(vid, f"RUN_TIMEOUT: exceeded {_SETTINGS.run_timeout_seconds}s")
+            _fail(vid, f"RUN_TIMEOUT: exceeded {_SETTINGS.run_timeout_seconds}s")
 
 
 # ---------------------------------------------------------------- enqueue after commit

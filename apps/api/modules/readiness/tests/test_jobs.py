@@ -1,6 +1,7 @@
 """Run state machine (M05 §5), events (§7), retries (M05-AT-10), sweeper and worker wiring (§10)."""
 
 import json
+import threading
 import uuid
 from dataclasses import replace
 from datetime import timedelta
@@ -8,7 +9,9 @@ from typing import Any
 
 import pytest
 from dramatiq.brokers.stub import StubBroker
+from dramatiq.middleware import TimeLimitExceeded
 from sqlalchemy import select, text, update
+from sqlalchemy.exc import OperationalError
 
 from api.modules.readiness import jobs
 from api.modules.readiness.catalog_port import StorageUnavailable, VersionView
@@ -361,3 +364,137 @@ def test_evaluation_holds_no_transaction(
     monkeypatch.setattr(jobs, "evaluate", spy)
     assert jobs.run_validation(vid) == "COMPLETED"
     assert seen == {"status": "RUNNING", "idle_in_tx": 0}
+
+
+# ---------------------------------------------------------------- fix round 1 (M05-R16)
+
+
+def _db_down(*_: Any, **__: Any) -> Any:
+    raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+
+
+def test_db_outage_at_claim_is_retryable_and_leaves_the_row_queued(
+    db: PgUrls, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    vid = insert_queued(db, catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B))
+    with monkeypatch.context() as m:
+        m.setattr(jobs, "_session", _db_down)
+        with pytest.raises(jobs.RetryableInfraError):
+            jobs.run_validation(vid)
+    assert row(db, vid)["run_status"] == "QUEUED"
+    assert jobs.run_validation(vid) == "COMPLETED"  # the redelivery succeeds once the DB is back
+
+
+def test_db_outage_while_recovering_is_retryable_not_a_crash(
+    db: PgUrls, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jobs, "DB_RETRY_DELAY_S", 0)
+    vid = insert_queued(db, catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B))
+
+    def storage_then_db_down(*_: Any, **__: Any) -> Any:
+        monkeypatch.setattr(jobs, "_session", _db_down)  # the DB dies right after the claim committed
+        raise StorageUnavailable("x")
+
+    monkeypatch.setattr(jobs, "evaluate", storage_then_db_down)
+    with pytest.raises(jobs.RetryableInfraError):  # from _requeue, not a bare OperationalError
+        jobs.run_validation(vid)
+
+
+def test_db_outage_while_failing_is_retryable(
+    db: PgUrls, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jobs, "DB_RETRY_DELAY_S", 0)
+    vid = insert_queued(db, catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B))
+
+    def crash_then_db_down(*_: Any, **__: Any) -> Any:
+        monkeypatch.setattr(jobs, "_session", _db_down)
+        raise FileTimeout()
+
+    monkeypatch.setattr(jobs, "evaluate", crash_then_db_down)
+    with pytest.raises(jobs.RetryableInfraError):
+        jobs.run_validation(vid)
+
+
+def test_reuse_conflict_fails_the_run_with_a_clear_reason(db: PgUrls, catalog: FixtureCatalog) -> None:
+    view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
+    first = insert_queued(db, view, "GENERIC_BASIC")
+    assert jobs.run_validation(first) == "COMPLETED"
+    # a concurrent identical run that was claimed before `first` completed: same fingerprint, now RUNNING
+    with session_factory(db.app)() as session, session.begin():
+        fp = row(db, first)["input_fingerprint"]
+        second = session.execute(
+            validations.insert()
+            .values(
+                validation_id=uuid.uuid4(),
+                dataset_version_id=view.dataset_version_id,
+                dataset_id=view.dataset_id,
+                owner_organization_id=view.owner_organization_id,
+                profile_id="GENERIC_BASIC",
+                profile_version="1.0.0",
+                validator_version=VALIDATOR_VERSION,
+                input_fingerprint=fp,
+                run_status="RUNNING",
+                triggered_by="AUTO_ON_PUBLISH",
+                attempt=1,
+                correlation_id=CORRELATION,
+            )
+            .returning(validations.c.validation_id)
+        ).scalar_one()
+    assert jobs.run_validation(second) == "SKIPPED"  # not QUEUED: nothing to do
+    # drive the conflict itself: evaluate for the RUNNING row
+    result = jobs.evaluate(
+        catalog.get_version(view.dataset_version_id),  # type: ignore[arg-type]
+        jobs.PROFILES["GENERIC_BASIC"],
+        catalog,
+        file_timeout_s=60,
+    )
+    with pytest.raises(jobs._ReuseConflict):
+        jobs._complete(second, result)
+    assert row(db, second)["run_status"] == "RUNNING"  # nothing half-written
+    assert jobs._fail(second, "INTERNAL_ERROR: reuse conflict") == "FAILED"
+    assert row(db, first)["run_status"] == "COMPLETED"
+
+
+def test_failed_return_value_is_accurate_when_nothing_was_failed(
+    db: PgUrls, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def sweep_then_timeout(*_: Any, **__: Any) -> Any:
+        jobs.fail_run(vid, "STALE_JOB: swept meanwhile")
+        raise FileTimeout()
+
+    vid = insert_queued(db, catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B))
+    monkeypatch.setattr(jobs, "evaluate", sweep_then_timeout)
+    assert jobs.run_validation(vid) == "SKIPPED"
+    assert row(db, vid)["error"].startswith("STALE_JOB")
+
+
+def test_two_workers_claim_exactly_once(db: PgUrls, catalog: FixtureCatalog) -> None:
+    vid = insert_queued(db, catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B))
+    barrier = threading.Barrier(2)
+    results: list[Any] = []
+
+    def claim() -> None:
+        barrier.wait()
+        results.append(jobs.start_run(vid))
+
+    threads = [threading.Thread(target=claim) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert sorted(r is None for r in results) == [False, True]
+    assert [e["event_type"] for e in events(db)] == ["readiness.validation.started.v1"]
+    assert row(db, vid)["attempt"] == 1
+
+
+def test_time_limit_fails_the_run_with_run_timeout(
+    db: PgUrls, catalog: FixtureCatalog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def too_slow(*_: Any, **__: Any) -> Any:
+        raise TimeLimitExceeded()
+
+    monkeypatch.setattr(jobs, "evaluate", too_slow)
+    vid = insert_queued(db, catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B))
+    jobs.run_validation_actor.fn(str(vid))
+    assert row(db, vid)["error"] == f"RUN_TIMEOUT: exceeded {jobs._SETTINGS.run_timeout_seconds}s"
+    assert events(db)[-1]["payload"]["run_status"] == "FAILED"
