@@ -15,10 +15,10 @@ import { PageHeader } from "@/shared/ui/page-header";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { useToast } from "@/shared/ui/toast";
 import { decideAccessCta, type AccessCta as AccessCtaT } from "./access-cta";
-import { useGetDataset, useListDatasetVersions, useUpdateDataset } from "./api";
+import { useGetDataset, useListDatasetVersions, usePutDatasetContributors, useUpdateDataset } from "./api";
 import { DatasetForm } from "./components/dataset-form";
 import { NewVersionDialog } from "./components/new-version-dialog";
-import { fromDataset, toDatasetUpdate } from "./schemas";
+import { contributorsChanged, fromDataset, toDatasetUpdate } from "./schemas";
 
 function Meta({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -89,6 +89,7 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const ds = useGetDataset(datasetId);
   const versions = useListDatasetVersions(datasetId);
   const update = useUpdateDataset(datasetId);
+  const putContributors = usePutDatasetContributors(datasetId);
   const latestId = ds.data?.latest_published_version?.dataset_version_id;
   const readiness = useGetReadiness(latestId ?? "none", { enabled: !!latestId });
   const [editing, setEditing] = useState(false);
@@ -142,9 +143,15 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
           mode="edit"
           defaultValues={fromDataset(d)}
           ownerName={d.owner_organization_name ?? ""}
+          ownerOrganizationId={d.owner_organization_id}
           onCancel={() => setEditing(false)}
           onSubmit={async (values) => {
-            await update.mutateAsync(toDatasetUpdate(values));
+            const before = fromDataset(d);
+            const patch = toDatasetUpdate(values, before);
+            if (Object.keys(patch).length) await update.mutateAsync(patch);
+            if (contributorsChanged(before, values)) {
+              await putContributors.mutateAsync({ contributors: values.contributors.map((c) => ({ user_id: c.user_id, role: c.role })) });
+            }
             toast(t("data.detail.saved"));
             setEditing(false);
           }}
