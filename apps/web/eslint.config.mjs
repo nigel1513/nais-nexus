@@ -12,8 +12,8 @@ const noDirectFetch = {
   ],
 };
 
-export default [
-  { ignores: [".next/**", "node_modules/**", "src/generated/**", "playwright-report/**", "test-results/**"] },
+const config = [
+  { ignores: [".next/**", "node_modules/**", "src/generated/**", "playwright-report/**", "test-results/**", "next-env.d.ts"] },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
   // eslint-config-next already registers the jsx-a11y plugin; add its full recommended rule set on top.
   { rules: jsxA11y.flatConfigs.recommended.rules },
@@ -26,3 +26,5 @@ export default [
   // M10-AT-03: no direct fetch( in components/pages.
   { files: ["src/app/**/*.tsx", "src/features/**/components/**/*.tsx", "src/shared/ui/**/*.tsx"], rules: noDirectFetch },
 ];
+
+export default config;
