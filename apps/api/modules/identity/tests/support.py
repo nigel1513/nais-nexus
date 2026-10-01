@@ -26,3 +26,11 @@ def events(urls: PgUrls, event_type: str, **payload_match: str) -> list[dict[str
         for env in envelopes
         if all(env["payload"].get(key) == value for key, value in payload_match.items())
     ]
+
+
+def seed_all(urls: PgUrls) -> None:
+    from api.modules.identity.seed import seed
+    from api.platform.db import session_scope
+
+    with session_scope(urls.app) as session:
+        seed(session)

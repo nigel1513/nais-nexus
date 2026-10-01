@@ -28,3 +28,11 @@ def db(identity_db: PgUrls) -> Iterator[PgUrls]:
         conn.execute(text("DELETE FROM platform.outbox_events WHERE event_type LIKE 'identity.%'"))
     engine.dispose()
     yield identity_db
+
+
+@pytest.fixture
+def seeded(db: PgUrls) -> PgUrls:
+    from api.modules.identity.tests.support import seed_all
+
+    seed_all(db)
+    return db

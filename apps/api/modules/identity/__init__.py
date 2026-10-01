@@ -2,10 +2,12 @@
 
 from pathlib import Path
 
+from api.modules.identity.seed import seed
 from api.platform.modules import ModuleSpec
 
 MODULE = ModuleSpec(
     name="identity",
     db_schema="identity",
     migrations_dir=Path(__file__).parent / "migrations",
+    seed=seed,
 )

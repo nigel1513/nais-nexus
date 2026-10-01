@@ -1,0 +1,18 @@
+{
+  "$comment": "Fixed seed UUIDs (NAIS_PRD/10_SEED_DATA.md §2-3). Keycloak user id == NAIS user_id == token sub. Other modules' seeds reference these; source of truth is apps/api/modules/identity/seed_data.py (a test keeps them equal).",
+  "organizations": {
+    "nais": "00000000-0000-7000-8000-000000000001",
+    "inst-a": "00000000-0000-7000-8000-00000000000a",
+    "inst-b": "00000000-0000-7000-8000-00000000000b"
+  },
+  "users": {
+    "admin@nais.local": "00000000-0000-7000-8000-000000000101",
+    "a.admin@inst-a.local": "00000000-0000-7000-8000-000000000a01",
+    "a.researcher@inst-a.local": "00000000-0000-7000-8000-000000000a02",
+    "a.steward@inst-a.local": "00000000-0000-7000-8000-000000000a03",
+    "b.admin@inst-b.local": "00000000-0000-7000-8000-000000000b01",
+    "b.researcher@inst-b.local": "00000000-0000-7000-8000-000000000b02",
+    "b.steward@inst-b.local": "00000000-0000-7000-8000-000000000b03",
+    "b.disabled@inst-b.local": "00000000-0000-7000-8000-000000000b04"
+  }
+}
