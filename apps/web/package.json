@@ -16,6 +16,7 @@
     "contracts:check": "node scripts/sync-contracts.mjs --check"
   },
   "dependencies": {
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
     "@hookform/resolvers": "^5.2.0",
     "@nais/contracts": "workspace:*",
     "@nais/ui": "workspace:*",
@@ -26,7 +27,9 @@
     "next": "~15.5.27",
     "next-auth": "5.0.0-beta.32",
     "next-intl": "^4.14.8",
+    "next-themes": "^0.4.6",
     "openapi-fetch": "^0.17.0",
+    "pretendard": "^1.3.9",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.62.0",

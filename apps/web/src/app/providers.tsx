@@ -9,6 +9,7 @@ import { useAccessTokenBridge } from "@/features/auth/use-auth-ready";
 import { makeQueryClient } from "@/shared/api/query-client";
 import { getAccessToken } from "@/shared/api/client";
 import { isMocking } from "@/shared/config";
+import { ThemeProvider } from "@/shared/ui/theme";
 import { ToastProvider } from "@/shared/ui/toast";
 
 type Handler = ReturnType<typeof createApiErrorHandler>;
@@ -58,11 +59,19 @@ function ApiProviders({ children }: { children: ReactNode }) {
 }
 
 export function Providers({ children }: { children: ReactNode }) {
-  if (isMocking()) return <ApiProviders>{children}</ApiProviders>;
+  if (isMocking()) {
+    return (
+      <ThemeProvider>
+        <ApiProviders>{children}</ApiProviders>
+      </ThemeProvider>
+    );
+  }
   // The access token lives 300 s and is refreshed 60 s early: poll the session so it is renewed before it expires.
   return (
-    <SessionProvider basePath="/web-auth" refetchInterval={120}>
-      <ApiProviders>{children}</ApiProviders>
-    </SessionProvider>
+    <ThemeProvider>
+      <SessionProvider basePath="/web-auth" refetchInterval={120}>
+        <ApiProviders>{children}</ApiProviders>
+      </SessionProvider>
+    </ThemeProvider>
   );
 }

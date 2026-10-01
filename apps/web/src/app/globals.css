@@ -1,57 +1,98 @@
 @import "tailwindcss";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+@import "@fontsource-variable/jetbrains-mono";
 @source "../../../../packages/ui/src";
+@custom-variant dark (&:where(.dark, .dark *));
 
+/* Design tokens: docs/superpowers/specs/2026-10-01-ui-design-system.md §2.
+   This file is the only place raw color values are allowed. */
 @theme {
-  --color-background: #ffffff;
-  --color-foreground: #0f172a;
-  --color-muted: #f1f5f9;
-  --color-muted-foreground: #475569;
-  --color-border: #94a3b8;
-  --color-primary: #1d4ed8;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #e2e8f0;
-  --color-secondary-foreground: #0f172a;
-  --color-destructive: #b91c1c;
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --color-bg: #fcfcfd;          /* slate-1 */
+  --color-bg-subtle: #f9f9fb;   /* slate-2 */
+  --color-bg-panel: #ffffff;
+  --color-bg-hover: #f0f0f3;    /* slate-3 */
+  --color-bg-active: #e8e8ec;   /* slate-4 */
+  --color-border: #d9d9e0;      /* slate-6 */
+  --color-border-strong: #cdced6; /* slate-7 */
+  --color-fg: #1c2024;          /* slate-12 */
+  --color-fg-muted: #60646c;    /* slate-11 */
+  --color-fg-subtle: #80838d;   /* slate-10 */
+  --color-accent: #3e63dd;      /* indigo-9 */
+  --color-accent-fg: #3a5bc7;   /* indigo-11 */
+  --color-accent-soft: #edf2fe; /* indigo-3 */
+  --color-primary: #1c2024;     /* slate-12 */
+  --color-primary-hover: #2b3036;
+  --color-primary-fg: #ffffff;
+  --color-focus: #8da4ef;       /* indigo-8 */
+  --color-focus-ring: #e1e9ff;  /* indigo-4 */
+  --color-success-soft: #e9f6e9; --color-success-line: #b2ddb5; --color-success-solid: #46a758; --color-success: #2a7e3b;
+  --color-warning-soft: #fff7c2; --color-warning-line: #f3d673; --color-warning-solid: #ffc53d; --color-warning: #9e5c00; /* amber-11 #ab6400 darkened: 4.49:1 on bg fails AA */
+  --color-danger-soft: #feebec;  --color-danger-line: #fdbdbe;  --color-danger-solid: #e5484d;  --color-danger: #ce2c31;
+  --color-info-soft: #e0f8f3;    --color-info-line: #a1ded2;    --color-info-solid: #12a594;    --color-info: #007c6b; /* teal-11 #008573 darkened: 4.45:1 on bg fails AA */
+  --color-chart-1: #3e63dd; --color-chart-2: #12a594; --color-chart-muted: #b9bbc6;
+
+  /* Legacy aliases so unmigrated screens keep rendering. Task 13 removes them once grep finds no uses. */
+  --color-background: var(--color-bg);
+  --color-foreground: var(--color-fg);
+  --color-muted: var(--color-bg-hover);
+  --color-muted-foreground: var(--color-fg-muted);
+  --color-secondary: var(--color-bg-hover);
+  --color-secondary-foreground: var(--color-fg);
+  --color-destructive: var(--color-danger-solid);
   --color-destructive-foreground: #ffffff;
-  --color-ring: #1d4ed8;
-  --color-success: #166534;
-  --color-warning: #92400e;
-  --color-danger: #991b1b;
-  --color-info: #1e40af;
+  --color-ring: var(--color-focus);
+  --color-primary-foreground: var(--color-primary-fg);
+
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
+  --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(0 0 0 / 0.16);
+  --shadow-dialog: 0 1px 2px rgb(0 0 0 / 0.06), 0 24px 48px -12px rgb(0 0 0 / 0.28);
+
+  --text-display: 28px; --text-display--line-height: 34px; --text-display--letter-spacing: -0.02em; --text-display--font-weight: 650;
+  --text-title: 20px; --text-title--line-height: 28px; --text-title--letter-spacing: -0.015em; --text-title--font-weight: 600;
+  --text-heading: 16px; --text-heading--line-height: 24px; --text-heading--letter-spacing: -0.01em; --text-heading--font-weight: 600;
+  --text-body: 14px; --text-body--line-height: 22px;
+  --text-small: 13px; --text-small--line-height: 20px;
+  --text-caption: 12px; --text-caption--line-height: 16px; --text-caption--letter-spacing: 0.01em; --text-caption--font-weight: 500;
+  --text-mono: 12.5px; --text-mono--line-height: 20px;
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --dur-press: 120ms; --dur-fast: 150ms; --dur-base: 200ms; --dur-sheet: 280ms;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-background: #0b1220;
-    --color-foreground: #e2e8f0;
-    --color-muted: #1e293b;
-    --color-muted-foreground: #cbd5e1;
-    --color-border: #64748b;
-    --color-primary: #93c5fd;
-    --color-primary-foreground: #0b1220;
-    --color-secondary: #334155;
-    --color-secondary-foreground: #f1f5f9;
-    --color-destructive: #fca5a5;
-    --color-destructive-foreground: #0b1220;
-    --color-ring: #93c5fd;
-    --color-success: #86efac;
-    --color-warning: #fcd34d;
-    --color-danger: #fca5a5;
-    --color-info: #93c5fd;
-  }
+.dark {
+  --color-bg: #111113; --color-bg-subtle: #18191b; --color-bg-panel: #18191b; --color-bg-hover: #212225; --color-bg-active: #272a2d;
+  --color-border: #363a3f; --color-border-strong: #43484e;
+  --color-fg: #edeef0; --color-fg-muted: #b0b4ba; --color-fg-subtle: #777b84;
+  --color-accent: #3e63dd; --color-accent-fg: #9eb1ff; --color-accent-soft: #182449;
+  --color-primary: #edeef0; --color-primary-hover: #d9dbde; --color-primary-fg: #111113;
+  --color-focus: #435db1; --color-focus-ring: #1d2e62;
+  --color-success-soft: #1b2a1e; --color-success-line: #2d5736; --color-success-solid: #46a758; --color-success: #71d083;
+  --color-warning-soft: #302008; --color-warning-line: #5c3d05; --color-warning-solid: #ffc53d; --color-warning: #ffca16;
+  --color-danger-soft: #3b1219;  --color-danger-line: #72232d;  --color-danger-solid: #e5484d;  --color-danger: #ff9592;
+  --color-info-soft: #0d2d2a;    --color-info-line: #145750;    --color-info-solid: #12a594;    --color-info: #0bd8b6;
+  --color-chart-1: #5472e4; --color-chart-2: #0eb39e; --color-chart-muted: #5a6169;
+  --color-destructive-foreground: #ffffff;
+  --shadow-popover: 0 0 0 1px #363a3f, 0 8px 24px -6px rgb(0 0 0 / 0.5);
+  --shadow-dialog: 0 0 0 1px #363a3f, 0 24px 48px -12px rgb(0 0 0 / 0.6);
+  color-scheme: dark;
 }
 
-html {
-  /* WCAG 2.4.11: focused elements are not hidden under the sticky header */
-  scroll-padding-top: 5rem;
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; scroll-padding-top: 4rem; }
+  body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-feature-settings: "ss06"; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+  button, a, [role="button"] { touch-action: manipulation; }
+  @media (max-width: 767px) { input, textarea, select { font-size: 16px; } }
 }
 
-body {
-  background: var(--color-background);
-  color: var(--color-foreground);
-}
+@utility num { font-variant-numeric: tabular-nums; }
+@utility press { transition: transform var(--dur-press) var(--ease-out); &:active { transform: scale(0.97); } }
 
-:focus-visible {
-  outline: 2px solid var(--color-ring);
-  outline-offset: 2px;
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-property: opacity !important; transition-duration: 120ms !important; animation: none !important; }
 }
