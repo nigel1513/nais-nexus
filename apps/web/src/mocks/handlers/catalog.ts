@@ -3,6 +3,7 @@ import type { Schemas } from "@/shared/api/types";
 import { getDb } from "../db";
 import { API, body, currentUser, fail, newestFirst, newId, notify, nowIso, orgName, paginate, publicOrigin, recordAudit } from "../http";
 import { buildResult } from "../readiness-results";
+import { emptyResearch } from "../fixtures";
 import type { MockDb, MockUser, StoredDataset, StoredUploadSession, StoredValidation, StoredVersion } from "../types";
 
 /**
@@ -83,8 +84,78 @@ function latestPublished(db: MockDb, datasetId: string): Schemas["DatasetVersion
   };
 }
 
+const NULLABLE = new Set(["subtitle", "project_title", "project_code", "funding_agency", "method_detail", "temporal_start", "temporal_end", "collecting_organization_id", "collecting_organization_name"]);
+const SCHEME_OF = { subject_codes: "SUBJECT", method_codes: "METHOD", material_codes: "MATERIAL" } as const;
+const CODE_MAX = { subject_codes: 5, method_codes: 10, material_codes: 20 } as const;
+const UPDATE_FREQUENCIES = ["ONCE", "MONTHLY", "QUARTERLY", "YEARLY", "IRREGULAR"];
+const CODE_PATTERN = /^[A-Z0-9_]{2,64}$/;
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const DOI_PATTERN = /^10\.\d{4,9}\/\S+$/;
+const URL_PATTERN = /^https?:\/\/\S+$/;
+// pydantic-style reasons (platform/errors.py puts err["msg"] into `reason`) for format errors the backend does not name itself.
+const TOO_LONG = (n: number) => `String should have at most ${n} characters`;
+const NO_MATCH = (pattern: string) => `String should match pattern '${pattern}'`;
+const isIsoDate = (v: unknown): v is string => typeof v === "string" && ISO_DATE.test(v) && new Date(`${v}T00:00:00Z`).toISOString().slice(0, 10) === v;
+
+const INTERNAL_KEYS = ["principal_investigator_id", "principal_investigator_org_id", "data_steward_contact_id", "data_steward_contact_org_id", "collecting_organization_id", "collecting_organization_name"] as const;
+
+function orgRef(db: MockDb, ds: StoredDataset): Schemas["OrganizationRef"] | null {
+  if (ds.collecting_organization_id) return { organization_id: ds.collecting_organization_id, name: orgName(db, ds.collecting_organization_id) };
+  if (ds.collecting_organization_name) return { organization_id: null, name: ds.collecting_organization_name };
+  return null;
+}
+
+function personOf(db: MockDb, userId: string, affiliation: string): Schemas["DatasetPerson"] {
+  const u = db.users.find((x) => x.user_id === userId);
+  return {
+    user_id: userId,
+    display_name: u?.display_name ?? userId,
+    national_researcher_number: u?.national_researcher_number ?? null,
+    status: u && u.status === "ACTIVE" && u.membership_status === "ACTIVE" ? "ACTIVE" : "DISABLED",
+    affiliation: { organization_id: affiliation, name: orgName(db, affiliation) },
+    current_organization: u ? { organization_id: u.organization_id, name: orgName(db, u.organization_id) } : null,
+  };
+}
+
+const eligibleMember = (u: MockUser | undefined, owner: string) => !!u && u.status === "ACTIVE" && u.membership_status === "ACTIVE" && u.organization_id === owner;
+
+export function peopleBlock(db: MockDb, ds: StoredDataset): Schemas["DatasetPeople"] {
+  const steward = ds.data_steward_contact_id ? db.users.find((u) => u.user_id === ds.data_steward_contact_id) : undefined;
+  const absent = !eligibleMember(steward, ds.owner_organization_id);
+  const contact = ds.data_steward_contact_id ? personOf(db, ds.data_steward_contact_id, ds.data_steward_contact_org_id!) : null;
+  if (contact && ds.contact_email_public && !absent && steward) contact.email = steward.email;
+  return {
+    principal_investigator: ds.principal_investigator_id ? personOf(db, ds.principal_investigator_id, ds.principal_investigator_org_id!) : null,
+    steward_contact: contact,
+    contributors: db.contributors
+      .filter((c) => c.dataset_id === ds.dataset_id)
+      .sort((a, b) => a.position - b.position)
+      .map((c) => ({ ...personOf(db, c.user_id, c.affiliation_organization_id), role: c.role })),
+    steward_contact_absent: absent,
+  };
+}
+
+/** Mirrors the backend NoGrants stance for previews (P6) only; downloads honour ACTIVE, unexpired grants. */
+export function canDownload(user: MockUser, ds: StoredDataset, db: MockDb): boolean {
+  return (
+    isPlatformAdmin(user) ||
+    user.organization_id === ds.owner_organization_id ||
+    ds.access_level === "PUBLIC" ||
+    db.grants.some((g) => g.subject_user_id === user.user_id && g.dataset_id === ds.dataset_id && g.status === "ACTIVE" && Date.parse(g.expires_at) > Date.now())
+  );
+}
+
+function statsOf(db: MockDb, datasetId: string): Schemas["Dataset"]["stats"] {
+  const v = db.versions.filter((x) => x.dataset_id === datasetId && x.status === "PUBLISHED").sort(newestFirst("published_at"))[0];
+  if (!v) return undefined;
+  return { file_count: v.file_count, total_bytes: v.total_bytes, media_types: [...new Set(v.files.map((f) => f.media_type))].sort() };
+}
+
 export function datasetView(db: MockDb, ds: StoredDataset): Schemas["Dataset"] {
-  return { ...ds, latest_published_version: latestPublished(db, ds.dataset_id) };
+  const rest: Partial<StoredDataset> = { ...ds };
+  for (const k of INTERNAL_KEYS) delete rest[k];
+  const stats = statsOf(db, ds.dataset_id);
+  return { ...(rest as Schemas["Dataset"]), people: peopleBlock(db, ds), collecting_organization: orgRef(db, ds), ...(stats ? { stats } : {}), latest_published_version: latestPublished(db, ds.dataset_id) };
 }
 
 export function visibleDataset(db: MockDb, id: string, user: MockUser): StoredDataset {
@@ -125,8 +196,8 @@ function validateDataset(input: (Partial<Schemas["DatasetCreate"]> | Schemas["Da
   const text = (name: string, value: unknown, min: number, max: number) => {
     if (typeof value !== "string" || value.length < min || value.length > max) fields.push({ field: name, reason: "LENGTH" });
   };
-  // StrictIn rejects null: the real API has no "clear this field" semantics.
-  for (const [k, v] of Object.entries(input)) if (v === null) fields.push({ field: k, reason: "NULL_NOT_ALLOWED" });
+  // StrictIn rejects null except on the nullable research fields (clearing); everything else has no "clear" semantics.
+  for (const [k, v] of Object.entries(input)) if (v === null && !(partial && NULLABLE.has(k))) fields.push({ field: k, reason: "NULL_NOT_ALLOWED" });
   const has = (k: keyof typeof input) => input[k] !== undefined && input[k] !== null;
   if (!partial || has("title")) text("title", input.title, 3, 300);
   if (!partial || has("description")) text("description", input.description, 0, 20000);
@@ -150,7 +221,93 @@ function validateDataset(input: (Partial<Schemas["DatasetCreate"]> | Schemas["Da
     fields.push({ field: "max_grant_days", reason: "OUT_OF_RANGE" });
   }
   if (has("status") && !["ACTIVE", "WITHDRAWN"].includes(String(input.status))) fields.push({ field: "status", reason: "INVALID" });
+
+  // Research metadata (Wave 1.5): length / pattern / enum errors carry pydantic-style reasons (P5).
+  const research = input as Record<string, unknown>;
+  const present = (k: string) => research[k] !== undefined && research[k] !== null;
+  const maxText = (k: string, max: number) => {
+    if (!present(k)) return;
+    if (typeof research[k] !== "string") fields.push({ field: k, reason: "Input should be a valid string" });
+    else if ((research[k] as string).length > max) fields.push({ field: k, reason: TOO_LONG(max) });
+  };
+  maxText("subtitle", 160);
+  maxText("project_title", 300);
+  maxText("project_code", 64);
+  maxText("funding_agency", 200);
+  maxText("method_detail", 4000);
+  if (present("collecting_organization_name")) {
+    const v = research.collecting_organization_name;
+    if (typeof v !== "string" || v.length < 1) fields.push({ field: "collecting_organization_name", reason: "String should have at least 1 character" });
+    else if (v.length > 200) fields.push({ field: "collecting_organization_name", reason: TOO_LONG(200) });
+  }
+  for (const [k, max] of Object.entries(CODE_MAX)) {
+    if (!present(k)) continue;
+    const v = research[k];
+    if (!Array.isArray(v)) fields.push({ field: k, reason: "Input should be a valid list" });
+    else if (v.length > max) fields.push({ field: k, reason: `List should have at most ${max} items after validation, not ${v.length}` });
+    else if (new Set(v).size !== v.length) fields.push({ field: k, reason: "Value error, the list has duplicates" });
+    else if (v.some((c) => typeof c !== "string" || !CODE_PATTERN.test(c))) fields.push({ field: k, reason: NO_MATCH(CODE_PATTERN.source) });
+  }
+  for (const k of ["temporal_start", "temporal_end"]) if (present(k) && !isIsoDate(research[k])) fields.push({ field: k, reason: "Input should be a valid date or datetime, invalid character in year" });
+  if (present("update_frequency") && !UPDATE_FREQUENCIES.includes(String(research.update_frequency))) {
+    fields.push({ field: "update_frequency", reason: "Input should be 'ONCE', 'MONTHLY', 'QUARTERLY', 'YEARLY' or 'IRREGULAR'" });
+  }
+  if (present("contact_email_public") && typeof research.contact_email_public !== "boolean") fields.push({ field: "contact_email_public", reason: "Input should be a valid boolean" });
+  if (present("related_publications")) {
+    const pubs = research.related_publications;
+    if (!Array.isArray(pubs)) fields.push({ field: "related_publications", reason: "Input should be a valid list" });
+    else if (pubs.length > 20) fields.push({ field: "related_publications", reason: `List should have at most 20 items after validation, not ${pubs.length}` });
+    else {
+      (pubs as Partial<Schemas["RelatedPublication"]>[]).forEach((pub, i) => {
+        const at = `related_publications.${i}`;
+        if (typeof pub?.title !== "string") fields.push({ field: `${at}.title`, reason: "Field required" });
+        else if (pub.title.length < 1) fields.push({ field: `${at}.title`, reason: "String should have at least 1 character" });
+        else if (pub.title.length > 300) fields.push({ field: `${at}.title`, reason: TOO_LONG(300) });
+        if (pub?.doi !== undefined && !(typeof pub.doi === "string" && DOI_PATTERN.test(pub.doi))) fields.push({ field: `${at}.doi`, reason: NO_MATCH(DOI_PATTERN.source) });
+        if (pub?.url !== undefined && !(typeof pub.url === "string" && URL_PATTERN.test(pub.url))) fields.push({ field: `${at}.url`, reason: NO_MATCH(URL_PATTERN.source) });
+      });
+    }
+  }
+  if (!partial) {
+    for (const k of ["principal_investigator_id", "data_steward_contact_id"]) if (!present(k)) fields.push({ field: k, reason: "Field required" });
+  }
   if (fields.length) invalid(fields);
+}
+
+/**
+ * research.validate_research: person eligibility (same organization, ACTIVE; only when assigned or changed), vocabulary membership,
+ * temporal range, mutually exclusive collecting organization. Returns the `*_org_id` additions for newly assigned persons.
+ */
+function validateResearch(db: MockDb, owner: string, values: Record<string, unknown>, current?: StoredDataset): Partial<StoredDataset> {
+  const problems: Field[] = [];
+  const out: Partial<StoredDataset> = {};
+  const people = [
+    ["principal_investigator_id", "principal_investigator_org_id"],
+    ["data_steward_contact_id", "data_steward_contact_org_id"],
+  ] as const;
+  for (const [field, orgField] of people) {
+    const id = values[field];
+    if (typeof id !== "string" || (current && current[field] === id)) continue;
+    const person = db.users.find((u) => u.user_id === id);
+    if (!eligibleMember(person, owner)) problems.push({ field, reason: "PERSON_NOT_ELIGIBLE" });
+    else out[orgField] = person!.organization_id;
+  }
+  for (const [field, scheme] of Object.entries(SCHEME_OF)) {
+    const codes = values[field];
+    if (Array.isArray(codes) && codes.some((c) => !db.vocabulary.some((t) => t.scheme === scheme && t.code === c))) problems.push({ field, reason: "VOCABULARY_TERM_UNKNOWN" });
+  }
+  const pick = <K extends keyof StoredDataset>(k: K): StoredDataset[K] | undefined => (k in values ? (values[k] as StoredDataset[K]) : current?.[k]);
+  const start = pick("temporal_start") as string | null | undefined;
+  const end = pick("temporal_end") as string | null | undefined;
+  if (start && end && end < start) problems.push({ field: "temporal_end", reason: "TEMPORAL_RANGE" });
+  const orgId = pick("collecting_organization_id");
+  const orgText = pick("collecting_organization_name");
+  if (orgId && orgText) problems.push({ field: "collecting_organization_name", reason: "MUTUALLY_EXCLUSIVE" });
+  if (typeof values.collecting_organization_id === "string" && !db.organizations.some((o) => o.organization_id === values.collecting_organization_id)) {
+    problems.push({ field: "collecting_organization_id", reason: "UNKNOWN_ORGANIZATION" });
+  }
+  if (problems.length) invalid(problems, "Research metadata is invalid.");
+  return out;
 }
 
 /** domain.build_policy: approval_required is derived; SENSITIVE defaults to and is capped at 30 days. */
@@ -240,7 +397,12 @@ function uploadSessionView(s: StoredUploadSession): Schemas["UploadSession"] {
 const DATASET_UPDATE_KEYS = new Set([
   "title", "description", "keywords", "domain", "access_level", "license", "usage_policy",
   "allowed_purposes", "max_grant_days", "contact_email", "provenance", "status",
+  "subtitle", "principal_investigator_id", "data_steward_contact_id", "contact_email_public", "project_title", "project_code", "funding_agency",
+  "subject_codes", "method_codes", "material_codes", "method_detail", "temporal_start", "temporal_end", "collecting_organization_id",
+  "collecting_organization_name", "update_frequency", "related_publications",
 ]);
+const RESEARCH_KEYS = [...DATASET_UPDATE_KEYS].filter((k) => !["title", "description", "keywords", "domain", "access_level", "license", "usage_policy", "allowed_purposes", "max_grant_days", "contact_email", "provenance", "status"].includes(k));
+const POLICY_INPUTS = new Set(["access_level", "allowed_purposes", "max_grant_days"]);
 
 function validateUploadFiles(files: Schemas["UploadSessionCreate"]["files"]) {
   const problems: Field[] = [];
@@ -271,6 +433,103 @@ function validateUploadFiles(files: Schemas["UploadSessionCreate"]["files"]) {
   if (tooLarge.length) fail("FILE_TOO_LARGE", "File exceeds the per-file limit.", { files: tooLarge.map((f) => ({ path: f.path, size_bytes: f.size_bytes })), max_bytes: MAX_FILE });
 }
 
+/** documents.build_documents: what `q` searches (title, description, keywords, owner, subtitle, vocabulary labels, PI, collecting organization). */
+function searchText(db: MockDb, ds: StoredDataset): string[] {
+  const labels = (["subject_codes", "material_codes", "method_codes"] as const).flatMap((field) =>
+    (ds[field] ?? []).flatMap((code) => {
+      const t = db.vocabulary.find((x) => x.scheme === SCHEME_OF[field] && x.code === code);
+      return t ? [t.label_ko, t.label_en] : [];
+    }),
+  );
+  const pi = ds.principal_investigator_id ? db.users.find((u) => u.user_id === ds.principal_investigator_id)?.display_name : undefined;
+  return [ds.title, ds.description, ...(ds.keywords ?? []), orgName(db, ds.owner_organization_id), ds.subtitle ?? "", ...labels, pi ?? "", orgRef(db, ds)?.name ?? ""];
+}
+
+const SCHEMES = ["SUBJECT", "METHOD", "MATERIAL"];
+const CONTRIBUTOR_ROLES = ["CO_INVESTIGATOR", "DATA_COLLECTOR", "DATA_CURATOR"];
+const IRI_PATTERN = /^https?:\/\/\S+$/;
+
+function schemeOf(raw: unknown): Schemas["VocabularyScheme"] {
+  if (!SCHEMES.includes(String(raw))) invalid([{ field: "scheme", reason: "Input should be 'SUBJECT', 'METHOD' or 'MATERIAL'" }]);
+  return raw as Schemas["VocabularyScheme"];
+}
+
+const JSONLD_CONTEXT = {
+  "@vocab": "https://schema.org/",
+  dcat: "http://www.w3.org/ns/dcat#",
+  dct: "http://purl.org/dc/terms/",
+  prov: "http://www.w3.org/ns/prov#",
+};
+
+function ldOrg(base: string, ref: Schemas["OrganizationRef"]) {
+  return ref.organization_id ? { "@type": "Organization", "@id": `${base}/id/organization/${ref.organization_id}`, name: ref.name } : { "@type": "Organization", name: ref.name };
+}
+
+function ldPerson(base: string, p: Schemas["DatasetPerson"]) {
+  return {
+    "@type": "Person",
+    "@id": `${base}/id/person/${p.user_id}`,
+    name: p.display_name,
+    ...(p.national_researcher_number ? { identifier: { "@type": "PropertyValue", propertyID: "NTIS", value: p.national_researcher_number } } : {}),
+    affiliation: ldOrg(base, p.affiliation),
+    ...(p.email ? { email: p.email } : {}),
+  };
+}
+
+function ldTerms(db: MockDb, base: string, scheme: Schemas["VocabularyScheme"], codes: string[]) {
+  return codes.map((code) => {
+    const t = db.vocabulary.find((x) => x.scheme === scheme && x.code === code);
+    return {
+      "@type": "DefinedTerm",
+      "@id": `${base}/vocabulary/${scheme}/${code}`,
+      termCode: code,
+      name: t?.label_ko ?? code,
+      inDefinedTermSet: `${base}/vocabulary/${scheme}`,
+      ...(t?.iri ? { sameAs: t.iri } : {}),
+    };
+  });
+}
+
+/** jsonld.dataset_jsonld (backend Task 8, P7: DefinedTerm @id). */
+function datasetJsonLd(db: MockDb, ds: StoredDataset, base: string): Record<string, unknown> {
+  const people = peopleBlock(db, ds);
+  const latest = latestPublished(db, ds.dataset_id);
+  const collecting = orgRef(db, ds);
+  const doc: Record<string, unknown> = {
+    "@context": JSONLD_CONTEXT,
+    "@type": ["Dataset", "dcat:Dataset"],
+    "@id": `${base}/id/dataset/${ds.dataset_id}`,
+    identifier: ds.dataset_id,
+    name: ds.title,
+    description: ds.description,
+    keywords: ds.keywords ?? [],
+    license: ds.license,
+    conditionsOfAccess: ds.access_level,
+    dateCreated: ds.created_at,
+    dateModified: ds.updated_at,
+    "dct:accrualPeriodicity": ds.update_frequency ?? "ONCE",
+    publisher: ldOrg(base, { organization_id: ds.owner_organization_id, name: orgName(db, ds.owner_organization_id) }),
+    about: [...ldTerms(db, base, "SUBJECT", ds.subject_codes ?? []), ...ldTerms(db, base, "MATERIAL", ds.material_codes ?? [])],
+    measurementTechnique: ldTerms(db, base, "METHOD", ds.method_codes ?? []),
+    creator: people.principal_investigator ? [ldPerson(base, people.principal_investigator)] : [],
+    contributor: people.contributors.map((c) => ({ ...ldPerson(base, c), roleName: c.role })),
+    citation: (ds.related_publications ?? []).map((p) => ({ "@type": "ScholarlyArticle", name: p.title, ...(p.doi ? { sameAs: `https://doi.org/${p.doi}` } : p.url ? { url: p.url } : {}) })),
+  };
+  if (people.steward_contact) doc.maintainer = ldPerson(base, people.steward_contact);
+  if (ds.subtitle) doc.alternativeHeadline = ds.subtitle;
+  if (ds.usage_policy) doc.usageInfo = ds.usage_policy;
+  if (ds.temporal_start) doc.temporalCoverage = `${ds.temporal_start}/${ds.temporal_end ?? ".."}`;
+  if (collecting) doc.sourceOrganization = ldOrg(base, collecting);
+  if (ds.funding_agency) doc.funder = { "@type": "Organization", name: ds.funding_agency };
+  if (ds.project_title || ds.project_code) doc.isPartOf = { "@type": "ResearchProject", name: ds.project_title ?? null, identifier: ds.project_code ?? null };
+  if (ds.method_detail) doc["prov:wasGeneratedBy"] = { "@type": "prov:Activity", description: ds.method_detail };
+  if (latest) {
+    doc.version = latest.version_label;
+    doc.datePublished = latest.published_at;
+  }
+  return doc;
+}
+
 export const catalogHandlers = [
   http.get(`${API}/datasets`, ({ request }) => {
     const user = currentUser(request);
@@ -282,6 +541,15 @@ export const catalogHandlers = [
     const purposes = url.searchParams.getAll("purpose");
     const keywords = url.searchParams.getAll("keyword").map((k) => k.trim().toLowerCase());
     const readiness = url.searchParams.getAll("readiness_status");
+    const subjects = url.searchParams.getAll("subject");
+    const materials = url.searchParams.getAll("material");
+    const methods = url.searchParams.getAll("method");
+    const collecting = url.searchParams.getAll("collecting_organization_id");
+    const piId = url.searchParams.get("principal_investigator_id");
+    const from = url.searchParams.get("temporal_from");
+    const to = url.searchParams.get("temporal_to");
+    for (const [field, v] of [["temporal_from", from], ["temporal_to", to]] as const) if (v !== null && !isIsoDate(v)) invalid([{ field, reason: "Input should be a valid date or datetime, invalid character in year" }]);
+    if (from && to && from > to) invalid([{ field: "temporal_to", reason: "TEMPORAL_RANGE" }], "temporal_from is after temporal_to.");
     const sort = url.searchParams.get("sort") ?? "relevance";
     if (!["relevance", "updated_desc", "title_asc"].includes(sort)) invalid([{ field: "sort", reason: "INVALID" }]);
     const effectiveSort = sort === "relevance" && !q ? "updated_desc" : sort;
@@ -289,13 +557,22 @@ export const catalogHandlers = [
     // query.build_search_body: every filter (and the visibility rule) narrows both the hits and the facet counts.
     const matches = db.datasets
       .filter((ds) => ds.status === "ACTIVE" && canSeeDataset(user, ds, db))
-      .filter((ds) => !q || [ds.title, ds.description, ...(ds.keywords ?? []), orgName(db, ds.owner_organization_id)].some((s) => s.toLowerCase().includes(q)))
+      .filter((ds) => !q || searchText(db, ds).some((s) => s.toLowerCase().includes(q)))
       .map((ds) => ({ ds, latest: latestPublished(db, ds.dataset_id) }))
       .filter((x) => !levels.length || levels.includes(x.ds.access_level))
       .filter((x) => !owners.length || owners.includes(x.ds.owner_organization_id))
       .filter((x) => !purposes.length || x.ds.policy.allowed_purposes.some((p) => purposes.includes(p)))
       .filter((x) => !keywords.length || (x.ds.keywords ?? []).some((k) => keywords.includes(k.toLowerCase())))
-      .filter((x) => !readiness.length || (x.latest?.readiness_overall && readiness.includes(x.latest.readiness_overall)));
+      .filter((x) => !readiness.length || (x.latest?.readiness_overall && readiness.includes(x.latest.readiness_overall)))
+      .filter((x) => !subjects.length || x.ds.subject_codes?.some((c) => subjects.includes(c)))
+      .filter((x) => !materials.length || x.ds.material_codes?.some((c) => materials.includes(c)))
+      .filter((x) => !methods.length || x.ds.method_codes?.some((c) => methods.includes(c)))
+      .filter((x) => !collecting.length || (x.ds.collecting_organization_id && collecting.includes(x.ds.collecting_organization_id)))
+      .filter((x) => !piId || x.ds.principal_investigator_id === piId)
+      // Period overlap: needs a start; a missing end is open-ended.
+      .filter((x) => (!from && !to) || !!x.ds.temporal_start)
+      .filter((x) => !to || x.ds.temporal_start! <= to)
+      .filter((x) => !from || !x.ds.temporal_end || x.ds.temporal_end >= from);
 
     const facet = (values: (string | null | undefined)[], label?: (v: string) => string): Schemas["FacetBucket"][] => {
       const counts = new Map<string, number>();
@@ -308,6 +585,10 @@ export const catalogHandlers = [
       purpose: facet(matches.flatMap((x) => x.ds.policy.allowed_purposes)),
       keyword: facet(matches.flatMap((x) => x.ds.keywords ?? [])),
       readiness_status: facet(matches.map((x) => x.latest?.readiness_overall)),
+      subject: facet(matches.flatMap((x) => x.ds.subject_codes ?? [])),
+      material: facet(matches.flatMap((x) => x.ds.material_codes ?? [])),
+      method: facet(matches.flatMap((x) => x.ds.method_codes ?? [])),
+      collecting_organization_id: facet(matches.map((x) => x.ds.collecting_organization_id), (id) => orgName(db, id)),
     };
 
     const hits: Schemas["DatasetSearchHit"][] = matches
@@ -331,6 +612,12 @@ export const catalogHandlers = [
         latest_version_label: latest?.version_label ?? null,
         readiness_overall: latest?.readiness_overall ?? null,
         updated_at: ds.updated_at,
+        subtitle: ds.subtitle ?? null,
+        principal_investigator_name: ds.principal_investigator_id ? (db.users.find((u) => u.user_id === ds.principal_investigator_id)?.display_name ?? null) : null,
+        temporal_start: ds.temporal_start ?? null,
+        temporal_end: ds.temporal_end ?? null,
+        subject_codes: ds.subject_codes ?? [],
+        collecting_organization_name: orgRef(db, ds)?.name ?? null,
       }));
     return HttpResponse.json({ ...paginate(hits, url), total: hits.length, facets });
   }),
@@ -342,6 +629,8 @@ export const catalogHandlers = [
     validateDataset(input, false);
     if (!isOwnerSteward(user, input.owner_organization_id)) fail("FORBIDDEN", "Only a DATA_STEWARD of the owner organization can create datasets.");
     const policy = buildPolicy(input.access_level, input.allowed_purposes, input.max_grant_days);
+    const researchInput = Object.fromEntries(RESEARCH_KEYS.filter((k) => (input as Record<string, unknown>)[k] !== undefined).map((k) => [k, (input as Record<string, unknown>)[k]]));
+    const orgIds = validateResearch(db, input.owner_organization_id, researchInput);
     const now = nowIso();
     const id = newId();
     const ds: StoredDataset = {
@@ -357,6 +646,9 @@ export const catalogHandlers = [
       usage_policy: input.usage_policy ?? null,
       contact_email: input.contact_email ?? null,
       provenance: input.provenance ?? null,
+      ...emptyResearch(),
+      ...(researchInput as Partial<ReturnType<typeof emptyResearch>>),
+      ...orgIds,
       policy: { dataset_id: id, owner_organization_id: input.owner_organization_id, ...policy },
       status: "ACTIVE",
       created_by: user.user_id,
@@ -390,11 +682,13 @@ export const catalogHandlers = [
     if (ds.status === "WITHDRAWN" && !(keys.length === 1 && patch.status === "ACTIVE")) {
       fail("CONFLICT", 'A WITHDRAWN dataset can only be reactivated with {"status": "ACTIVE"}.');
     }
+    const orgIds = validateResearch(db, ds.owner_organization_id, Object.fromEntries(Object.entries(patch).filter(([k]) => RESEARCH_KEYS.includes(k))), ds);
+    const before = { ...ds };
     const previous = ds.policy;
     const policy = buildPolicy(patch.access_level ?? ds.access_level, patch.allowed_purposes ?? ds.policy.allowed_purposes, patch.max_grant_days ?? ds.policy.max_grant_days);
     const plain: Partial<Schemas["DatasetUpdate"]> = { ...patch };
     for (const key of ["access_level", "allowed_purposes", "max_grant_days", "keywords"] as const) delete plain[key];
-    Object.assign(ds, plain, patch.keywords ? { keywords: keywordsOf(patch.keywords) } : {}, { access_level: policy.access_level, updated_at: nowIso() });
+    Object.assign(ds, plain, orgIds, patch.keywords ? { keywords: keywordsOf(patch.keywords) } : {}, { access_level: policy.access_level, updated_at: nowIso() });
     ds.policy = { ...ds.policy, ...policy };
     const changed =
       previous.access_level !== policy.access_level ||
@@ -408,7 +702,107 @@ export const catalogHandlers = [
         details: { access_level: policy.access_level, max_grant_days: policy.max_grant_days },
       });
     }
+    // metadata_changed mirror: any non-policy, non-status field that actually changed.
+    const changedFields = keys
+      .filter((k) => !POLICY_INPUTS.has(k) && k !== "status")
+      .filter((k) => JSON.stringify((before as Record<string, unknown>)[k] ?? null) !== JSON.stringify((ds as Record<string, unknown>)[k] ?? null))
+      .sort();
+    if (changedFields.length) {
+      recordAudit(db, { action: "DATASET_UPDATED", actor: user, resource: { type: "DATASET", id: ds.dataset_id, owner_organization_id: ds.owner_organization_id }, details: { changed_fields: changedFields } });
+    }
     return HttpResponse.json(datasetView(db, ds));
+  }),
+
+  http.get(`${API}/vocabulary/:scheme`, ({ request, params }) => {
+    currentUser(request);
+    const scheme = schemeOf(params.scheme);
+    const items = getDb()
+      .vocabulary.filter((t) => t.scheme === scheme)
+      .sort((a, b) => (a.parent_code ?? "").localeCompare(b.parent_code ?? "") || a.code.localeCompare(b.code));
+    return HttpResponse.json({ items });
+  }),
+
+  http.post(`${API}/vocabulary/:scheme`, async ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const scheme = schemeOf(params.scheme);
+    const input = await body<Schemas["VocabularyTermCreate"]>(request);
+    const problems: Field[] = [];
+    const known = ["code", "label_ko", "label_en", "iri", "parent_code"];
+    for (const k of Object.keys(input)) if (!known.includes(k)) problems.push({ field: k, reason: "Extra inputs are not permitted" });
+    for (const k of ["code", "label_ko", "label_en"] as const) if (typeof input[k] !== "string") problems.push({ field: k, reason: "Field required" });
+    if (typeof input.code === "string" && !CODE_PATTERN.test(input.code)) problems.push({ field: "code", reason: NO_MATCH(CODE_PATTERN.source) });
+    for (const k of ["label_ko", "label_en"] as const) {
+      const v = input[k];
+      if (typeof v === "string" && v.length < 1) problems.push({ field: k, reason: "String should have at least 1 character" });
+      else if (typeof v === "string" && v.length > 200) problems.push({ field: k, reason: TOO_LONG(200) });
+    }
+    if (input.iri !== undefined && !(typeof input.iri === "string" && IRI_PATTERN.test(input.iri))) problems.push({ field: "iri", reason: NO_MATCH(IRI_PATTERN.source) });
+    if (input.parent_code !== undefined && !(typeof input.parent_code === "string" && CODE_PATTERN.test(input.parent_code))) problems.push({ field: "parent_code", reason: NO_MATCH(CODE_PATTERN.source) });
+    if (problems.length) invalid(problems);
+    if (!isPlatformAdmin(user)) fail("FORBIDDEN", "Only a PLATFORM_ADMIN can add vocabulary terms.");
+    if (input.parent_code && !db.vocabulary.some((t) => t.scheme === scheme && t.code === input.parent_code)) invalid([{ field: "parent_code", reason: "VOCABULARY_TERM_UNKNOWN" }], "Unknown parent term.");
+    if (db.vocabulary.some((t) => t.scheme === scheme && t.code === input.code)) fail("CONFLICT", "This code already exists in the scheme.");
+    const term: Schemas["VocabularyTerm"] = { scheme, code: input.code, label_ko: input.label_ko, label_en: input.label_en, iri: input.iri ?? null, parent_code: input.parent_code ?? null };
+    db.vocabulary.push(term);
+    return HttpResponse.json(term, { status: 201 });
+  }),
+
+  http.get(`${API}/datasets/:dataset_id/contributors`, ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    return HttpResponse.json({ items: peopleBlock(db, visibleDataset(db, String(params.dataset_id), user)).contributors });
+  }),
+
+  http.put(`${API}/datasets/:dataset_id/contributors`, async ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const input = await body<Schemas["DatasetContributorsPut"]>(request);
+    const shape: Field[] = [];
+    if (!Array.isArray(input.contributors)) shape.push({ field: "contributors", reason: "Field required" });
+    else if (input.contributors.length > 50) shape.push({ field: "contributors", reason: `List should have at most 50 items after validation, not ${input.contributors.length}` });
+    else {
+      input.contributors.forEach((c, i) => {
+        if (typeof c?.user_id !== "string") shape.push({ field: `contributors.${i}.user_id`, reason: "Field required" });
+        if (!CONTRIBUTOR_ROLES.includes(String(c?.role))) shape.push({ field: `contributors.${i}.role`, reason: "Input should be 'CO_INVESTIGATOR', 'DATA_COLLECTOR' or 'DATA_CURATOR'" });
+      });
+    }
+    if (shape.length) invalid(shape);
+    const ds = visibleDataset(db, String(params.dataset_id), user);
+    requireSteward(user, ds);
+    const wanted = input.contributors.map((c) => ({ user_id: c.user_id, role: c.role }));
+    const key = (c: { user_id: string; role: string }) => `${c.user_id}|${c.role}`;
+    const problems: Field[] = [];
+    if (new Set(wanted.map(key)).size !== wanted.length) problems.push({ field: "contributors", reason: "DUPLICATE" });
+    const existing = db.contributors.filter((c) => c.dataset_id === ds.dataset_id).sort((a, b) => a.position - b.position);
+    const existingKeys = new Set(existing.map(key));
+    wanted.forEach((c, i) => {
+      if (existingKeys.has(key(c))) return;
+      const u = db.users.find((x) => x.user_id === c.user_id);
+      if (!u || u.status !== "ACTIVE" || u.membership_status !== "ACTIVE") problems.push({ field: `contributors[${i}].user_id`, reason: "PERSON_NOT_ELIGIBLE" });
+    });
+    if (problems.length) invalid(problems, "Contributors are invalid.");
+    if (wanted.map(key).join() !== existing.map(key).join()) {
+      const rows = wanted.map((c, position) => ({
+        dataset_id: ds.dataset_id,
+        user_id: c.user_id,
+        role: c.role,
+        // Unchanged pairs keep their at-the-time affiliation; new ones take the person's current organization.
+        affiliation_organization_id: existing.find((e) => key(e) === key(c))?.affiliation_organization_id ?? db.users.find((u) => u.user_id === c.user_id)!.organization_id,
+        position,
+      }));
+      db.contributors = [...db.contributors.filter((c) => c.dataset_id !== ds.dataset_id), ...rows];
+      ds.updated_at = nowIso();
+      recordAudit(db, { action: "DATASET_UPDATED", actor: user, resource: { type: "DATASET", id: ds.dataset_id, owner_organization_id: ds.owner_organization_id }, details: { changed_fields: ["contributors"] } });
+    }
+    return HttpResponse.json({ items: peopleBlock(db, ds).contributors });
+  }),
+
+  http.get(`${API}/datasets/:dataset_id/metadata.jsonld`, ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const ds = visibleDataset(db, String(params.dataset_id), user);
+    return HttpResponse.json(datasetJsonLd(db, ds, publicOrigin(request)), { headers: { "Content-Type": "application/ld+json" } });
   }),
 
   http.get(`${API}/datasets/:dataset_id/policy`, ({ request, params }) => {

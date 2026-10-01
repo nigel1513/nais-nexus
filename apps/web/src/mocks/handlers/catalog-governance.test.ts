@@ -3,7 +3,7 @@ import { setMockUser } from "../../../tests/render";
 import { api, unwrap } from "@/shared/api/client";
 import type { AccessGrant, AuditEvent, DatasetVersion, Page, ReadinessValidation, SearchPage } from "@/shared/api/types";
 import { getDb } from "../db";
-import { DATASET, GRANT, PROJECT, USER, VERSION } from "../fixtures";
+import { DATASET, GRANT, ORG, PROJECT, USER, VERSION } from "../fixtures";
 
 const as = (user: string) => setMockUser(user);
 const MiB = 1024 * 1024;
@@ -46,7 +46,7 @@ describe("catalog mocks", () => {
     expect(created.policy).toMatchObject({ access_level: "SENSITIVE", max_grant_days: 30, approval_required: true });
   });
 
-  it("PATCH rejects null (StrictIn: no clear semantics) with VALIDATION_FAILED", async () => {
+  it("PATCH rejects null on non-nullable fields (StrictIn) with VALIDATION_FAILED", async () => {
     as(USER.bSteward);
     await expect(unwrap(api.PATCH("/datasets/{dataset_id}", { params: { path: { dataset_id: DATASET.battery } }, body: { domain: null } as never }))).rejects.toMatchObject({
       code: "VALIDATION_FAILED",
@@ -447,5 +447,136 @@ describe("governance rules (M04 §6)", () => {
       });
       expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)!.title).not.toBe("Renamed");
     });
+  });
+});
+
+const BASE = "http://localhost:3000/mock-api/v1";
+async function send(user: string, method: string, path: string, body?: unknown) {
+  return fetch(`${BASE}${path}`, { method, headers: { "x-mock-user": user, "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+}
+async function getJson(user: string, path: string) {
+  const res = await send(user, "GET", path);
+  expect(res.status).toBe(200);
+  return res.json();
+}
+const datasetCreate = (org: string) => ({
+  owner_organization_id: org,
+  title: "Research set",
+  description: "d",
+  license: "CC-BY-4.0",
+  access_level: "CONTROLLED",
+  allowed_purposes: ["ACADEMIC_RESEARCH"],
+  max_grant_days: 90,
+  principal_investigator_id: org === ORG.b ? USER.bResearcher : USER.aResearcher,
+  data_steward_contact_id: org === ORG.b ? USER.bSteward : USER.aSteward,
+  contact_email_public: false,
+});
+
+describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
+  it("returns people with at-the-time and current affiliation, email only when public", async () => {
+    const battery = await getJson(USER.aResearcher, `/datasets/${DATASET.battery}`);
+    expect(battery.subtitle).toBe("연료전지 고분자 막 시편 1,000개의 온도·압력 측정");
+    expect(battery.people.principal_investigator).toMatchObject({ display_name: "B Researcher", national_researcher_number: "10000002", affiliation: { organization_id: ORG.b, name: "Institute B" } });
+    expect(battery.people.steward_contact.email).toBe("b.steward@inst-b.local"); // 2001 is contact_email_public
+    expect(battery.stats).toMatchObject({ file_count: 4 });
+    expect(battery.principal_investigator_id).toBeUndefined();
+    const open = await getJson(USER.aResearcher, `/datasets/${DATASET.openMaterials}`);
+    expect(open.people.steward_contact.email).toBeUndefined();
+  });
+
+  it("validates research fields like the API", async () => {
+    const res = await send(USER.bSteward, "POST", "/datasets", { ...datasetCreate(ORG.b), principal_investigator_id: USER.aResearcher, subject_codes: ["NOPE"], temporal_start: "2025-01-02", temporal_end: "2025-01-01" });
+    expect(res.status).toBe(422);
+    const fields = (await res.json()).error.details.fields;
+    expect(fields).toEqual(
+      expect.arrayContaining([
+        { field: "principal_investigator_id", reason: "PERSON_NOT_ELIGIBLE" },
+        { field: "subject_codes", reason: "VOCABULARY_TERM_UNKNOWN" },
+        { field: "temporal_end", reason: "TEMPORAL_RANGE" },
+      ]),
+    );
+    const missing = await send(USER.bSteward, "POST", "/datasets", { ...datasetCreate(ORG.b), principal_investigator_id: undefined });
+    expect((await missing.json()).error.details.fields).toEqual([{ field: "principal_investigator_id", reason: "Field required" }]);
+    const both = await send(USER.bSteward, "PATCH", `/datasets/${DATASET.battery}`, { collecting_organization_name: "Elsewhere" });
+    expect((await both.json()).error.details.fields).toEqual([{ field: "collecting_organization_name", reason: "MUTUALLY_EXCLUSIVE" }]);
+    const unknownOrg = await send(USER.bSteward, "PATCH", `/datasets/${DATASET.battery}`, { collecting_organization_id: USER.admin });
+    expect((await unknownOrg.json()).error.details.fields).toEqual([{ field: "collecting_organization_id", reason: "UNKNOWN_ORGANIZATION" }]);
+  });
+
+  it("clears nullable fields with null and audits metadata changes", async () => {
+    const res = await send(USER.bSteward, "PATCH", `/datasets/${DATASET.battery}`, { subtitle: null, temporal_end: null, collecting_organization_id: null, collecting_organization_name: "Elsewhere" });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.subtitle).toBeNull();
+    expect(body.temporal_end).toBeNull();
+    expect(body.collecting_organization).toEqual({ organization_id: null, name: "Elsewhere" });
+    expect(getDb().audit.some((e) => e.action === "DATASET_UPDATED" && e.resource.id === DATASET.battery)).toBe(true);
+    // Unchanged people keep their stored affiliation; reassigning to an ineligible person is rejected.
+    const bad = await send(USER.bSteward, "PATCH", `/datasets/${DATASET.battery}`, { data_steward_contact_id: USER.aSteward });
+    expect((await bad.json()).error.details.fields).toEqual([{ field: "data_steward_contact_id", reason: "PERSON_NOT_ELIGIBLE" }]);
+  });
+
+  it("filters search by period overlap, subject and collecting organization", async () => {
+    const recent = await getJson(USER.aResearcher, "/datasets?temporal_from=2026-01-01");
+    expect(recent.items.map((h: { dataset_id: string }) => h.dataset_id)).toContain(DATASET.battery);
+    expect(recent.items.map((h: { dataset_id: string }) => h.dataset_id)).not.toContain(DATASET.openMaterials);
+    const bad = await send(USER.aResearcher, "GET", "/datasets?temporal_from=2026-01-02&temporal_to=2026-01-01");
+    expect(bad.status).toBe(422);
+    expect((await bad.json()).error.details.fields).toEqual([{ field: "temporal_to", reason: "TEMPORAL_RANGE" }]);
+    const all = await getJson(USER.aResearcher, "/datasets");
+    expect(all.facets.subject).toEqual(expect.arrayContaining([{ value: "MATERIALS", count: 2 }]));
+    expect(all.facets.collecting_organization_id).toEqual(expect.arrayContaining([{ value: ORG.b, count: 2, label: "Institute B" }]));
+    const byPi = await getJson(USER.aResearcher, `/datasets?principal_investigator_id=${USER.bResearcher}&material=ELECTROLYTE&method=SENSOR_LOGGING`);
+    expect(byPi.items.map((h: { dataset_id: string }) => h.dataset_id)).toEqual([DATASET.battery]);
+    expect(byPi.items[0]).toMatchObject({ principal_investigator_name: "B Researcher", collecting_organization_name: "Institute B", subject_codes: ["ENERGY", "MATERIALS"] });
+    // q reaches vocabulary labels and the PI name; an open-ended period (qcLogs) overlaps later windows.
+    expect((await getJson(USER.aResearcher, "/datasets?q=%EC%9E%AC%EB%A3%8C")).items.length).toBeGreaterThan(0);
+    expect((await getJson(USER.bResearcher, "/datasets?temporal_from=2030-01-01")).items.map((h: { dataset_id: string }) => h.dataset_id)).toEqual([DATASET.qcLogs]);
+  });
+
+  it("puts contributors keeping affiliation, lists vocabulary, serves JSON-LD", async () => {
+    const put = await send(USER.bSteward, "PUT", `/datasets/${DATASET.battery}/contributors`, { contributors: [{ user_id: USER.aResearcher, role: "CO_INVESTIGATOR" }] });
+    expect(put.status).toBe(200);
+    expect((await put.json()).items[0].affiliation.organization_id).toBe(ORG.a);
+    const dup = await send(USER.bSteward, "PUT", `/datasets/${DATASET.battery}/contributors`, { contributors: [{ user_id: USER.bResearcher, role: "DATA_CURATOR" }, { user_id: USER.bResearcher, role: "DATA_CURATOR" }] });
+    expect((await dup.json()).error.details.fields).toEqual([{ field: "contributors", reason: "DUPLICATE" }]);
+    const disabled = await send(USER.bSteward, "PUT", `/datasets/${DATASET.battery}/contributors`, { contributors: [{ user_id: USER.bDisabled, role: "DATA_CURATOR" }] });
+    expect((await disabled.json()).error.details.fields).toEqual([{ field: "contributors[0].user_id", reason: "PERSON_NOT_ELIGIBLE" }]);
+    expect((await send(USER.bResearcher, "PUT", `/datasets/${DATASET.battery}/contributors`, { contributors: [] })).status).toBe(403);
+    const vocab = await getJson(USER.aResearcher, "/vocabulary/SUBJECT");
+    expect(vocab.items.length).toBeGreaterThanOrEqual(20);
+    expect((await send(USER.aResearcher, "GET", "/vocabulary/NOPE")).status).toBe(422);
+    const term = { code: "NEW_TERM", label_ko: "새 용어", label_en: "New term" };
+    expect((await send(USER.bSteward, "POST", "/vocabulary/METHOD", term)).status).toBe(403);
+    expect((await send(USER.admin, "POST", "/vocabulary/METHOD", term)).status).toBe(201);
+    expect((await send(USER.admin, "POST", "/vocabulary/METHOD", term)).status).toBe(409);
+    expect((await send(USER.admin, "POST", "/vocabulary/METHOD", { ...term, code: "OTHER", parent_code: "MISSING" })).status).toBe(422);
+    const doc = await getJson(USER.aResearcher, `/datasets/${DATASET.battery}/metadata.jsonld`);
+    expect(doc["@type"]).toEqual(["Dataset", "dcat:Dataset"]);
+    expect(doc.temporalCoverage).toBe("2026-01-01/2026-01-01");
+    expect(doc.about[0]).toMatchObject({ "@type": "DefinedTerm", "@id": expect.stringContaining("/vocabulary/SUBJECT/") });
+  });
+
+  it("updateMe sets the NTIS number; duplicates are 409", async () => {
+    const ok = await send(USER.aAdmin, "PATCH", "/me", { national_researcher_number: "12345678" });
+    expect((await ok.json()).national_researcher_number).toBe("12345678");
+    expect((await send(USER.bAdmin, "PATCH", "/me", { national_researcher_number: "12345678" })).status).toBe(409);
+    expect((await send(USER.bAdmin, "PATCH", "/me", { national_researcher_number: "12" })).status).toBe(422);
+    expect((await send(USER.bAdmin, "PATCH", "/me", {})).status).toBe(422);
+    expect((await (await send(USER.aAdmin, "PATCH", "/me", { national_researcher_number: null })).json()).national_researcher_number).toBeNull();
+  });
+
+  it("transferUserOrganization moves a user and keeps history (PLATFORM_ADMIN only)", async () => {
+    expect((await send(USER.aAdmin, "POST", `/users/${USER.aResearcher}/transfer`, { organization_id: ORG.b })).status).toBe(403);
+    expect((await send(USER.admin, "POST", `/users/${USER.aResearcher}/transfer`, { organization_id: USER.admin })).status).toBe(422);
+    const moved = await send(USER.admin, "POST", `/users/${USER.aResearcher}/transfer`, { organization_id: ORG.b });
+    expect((await moved.json()).organization_id).toBe(ORG.b);
+    expect(getDb().users.find((u) => u.user_id === USER.aResearcher)?.history).toMatchObject([{ organization_id: ORG.a }]);
+    const found = await getJson(USER.bAdmin, "/users?q=A%20Researcher");
+    expect(found.items.map((u: { organization_id: string }) => u.organization_id)).toEqual([ORG.b]);
+    // An Institute A dataset whose PI was A Researcher keeps the at-the-time affiliation and shows the new current org.
+    const sensors = await getJson(USER.aSteward, `/datasets/${DATASET.sensors}`);
+    expect(sensors.people.principal_investigator.affiliation.organization_id).toBe(ORG.a);
+    expect(sensors.people.principal_investigator.current_organization.organization_id).toBe(ORG.b);
   });
 });

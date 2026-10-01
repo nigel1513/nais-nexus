@@ -25,6 +25,14 @@ describe("seed fidelity (10_SEED_DATA / seed_ids.json)", () => {
     expect(SEED_USERS).toHaveLength(8);
   });
 
+  it("seeds NTIS researcher numbers and empty membership history", () => {
+    const byEmail = Object.fromEntries(getDb().users.map((u) => [u.email, u]));
+    expect(byEmail["a.researcher@inst-a.local"]?.national_researcher_number).toBe("10000001");
+    expect(byEmail["b.steward@inst-b.local"]?.national_researcher_number).toBe("10000004");
+    expect(byEmail["admin@nais.local"]?.national_researcher_number).toBeNull();
+    expect(getDb().users.every((u) => u.history.length === 0)).toBe(true);
+  });
+
   it("has exactly the seed project and the five seed datasets with real titles", () => {
     const db = getDb();
     expect(db.projects.map((p) => [p.project_id, p.name])).toEqual([[PROJECT.seed, "Seed: Battery Materials Joint Study"]]);

@@ -10,10 +10,22 @@ export type MockUser = {
   status: Schemas["ActiveStatus"];
   membership_status: Schemas["ActiveStatus"];
   updated_at: string;
+  national_researcher_number: string | null;
+  /** Earlier memberships (transferUserOrganization); the current one is `organization_id`. */
+  history: { organization_id: string; started_at: string; ended_at: string }[];
 };
 
 export type StoredProject = Omit<Schemas["Project"], "my_role" | "member_count">;
-export type StoredDataset = Omit<Schemas["Dataset"], "latest_published_version">;
+/** Internal ids stay in the store; datasetView turns them into `people`, `collecting_organization` and `stats`. */
+export type StoredDataset = Omit<Schemas["Dataset"], "latest_published_version" | "people" | "collecting_organization" | "stats"> & {
+  principal_investigator_id: string | null;
+  principal_investigator_org_id: string | null;
+  data_steward_contact_id: string | null;
+  data_steward_contact_org_id: string | null;
+  collecting_organization_id: string | null;
+  collecting_organization_name: string | null;
+};
+export type StoredContributor = { dataset_id: string; user_id: string; role: Schemas["ContributorRole"]; affiliation_organization_id: string; position: number };
 export type StoredVersion = Omit<Schemas["DatasetVersion"], "readiness_overall">;
 export type ReadinessOutcome = Pick<Schemas["ReadinessValidation"], "overall_status" | "summary" | "checks">;
 export type StoredValidation = Schemas["ReadinessValidation"] & { polls: number; outcome: ReadinessOutcome };
@@ -34,4 +46,6 @@ export type MockDb = {
   validations: StoredValidation[];
   audit: Schemas["AuditEvent"][];
   notifications: StoredNotification[];
+  contributors: StoredContributor[];
+  vocabulary: Schemas["VocabularyTerm"][];
 };
