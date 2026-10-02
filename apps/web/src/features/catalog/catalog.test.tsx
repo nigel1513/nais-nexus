@@ -348,10 +348,12 @@ describe("DatasetDetailScreen", () => {
     server.use(http.patch("*/mock-api/v1/datasets/:id", () => { patches += 1; return HttpResponse.json({}); }));
     open(USER.bSteward, DATASET.battery);
     await userEvent.click(await screen.findByRole("button", { name: "편집" }));
-    await userEvent.clear(screen.getByLabelText(/^이용 정책/));
-    await userEvent.click(screen.getByRole("button", { name: "저장" }));
-    expect((await screen.findAllByText(/이 항목은 비울 수 없습니다/)).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText(/^이용 정책/)).toHaveAttribute("aria-invalid", "true");
+    // Scoped to the sheet: the Data Card's rail behind it has its own "이용 정책" section.
+    const sheet = await screen.findByRole("dialog", { name: "데이터셋 편집" });
+    await userEvent.clear(within(sheet).getByLabelText(/^이용 정책/));
+    await userEvent.click(within(sheet).getByRole("button", { name: "저장" }));
+    expect((await within(sheet).findAllByText(/이 항목은 비울 수 없습니다/)).length).toBeGreaterThan(0);
+    expect(within(sheet).getByLabelText(/^이용 정책/)).toHaveAttribute("aria-invalid", "true");
     expect(patches).toBe(0);
   });
 
