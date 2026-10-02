@@ -188,7 +188,7 @@ describe("AccessRequestDetailScreen", () => {
     const dialog = screen.getByRole("dialog");
     await userEvent.type(within(dialog).getByLabelText(/^거절 사유/), "목적이 불명확합니다");
     await userEvent.click(within(dialog).getByRole("button", { name: "거절" }));
-    expect(await screen.findByText("다른 사용자가 먼저 처리했습니다. 최신 상태를 불러옵니다.")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("다른 사용자가 먼저 처리했습니다. 최신 상태를 불러옵니다."); // the error toast's announcement
     expect((await screen.findAllByText("철회됨")).length).toBeGreaterThan(0);
   });
 

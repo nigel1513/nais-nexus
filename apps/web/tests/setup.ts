@@ -1,11 +1,15 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import { resetDb } from "@/mocks/db";
 import { notify } from "@nais/ui";
 import { contractViolations, pendingChecks, server } from "./msw";
 import { resetNavigation } from "./navigation";
 import { mockViewport } from "./viewport";
+
+// Error toasts are also written to a hidden role="alert" announcer (packages/ui toast.tsx). Text queries look at the
+// visible toast only; getByRole("alert") still finds the announcement.
+configure({ defaultIgnore: "script, style, [data-announcer]" });
 
 vi.mock("next/navigation", async () => (await import("./navigation")).navigationMock);
 

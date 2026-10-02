@@ -75,7 +75,10 @@
     "theme": "Theme",
     "themeSystem": "System",
     "themeLight": "Light",
-    "themeDark": "Dark"
+    "themeDark": "Dark",
+    "hintMove": "move",
+    "hintOpen": "open",
+    "hintClose": "close"
   },
   "landing": {
     "title": "NAIS AI-OS Research Commons",

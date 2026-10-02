@@ -157,8 +157,7 @@ describe("PlatformShell: top bar", () => {
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     await userEvent.click(await screen.findByRole("button", { name: "알림 1개 읽지 않음" }));
     await userEvent.click(await screen.findByRole("button", { name: /접근 권한이 .* UTC에 만료됩니다/ }));
-    expect(await screen.findByText("알림을 읽음 처리하지 못했습니다.")).toBeInTheDocument();
-    expect(document.querySelector("section[aria-live]")).toHaveAttribute("aria-live", "assertive");
+    expect(await screen.findByRole("alert")).toHaveTextContent("알림을 읽음 처리하지 못했습니다.");
     expect(router.push).not.toHaveBeenCalled();
   });
 
@@ -234,7 +233,7 @@ describe("PlatformShell: gate and shortcuts", () => {
     expect(screen.getByRole("heading", { name: "본문" })).toBeInTheDocument();
   });
 
-  it("/ opens the command palette unless the user is typing", async () => {
+  it("/ opens the command palette unless the user is typing or a menu is open", async () => {
     renderWithProviders(
       <PlatformShell>
         <label>
@@ -247,6 +246,13 @@ describe("PlatformShell: gate and shortcuts", () => {
     const input = await screen.findByLabelText("메모");
     fireEvent.keyDown(input, { key: "/" });
     expect(screen.queryByRole("dialog", { name: "명령 팔레트" })).not.toBeInTheDocument();
+    // A menu is open: `/` is its business (type-ahead), not the palette's.
+    await userEvent.click(screen.getByRole("button", { name: /A Researcher/ }));
+    await screen.findByRole("menu");
+    fireEvent.keyDown(document.body, { key: "/" });
+    expect(screen.queryByRole("dialog", { name: "명령 팔레트" })).not.toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
     fireEvent.keyDown(document.body, { key: "/" });
     expect(await screen.findByRole("dialog", { name: "명령 팔레트" })).toBeInTheDocument();
   });

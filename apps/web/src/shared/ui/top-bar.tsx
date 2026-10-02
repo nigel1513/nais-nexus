@@ -8,12 +8,12 @@ import { useCommandPalette } from "./command-palette";
 import type { NavItem } from "./nav";
 import { NotificationBell } from "./notification-bell";
 
-/** ⌘ on Apple keyboards, Ctrl elsewhere. Decided after mount so the server and first client render agree. */
-function useModKey(): string {
-  const [mod, setMod] = useState("Ctrl");
+/** ⌘ on Apple keyboards, Ctrl elsewhere; null until mounted (the server cannot know), so nothing flips on screen. */
+function useModKey(): "⌘" | "Ctrl" | null {
+  const [mod, setMod] = useState<"⌘" | "Ctrl" | null>(null);
   useEffect(() => {
     const platform = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform ?? "";
-    if (/mac|iphone|ipad/i.test(platform)) setMod("⌘");
+    setMod(/mac|iphone|ipad/i.test(platform) ? "⌘" : "Ctrl");
   }, []);
   return mod;
 }
@@ -38,11 +38,16 @@ export function TopBar({ destinations, onOpenMenu, className }: { destinations: 
           type="button"
           onClick={() => setOpen(true)}
           aria-keyshortcuts="Meta+K Control+K"
-          className={buttonClass("secondary", "sm", "w-8 justify-center px-0 text-fg-muted max-md:border-transparent max-md:bg-transparent md:w-48 md:justify-start md:px-2")}
+          className={buttonClass(
+            "secondary",
+            "md",
+            "w-8 justify-center px-0 text-fg-muted max-md:border-transparent max-md:bg-transparent md:w-48 md:justify-start md:px-2.5 md:text-small",
+          )}
         >
           <Search aria-hidden="true" strokeWidth={1.75} />
           <span className="sr-only md:not-sr-only md:flex-1 md:text-left">{t("shell.search")}</span>
-          <Kbd aria-hidden="true" className="hidden md:inline-flex">
+          {/* Invisible (not absent) until the platform is known: keeps the width, avoids a Ctrl→⌘ flash. */}
+          <Kbd aria-hidden="true" className={cn("hidden md:inline-flex", !mod && "invisible")}>
             {mod === "⌘" ? "⌘K" : "Ctrl K"}
           </Kbd>
         </button>

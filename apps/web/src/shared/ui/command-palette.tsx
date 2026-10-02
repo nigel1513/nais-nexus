@@ -1,5 +1,5 @@
 "use client";
-import { CommandMenu } from "@nais/ui";
+import { CommandMenu, Kbd } from "@nais/ui";
 import { Database, FolderKanban, Moon, Plus, Search, ShieldCheck, Sun } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -24,6 +24,11 @@ function isTyping(target: EventTarget | null): boolean {
   return target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName);
 }
 
+/** A dialog, sheet, menu or listbox is open: `/` belongs to it (e.g. type-ahead), not to the palette. */
+function overlayOpen(): boolean {
+  return !!document.querySelector('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]');
+}
+
 /**
  * ⌘K / Ctrl+K toggles the palette anywhere; `/` opens it when focus is not in a field (spec §3).
  * Opens and closes with no animation: it is used many times a day (spec §2.6).
@@ -35,7 +40,7 @@ export function CommandPaletteProvider({ me, children }: { me: Me; children: Rea
       if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setOpen((o) => !o);
-      } else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e.target)) {
+      } else if (e.key === "/" && !e.metaKey && !e.ctrlKey && !e.altKey && !isTyping(e.target) && !overlayOpen()) {
         e.preventDefault();
         setOpen(true);
       }
@@ -167,6 +172,22 @@ function PaletteBody({ me, close }: { me: Me; close: () => void }) {
           </CommandMenu.Group>
         ) : null}
       </CommandMenu.List>
+      {/* Keyboard legend; decorative, the keys themselves are standard for a listbox. */}
+      <div aria-hidden="true" className="flex h-9 shrink-0 items-center gap-4 border-t border-border px-3 text-caption text-fg-muted">
+        <span className="flex items-center gap-1.5">
+          <Kbd>↑</Kbd>
+          <Kbd>↓</Kbd>
+          {t("shell.hintMove")}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Kbd>↵</Kbd>
+          {t("shell.hintOpen")}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <Kbd>esc</Kbd>
+          {t("shell.hintClose")}
+        </span>
+      </div>
     </>
   );
 }

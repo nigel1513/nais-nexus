@@ -40,7 +40,7 @@ export function UserMenu({ me, compact = false }: { me: Me; compact?: boolean })
         <span className="sr-only">{t("shell.userMenu")}</span>
         {compact ? null : <ChevronsUpDown {...icon} className="size-4 shrink-0 text-fg-muted" />}
       </Menu.Trigger>
-      <Menu.Content side="top" align="start" sideOffset={4} className="w-64">
+      <Menu.Content side="top" align="start" sideOffset={4} className="w-[var(--anchor-width)] min-w-56">
         <div className="px-2 pb-2 pt-1.5">
           <p className="truncate text-body font-medium text-fg">{me.display_name}</p>
           <p className="truncate text-small text-fg-muted">{me.email}</p>

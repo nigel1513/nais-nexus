@@ -24,17 +24,18 @@ describe("app toasts (notify → Sonner)", () => {
     await waitFor(() => expect(screen.queryByText("메시지")).not.toBeInTheDocument());
   });
 
-  it("error toasts stay until closed with the labelled button and are announced assertively", async () => {
+  it("error toasts stay until closed, are announced through the alert region and not again politely", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     renderWithProviders(<Fire kind="error" />);
     await user.click(screen.getByText("fire"));
-    expect(await screen.findByText("메시지")).toBeInTheDocument();
-    expect(region()).toHaveAttribute("aria-live", "assertive");
+    expect(await screen.findByRole("alert")).toHaveTextContent("메시지");
+    const card = () => region()!.querySelector("div[aria-hidden=true]");
+    expect(card()).toHaveTextContent("메시지"); // the polite region does not read it a second time
     act(() => vi.advanceTimersByTime(60_000));
-    expect(screen.getByText("메시지")).toBeInTheDocument();
+    expect(card()).toHaveTextContent("메시지");
     await user.click(screen.getByRole("button", { name: "닫기" }));
-    await waitFor(() => expect(screen.queryByText("메시지")).not.toBeInTheDocument());
+    await waitFor(() => expect(card()).toBeNull());
   });
 
   it("nothing leaks across a remount: the toaster starts empty", async () => {

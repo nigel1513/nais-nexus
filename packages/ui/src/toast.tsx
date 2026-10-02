@@ -21,12 +21,13 @@ const ICON: Record<Kind, React.ReactNode> = {
 export function ToastCard({ kind, title, description, onClose }: { kind: Kind; title: React.ReactNode; description?: React.ReactNode; onClose?: () => void }) {
   const closeLabel = React.useContext(CloseLabel);
   return (
-    // No role here: Sonner's list is already a live region, and a nested alert would be announced twice.
+    // No role here: Sonner's list is already a (polite) live region. An error's text is announced by the Toaster's
+    // alert region instead, so here it is hidden from assistive tech to avoid a second, polite reading.
     <div
       className="flex w-[var(--width,356px)] max-w-full items-start gap-3 rounded-md border border-border bg-bg-panel p-3 text-fg shadow-popover"
     >
       <span className="mt-0.5 shrink-0">{ICON[kind]}</span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1" aria-hidden={kind === "error" || undefined}>
         <p className="text-body font-medium">{title}</p>
         {description ? <p className="mt-0.5 text-small text-fg-muted">{description}</p> : null}
       </div>
@@ -45,14 +46,16 @@ export function ToastCard({ kind, title, description, onClose }: { kind: Kind; t
 }
 
 /**
- * Sonner's container is one polite live region. An error must interrupt (WCAG 4.1.3), so the region is switched to
- * assertive right before an error is added and back to polite before anything else. The attribute is read when the
- * content changes, so each toast is announced once, with its own urgency. Set through the <Toaster> ref.
+ * Sonner's container is one polite live region, and it inserts toasts later than the call. Errors must interrupt
+ * (WCAG 4.1.3), so their text also goes, synchronously, to a visually hidden role="alert" region the <Toaster> mounts.
+ * The region is removed first and inserted again on the next tick, so the same message twice is announced twice.
  */
-let liveRegion: HTMLElement | null = null;
+type Alert = { title: React.ReactNode; description?: React.ReactNode };
+let alertSeq = 0;
+let announce: ((a: Alert) => void) | null = null;
 
 function show(kind: Kind, title: React.ReactNode, opts: NotifyOptions = {}) {
-  liveRegion?.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
+  if (kind === "error") announce?.({ title, description: opts.description });
   // Errors stay until dismissed: they carry what the user must act on. Success / info leave after 4s.
   const duration = opts.duration ?? (kind === "error" || kind === "loading" ? Infinity : 4000);
   return toast.custom(
@@ -85,12 +88,29 @@ export const notify = {
  * follow the OS on its own. `closeLabel` names every toast's close button.
  */
 export function Toaster({ theme, closeLabel, className }: { theme?: "light" | "dark"; closeLabel: string; className?: string }) {
+  const [alert, setAlert] = React.useState<(Alert & { n: number }) | null>(null);
+  React.useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    announce = (a) => {
+      clearTimeout(timer);
+      setAlert(null);
+      timer = setTimeout(() => setAlert({ ...a, n: ++alertSeq }), 50);
+    };
+    return () => {
+      clearTimeout(timer);
+      announce = null;
+    };
+  }, []);
   return (
     <CloseLabel.Provider value={closeLabel}>
+      {/* Mounted (re-mounted per error) only while it has content: inserting a role="alert" element announces it. */}
+      {alert ? (
+        <div key={alert.n} role="alert" data-announcer="" className="sr-only">
+          {alert.title}
+          {alert.description ? <> {alert.description}</> : null}
+        </div>
+      ) : null}
       <Sonner
-        ref={(el) => {
-          liveRegion = el;
-        }}
         position="bottom-right"
         theme={theme}
         className={className}

@@ -30,7 +30,7 @@ export function NotificationBell() {
           <Bell aria-hidden="true" strokeWidth={1.75} />
           {count > 0 ? <span aria-hidden="true" className="absolute right-1.5 top-1.5 size-2 rounded-full border-2 border-bg bg-accent" /> : null}
         </PopoverTrigger>
-        <PopoverContent align="end" className="flex w-[360px] flex-col p-0">
+        <PopoverContent align="end" className="flex w-90 flex-col p-0">
           <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border pl-4 pr-2">
             <PopoverTitle className="text-body font-semibold">{t("shell.notificationsTitle")}</PopoverTitle>
             {count > 0 ? <span className="num text-small text-fg-muted">{t("shell.unreadCount", { count })}</span> : null}

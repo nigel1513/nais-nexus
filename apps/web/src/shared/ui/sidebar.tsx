@@ -121,19 +121,22 @@ export function Sidebar({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Expanded: mark + name + collapse on one row. Rail: the mark keeps its place; expand sits right under it. */}
       <div className={cn("flex h-12 shrink-0 items-center gap-2", collapsed ? "justify-center px-2" : "pl-4 pr-2")}>
-        {collapsed ? null : <Brand compact={false} />}
-        {onToggle ? (
-          <IconButton
-            label={collapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
-            onClick={onToggle}
-            size="sm"
-            className={collapsed ? undefined : "ml-auto"}
-          >
-            {collapsed ? <PanelLeftOpen aria-hidden="true" strokeWidth={1.75} /> : <PanelLeftClose aria-hidden="true" strokeWidth={1.75} />}
+        <Brand compact={collapsed} />
+        {onToggle && !collapsed ? (
+          <IconButton label={t("shell.collapseSidebar")} onClick={onToggle} size="sm" className="ml-auto">
+            <PanelLeftClose aria-hidden="true" strokeWidth={1.75} />
           </IconButton>
         ) : null}
       </div>
+      {onToggle && collapsed ? (
+        <div className="flex shrink-0 justify-center pb-1">
+          <IconButton label={t("shell.expandSidebar")} onClick={onToggle} size="md">
+            <PanelLeftOpen aria-hidden="true" strokeWidth={1.75} />
+          </IconButton>
+        </div>
+      ) : null}
       <nav aria-label={t("shell.mainNav")} className={cn("min-h-0 flex-1 overflow-y-auto pb-4", collapsed ? "px-4" : "px-2")}>
         {groups.map((g, gi) => (
           <div key={g.key} className={gi > 0 ? "mt-4" : "mt-1"}>

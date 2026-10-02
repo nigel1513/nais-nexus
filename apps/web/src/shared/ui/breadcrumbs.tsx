@@ -35,7 +35,7 @@ export function useBreadcrumbs(items: Crumb[]): void {
   }, [key, set]);
 }
 
-/** Top-bar trail: every crumb but the last is a link; the last is the current page. On phones only the last shows. */
+/** Top-bar trail: every crumb but the last is a link; the last is the current page. On phones only the last shows (none for a one-crumb trail). */
 export function Breadcrumbs({ destinations, className }: { destinations: NavItem[]; className?: string }) {
   const t = useTranslations();
   const pathname = usePathname();
@@ -49,8 +49,9 @@ export function Breadcrumbs({ destinations, className }: { destinations: NavItem
         {trail.map((c, i) => {
           const last = i === trail.length - 1;
           return (
-            <li key={`${i}-${c.label}`} className={cn("flex min-w-0 items-center gap-1.5", !last && "hidden shrink md:flex")}>
-              {i > 0 ? <Slash aria-hidden="true" className="size-3.5 shrink-0 -rotate-12 text-border-strong" strokeWidth={1.75} /> : null}
+            // Phones show only the last crumb, without its separator; a lone crumb would just repeat the h1, so none.
+            <li key={`${i}-${c.label}`} className={cn("min-w-0 items-center gap-1.5", last && trail.length > 1 ? "flex" : "hidden shrink md:flex")}>
+              {i > 0 ? <Slash aria-hidden="true" className="hidden size-3.5 shrink-0 -rotate-12 text-border-strong md:block" strokeWidth={1.75} /> : null}
               {last ? (
                 <span aria-current="page" className="truncate font-medium text-fg">
                   {c.label}

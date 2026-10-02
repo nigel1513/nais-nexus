@@ -12,7 +12,7 @@ describe("notify", () => {
     });
     expect(await screen.findByText("업로드 실패")).toBeInTheDocument();
     expect(screen.getByText("네트워크 오류")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(1)); // only the Toaster's own region, none per card
     await user.click(screen.getByRole("button", { name: "닫기" }));
     await waitFor(() => expect(screen.queryByText("업로드 실패")).toBeNull());
     act(() => notify.dismiss());
@@ -28,23 +28,20 @@ describe("notify", () => {
     expect(await screen.findByText("3개 검증됨")).toBeInTheDocument();
     act(() => notify.dismiss());
   });
-  it("announces errors assertively and everything else politely, in Sonner's one live region", async () => {
-    const { container } = render(<Toaster closeLabel="닫기" />);
-    const region = () => container.ownerDocument.querySelector("section[aria-live]")!;
+  it("errors go to the alert region at once; other toasts stay in Sonner's polite region, even in the same tick", async () => {
+    render(<Toaster closeLabel="닫기" />);
     act(() => {
-      notify.success("저장했습니다");
-    });
-    expect(await screen.findByText("저장했습니다")).toBeInTheDocument();
-    expect(region()).toHaveAttribute("aria-live", "polite");
-    act(() => {
-      notify.error("저장하지 못했습니다");
-    });
-    expect(await screen.findByText("저장하지 못했습니다")).toBeInTheDocument();
-    expect(region()).toHaveAttribute("aria-live", "assertive");
-    act(() => {
+      notify.error("저장하지 못했습니다", { description: "네트워크 오류" });
       notify.info("다시 연결했습니다");
     });
-    expect(region()).toHaveAttribute("aria-live", "polite");
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("저장하지 못했습니다 네트워크 오류"));
+    expect(screen.getByRole("alert")).not.toHaveTextContent("다시 연결했습니다");
+    const polite = document.querySelector("section[aria-live]")!;
+    expect(polite).toHaveAttribute("aria-live", "polite");
+    await waitFor(() => expect(polite).toHaveTextContent("다시 연결했습니다"));
+    // The error card's own text is hidden from assistive tech so it is not read a second time, politely.
+    const card = [...polite.querySelectorAll("[aria-hidden=true]")].find((n) => n.textContent?.includes("저장하지 못했습니다"));
+    expect(card).toBeTruthy();
     act(() => notify.dismiss());
   });
 });

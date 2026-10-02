@@ -76,7 +76,10 @@
     "theme": "테마",
     "themeSystem": "시스템",
     "themeLight": "라이트",
-    "themeDark": "다크"
+    "themeDark": "다크",
+    "hintMove": "이동",
+    "hintOpen": "열기",
+    "hintClose": "닫기"
   },
   "meta": {
     "title": "NAIS Research Commons",
