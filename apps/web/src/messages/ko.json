@@ -86,40 +86,56 @@
     "description": "NAIS AI-OS 공동 연구 데이터 플랫폼"
   },
   "landing": {
-    "title": "NAIS AI-OS Research Commons",
-    "subtitle": "기관의 경계를 넘어 공동 프로젝트를 만들고, AI-Ready 데이터를 찾고, 승인된 범위 안에서 안전하게 이용하세요.",
-    "cta": "Research Commons 시작하기",
-    "signIn": "로그인",
-    "featuresTitle": "주요 기능",
-    "features": {
+    "context": "국가과학기술연구회 연구 데이터 포털",
+    "title": "NAIS Research Commons",
+    "lead": "연구회 소속 기관이 연구 데이터를 공유하고, 기관을 넘나드는 공동 연구를 진행하는 내부 포털입니다.",
+    "signIn": "NST 통합 로그인 (SSO)",
+    "signInHint": "소속 기관 계정으로 로그인합니다. 계정 문제는 소속 기관 관리자에게 문의하세요.",
+    "demoMode": "데모 모드",
+    "demoHint": "로그인하면 데모 사용자 선택 화면으로 이동합니다.",
+    "internal": "내부 시스템",
+    "contentsTitle": "포털에서 하는 일",
+    "contents": {
+      "data": {
+        "title": "연구 데이터",
+        "body": "기관별 연구 데이터셋을 메타데이터와 열 분포로 찾고, 버전별 파일을 확인합니다.",
+        "where": "/commons/data"
+      },
       "projects": {
         "title": "공동 프로젝트",
-        "body": "여러 기관의 연구자가 한 프로젝트에서 협업합니다."
+        "body": "여러 기관의 연구자가 한 프로젝트에서 구성원과 데이터를 함께 관리합니다.",
+        "where": "/commons/projects"
       },
-      "data": {
-        "title": "데이터 검색",
-        "body": "기관별 데이터를 메타데이터로 찾고 AI-Ready 수준을 확인합니다."
+      "access": {
+        "title": "접근 승인",
+        "body": "이용 목적과 기간을 밝혀 요청하고, 데이터를 가진 기관이 승인하거나 회수합니다.",
+        "where": "/commons/access"
       },
-      "governance": {
-        "title": "접근 거버넌스",
-        "body": "목적과 기간을 정해 요청하고, 소유 기관이 승인·회수합니다."
+      "readiness": {
+        "title": "AI-ready 검증",
+        "body": "메타데이터·단위·출처를 점검해 AI 학습에 바로 쓸 수 있는 수준인지 확인합니다.",
+        "where": "/commons/data/:id"
       }
     },
-    "aboutTitle": "NAIS 소개",
-    "placeholder": {
-      "about": "소개",
-      "research": "연구",
-      "news": "소식",
-      "body": "준비 중인 콘텐츠입니다."
+    "figure": {
+      "path": "battery-cycling / capacity_ah",
+      "label": "예시 열 분포: 용량(capacity_ah) 히스토그램과 전압·온도·용량 추세선",
+      "caption": "데이터 카드는 열마다 분포를 보여 줍니다. 그림은 생성한 예시이며 실제 데이터가 아닙니다.",
+      "sample": "예시"
     },
-    "footer": "© NAIS"
+    "notice": "이 시스템은 NST 연구회 소속 연구자 전용입니다. 접속 기록이 감사 로그에 남습니다.",
+    "support": "운영 지원",
+    "supportPending": "연락처 준비 중",
+    "version": "버전"
   },
   "auth": {
-    "mockTitle": "개발용 데모 로그인",
-    "mockDescription": "개발용 데모 로그인입니다. 사용자를 골라 로그인하세요.",
+    "mockTitle": "데모 사용자로 로그인",
+    "mockDescription": "개발·시연용 화면입니다. 실제 서비스에서는 NST 통합 로그인(SSO)으로 들어갑니다.",
     "mockUser": "사용자",
     "signIn": "로그인",
-    "signOut": "로그아웃"
+    "signOut": "로그아웃",
+    "mockBadge": "데모 로그인",
+    "mockBack": "첫 화면으로"
   },
   "blocked": {
     "title": "계정을 사용할 수 없습니다",

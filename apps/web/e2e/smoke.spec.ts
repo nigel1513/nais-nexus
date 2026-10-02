@@ -12,7 +12,21 @@ test("public landing renders the portal (not the gateway 503)", async ({ page })
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Research Commons");
-  await expect(page.getByRole("link", { name: "Research Commons 시작하기" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "NST 통합 로그인 (SSO)" })).toHaveAttribute("href", "/commons");
+  await expect(page.getByText("접속 기록이 감사 로그에 남습니다.")).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+  for (const theme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await expect(page.locator("html")).toHaveClass(new RegExp(`\\b${theme}\\b`));
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  await page.getByRole("link", { name: "NST 통합 로그인 (SSO)" }).click();
+  await expect(page).toHaveURL(/\/mock-login\?callbackUrl=%2Fcommons$/);
+  await expect(page.getByText("데모 로그인", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   expect(await seriousViolations(page)).toEqual([]);
 });
 

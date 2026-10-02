@@ -65,6 +65,11 @@
   --text-caption: 12px; --text-caption--line-height: 16px; --text-caption--letter-spacing: 0.01em; --text-caption--font-weight: 500;
   --text-mono: 12.5px; --text-mono--line-height: 20px;
   --text-micro: 11px; --text-micro--line-height: 14px; --text-micro--font-weight: 500; /* Kbd, 20/24px avatar initials */
+  /* Public landing only (Observable-style two-step title): a lighter context line above a heavy name. */
+  --text-hero: 52px; --text-hero--line-height: 56px; --text-hero--letter-spacing: -0.035em; --text-hero--font-weight: 650;
+  --text-hero-sm: 36px; --text-hero-sm--line-height: 42px; --text-hero-sm--letter-spacing: -0.03em; --text-hero-sm--font-weight: 650;
+  --text-hero-context: 24px; --text-hero-context--line-height: 32px; --text-hero-context--letter-spacing: -0.015em; --text-hero-context--font-weight: 450;
+  --text-lead: 17px; --text-lead--line-height: 28px;
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);

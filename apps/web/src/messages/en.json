@@ -81,15 +81,56 @@
     "hintClose": "close"
   },
   "landing": {
-    "title": "NAIS AI-OS Research Commons",
-    "subtitle": "Collaborate across institutions, find AI-ready data and use it safely within approved limits.",
-    "cta": "Start with Research Commons",
-    "signIn": "Sign in"
+    "context": "Research data portal of the National Research Council of Science & Technology",
+    "title": "NAIS Research Commons",
+    "lead": "An internal portal where NST member institutes share research data and run joint research across institutes.",
+    "signIn": "NST single sign-on (SSO)",
+    "signInHint": "Sign in with your institute account. For account problems, contact your institute administrator.",
+    "demoMode": "Demo mode",
+    "demoHint": "Signing in opens the demo user picker.",
+    "internal": "Internal system",
+    "contentsTitle": "What the portal is for",
+    "contents": {
+      "data": {
+        "title": "Research data",
+        "body": "Find institute datasets by metadata and column distributions, and check files by version.",
+        "where": "/commons/data"
+      },
+      "projects": {
+        "title": "Joint projects",
+        "body": "Researchers from several institutes manage members and data in one project.",
+        "where": "/commons/projects"
+      },
+      "access": {
+        "title": "Access approval",
+        "body": "Request data with a purpose and period; the owning institute approves or revokes.",
+        "where": "/commons/access"
+      },
+      "readiness": {
+        "title": "AI-ready checks",
+        "body": "Checks metadata, units and provenance to show whether data is ready for AI training.",
+        "where": "/commons/data/:id"
+      }
+    },
+    "figure": {
+      "path": "battery-cycling / capacity_ah",
+      "label": "Sample column profile: capacity histogram and voltage, temperature and capacity trend lines",
+      "caption": "Data cards show a distribution for every column. This figure is generated sample data, not real data.",
+      "sample": "sample"
+    },
+    "notice": "This system is for researchers at NST member institutes only. Access is recorded in the audit log.",
+    "support": "Support",
+    "supportPending": "Contact to be announced",
+    "version": "Version"
   },
   "auth": {
     "mockUser": "User",
     "signIn": "Sign in",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "mockBadge": "Demo login",
+    "mockTitle": "Sign in as a demo user",
+    "mockDescription": "For development and demos. The real service uses NST single sign-on (SSO).",
+    "mockBack": "Back to start"
   },
   "enums": {
     "VocabularyScheme": {

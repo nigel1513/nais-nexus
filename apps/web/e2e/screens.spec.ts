@@ -44,6 +44,16 @@ async function setup(page: Page, [w, h]: Size, theme: Theme) {
 test.describe("screens", () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
 
+  test("landing and demo login", async ({ page }) => {
+    const prefix = process.env.SHOT_PREFIX ?? "landing";
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await shoot(page, `${prefix}-home`);
+    await page.goto("/mock-login");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await shoot(page, `${prefix}-mock-login`);
+  });
+
   test("ui gallery (Task 2 primitives)", async ({ page, baseURL }) => {
     await as(page, "researcher", baseURL!);
     await page.goto("/commons/_ui");
