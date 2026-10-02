@@ -8,7 +8,6 @@ import { HeroWindows } from "@/features/landing/components/hero-windows";
 import { OperatorLink, PublicFooter, PublicHeader } from "@/features/landing/components/public-frame";
 import { ScrollReveal } from "@/features/landing/components/scroll-reveal";
 import { operatorUrl } from "@/features/landing/version";
-import { isMocking } from "@/shared/config";
 import "@/features/landing/landing.css";
 
 const rich = {
@@ -46,7 +45,6 @@ function Check({ pass, label }: { pass: boolean; label: string }) {
 export default async function LandingPage() {
   const t = await getTranslations("landing");
   const tc = await getTranslations("common");
-  const mocking = isMocking();
   const operator = operatorUrl();
   const members: Array<[string, "a" | "b", "lead" | "steward" | "coResearcher", string]> = [
     ["이소재", "a", "lead", "07-01"],
@@ -87,8 +85,7 @@ export default async function LandingPage() {
             <p className="lp-prose">{t.rich("prose", rich)}</p>
             <div className="lp-cta">
               <SignIn className="lp-btn-hero" label={t("signIn")} />
-              {mocking ? <span className="lp-demo">{t("demoMode")}</span> : null}
-              <small>{mocking ? t("demoHint") : t("signInHint")}</small>
+              <small>{t("signInHint")}</small>
             </div>
           </div>
           <HeroWindows />

@@ -35,14 +35,14 @@ describe("seed fidelity (10_SEED_DATA / seed_ids.json)", () => {
 
   it("has exactly the seed project and the five seed datasets with real titles", () => {
     const db = getDb();
-    expect(db.projects.map((p) => [p.project_id, p.name])).toEqual([[PROJECT.seed, "Seed: Battery Materials Joint Study"]]);
+    expect(db.projects.map((p) => [p.project_id, p.name])).toEqual([[PROJECT.seed, "차세대 이차전지 소재 공동연구"]]);
     expect(PROJECT.seed).toBe("00000000-0000-7000-8000-000000001001");
     expect(db.datasets.map((d) => [d.dataset_id.slice(-4), d.title, d.owner_organization_id === ORG.b ? "b" : "a", d.access_level])).toEqual([
-      ["2001", "Battery Cycling Measurements", "b", "CONTROLLED"],
-      ["2002", "Open Materials Properties", "b", "PUBLIC"],
-      ["2003", "Inst-B Internal QC Logs", "b", "INTERNAL"],
-      ["2004", "Facility Sensor Streams", "a", "SENSITIVE"],
-      ["2005", "Electrolyte Screening (draft)", "a", "CONTROLLED"],
+      ["2001", "리튬이온 배터리 셀 사이클 시험 데이터", "b", "CONTROLLED"],
+      ["2002", "구조용 세라믹·초내열합금 물성 DB", "b", "PUBLIC"],
+      ["2003", "소결 공정 배치별 품질관리 로그", "b", "INTERNAL"],
+      ["2004", "시험동 공조 설비 센서 스트림", "a", "SENSITIVE"],
+      ["2005", "하이브리드 전해질 후보 스크리닝 (초안)", "a", "CONTROLLED"],
     ]);
     expect(db.versions.map((v) => [v.dataset_version_id.slice(-4), v.status, v.file_count])).toEqual([
       ["2101", "PUBLISHED", 5],
@@ -95,7 +95,7 @@ describe("identity mocks", () => {
   it("getMe returns the mock session user with org and roles", async () => {
     as(USER.aSteward);
     const me = await unwrap(api.GET("/me"));
-    expect(me).toMatchObject({ display_name: "A Steward", org_roles: ["DATA_STEWARD"], organization: { code: "inst-a" } });
+    expect(me).toMatchObject({ display_name: "이서연", org_roles: ["DATA_STEWARD"], organization: { code: "inst-a" } });
   });
 
   it("no session → 401 UNAUTHENTICATED; disabled membership → 403 MEMBERSHIP_DISABLED", async () => {
@@ -176,7 +176,7 @@ describe("identity mocks", () => {
   it("listUsers matches display name or email prefix", async () => {
     as(USER.aResearcher);
     const page = (await unwrap(api.GET("/users", { params: { query: { q: "b.re" } } }))) as Page<IdentityPublicProfile>;
-    expect(page.items.map((u) => u.display_name)).toEqual(["B Researcher"]);
+    expect(page.items.map((u) => u.display_name)).toEqual(["최유진"]);
   });
 });
 
@@ -341,7 +341,7 @@ describe("audit and notification mocks", () => {
       action: "DOWNLOAD_DENIED",
       result: "DENIED",
       reason: "ACCESS_GRANT_NOT_FOUND",
-      actor: { type: "USER", user_id: USER.aResearcher, display_name: "A Researcher", organization_id: ORG.a },
+      actor: { type: "USER", user_id: USER.aResearcher, display_name: "김민준", organization_id: ORG.a },
       resource: { type: "DATASET_VERSION", id: VERSION.battery, owner_organization_id: ORG.b },
       project_id: PROJECT.seed,
       policy_version: null,

@@ -110,20 +110,20 @@ describe("OrganizationScreen", () => {
   it("lists members in a table with role badges and status", async () => {
     renderScreen(<OrganizationScreen />, { user: USER.bAdmin, path: "/settings/organization" });
     const table = await screen.findByRole("table", { name: "기관 멤버" });
-    const row = within(table).getByRole("row", { name: /B Steward/ });
+    const row = within(table).getByRole("row", { name: /정현우/ });
     expect(within(row).getByText("데이터 관리자")).toBeInTheDocument();
     expect(within(row).getByText("활성")).toBeInTheDocument();
-    expect(within(within(table).getByRole("row", { name: /B Disabled/ })).getByText("비활성")).toBeInTheDocument();
-    expect(within(within(table).getByRole("row", { name: /B Admin/ })).getByText("나")).toBeInTheDocument();
+    expect(within(within(table).getByRole("row", { name: /조하은/ })).getByText("비활성")).toBeInTheDocument();
+    expect(within(within(table).getByRole("row", { name: /한유나/ })).getByText("나")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "설정 메뉴" })).toBeInTheDocument();
     expect(within(screen.getByRole("navigation", { name: "설정 메뉴" })).getByRole("link", { name: "기관 관리" })).toHaveAttribute("aria-current", "page");
   });
 
   it("disabling a member warns that all their grants are revoked", async () => {
     renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
-    const menu = await openMemberMenu("A Researcher");
+    const menu = await openMemberMenu("김민준");
     await userEvent.click(within(menu).getByRole("menuitem", { name: "비활성화" }));
-    const dialog = await screen.findByRole("dialog", { name: "A Researcher 비활성화" });
+    const dialog = await screen.findByRole("dialog", { name: "김민준 비활성화" });
     expect(dialog).toHaveTextContent("이 사용자의 모든 데이터 접근 권한이 회수됩니다");
     await userEvent.click(within(dialog).getByRole("button", { name: "비활성화" }));
     await waitFor(() => expect(getDb().users.find((u) => u.user_id === USER.aResearcher)?.membership_status).toBe("DISABLED"));
@@ -132,9 +132,9 @@ describe("OrganizationScreen", () => {
 
   it("a disabled member can be re-enabled from the row menu", async () => {
     renderScreen(<OrganizationScreen />, { user: USER.bAdmin, path: "/settings/organization" });
-    const menu = await openMemberMenu("B Disabled");
+    const menu = await openMemberMenu("조하은");
     await userEvent.click(within(menu).getByRole("menuitem", { name: "다시 활성화" }));
-    const dialog = await screen.findByRole("dialog", { name: "B Disabled 다시 활성화" });
+    const dialog = await screen.findByRole("dialog", { name: "조하은 다시 활성화" });
     expect(dialog).not.toHaveTextContent("회수됩니다");
     await userEvent.click(within(dialog).getByRole("button", { name: "다시 활성화" }));
     await waitFor(() => expect(getDb().users.find((u) => u.user_id === USER.bDisabled)?.membership_status).toBe("ACTIVE"));
@@ -142,7 +142,7 @@ describe("OrganizationScreen", () => {
 
   it("granting a role saves, confirms with a toast and closes the dialog", async () => {
     renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
-    const dialog = await openRolesDialog("A Researcher");
+    const dialog = await openRolesDialog("김민준");
     const save = within(dialog).getByRole("button", { name: "변경 저장" });
     expect(save).toBeDisabled();
     await userEvent.click(within(dialog).getByRole("checkbox", { name: "데이터 관리자" }));
@@ -151,16 +151,16 @@ describe("OrganizationScreen", () => {
     expect(await screen.findByText("변경했습니다.")).toBeInTheDocument();
     expect(getDb().users.find((u) => u.user_id === USER.aResearcher)?.org_roles).toEqual(["DATA_STEWARD"]);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    await waitFor(() => expect(within(screen.getByRole("row", { name: /A Researcher/ })).getByText("데이터 관리자")).toBeInTheDocument());
+    await waitFor(() => expect(within(screen.getByRole("row", { name: /김민준/ })).getByText("데이터 관리자")).toBeInTheDocument());
   });
 
   it("an ORG_ADMIN cannot change their own ORG_ADMIN role or status (M01): the controls are disabled with a hint", async () => {
     renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
-    const menu = await openMemberMenu("A Admin");
+    const menu = await openMemberMenu("박지훈");
     expect(within(menu).getByRole("menuitem", { name: "비활성화" })).toHaveAttribute("aria-disabled", "true");
     expect(within(menu).getByRole("menuitem", { name: "비활성화" })).toHaveAccessibleDescription("본인의 기관 관리자 역할과 상태는 직접 변경할 수 없습니다.");
     await userEvent.click(within(menu).getByRole("menuitem", { name: "역할 변경" }));
-    const dialog = await screen.findByRole("dialog", { name: "A Admin 역할 변경" });
+    const dialog = await screen.findByRole("dialog", { name: "박지훈 역할 변경" });
     expect(within(dialog).getByRole("checkbox", { name: "기관 관리자" })).toBeDisabled();
     expect(within(dialog).getByText("본인의 기관 관리자 역할과 상태는 직접 변경할 수 없습니다.")).toBeInTheDocument();
     expect(within(dialog).getByRole("checkbox", { name: "데이터 관리자" })).toBeEnabled();
@@ -168,11 +168,11 @@ describe("OrganizationScreen", () => {
 
   it("the status control is disabled on one's own row even for a PLATFORM_ADMIN (ORG_ADMIN role stays editable)", async () => {
     renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
-    const menu = await openMemberMenu("NAIS Admin");
+    const menu = await openMemberMenu("송태호");
     expect(within(menu).getByRole("menuitem", { name: "비활성화" })).toHaveAttribute("aria-disabled", "true");
     expect(within(menu).getByText("본인의 상태는 직접 변경할 수 없습니다.")).toBeInTheDocument();
     await userEvent.click(within(menu).getByRole("menuitem", { name: "역할 변경" }));
-    const dialog = await screen.findByRole("dialog", { name: "NAIS Admin 역할 변경" });
+    const dialog = await screen.findByRole("dialog", { name: "송태호 역할 변경" });
     expect(within(dialog).getByRole("checkbox", { name: "기관 관리자" })).toBeEnabled();
   });
 
@@ -180,7 +180,7 @@ describe("OrganizationScreen", () => {
     getDb().users.find((u) => u.user_id === USER.aResearcher)!.org_roles = ["ORG_ADMIN"];
     server.use(http.patch("*/mock-api/v1/organizations/:id/members/:uid", () => apiError(422, "ROLE_NOT_ASSIGNABLE"), { once: true }));
     renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
-    const dialog = await openRolesDialog("A Researcher");
+    const dialog = await openRolesDialog("김민준");
     await userEvent.click(within(dialog).getByRole("checkbox", { name: "기관 관리자" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }));
     expect(await screen.findByText("기관의 마지막 기관 관리자는 플랫폼 관리자만 해제할 수 있습니다.")).toBeInTheDocument();
@@ -189,7 +189,7 @@ describe("OrganizationScreen", () => {
   it("a server rejection (ROLE_NOT_ASSIGNABLE) is localized and the dialog closes", async () => {
     server.use(http.patch("*/mock-api/v1/organizations/:id/members/:uid", () => apiError(422, "ROLE_NOT_ASSIGNABLE"), { once: true }));
     renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
-    const dialog = await openRolesDialog("A Researcher");
+    const dialog = await openRolesDialog("김민준");
     await userEvent.click(within(dialog).getByRole("checkbox", { name: "데이터 관리자" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }));
     expect(await screen.findByText("이 범위에서 지정할 수 없는 역할입니다.")).toBeInTheDocument();
@@ -198,7 +198,7 @@ describe("OrganizationScreen", () => {
 
   it("a PLATFORM_ADMIN removing their own ORG_ADMIN role needs a second confirmation", async () => {
     renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
-    const dialog = await openRolesDialog("NAIS Admin");
+    const dialog = await openRolesDialog("송태호");
     await userEvent.click(within(dialog).getByRole("checkbox", { name: "기관 관리자" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "변경 저장" }));
     const second = await screen.findByRole("dialog", { name: "본인 권한 해제 확인" });
@@ -249,23 +249,23 @@ describe("NTIS number and institute transfer (Wave 1.5)", () => {
     const card = await screen.findByRole("region", { name: "기관 이동" });
     expect(within(card).getByText(/이전 기관의 역할과 접근 권한은 종료되고/)).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "이동" })).toBeDisabled();
-    await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "A R");
-    await userEvent.click(await within(card).findByRole("option", { name: /A Researcher/ }));
-    await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "Institute B");
+    await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "김민준");
+    await userEvent.click(await within(card).findByRole("option", { name: /김민준/ }));
+    await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "한국재료연구원");
     await userEvent.click(within(card).getByRole("button", { name: "이동" }));
-    const confirm = await screen.findByRole("dialog", { name: "A Researcher 님을 Institute B(으)로 이동" });
+    const confirm = await screen.findByRole("dialog", { name: "김민준 님을 한국재료연구원(으)로 이동" });
     expect(confirm).toHaveTextContent("다시 로그인해야 합니다");
     await userEvent.click(within(confirm).getByRole("button", { name: "이동 확인" }));
-    expect(await screen.findByText(/A Researcher 님을 Institute B\(으\)로 옮겼습니다/)).toBeInTheDocument();
+    expect(await screen.findByText(/김민준 님을 한국재료연구원\(으\)로 옮겼습니다/)).toBeInTheDocument();
   });
 
   it("a 503 from the transfer shows a retry message", async () => {
     server.use(http.post("*/mock-api/v1/users/:id/transfer", () => apiError(503, "DEPENDENCY_UNAVAILABLE")));
     renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
     const card = await screen.findByRole("region", { name: "기관 이동" });
-    await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "A R");
-    await userEvent.click(await within(card).findByRole("option", { name: /A Researcher/ }));
-    await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "Institute B");
+    await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "김민준");
+    await userEvent.click(await within(card).findByRole("option", { name: /김민준/ }));
+    await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "한국재료연구원");
     await userEvent.click(within(card).getByRole("button", { name: "이동" }));
     await userEvent.click(await screen.findByRole("button", { name: "이동 확인" }));
     expect(await within(card).findByRole("alert")).toHaveTextContent("다시 시도하세요");

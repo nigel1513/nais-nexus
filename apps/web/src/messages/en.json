@@ -98,8 +98,6 @@
     "prose": "<b>NAIS Research Commons</b> is an internal portal where NST member institutes share research data and run joint research across institutes. Data opens only within the scope its owning institute approves, and every access is recorded in the audit log.",
     "signIn": "NST single sign-on (SSO)",
     "signInHint": "Sign in with your institute account",
-    "demoMode": "Demo mode",
-    "demoHint": "Signing in opens the demo user picker",
     "windows": {
       "pick": "Choose a screen example",
       "access": "Access approval",
@@ -143,9 +141,8 @@
     "mockUser": "User",
     "signIn": "Sign in",
     "signOut": "Sign out",
-    "mockBadge": "Demo login",
-    "mockTitle": "Sign in as a demo user",
-    "mockDescription": "For development and demos. The real service uses NST single sign-on (SSO).",
+    "mockTitle": "Choose an account",
+    "mockDescription": "Choose the account to sign in with through NST single sign-on.",
     "mockBack": "Back to start"
   },
   "enums": {

@@ -77,12 +77,12 @@ test.describe("screens", () => {
     await shoot(page, "task3-shell-dashboard");
 
     await page.goto("/commons/data");
-    await expect(page.getByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
     await shoot(page, "task3-shell-data-search");
 
     await page.goto(`/commons/data/${DATASET_BATTERY}`);
-    await expect(page.getByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "현재 위치" })).toContainText("Battery Cycling Measurements");
+    await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "현재 위치" })).toContainText("리튬이온 배터리 셀 사이클 시험 데이터");
     await shoot(page, "task3-shell-data-card");
   });
 
@@ -96,8 +96,8 @@ test.describe("screens", () => {
       await page.keyboard.press("ControlOrMeta+k");
       const palette = page.getByRole("dialog", { name: "명령 팔레트" });
       await expect(palette).toBeVisible();
-      await page.keyboard.type("battery");
-      await expect(palette.getByRole("option", { name: /Battery Cycling Measurements/ })).toBeVisible();
+      await page.keyboard.type("배터리");
+      await expect(palette.getByRole("option", { name: /리튬이온 배터리 셀 사이클 시험 데이터/ })).toBeVisible();
       await shootOne(page, "task3-cmdk", 1440, theme);
       await page.keyboard.press("Escape");
       await expect(palette).toBeHidden();
@@ -107,7 +107,7 @@ test.describe("screens", () => {
       await shootOne(page, "task3-notifications", 1440, theme);
       await page.keyboard.press("Escape");
 
-      await page.getByRole("button", { name: /A Researcher/ }).click();
+      await page.getByRole("button", { name: /김민준/ }).click();
       await expect(page.getByRole("menu")).toBeVisible();
       await shootOne(page, "task3-user-menu", 1440, theme);
       await page.keyboard.press("Escape");
@@ -143,7 +143,7 @@ test.describe("settings and organization (Task 11)", () => {
     await as(page, "bAdmin", baseURL!);
     await page.goto("/settings/organization");
     await expect(page.getByRole("heading", { name: "멤버" })).toBeVisible();
-    await expect(page.getByText("B Researcher").first()).toBeVisible();
+    await expect(page.getByText("최유진").first()).toBeVisible();
     await shoot(page, `${prefix}-organization-admin`);
   });
 
@@ -159,11 +159,11 @@ test.describe("settings and organization (Task 11)", () => {
     for (const theme of ["light", "dark"] as Theme[]) {
       await setup(page, [1440, 900], theme);
       await page.goto("/settings/organization");
-      await page.getByRole("button", { name: "B Steward 관리" }).first().click();
+      await page.getByRole("button", { name: "정현우 관리" }).first().click();
       await expect(page.getByRole("menu")).toBeVisible();
       await shootOne(page, `${prefix}-member-menu`, 1440, theme);
       await page.getByRole("menuitem", { name: "역할 변경" }).click();
-      await expect(page.getByRole("dialog", { name: "B Steward 역할 변경" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "정현우 역할 변경" })).toBeVisible();
       await shootOne(page, `${prefix}-roles-dialog`, 1440, theme);
       await page.keyboard.press("Escape");
     }

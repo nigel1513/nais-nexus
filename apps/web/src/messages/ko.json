@@ -103,8 +103,6 @@
     "prose": "<b>NAIS Research Commons</b>는 국가과학기술연구회 소속 기관이 연구 데이터를 공유하고 기관을 넘나드는 공동 연구를 진행하는 내부 포털입니다. 데이터는 소유 기관이 승인한 범위 안에서만 열리고, 모든 접근은 감사 로그에 남습니다.",
     "signIn": "NST 통합 로그인 (SSO)",
     "signInHint": "소속 기관 계정으로 로그인합니다",
-    "demoMode": "데모 모드",
-    "demoHint": "로그인하면 데모 사용자 선택 화면으로 이동합니다",
     "windows": {
       "pick": "화면 예시 고르기",
       "access": "접근 승인",
@@ -237,12 +235,11 @@
     "version": "버전"
   },
   "auth": {
-    "mockTitle": "데모 사용자로 로그인",
-    "mockDescription": "개발·시연용 화면입니다. 실제 서비스에서는 NST 통합 로그인(SSO)으로 들어갑니다.",
+    "mockTitle": "계정 선택",
+    "mockDescription": "NST 통합 로그인으로 들어갈 계정을 선택하세요.",
     "mockUser": "사용자",
     "signIn": "로그인",
     "signOut": "로그아웃",
-    "mockBadge": "데모 로그인",
     "mockBack": "첫 화면으로"
   },
   "blocked": {

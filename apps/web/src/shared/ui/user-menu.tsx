@@ -9,7 +9,7 @@ import { useThemeChoice, type ThemeChoice } from "./theme";
 
 const icon = { "aria-hidden": true, strokeWidth: 1.75 } as const;
 
-/** "Institute A · 데이터 관리자": where the user works and what they may do there (spec §3: shown, not switchable). */
+/** "한국에너지기술연구원 · 데이터 관리자": where the user works and what they may do there (spec §3: shown, not switchable). */
 function useAffiliation(me: Me): string {
   const t = useTranslations();
   const roles = me.org_roles.map((r) => t(`enums.OrgRole.${r}`));

@@ -1,4 +1,4 @@
-import { ArrowLeft, FlaskConical } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTranslations } from "next-intl/server";
@@ -19,11 +19,7 @@ export default async function MockLoginPage({ searchParams }: { searchParams: Pr
     <div className="lp flex min-h-screen flex-col">
       <PublicHeader operator={operator} />
       <main id="main" className="mx-auto w-full max-w-[420px] break-keep px-4 pb-16 pt-12 md:pt-20">
-        <span className="lp-demo gap-1.5">
-          <FlaskConical className="size-3.5" strokeWidth={1.75} aria-hidden />
-          {t("auth.mockBadge")}
-        </span>
-        <h1 className="mt-3 text-[28px] font-[750] leading-[1.25] tracking-[-0.035em] text-fg">{t("auth.mockTitle")}</h1>
+        <h1 className="text-[28px] font-[750] leading-[1.25] tracking-[-0.035em] text-fg">{t("auth.mockTitle")}</h1>
         <p className="mt-2 text-[15px] leading-[1.7] text-fg-muted">{t("auth.mockDescription")}</p>
         <div className="lp-panel mt-8 p-5">
           <MockLoginForm callbackUrl={safeCallbackUrl(callbackUrl)} users={SEED_USERS} />

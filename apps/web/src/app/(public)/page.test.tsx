@@ -24,15 +24,14 @@ describe("public landing", () => {
     const signIns = screen.getAllByRole("link", { name: /NST 통합 로그인/ });
     expect(signIns.length).toBeGreaterThanOrEqual(2);
     for (const link of signIns) expect(link).toHaveAttribute("href", "/commons");
-    expect(screen.queryByText("데모 모드")).not.toBeInTheDocument();
     expect(screen.getByText("소속 기관 계정으로 로그인합니다")).toBeInTheDocument();
   });
 
-  it("says so when the build is a demo", async () => {
+  it("reads the same in the demo build: no demo badge or demo wording", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_MOCKING", "enabled");
     await renderPage();
-    expect(screen.getByText("데모 모드")).toBeInTheDocument();
-    expect(screen.getByText(/데모 사용자 선택 화면/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/데모|demo/i);
+    expect(screen.getByText("소속 기관 계정으로 로그인합니다")).toBeInTheDocument();
   });
 
   it("walks through what the portal does, one section each", async () => {
