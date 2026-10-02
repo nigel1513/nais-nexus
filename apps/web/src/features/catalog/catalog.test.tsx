@@ -227,7 +227,7 @@ describe("DatasetDetailScreen", () => {
     open(USER.bResearcher, DATASET.sensors);
     expect(await screen.findByRole("link", { name: "요청 상태 보기" })).toHaveAttribute("href", `/commons/access/${request.access_request_id}`);
     // Scoped to the header CTA: the explorer's gated notice carries its own "접근 요청" button (P10).
-    const header = screen.getByRole("heading", { level: 1 }).closest("header")!;
+    const header = screen.getByRole("heading", { level: 1 }).closest("section")!;
     expect(within(header).queryByRole("button", { name: "접근 요청" })).not.toBeInTheDocument();
   });
 

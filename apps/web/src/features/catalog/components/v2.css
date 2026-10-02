@@ -8,3 +8,8 @@
 .nx-rise-2 { animation-duration: 520ms; }
 .nx-meter-fill { transform-origin: left center; animation: nx-grow-x 700ms var(--ease-out); }
 .nx-bar { transform-box: fill-box; transform-origin: 50% 100%; animation: nx-grow-y 480ms var(--ease-out); }
+
+/* Data Card summary band (shared .sv-band): the fact values may wrap on phones instead of being cut, and the AI-ready
+   meter's hover fill is not clipped. Unlayered like screen-v2.css, so it can override it. */
+.nx-card-band .sv-facts > div:last-child > dd { overflow: visible; }
+@media (max-width: 767px) { .nx-card-band .sv-facts dd { white-space: normal; } }

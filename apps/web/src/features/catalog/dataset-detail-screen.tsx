@@ -22,7 +22,7 @@ import { ColumnTable } from "./explorer/column-table";
 import { DataExplorer } from "./explorer/data-explorer";
 import { contributorsChanged, fromDataset, toDatasetUpdate } from "./schemas";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
-import { SectionHead } from "./components/v2";
+import { SectionHead } from "./components/section-head";
 
 export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const t = useTranslations();

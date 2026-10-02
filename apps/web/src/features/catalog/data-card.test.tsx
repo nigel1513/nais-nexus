@@ -18,12 +18,12 @@ describe("Data Card", () => {
     expect(screen.getByRole("tab", { name: "데이터 카드" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("button", { name: /AI-ready/ })).toBeInTheDocument();
     // Header meta line: PI with NTIS, data period and the latest version.
-    const summary = screen.getByRole("list", { name: "데이터셋 요약" });
+    const summary = screen.getByRole("region", { name: "데이터셋 요약" }); // the shared v2 SummaryBand
     expect(within(summary).getByText("NTIS 10000002")).toBeInTheDocument();
     expect(within(summary).getByText("2026-01-12 – 2026-06-30")).toBeInTheDocument();
     expect(within(summary).getByText("v2.0")).toHaveClass("font-mono");
-    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("font-[760]", "tracking-[-0.04em]"); // v2 page title
-    expect(screen.getByRole("heading", { level: 1 }).closest(".dark")).not.toBeNull(); // inside the dark header band
+    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("sv-h1"); // v2 two-step title inside the summary band
+    expect(screen.getByRole("heading", { level: 1 }).closest(".sv-band")).toBe(summary);
     const meta = screen.getByRole("region", { name: "메타데이터" });
     expect(within(meta).getByText("2026-01-12 – 2026-06-30")).toBeInTheDocument();
     expect(within(meta).getByText("에너지")).toBeInTheDocument();
@@ -67,7 +67,7 @@ describe("Data Card", () => {
 describe("Data Card layout", () => {
   it("orders the actions 문의 · 새 노트북 (예정, disabled) · access CTA, and has a rail with four panels", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
-    const header = (await screen.findByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).closest("header")!;
+    const header = (await screen.findByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).closest("section")!;
     await within(header).findByRole("button", { name: "접근 요청" });
     const actions = within(header).getAllByRole("button").filter((b) => /^(문의|새 노트북|접근 요청)/.test(b.textContent ?? ""));
     expect(actions.map((b) => b.textContent)).toEqual(["문의", "새 노트북예정", "접근 요청"]);

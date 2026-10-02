@@ -8,7 +8,7 @@ import { AccessLevelBadge } from "@/shared/ui/badges";
 import { PersonLine } from "../components/person-line";
 import { ActivitySummary } from "./activity-summary";
 import { DefList } from "./def-list";
-import { crumbClass } from "../components/v2";
+import "@/shared/ui/screen-v2.css";
 
 /** One rail section: accent crumb title, then its content; sections share one bordered panel, split by 1px rules. */
 function RailPanel({ title, children, panelRef, focusable }: { title: string; children: ReactNode; panelRef?: Ref<HTMLElement>; focusable?: boolean }) {
@@ -20,7 +20,7 @@ function RailPanel({ title, children, panelRef, focusable }: { title: string; ch
       tabIndex={focusable ? -1 : undefined}
       className={cn("flex flex-col gap-3 px-4 py-4", focusable && "outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus")}
     >
-      <h2 id={id} className={crumbClass}>
+      <h2 id={id} className="sv-kicker">
         {title}
       </h2>
       {children}

@@ -1,7 +1,7 @@
 "use client";
 import { useTranslations } from "next-intl";
 import { Markdown } from "../components/markdown";
-import { SectionHead } from "../components/v2";
+import { SectionHead } from "../components/section-head";
 
 export function About({ description }: { description: string }) {
   const t = useTranslations();

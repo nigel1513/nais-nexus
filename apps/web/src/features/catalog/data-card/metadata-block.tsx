@@ -7,7 +7,7 @@ import { notify } from "@/shared/ui/toast";
 import { downloadJsonLd } from "../api";
 import { PersonLine } from "../components/person-line";
 import { VocabularyTags } from "../components/vocabulary-tags";
-import { SectionHead } from "../components/v2";
+import { SectionHead } from "../components/section-head";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (

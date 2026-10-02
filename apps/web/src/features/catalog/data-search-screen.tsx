@@ -1,6 +1,6 @@
 "use client";
 import {
-  Badge, Button, buttonClass, DataTable, EmptyState, Input, SegmentedControl, Select, Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle,
+  Badge, Button, DataTable, EmptyState, Input, SegmentedControl, Select, Sheet, SheetBody, SheetContent, SheetHeader, SheetTitle,
   Skeleton, Tag, type DataColumn,
 } from "@nais/ui";
 import { List, Search, SearchX, SlidersHorizontal, Table2 } from "lucide-react";
@@ -20,7 +20,8 @@ import { PeriodFilter } from "./components/period-filter";
 import { PrincipalInvestigatorFilter } from "./components/principal-investigator-filter";
 import { bucketsOf, FACETS, FacetGroup, useFacetLabel, type FacetKey } from "./components/facet-panel";
 import { ListReadinessBadge, periodText, SearchResultCard } from "./components/search-result-card";
-import { crumbClass, HeroBand, SectionHead, TwoStepTitle } from "./components/v2";
+import { SectionHead } from "./components/section-head";
+import { SummaryBand } from "@/shared/ui/screen-v2";
 
 type Sort = "relevance" | "updated_desc" | "title_asc";
 const SORTS: Sort[] = ["relevance", "updated_desc", "title_asc"];
@@ -101,8 +102,8 @@ export function DataSearchScreen() {
   const railHeader = (
     <div className="flex items-end justify-between">
       <div>
-        <p className={crumbClass}>{t("data.search.hero.railCrumb")}</p>
-        <h2 className="mt-0.5 text-[17px] leading-6 font-[700] tracking-[-0.025em] text-fg">{t("data.search.filters")}</h2>
+        <p className="sv-kicker">{t("data.search.hero.railCrumb")}</p>
+        <h2 className="sv-h2 mt-1">{t("data.search.filters")}</h2>
       </div>
       {activeCount ? (
         <Button size="sm" variant="ghost" onClick={clearFilters} className="-mr-2.5">
@@ -114,51 +115,31 @@ export function DataSearchScreen() {
 
   return (
     <>
-      <HeroBand>
-        <div className="flex flex-col gap-6 px-5 py-6 sm:px-8 sm:py-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex min-w-0 flex-col gap-3">
-              <TwoStepTitle crumb={t("data.search.hero.crumb")} context={t("data.search.hero.context")} title={t("data.search.title")} />
-              <p className="max-w-[60ch] break-keep text-body text-fg-muted">{t("data.search.description")}</p>
-            </div>
-            {hasOrgRole(me, "DATA_STEWARD") ? (
-              <Link href="/commons/data/new" className={buttonClass("primary")}>
-                {t("data.new.title")}
-              </Link>
-            ) : null}
-          </div>
-          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-10">
-            <div className="flex min-w-0 flex-col">
-              <div className="relative w-full max-w-xl">
-                <label htmlFor="data-search" className="sr-only">
-                  {t("shell.searchLabel")}
-                </label>
-                <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-fg-muted" strokeWidth={1.75} />
-                <Input
-                  id="data-search"
-                  type="search"
-                  value={q}
-                  onChange={(e) => setQ(e.target.value)}
-                  placeholder={t("shell.searchPlaceholder")}
-                  className="h-11 rounded-md border-border-strong bg-bg pl-10 text-[15px]"
-                />
-              </div>
-            </div>
-            <ul aria-label={t("data.search.hero.summary")} className="grid grid-cols-3 border-t border-border pt-4 lg:border-t-0 lg:pt-0">
-              {[
-                [t("data.search.hero.results"), first?.total],
-                [t("data.search.hero.institutes"), first ? (first.facets?.owner_organization_id ?? []).filter((b) => b.count > 0).length : undefined],
-                [t("data.search.hero.aiReady"), first ? (first.facets?.readiness_status?.find((b) => b.value === "PASS")?.count ?? 0) : undefined],
-              ].map(([label, value], i) => (
-                <li key={String(label)} className={i ? "border-l border-border pl-4 lg:pl-6" : "pr-4 lg:pr-6"}>
-                  <span className="block whitespace-nowrap text-caption font-normal text-fg-muted">{label}</span>
-                  <span className="num mt-1 block font-mono text-[26px] leading-8 font-medium tracking-[-0.02em] text-fg">{value ?? "—"}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </HeroBand>
+      <SummaryBand
+        label={t("data.search.hero.summary")}
+        context={[t("data.search.hero.crumb"), t("data.search.hero.context")]}
+        title={t("data.search.title")}
+        tags={<p className="basis-full break-keep text-[14px] leading-6 text-hero-fg-muted">{t("data.search.description")}</p>}
+        actions={
+          hasOrgRole(me, "DATA_STEWARD") ? (
+            <Link href="/commons/data/new" className="sv-hb sv-hb-w">
+              {t("data.new.title")}
+            </Link>
+          ) : null
+        }
+        facts={[
+          { label: t("data.search.hero.results"), value: first?.total ?? "—", kind: "number" },
+          { label: t("data.search.hero.institutes"), value: first ? (first.facets?.owner_organization_id ?? []).filter((b) => b.count > 0).length : "—", kind: "number" },
+          { label: t("data.search.hero.aiReady"), value: first ? (first.facets?.readiness_status?.find((b) => b.value === "PASS")?.count ?? 0) : "—", kind: "number", accent: true },
+        ]}
+      />
+      <div className="relative mb-8 w-full max-w-2xl">
+        <label htmlFor="data-search" className="sr-only">
+          {t("shell.searchLabel")}
+        </label>
+        <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-fg-muted" strokeWidth={1.75} />
+        <Input id="data-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("shell.searchPlaceholder")} className="h-11 rounded-md pl-10 text-[15px]" />
+      </div>
       <div className="grid gap-8 md:grid-cols-[240px_minmax(0,1fr)]">
         <aside aria-label={t("data.search.filters")} className="hidden min-w-0 flex-col gap-4 md:flex">
           {railHeader}

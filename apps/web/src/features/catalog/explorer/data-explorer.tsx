@@ -12,7 +12,7 @@ import { ColumnView } from "./column-view";
 import { CompactView } from "./compact-view";
 import { DetailView } from "./detail-view";
 import { FileTree } from "./file-tree";
-import { SectionHead } from "../components/v2";
+import { SectionHead } from "../components/section-head";
 
 type View = "detail" | "compact" | "column";
 
