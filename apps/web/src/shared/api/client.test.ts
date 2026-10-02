@@ -7,10 +7,10 @@ import { ApiError } from "./errors";
 
 const me = {
   user_id: "00000000-0000-7000-8000-000000000a02",
-  display_name: "A Researcher",
+  display_name: "김민준",
   email: "a.researcher@inst-a.local",
   status: "ACTIVE",
-  organization: { organization_id: "00000000-0000-7000-8000-00000000000a", code: "inst-a", name: "Institute A", type: "RESEARCH_INSTITUTE" },
+  organization: { organization_id: "00000000-0000-7000-8000-00000000000a", code: "inst-a", name: "한국에너지기술연구원", type: "RESEARCH_INSTITUTE" },
   org_roles: [],
   platform_roles: [],
 };
@@ -31,7 +31,7 @@ describe("api client", () => {
     setAccessTokenGetter(() => "tok-1");
     setMockUser(me.user_id);
     const data = await unwrap(api.GET("/me"));
-    expect(data.display_name).toBe("A Researcher");
+    expect(data.display_name).toBe("김민준");
     expect(url).toBe("http://localhost:3000/mock-api/v1/me");
     expect(seen?.get("x-request-id")).toMatch(/^[0-9a-f-]{36}$/);
     expect(seen?.get("authorization")).toBe("Bearer tok-1");

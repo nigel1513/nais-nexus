@@ -45,9 +45,9 @@ describe("CommandPalette", () => {
   it("arrow keys move through results; Enter opens a dataset found by the server search", async () => {
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     const dialog = await openWithShortcut();
-    await userEvent.type(within(dialog).getByRole("combobox"), "battery cycling");
-    const hit = await within(dialog).findByRole("option", { name: /Battery Cycling Measurements/ });
-    const searchAll = within(dialog).getByRole("option", { name: "데이터에서 “battery cycling” 검색" });
+    await userEvent.type(within(dialog).getByRole("combobox"), "배터리 셀");
+    const hit = await within(dialog).findByRole("option", { name: /리튬이온 배터리 셀 사이클 시험 데이터/ });
+    const searchAll = within(dialog).getByRole("option", { name: "데이터에서 “배터리 셀” 검색" });
     expect(searchAll).toHaveAttribute("aria-selected", "true");
     await userEvent.keyboard("{ArrowDown}");
     expect(hit).toHaveAttribute("aria-selected", "true");
@@ -58,17 +58,17 @@ describe("CommandPalette", () => {
   it("the search-all row goes to data search with q", async () => {
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     const dialog = await openWithShortcut();
-    await userEvent.type(within(dialog).getByRole("combobox"), "battery");
-    await within(dialog).findByRole("option", { name: "데이터에서 “battery” 검색" });
+    await userEvent.type(within(dialog).getByRole("combobox"), "배터리");
+    await within(dialog).findByRole("option", { name: "데이터에서 “배터리” 검색" });
     await userEvent.keyboard("{Enter}");
-    expect(router.push).toHaveBeenCalledWith("/commons/data?q=battery");
+    expect(router.push).toHaveBeenCalledWith(`/commons/data?q=${encodeURIComponent("배터리")}`);
   });
 
   it("finds my projects by name", async () => {
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     const dialog = await openWithShortcut();
-    await userEvent.type(within(dialog).getByRole("combobox"), "joint study");
-    const project = await within(within(dialog).getByRole("group", { name: "프로젝트" })).findByRole("option", { name: /Seed: Battery Materials Joint Study/ });
+    await userEvent.type(within(dialog).getByRole("combobox"), "이차전지 소재");
+    const project = await within(within(dialog).getByRole("group", { name: "프로젝트" })).findByRole("option", { name: /차세대 이차전지 소재 공동연구/ });
     await userEvent.click(project);
     expect(router.push).toHaveBeenCalledWith(`/commons/projects/${PROJECT.seed}`);
   });

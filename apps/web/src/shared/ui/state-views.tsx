@@ -1,24 +1,40 @@
 "use client";
-import { Button, ErrorState, Skeleton } from "@nais/ui";
+import { Button, PathText, Skeleton } from "@nais/ui";
+import { TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useState } from "react";
 import { asApiError, errorMessageKey } from "@/shared/api/errors";
 
+/**
+ * Inline error for one block or screen: icon, title, the localized message, the trace id (mono, shortened in the
+ * middle, copyable on plain http) and a retry action. role="alert" so it is announced.
+ */
 export function ErrorView({ error, onRetry, params }: { error: unknown; onRetry?: () => void; params?: Record<string, string | number> }) {
   const t = useTranslations();
   const e = asApiError(error);
   return (
-    <ErrorState
-      title={t("common.errorTitle")}
-      message={t(errorMessageKey(e.code), params)}
-      traceId={e.traceId}
-      traceIdLabel={t("common.traceId")}
-      copyLabel={t("common.copyTraceId")}
-      copiedLabel={t("common.copied")}
-      copyFailedLabel={t("common.copyFailed")}
-      retryLabel={t("common.retry")}
-      onRetry={onRetry}
-    />
+    <div role="alert" className="flex gap-3 rounded-md border border-border bg-bg-panel p-4">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-danger-soft text-danger">
+        <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="size-4" />
+      </span>
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <p className="text-body font-semibold text-fg">{t("common.errorTitle")}</p>
+        <p className="text-body text-fg-muted">{t(errorMessageKey(e.code), params)}</p>
+        {e.traceId ? (
+          <p className="mt-1 flex min-w-0 items-center gap-2 text-small text-fg-muted">
+            <span className="shrink-0">{t("common.traceId")}</span>
+            <PathText value={e.traceId} copyLabel={t("common.copyTraceId")} copiedLabel={t("common.copied")} className="min-w-0" />
+          </p>
+        ) : null}
+        {onRetry ? (
+          <div className="mt-2">
+            <Button size="sm" variant="secondary" onClick={onRetry}>
+              {t("common.retry")}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 

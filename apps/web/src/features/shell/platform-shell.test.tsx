@@ -14,7 +14,7 @@ import { PlatformShell } from "./platform-shell";
 const page = <h1>본문</h1>;
 const API = "http://localhost:3000/mock-api/v1";
 
-/** The seed has no pending request: B Researcher files one against A's sensor dataset, so A Steward has one to review. */
+/** The seed has no pending request: 최유진 files one against A's sensor dataset, so 이서연 has one to review. */
 async function seedPending() {
   const send = async (path: string, body: unknown) => {
     const res = await fetch(`${API}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-mock-user": USER.bResearcher }, body: JSON.stringify(body) });
@@ -53,7 +53,7 @@ describe("PlatformShell: sidebar", () => {
 
     expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(screen.getByRole("main")).toContainElement(screen.getByRole("heading", { name: "본문" }));
-    expect(screen.getAllByText("Institute A").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("한국에너지기술연구원").length).toBeGreaterThan(0);
     await userEvent.tab();
     expect(screen.getByRole("link", { name: "본문으로 건너뛰기" })).toHaveFocus();
   });
@@ -116,7 +116,7 @@ describe("PlatformShell: top bar", () => {
   it("breadcrumbs: section from the path, then what the screen adds; the last is the current page", async () => {
     setLocation(`/commons/data/${DATASET.battery}`);
     function Detail() {
-      useBreadcrumbs([{ label: "Battery Cycling Measurements" }]);
+      useBreadcrumbs([{ label: "리튬이온 배터리 셀 사이클 시험 데이터" }]);
       return page;
     }
     renderWithProviders(
@@ -126,9 +126,9 @@ describe("PlatformShell: top bar", () => {
       { user: USER.aResearcher },
     );
     const crumbs = await screen.findByRole("navigation", { name: "현재 위치" });
-    await waitFor(() => expect(within(crumbs).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["데이터", "Battery Cycling Measurements"]));
+    await waitFor(() => expect(within(crumbs).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["데이터", "리튬이온 배터리 셀 사이클 시험 데이터"]));
     expect(within(crumbs).getByRole("link", { name: "데이터" })).toHaveAttribute("href", "/commons/data");
-    expect(within(crumbs).getByText("Battery Cycling Measurements")).toHaveAttribute("aria-current", "page");
+    expect(within(crumbs).getByText("리튬이온 배터리 셀 사이클 시험 데이터")).toHaveAttribute("aria-current", "page");
   });
 
   it("notification bell shows the unread count and opens the linked page (marking it read)", async () => {
@@ -136,7 +136,7 @@ describe("PlatformShell: top bar", () => {
     const bell = await screen.findByRole("button", { name: "알림 1개 읽지 않음" });
     await userEvent.click(bell);
     const panel = await screen.findByRole("dialog", { name: "알림" });
-    await userEvent.click(within(panel).getByRole("button", { name: /접근 권한이 .* UTC에 만료됩니다/ }));
+    await userEvent.click(within(panel).getByRole("button", { name: /접근 권한이 .* 만료됩니다/ }));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/commons/access?tab=grants"));
     expect(getDb().notifications.find((n) => n.link === "/commons/access?tab=grants")?.read).toBe(true);
   });
@@ -147,7 +147,7 @@ describe("PlatformShell: top bar", () => {
     const panel = await screen.findByRole("dialog", { name: "알림" });
     await userEvent.click(within(panel).getByRole("button", { name: "모두 읽음" }));
     expect(await screen.findByRole("button", { name: "알림" })).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: /접근 권한이 .* UTC에 만료됩니다/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /접근 권한이 .* 만료됩니다/ })).toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: "모두 읽음" })).not.toBeInTheDocument();
   });
 
@@ -156,7 +156,7 @@ describe("PlatformShell: top bar", () => {
     server.use(http.post("*/mock-api/v1/notifications/:id/read", () => HttpResponse.json({ error: { code: "INTERNAL_ERROR", message: "x", trace_id: "t" } }, { status: 500 })));
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     await userEvent.click(await screen.findByRole("button", { name: "알림 1개 읽지 않음" }));
-    await userEvent.click(await screen.findByRole("button", { name: /접근 권한이 .* UTC에 만료됩니다/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /접근 권한이 .* 만료됩니다/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("알림을 읽음 처리하지 못했습니다.");
     expect(router.push).not.toHaveBeenCalled();
   });
@@ -167,7 +167,7 @@ describe("PlatformShell: top bar", () => {
     expect(await screen.findByRole("dialog", { name: "알림" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("heading", { name: "본문" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "알림" })).not.toBeInTheDocument());
-    await userEvent.click(screen.getByRole("button", { name: /A Researcher/ }));
+    await userEvent.click(screen.getByRole("button", { name: /김민준/ }));
     expect(await screen.findByRole("menuitem", { name: "설정" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("heading", { name: "본문" }));
     await waitFor(() => expect(screen.queryByRole("menuitem", { name: "설정" })).not.toBeInTheDocument());
@@ -182,7 +182,7 @@ describe("PlatformShell: user menu", () => {
       </ThemeProvider>,
       { user: USER.aResearcher },
     );
-    const menuButton = await screen.findByRole("button", { name: /A Researcher/ });
+    const menuButton = await screen.findByRole("button", { name: /김민준/ });
     await userEvent.click(menuButton);
     const menu = await screen.findByRole("menu");
     expect(within(menu).getByText("a.researcher@inst-a.local")).toBeInTheDocument();
@@ -202,7 +202,7 @@ describe("PlatformShell: user menu", () => {
 
   it("로그아웃 in mock mode clears the mock user and goes home", async () => {
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
-    await userEvent.click(await screen.findByRole("button", { name: /A Researcher/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /김민준/ }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "로그아웃" }));
     expect(router.push).toHaveBeenCalledWith("/");
     expect(document.cookie).not.toContain(USER.aResearcher);
@@ -247,7 +247,7 @@ describe("PlatformShell: gate and shortcuts", () => {
     fireEvent.keyDown(input, { key: "/" });
     expect(screen.queryByRole("dialog", { name: "명령 팔레트" })).not.toBeInTheDocument();
     // A menu is open: `/` is its business (type-ahead), not the palette's.
-    await userEvent.click(screen.getByRole("button", { name: /A Researcher/ }));
+    await userEvent.click(screen.getByRole("button", { name: /김민준/ }));
     await screen.findByRole("menu");
     fireEvent.keyDown(document.body, { key: "/" });
     expect(screen.queryByRole("dialog", { name: "명령 팔레트" })).not.toBeInTheDocument();

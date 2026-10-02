@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, Column, DateTime, Integer, MetaData, Table, Text
+from sqlalchemy import BigInteger, Boolean, Column, Date, DateTime, Integer, MetaData, Table, Text
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 
 metadata = MetaData(schema="catalog")
@@ -33,6 +33,26 @@ datasets = Table(
     Column("max_grant_days", Integer),
     Column("contact_email", Text),
     Column("provenance", Text),
+    Column("subtitle", Text),
+    _uuid("principal_investigator_id"),
+    _uuid("principal_investigator_org_id"),
+    _uuid("data_steward_contact_id"),
+    _uuid("data_steward_contact_org_id"),
+    Column("contact_email_public", Boolean),
+    Column("project_title", Text),
+    Column("project_code", Text),
+    Column("funding_agency", Text),
+    Column("subject_codes", ARRAY(Text)),
+    Column("method_codes", ARRAY(Text)),
+    Column("material_codes", ARRAY(Text)),
+    Column("method_detail", Text),
+    Column("temporal_start", Date),
+    Column("temporal_end", Date),
+    _uuid("collecting_organization_id"),
+    Column("collecting_organization_name", Text),
+    Column("update_frequency", Text),
+    Column("related_publications", JSONB),
+    Column("doi", Text),
     Column("status", Text),
     _uuid("created_by"),
     _ts("created_at"),
@@ -113,4 +133,45 @@ index_queue = Table(
     _ts("enqueued_at"),
     Column("attempts", Integer),
     _ts("next_attempt_at"),
+)
+
+
+vocabulary_terms = Table(
+    "vocabulary_terms",
+    metadata,
+    _uuid("term_id", primary_key=True),
+    Column("scheme", Text),
+    Column("code", Text),
+    Column("label_ko", Text),
+    Column("label_en", Text),
+    Column("iri", Text),
+    Column("parent_code", Text),
+    Column("active", Boolean),
+    _ts("created_at"),
+)
+
+dataset_contributors = Table(
+    "dataset_contributors",
+    metadata,
+    _uuid("dataset_id"),
+    _uuid("user_id"),
+    Column("role", Text),
+    _uuid("affiliation_organization_id"),
+    Column("position", Integer),
+    _ts("created_at"),
+)
+
+file_previews = Table(
+    "file_previews",
+    metadata,
+    _uuid("file_id", primary_key=True),
+    _uuid("dataset_version_id"),
+    Column("status", Text),
+    Column("failure_code", Text),
+    Column("column_profile", JSONB),
+    Column("preview", JSONB),
+    Column("attempts", Integer),
+    _ts("next_attempt_at"),
+    _ts("generated_at"),
+    _ts("created_at"),
 )

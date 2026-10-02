@@ -11,7 +11,7 @@ import { pickVersion } from "./data-card/pick-version";
 describe("Data Card", () => {
   it("renders header, subtitle, tags, AI-ready badge and the metadata block", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
-    expect(await screen.findByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeInTheDocument();
     expect(screen.getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "데이터 카드" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("button", { name: /AI-ready/ })).toBeInTheDocument();
@@ -30,7 +30,7 @@ describe("Data Card", () => {
     const card = await screen.findByRole("complementary", { name: "담당자" });
     expect(within(card).getByText("담당자 재지정 필요")).toBeInTheDocument();
     expect(within(card).getByText(/당시 소속/)).toBeInTheDocument();
-    expect(within(card).getByText(/현재 Institute A/)).toBeInTheDocument();
+    expect(within(card).getByText(/현재 한국에너지기술연구원/)).toBeInTheDocument();
   });
 
   it("shows the steward email only when public and the inquiry button focuses the contact card", async () => {

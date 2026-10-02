@@ -40,6 +40,28 @@ def test_metadata_fail_matches_missing_metadata_fixture() -> None:
     )
 
 
+def test_metadata_steward_contact_satisfies_contact() -> None:
+    """Ruling P23: the snapshot never carries a private steward email; a frozen steward contact counts as contact."""
+    snap = _snap(
+        contact_email=None,
+        data_steward_contact_id="00000000-0000-7000-8000-000000000b03",
+        people={"steward_contact_absent": False},
+    )
+    outcome = metadata_completeness.check(make_ctx(snapshot=snap))
+    assert outcome.status == "PASS" and outcome.evidence["required_missing"] == []
+    assert metadata_completeness.check(make_ctx(snapshot=_snap(contact_email=None))).status == "FAIL"
+
+
+@pytest.mark.parametrize("people", [{"steward_contact_absent": True}, {}, None])
+def test_metadata_absent_steward_contact_does_not_satisfy_contact(people: object) -> None:
+    """An id whose steward left the owner org (or a snapshot without the people block) is no reachable contact."""
+    snap = _snap(
+        contact_email=None, data_steward_contact_id="00000000-0000-7000-8000-000000000b03", people=people
+    )
+    outcome = metadata_completeness.check(make_ctx(snapshot=snap))
+    assert outcome.status == "FAIL" and outcome.evidence["required_missing"] == ["contact_email"]
+
+
 @pytest.mark.parametrize(
     ("changes", "status"),
     [

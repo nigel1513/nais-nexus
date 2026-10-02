@@ -10,7 +10,7 @@ describe("/mock-api route handler", () => {
     const res = await get("/me");
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toMatchObject({ display_name: "B Steward" });
+    expect(body).toMatchObject({ display_name: "정현우" });
     expect(checkResponse("GET", "/me", 200, body)).toEqual([]);
   });
 
@@ -39,7 +39,7 @@ describe("production safety: mock route is disabled unless NEXT_PUBLIC_API_MOCKI
       await POST(new Request("http://localhost:3000/mock-api/v1/projects", { ...init, method: "POST", body: JSON.stringify({ name: "Injected" }) })),
     ]) {
       expect(res.status).toBe(404);
-      expect(await res.text()).not.toContain("NAIS Admin");
+      expect(await res.text()).not.toContain("송태호");
     }
   });
 

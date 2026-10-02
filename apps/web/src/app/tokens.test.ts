@@ -58,6 +58,12 @@ describe("design tokens", () => {
       }
     }
   });
+  it.each(["light", "dark"] as const)("%s: landing hero text meets AA on the hero band", (mode) => {
+    const darkStart = css.search(/^\.dark\s*\{/m);
+    const light = tokens(css.slice(0, darkStart));
+    const t = mode === "light" ? light : { ...light, ...tokens(css.slice(darkStart)) };
+    for (const fg of ["hero-fg", "hero-fg-muted", "hero-accent"]) expect(contrast(t[fg]!, t["hero"]!), `${mode} ${fg} on hero`).toBeGreaterThanOrEqual(4.5);
+  });
   it("repeats the light values under .light (forced-light subtrees)", () => {
     const lightStart = css.search(/^\.light\s*\{/m);
     const darkStart = css.search(/^\.dark\s*\{/m);

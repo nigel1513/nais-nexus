@@ -1,7 +1,8 @@
 """searchDatasets query DSL (M03 §6.2). Visibility is a query filter, never a post-filter (D-012)."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -17,7 +18,17 @@ SORTS: dict[str, list[dict[str, str]]] = {
     "updated_desc": [{"updated_at": "desc"}, {"dataset_id": "asc"}],
     "title_asc": [{"title.raw": "asc"}, {"dataset_id": "asc"}],
 }
-SEARCH_FIELDS = ["title^3", "keywords.text^2", "description", "owner_organization_name.text"]
+SEARCH_FIELDS = [
+    "title^3",
+    "keywords.text^2",
+    "description",
+    "owner_organization_name.text",
+    "subtitle^2",
+    "subject_labels",
+    "principal_investigator_name.text",
+    "collecting_organization_name.text",
+]
+VOCABULARY_FACETS = {"subject": "SUBJECT", "material": "MATERIAL", "method": "METHOD"}
 AGGREGATIONS: dict[str, Any] = {
     "access_level": {"terms": {"field": "access_level", "size": 4}},
     "owner_organization_id": {
@@ -27,6 +38,13 @@ AGGREGATIONS: dict[str, Any] = {
     "purpose": {"terms": {"field": "allowed_purposes", "size": 5}},
     "keyword": {"terms": {"field": "keywords", "size": 20}},
     "readiness_status": {"terms": {"field": "readiness_overall", "size": 3}},
+    "subject": {"terms": {"field": "subject_codes", "size": 30}},
+    "material": {"terms": {"field": "material_codes", "size": 30}},
+    "method": {"terms": {"field": "method_codes", "size": 30}},
+    "collecting_organization_id": {
+        "terms": {"field": "collecting_organization_id", "size": 50},
+        "aggs": {"name": {"terms": {"field": "collecting_organization_name", "size": 1}}},
+    },
 }
 HIT_FIELDS = (
     "dataset_id",
@@ -40,6 +58,12 @@ HIT_FIELDS = (
     "latest_version_label",
     "readiness_overall",
     "updated_at",
+    "subtitle",
+    "principal_investigator_name",
+    "temporal_start",
+    "temporal_end",
+    "subject_codes",
+    "collecting_organization_name",
 )
 
 
@@ -51,6 +75,13 @@ class SearchParams:
     purpose: tuple[str, ...] = ()
     keyword: tuple[str, ...] = ()
     readiness_status: tuple[str, ...] = ()
+    subject: tuple[str, ...] = ()
+    material: tuple[str, ...] = ()
+    method: tuple[str, ...] = ()
+    collecting_organization_id: tuple[UUID, ...] = ()
+    principal_investigator_id: UUID | None = None
+    temporal_from: date | None = None
+    temporal_to: date | None = None
     sort: str = "relevance"
     cursor: str | None = None
     limit: int = 20
@@ -103,6 +134,28 @@ def visibility_filter(user: CurrentUser) -> dict[str, Any]:
     }
 
 
+def _temporal_filters(params: SearchParams) -> list[dict[str, Any]]:
+    """Period overlap: undated datasets never match; a missing temporal_end is open-ended (ongoing)."""
+    if not (params.temporal_from or params.temporal_to):
+        return []
+    filters: list[dict[str, Any]] = [{"exists": {"field": "temporal_start"}}]
+    if params.temporal_to:
+        filters.append({"range": {"temporal_start": {"lte": params.temporal_to.isoformat()}}})
+    if params.temporal_from:
+        filters.append(
+            {
+                "bool": {
+                    "should": [
+                        {"range": {"temporal_end": {"gte": params.temporal_from.isoformat()}}},
+                        {"bool": {"must_not": {"exists": {"field": "temporal_end"}}}},
+                    ],
+                    "minimum_should_match": 1,
+                }
+            }
+        )
+    return filters
+
+
 def build_search_body(
     user: CurrentUser, params: SearchParams, sort_name: str, search_after: list[Any] | None
 ) -> dict[str, Any]:
@@ -117,6 +170,20 @@ def build_search_body(
         filters.append({"terms": {"keywords": [k.strip().lower() for k in params.keyword]}})
     if params.readiness_status:
         filters.append({"terms": {"readiness_overall": list(params.readiness_status)}})
+    for field, values in (
+        ("subject_codes", params.subject),
+        ("material_codes", params.material),
+        ("method_codes", params.method),
+    ):
+        if values:
+            filters.append({"terms": {field: list(values)}})
+    if params.collecting_organization_id:
+        filters.append(
+            {"terms": {"collecting_organization_id": [str(o) for o in params.collecting_organization_id]}}
+        )
+    if params.principal_investigator_id:
+        filters.append({"term": {"principal_investigator_id": str(params.principal_investigator_id)}})
+    filters.extend(_temporal_filters(params))
     query: dict[str, Any] = {"bool": {"filter": filters}}
     if params.q and params.q.strip():
         query["bool"]["must"] = [{"multi_match": {"query": params.q.strip(), "fields": SEARCH_FIELDS}}]
@@ -140,9 +207,9 @@ def _buckets(aggregations: Mapping[Any, Any], name: str) -> list[dict[str, Any]]
     ]
 
 
-def _owner_buckets(aggregations: Mapping[Any, Any]) -> list[dict[str, Any]]:
+def _named_buckets(aggregations: Mapping[Any, Any], name: str) -> list[dict[str, Any]]:
     buckets = []
-    for bucket in aggregations.get("owner_organization_id", {}).get("buckets", []):
+    for bucket in aggregations.get(name, {}).get("buckets", []):
         item: dict[str, Any] = {"value": str(bucket["key"]), "count": int(bucket["doc_count"])}
         names = bucket.get("name", {}).get("buckets", [])
         if names and names[0]["key"]:
@@ -159,7 +226,22 @@ def _hit(source: Mapping[Any, Any]) -> dict[str, Any]:
         hit.pop("snippet")
     hit["keywords"] = list(hit["keywords"] or [])
     hit["allowed_purposes"] = list(hit["allowed_purposes"] or [])
+    hit["subject_codes"] = list(hit["subject_codes"] or [])
     return hit
+
+
+def label_vocabulary_facets(
+    facets: dict[str, list[dict[str, Any]]], labels_for: Callable[[str, list[str]], Mapping[str, str]]
+) -> None:
+    """Facet labels for vocabulary codes are the Korean labels (label_ko), resolved from the catalog DB."""
+    for name, scheme in VOCABULARY_FACETS.items():
+        buckets = facets.get(name) or []
+        if not buckets:
+            continue
+        found = labels_for(scheme, [bucket["value"] for bucket in buckets])
+        for bucket in buckets:
+            if label := found.get(bucket["value"]):
+                bucket["label"] = label
 
 
 def map_search_response(raw: Mapping[Any, Any], *, limit: int, sort_name: str) -> dict[str, Any]:
@@ -174,9 +256,11 @@ def map_search_response(raw: Mapping[Any, Any], *, limit: int, sort_name: str) -
         "total": min(int(raw["hits"]["total"]["value"]), MAX_TOTAL),
         "facets": {
             "access_level": _buckets(aggregations, "access_level"),
-            "owner_organization_id": _owner_buckets(aggregations),
+            "owner_organization_id": _named_buckets(aggregations, "owner_organization_id"),
             "purpose": _buckets(aggregations, "purpose"),
             "keyword": _buckets(aggregations, "keyword"),
             "readiness_status": _buckets(aggregations, "readiness_status"),
+            **{name: _buckets(aggregations, name) for name in VOCABULARY_FACETS},
+            "collecting_organization_id": _named_buckets(aggregations, "collecting_organization_id"),
         },
     }

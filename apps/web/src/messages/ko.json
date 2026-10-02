@@ -86,40 +86,161 @@
     "description": "NAIS AI-OS 공동 연구 데이터 플랫폼"
   },
   "landing": {
-    "title": "NAIS AI-OS Research Commons",
-    "subtitle": "기관의 경계를 넘어 공동 프로젝트를 만들고, AI-Ready 데이터를 찾고, 승인된 범위 안에서 안전하게 이용하세요.",
-    "cta": "Research Commons 시작하기",
-    "signIn": "로그인",
-    "featuresTitle": "주요 기능",
-    "features": {
-      "projects": {
-        "title": "공동 프로젝트",
-        "body": "여러 기관의 연구자가 한 프로젝트에서 협업합니다."
-      },
-      "data": {
-        "title": "데이터 검색",
-        "body": "기관별 데이터를 메타데이터로 찾고 AI-Ready 수준을 확인합니다."
-      },
-      "governance": {
-        "title": "접근 거버넌스",
-        "body": "목적과 기간을 정해 요청하고, 소유 기관이 승인·회수합니다."
+    "nav": {
+      "guide": "포털 안내",
+      "support": "지원",
+      "label": "바로가기"
+    },
+    "operator": "국가과학AI연구센터",
+    "operatorFull": "NAIS 국가과학AI연구센터",
+    "operatedBy": "운영",
+    "newTab": "새 탭에서 열림",
+    "signInPrefix": "NST 통합 ",
+    "signInShort": "로그인",
+    "over": "<operator>국가과학AI연구센터</operator>가 운영하는 연구회 데이터 포털",
+    "titleLine1": "데이터를 찾고, 승인받고,",
+    "titleLine2": "함께 연구합니다",
+    "prose": "<b>NAIS Research Commons</b>는 국가과학기술연구회 소속 기관이 연구 데이터를 공유하고 기관을 넘나드는 공동 연구를 진행하는 내부 포털입니다. 데이터는 소유 기관이 승인한 범위 안에서만 열리고, 모든 접근은 감사 로그에 남습니다.",
+    "signIn": "NST 통합 로그인 (SSO)",
+    "signInHint": "소속 기관 계정으로 로그인합니다",
+    "windows": {
+      "pick": "화면 예시 고르기",
+      "access": "접근 승인",
+      "data": "데이터 카드",
+      "project": "공동 프로젝트"
+    },
+    "sample": {
+      "dataset": "배터리 셀 사이클 측정",
+      "orgA": "A 연구원",
+      "orgB": "B 연구원",
+      "dataCrumb": "데이터 · A 연구원",
+      "files": "CSV 4개 · 18.2 MB",
+      "aiReady": "AI-ready 8/10",
+      "accessCrumb": "접근 요청 · 검토",
+      "requester": "요청: B 연구원 · 김연구",
+      "purpose": "열화 예측 모델 공동 학습",
+      "period": "2026-10-15 → 2027-03-31",
+      "scopeShort": "processed/ 폴더",
+      "scope": "processed/ 폴더, 원본 제외",
+      "requestNo": "접근 요청 #2026-0142",
+      "route": "B 연구원 김연구 → A 연구원 데이터 담당자",
+      "projectCrumb": "프로젝트",
+      "project": "차세대 전극 소재 공동 연구",
+      "projectMetaShort": "기관 2곳 · 구성원 5명",
+      "projectStart": "2026-07 시작",
+      "projectOrgs": "기관 2곳",
+      "projectData": "데이터셋 3개",
+      "readinessCrumb": "AI-ready 검증 · v3",
+      "trainable": "학습 가능"
+    },
+    "ui": {
+      "purpose": "목적",
+      "period": "기간",
+      "scope": "범위",
+      "status": "상태",
+      "pending": "검토 대기",
+      "approved": "승인됨 · 2027-03-31까지",
+      "changed": "변경 요청됨",
+      "rejected": "거절됨",
+      "approve": "승인",
+      "change": "변경 요청",
+      "reject": "거절",
+      "reset": "처음으로",
+      "logSubmitted": "요청 제출",
+      "logReview": "소유 기관 검토",
+      "inProgress": "진행 중",
+      "justNow": "방금",
+      "logApproved": "승인 · 기간 2027-03-31까지",
+      "logChanged": "변경 요청 · 범위를 processed/로 한정",
+      "logRejected": "거절 · 사유 기록",
+      "logAutoClose": "기간 종료 시 자동으로 닫힘",
+      "logAwaitFix": "요청자 수정 대기",
+      "member": "구성원",
+      "org": "기관",
+      "role": "역할",
+      "joined": "합류",
+      "lead": "책임자",
+      "steward": "데이터 담당",
+      "coResearcher": "공동 연구자",
+      "pass": "통과",
+      "fix": "보완",
+      "passLabel": "통과",
+      "fixLabel": "보완 필요",
+      "rows": "{count}행"
+    },
+    "data": {
+      "kicker": "데이터 카드",
+      "title": "열어 보기 전에 데이터를 압니다",
+      "intro": "데이터셋마다 데이터 카드가 있습니다. 누가 만들었는지, 어떤 열이 어떤 분포를 갖는지, 어느 버전에 무엇이 바뀌었는지를 내려받기 전에 확인합니다.",
+      "panelPath": "measurements.csv · 12,480행",
+      "panelTitle": "열 분포",
+      "panelHint": "막대에 마우스를 올리면 구간 값이 보입니다",
+      "caption": "화면 예시입니다. 값은 생성한 예시이며 실제 데이터가 아닙니다.",
+      "profiles": "예시 열 분포: capacity_ah, voltage_v, temp_c, cycle",
+      "notes": {
+        "profile": "<b>열마다 분포.</b> 숫자 열은 히스토그램과 범위로, 범주 열은 상위 값으로 보여 줍니다. 단위와 결측 비율도 열 머리에 붙습니다.",
+        "versions": "<b>버전이 남습니다.</b> 발행된 버전마다 파일 목록과 변경 메모가 남아서, 논문에 쓴 버전을 그대로 다시 받을 수 있습니다. <code>v3</code> <code>+2 −1 ~3</code>",
+        "search": "<b>메타데이터로 찾기.</b> 연구 분야, 측정 대상, 수집 방법, 기관, 기간으로 걸러 찾습니다."
       }
     },
-    "aboutTitle": "NAIS 소개",
-    "placeholder": {
-      "about": "소개",
-      "research": "연구",
-      "news": "소식",
-      "body": "준비 중인 콘텐츠입니다."
+    "access": {
+      "kicker": "접근 승인",
+      "title": "승인된 범위 안에서만 열립니다",
+      "intro": "데이터를 쓰려면 목적과 기간을 밝혀 요청하고, 데이터를 가진 기관이 승인합니다. 승인은 기간이 끝나면 닫히고, 소유 기관은 언제든 회수할 수 있습니다.",
+      "caption": "화면 예시입니다. 버튼은 이 페이지 안에서만 동작합니다.",
+      "steps": {
+        "request": "<b>요청.</b> 데이터 카드에서 목적, 기간, 범위를 적어 요청합니다.",
+        "review": "<b>검토.</b> 소유 기관의 데이터 담당자가 승인, 변경 요청, 거절 중 하나를 고릅니다.",
+        "use": "<b>이용.</b> 승인된 기간 동안 정해진 범위만 내려받거나 미리 봅니다.",
+        "end": "<b>종료.</b> 기간이 끝나면 자동으로 닫히고, 소유 기관은 그 전에도 회수할 수 있습니다."
+      }
     },
-    "footer": "© NAIS"
+    "project": {
+      "kicker": "공동 프로젝트",
+      "title": "기관을 넘는 공동 프로젝트",
+      "intro": "여러 기관의 연구자가 한 프로젝트에 모여 구성원과 데이터를 함께 관리합니다. 프로젝트에 연결된 데이터도 각자의 소유 기관 승인을 따릅니다.",
+      "caption": "화면 예시입니다. 이름과 기관은 예시입니다.",
+      "notes": {
+        "manage": "<b>한 곳에서 관리.</b> 구성원 초대, 역할, 연결된 데이터셋을 프로젝트 화면에서 함께 봅니다.",
+        "rights": "<b>기관의 권한은 그대로.</b> 프로젝트에 들어왔다고 데이터가 열리지는 않습니다. 각 데이터는 소유 기관의 승인을 따로 받습니다."
+      }
+    },
+    "readiness": {
+      "kicker": "AI-ready 검증",
+      "title": "AI 학습에 쓰기 전에 검증합니다",
+      "intro": "데이터를 올리면 메타데이터, 단위, 출처, 형식을 자동으로 점검합니다. 무엇이 빠졌는지 항목별로 보여 주어, 학습에 바로 쓸 수 있는 상태로 다듬을 수 있습니다.",
+      "caption": "화면 예시입니다. 점수와 항목은 예시입니다.",
+      "checks": {
+        "metadata": "필수 메타데이터",
+        "metadataHint": "제목, 설명, 라이선스, 연락처",
+        "tabular": "표 형식 파일",
+        "tabularHint": "CSV 4개 모두 열 머리 확인",
+        "units": "열 단위",
+        "unitsHint": "<code>temp_c</code> 열에 단위 표기 없음",
+        "provenance": "출처와 수집 방법",
+        "provenanceHint": "측정 장비, 조건 기재"
+      },
+      "notes": {
+        "items": "<b>항목별로 보입니다.</b> 점수 하나로 끝내지 않고, 어느 항목이 왜 모자란지 알려 줍니다.",
+        "versions": "<b>버전마다 다시 검증.</b> 새 버전을 발행하면 검증도 다시 돌아, 데이터 카드의 표시가 최신 상태를 따릅니다."
+      }
+    },
+    "close": {
+      "title": "NST 통합 로그인으로 들어갑니다",
+      "body": "소속 기관 계정으로 로그인합니다. 계정 문제는 소속 기관 관리자에게 문의하세요."
+    },
+    "notice": "이 시스템은 NST 연구회 소속 연구자 전용입니다. 접속 기록이 감사 로그에 남습니다.",
+    "support": "운영 지원",
+    "supportPending": "연락처 준비 중",
+    "version": "버전"
   },
   "auth": {
-    "mockTitle": "개발용 데모 로그인",
-    "mockDescription": "개발용 데모 로그인입니다. 사용자를 골라 로그인하세요.",
+    "mockTitle": "계정 선택",
+    "mockDescription": "NST 통합 로그인으로 들어갈 계정을 선택하세요.",
     "mockUser": "사용자",
     "signIn": "로그인",
-    "signOut": "로그아웃"
+    "signOut": "로그아웃",
+    "mockBack": "첫 화면으로"
   },
   "blocked": {
     "title": "계정을 사용할 수 없습니다",
@@ -130,22 +251,74 @@
   },
   "notFound": {
     "title": "페이지를 찾을 수 없습니다",
-    "home": "대시보드로 이동"
+    "home": "대시보드로 이동",
+    "help": "주소를 확인하거나 대시보드에서 다시 찾아보세요.",
+    "search": "데이터 검색"
   },
   "dashboard": {
     "title": "대시보드",
-    "greeting": "{name}님, 오늘 확인할 일을 모았습니다.",
     "myProjects": "내 프로젝트",
-    "openRequests": "진행 중 요청",
+    "openRequests": "진행 중인 내 요청",
     "myGrants": "내 권한",
-    "reviewQueue": "검토 대기",
+    "reviewQueue": "검토할 요청",
     "noProjects": "아직 참여한 프로젝트가 없습니다.",
     "createFirstProject": "첫 공동 프로젝트 만들기",
     "noRequests": "진행 중인 요청이 없습니다.",
     "noGrants": "유효한 접근 권한이 없습니다.",
     "noReview": "검토할 요청이 없습니다.",
     "viewAll": "전체 보기",
-    "requestedBy": "{name} 요청"
+    "requestedBy": "{name} 요청",
+    "recentActivity": "최근 활동",
+    "activityList": "최근 활동 목록",
+    "orgDatasets": "{org} 데이터셋 최근 버전",
+    "noDatasets": "아직 등록된 데이터셋이 없습니다.",
+    "newDataset": "새 데이터셋 등록",
+    "findData": "데이터 찾기",
+    "openAccess": "접근 관리 열기",
+    "openActivity": "활동 열기",
+    "days": "{count}일",
+    "columns": {
+      "dataset": "데이터셋",
+      "requester": "요청자",
+      "project": "프로젝트",
+      "purpose": "목적",
+      "days": "기간",
+      "status": "상태",
+      "submitted": "제출일",
+      "version": "버전",
+      "access": "공개 수준",
+      "readiness": "AI-Ready",
+      "updated": "수정일",
+      "myRole": "내 역할",
+      "members": "구성원",
+      "expires": "만료",
+      "waiting": "대기",
+      "owner": "소유 기관",
+      "lead": "주관 기관"
+    },
+    "summary": "요약",
+    "repeat": "×{count}",
+    "researcher": "연구자",
+    "newProject": "새 프로젝트",
+    "s": {
+      "review": "검토 대기",
+      "reviewOldest": "가장 오래된 요청 {days}일째",
+      "reviewToday": "오늘 들어온 요청",
+      "reviewNone": "기다리는 요청 없음",
+      "requests": "진행 중인 내 요청",
+      "requestsChange": "{count}건은 변경 요청 받음",
+      "grants": "활성 권한",
+      "grantsHint": "지금 쓸 수 있는 데이터",
+      "expiring": "7일 안에 만료",
+      "expiringHint": "연장이 필요한 권한",
+      "projects": "내 프로젝트",
+      "projectsHint": "참여 중인 공동 연구",
+      "requestsHint": "내가 보낸 접근 요청"
+    },
+    "waitToday": "오늘",
+    "waitDays": "{days}일째",
+    "dday": "D-{days}",
+    "ddayToday": "오늘 만료"
   },
   "projects": {
     "list": {
@@ -794,8 +967,6 @@
   "settings": {
     "title": "설정",
     "profile": "내 정보",
-    "name": "이름",
-    "email": "이메일",
     "organization": "기관",
     "roles": "기관 역할",
     "profileHint": "정보 변경은 기관 관리자에게 문의하세요.",
@@ -812,7 +983,27 @@
       "remove": "번호 삭제",
       "format": "8자리 숫자로 입력하세요.",
       "duplicate": "이미 다른 사용자가 등록한 번호입니다.",
-      "saved": "저장했습니다."
+      "saved": "저장했습니다.",
+      "title": "연구자 번호",
+      "description": "국가연구자번호(NTIS)를 등록합니다.",
+      "registered": "등록됨",
+      "notRegistered": "미등록"
+    },
+    "description": "내 계정 정보와 화면 설정을 관리합니다.",
+    "profileDescription": "기관 계정에서 가져온 정보입니다.",
+    "noRoles": "부여된 역할 없음",
+    "theme": "화면 테마",
+    "themeDescription": "이 브라우저에만 적용됩니다.",
+    "languageDescription": "화면에 표시되는 언어입니다.",
+    "notificationsDescription": "프로젝트 초대, 접근 요청 처리, 권한 만료, 데이터셋 게시 소식입니다.",
+    "notificationSummary": "전체 {total}개 · 읽지 않음 {unread}개",
+    "nav": {
+      "label": "설정 메뉴",
+      "profile": "프로필",
+      "researcherNumber": "연구자 번호",
+      "theme": "화면 테마",
+      "language": "언어",
+      "notifications": "알림"
     }
   },
   "org": {
@@ -820,15 +1011,10 @@
     "description": "기관 멤버의 역할과 상태를 관리합니다.",
     "code": "기관 코드",
     "type": "기관 유형",
-    "memberCount": "멤버 수",
-    "datasetCount": "데이터셋 수",
     "members": "멤버",
     "rolesFor": "{name} 역할",
     "saveChanges": "변경 저장",
-    "confirmTitle": "{name} 설정 변경",
-    "confirmDescription": "역할과 상태를 변경합니다.",
     "disableWarning": "이 사용자의 모든 데이터 접근 권한이 회수됩니다. 계속하시겠습니까?",
-    "confirm": "변경",
     "saved": "변경했습니다.",
     "selfDemotionTitle": "본인 권한 해제 확인",
     "selfDemotionWarning": "본인의 기관 관리자 권한을 해제하면 이 화면에 다시 들어올 수 없습니다. 정말 해제하시겠습니까?",
@@ -845,8 +1031,36 @@
       "confirmTitle": "{name} 님을 {org}(으)로 이동",
       "warning": "이전 기관의 역할과 접근 권한은 종료되고, 사용자는 다시 로그인해야 합니다. 과거 데이터에는 당시 소속이 그대로 남습니다.",
       "confirm": "이동 확인",
-      "done": "{name} 님을 {org}(으)로 옮겼습니다."
-    }
+      "done": "{name} 님을 {org}(으)로 옮겼습니다.",
+      "description": "사용자를 다른 기관으로 옮깁니다.",
+      "platformOnly": "플랫폼 관리자 전용"
+    },
+    "actionsFor": "{name} 관리",
+    "changeRoles": "역할 변경",
+    "disable": "비활성화",
+    "enable": "다시 활성화",
+    "rolesTitle": "{name} 역할 변경",
+    "rolesDescription": "이 멤버에게 줄 기관 역할을 고르세요.",
+    "disableTitle": "{name} 비활성화",
+    "enableTitle": "{name} 다시 활성화",
+    "enableDescription": "이 멤버가 다시 기관 역할을 사용할 수 있게 됩니다.",
+    "you": "나",
+    "noRoles": "역할 없음",
+    "memberTotal": "{count}명",
+    "memberTable": "기관 멤버",
+    "noMembers": "멤버가 없습니다.",
+    "memberCountValue": "멤버 {count}명",
+    "datasetCountValue": "데이터셋 {count}개",
+    "columns": {
+      "member": "멤버",
+      "email": "이메일",
+      "roles": "역할",
+      "status": "상태",
+      "updated": "최근 변경",
+      "actions": "관리"
+    },
+    "memberCountUnknown": "멤버 —",
+    "datasetCountUnknown": "데이터셋 —"
   },
   "reserved": {
     "marketplace": "AI Marketplace",
@@ -1127,5 +1341,8 @@
       "FAILED": "생성 실패",
       "UNSUPPORTED": "미리보기 미지원"
     }
+  },
+  "errorPage": {
+    "message": "예기치 않은 오류로 화면을 표시하지 못했습니다. 다시 시도하거나 추적 ID와 함께 관리자에게 알려 주세요."
   }
 }

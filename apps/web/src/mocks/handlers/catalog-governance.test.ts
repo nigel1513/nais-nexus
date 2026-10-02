@@ -25,7 +25,7 @@ describe("catalog mocks", () => {
 
   it("filters by q and access level and returns facets", async () => {
     const res = await search(USER.aResearcher, { q: "battery" });
-    expect(res.items.map((h) => h.title)).toEqual(["Battery Cycling Measurements"]);
+    expect(res.items.map((h) => h.title)).toEqual(["리튬이온 배터리 셀 사이클 시험 데이터"]);
     const controlled = await search(USER.aResearcher, { access_level: ["CONTROLLED"] });
     expect(controlled.items.every((h) => h.access_level === "CONTROLLED")).toBe(true);
     // Real searchDatasets aggregates under the active filters (no post_filter).
@@ -33,7 +33,7 @@ describe("catalog mocks", () => {
     expect(controlled.total).toBe(2);
     expect(res.total).toBe(1);
     const all = await search(USER.aResearcher);
-    expect(all.facets.owner_organization_id).toEqual(expect.arrayContaining([{ value: getDb().organizations[2]!.organization_id, count: 2, label: "Institute B" }]));
+    expect(all.facets.owner_organization_id).toEqual(expect.arrayContaining([{ value: getDb().organizations[2]!.organization_id, count: 2, label: "한국재료연구원" }]));
   });
 
   it("only DATA_STEWARD of the owner org can register datasets; SENSITIVE is capped at 30 days", async () => {
@@ -476,7 +476,7 @@ describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
   it("returns people with at-the-time and current affiliation, email only when public", async () => {
     const battery = await getJson(USER.aResearcher, `/datasets/${DATASET.battery}`);
     expect(battery.subtitle).toBe("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력");
-    expect(battery.people.principal_investigator).toMatchObject({ display_name: "B Researcher", national_researcher_number: "10000002", affiliation: { organization_id: ORG.b, name: "Institute B" } });
+    expect(battery.people.principal_investigator).toMatchObject({ display_name: "최유진", national_researcher_number: "10000002", affiliation: { organization_id: ORG.b, name: "한국재료연구원" } });
     expect(battery.people.steward_contact.email).toBe("b.steward@inst-b.local"); // 2001 is contact_email_public
     expect(battery.stats).toMatchObject({ file_count: 5 });
     expect(battery.principal_investigator_id).toBeUndefined();
@@ -525,10 +525,10 @@ describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
     expect((await bad.json()).error.details.fields).toEqual([{ field: "temporal_to", reason: "TEMPORAL_RANGE" }]);
     const all = await getJson(USER.aResearcher, "/datasets");
     expect(all.facets.subject).toEqual(expect.arrayContaining([{ value: "MATERIALS", count: 1 }, { value: "ENERGY", count: 2 }]));
-    expect(all.facets.collecting_organization_id).toEqual(expect.arrayContaining([{ value: ORG.a, count: 2, label: "Institute A" }, { value: ORG.b, count: 1, label: "Institute B" }]));
+    expect(all.facets.collecting_organization_id).toEqual(expect.arrayContaining([{ value: ORG.a, count: 2, label: "한국에너지기술연구원" }, { value: ORG.b, count: 1, label: "한국재료연구원" }]));
     const byPi = await getJson(USER.aResearcher, `/datasets?principal_investigator_id=${USER.bResearcher}&material=ELECTROLYTE&method=SENSOR_LOGGING`);
     expect(byPi.items.map((h: { dataset_id: string }) => h.dataset_id)).toEqual([DATASET.battery]);
-    expect(byPi.items[0]).toMatchObject({ principal_investigator_name: "B Researcher", collecting_organization_name: "Institute B", subject_codes: ["ENERGY", "BATTERY"] });
+    expect(byPi.items[0]).toMatchObject({ principal_investigator_name: "최유진", collecting_organization_name: "한국재료연구원", subject_codes: ["ENERGY", "BATTERY"] });
     // q reaches vocabulary labels and the PI name; an open-ended period (qcLogs) overlaps later windows.
     expect((await getJson(USER.aResearcher, "/datasets?q=%EC%9E%AC%EB%A3%8C")).items.length).toBeGreaterThan(0);
     expect((await getJson(USER.bResearcher, "/datasets?temporal_from=2030-01-01")).items.map((h: { dataset_id: string }) => h.dataset_id)).toEqual([DATASET.qcLogs]);
@@ -555,6 +555,9 @@ describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
     expect(doc["@type"]).toEqual(["Dataset", "dcat:Dataset"]);
     expect(doc.temporalCoverage).toBe("2026-01-12/2026-06-30");
     expect(doc.about[0]).toMatchObject({ "@type": "DefinedTerm", "@id": expect.stringContaining("/vocabulary/SUBJECT/") });
+    expect(doc["@context"]).toMatchObject({ sameAs: { "@type": "@id" }, "dct:accrualPeriodicity": { "@type": "@id" } });
+    for (const c of doc.contributor) expect(c).toMatchObject({ "@type": "Role", contributor: { "@type": "Person" } });
+    expect(String(doc["dct:accrualPeriodicity"] ?? "http://purl.org/cld/freq/")).toMatch(/^http:\/\/purl\.org\/cld\/freq\//);
   });
 
   it("updateMe sets the NTIS number; duplicates are 409", async () => {
@@ -572,9 +575,9 @@ describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
     const moved = await send(USER.admin, "POST", `/users/${USER.aResearcher}/transfer`, { organization_id: ORG.b });
     expect((await moved.json()).organization_id).toBe(ORG.b);
     expect(getDb().users.find((u) => u.user_id === USER.aResearcher)?.history).toMatchObject([{ organization_id: ORG.a }]);
-    const found = await getJson(USER.bAdmin, "/users?q=A%20Researcher");
+    const found = await getJson(USER.bAdmin, `/users?q=${encodeURIComponent("김민준")}`);
     expect(found.items.map((u: { organization_id: string }) => u.organization_id)).toEqual([ORG.b]);
-    // An Institute A dataset whose PI was A Researcher keeps the at-the-time affiliation and shows the new current org.
+    // An 한국에너지기술연구원 dataset whose PI was 김민준 keeps the at-the-time affiliation and shows the new current org.
     const sensors = await getJson(USER.aSteward, `/datasets/${DATASET.sensors}`);
     expect(sensors.people.principal_investigator.affiliation.organization_id).toBe(ORG.a);
     expect(sensors.people.principal_investigator.current_organization.organization_id).toBe(ORG.b);
@@ -635,9 +638,9 @@ describe("Data Explorer mocks (web Task 2)", () => {
     expect(await getJson(USER.aSteward, `/dataset-files/${id("p.parquet")}/profile`)).toMatchObject({ status: "FAILED", failure_code: "GENERATION_FAILED" });
   });
 
-  it("reports a tabular file without a preview row as PENDING", async () => {
+  it("reports a file without a preview row as UNSUPPORTED", async () => {
     const data = await dataFile(VERSION.battery);
     delete getDb().previews[data.file_id];
-    expect((await getJson(USER.aResearcher, `/dataset-files/${data.file_id}/profile`)).status).toBe("PENDING");
+    expect((await getJson(USER.aResearcher, `/dataset-files/${data.file_id}/profile`)).status).toBe("UNSUPPORTED");
   });
 });

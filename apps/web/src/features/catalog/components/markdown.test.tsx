@@ -20,4 +20,11 @@ describe("Markdown", () => {
     expect(container.querySelector("h3")?.textContent).toBe("A");
     expect(container.querySelector("h4")?.textContent).toBe("B");
   });
+  it("keeps only http, https, mailto and relative/fragment links", () => {
+    const src = "[a](https://e.org) [b](http://e.org) [c](mailto:x@e.org) [d](/docs/x) [e](#frag) [f](tel:123) [g](data:text/html,x) [h](ftp://e.org) [i](//evil.org) [j](JaVaScRiPt:alert(1))";
+    const { container } = render(<Markdown source={src} />);
+    const href = (t: string) => [...container.querySelectorAll("a")].find((a) => a.textContent === t)?.getAttribute("href") ?? "";
+    for (const t of ["a", "b", "c", "d", "e"]) expect(href(t)).not.toBe("");
+    for (const t of ["f", "g", "h", "i", "j"]) expect(href(t)).toBe("");
+  });
 });

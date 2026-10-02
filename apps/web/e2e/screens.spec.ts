@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 // Screenshot harness for the UI redesign (spec §8). SHOTS_DIR lets a worktree write into the main checkout.
 // Run: corepack pnpm --dir apps/web exec playwright test e2e/screens.spec.ts --project=chromium
 const OUT = process.env.SHOTS_DIR ?? "../../.superpowers/sdd/2026-10-01-ui-redesign/shots";
-const USERS = { steward: "00000000-0000-7000-8000-000000000b03", researcher: "00000000-0000-7000-8000-000000000a02", admin: "00000000-0000-7000-8000-000000000101" };
+const USERS = { steward: "00000000-0000-7000-8000-000000000b03", researcher: "00000000-0000-7000-8000-000000000a02", admin: "00000000-0000-7000-8000-000000000101", bAdmin: "00000000-0000-7000-8000-000000000b01" };
 const DATASET_BATTERY = "00000000-0000-7000-8000-000000002001";
 const PROJECT_SEED = "00000000-0000-7000-8000-000000001001";
 
@@ -45,6 +45,24 @@ async function setup(page: Page, [w, h]: Size, theme: Theme) {
 test.describe("screens", () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
 
+  test("landing and demo login", async ({ page }) => {
+    const prefix = process.env.SHOT_PREFIX ?? "landing";
+    await page.goto("/");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // Scroll like a reader so every once-only reveal has fired before the full-page shots.
+    for (let i = 0; i < 16; i += 1) {
+      await page.mouse.wheel(0, 500);
+      await page.waitForTimeout(80);
+    }
+    await expect(page.locator(".lp-reveal[data-pre]")).toHaveCount(0);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(1200);
+    await shoot(page, `${prefix}-home`);
+    await page.goto("/mock-login");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await shoot(page, `${prefix}-mock-login`);
+  });
+
   test("ui gallery (Task 2 primitives)", async ({ page, baseURL }) => {
     await as(page, "researcher", baseURL!);
     await page.goto("/commons/_ui");
@@ -60,12 +78,12 @@ test.describe("screens", () => {
     await shoot(page, "task3-shell-dashboard");
 
     await page.goto("/commons/data");
-    await expect(page.getByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
     await shoot(page, "task3-shell-data-search");
 
     await page.goto(`/commons/data/${DATASET_BATTERY}`);
-    await expect(page.getByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "현재 위치" })).toContainText("Battery Cycling Measurements");
+    await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "현재 위치" })).toContainText("리튬이온 배터리 셀 사이클 시험 데이터");
     await shoot(page, "task3-shell-data-card");
   });
 
@@ -79,8 +97,8 @@ test.describe("screens", () => {
       await page.keyboard.press("ControlOrMeta+k");
       const palette = page.getByRole("dialog", { name: "명령 팔레트" });
       await expect(palette).toBeVisible();
-      await page.keyboard.type("battery");
-      await expect(palette.getByRole("option", { name: /Battery Cycling Measurements/ })).toBeVisible();
+      await page.keyboard.type("배터리");
+      await expect(palette.getByRole("option", { name: /리튬이온 배터리 셀 사이클 시험 데이터/ })).toBeVisible();
       await shootOne(page, "task3-cmdk", 1440, theme);
       await page.keyboard.press("Escape");
       await expect(palette).toBeHidden();
@@ -90,7 +108,7 @@ test.describe("screens", () => {
       await shootOne(page, "task3-notifications", 1440, theme);
       await page.keyboard.press("Escape");
 
-      await page.getByRole("button", { name: /A Researcher/ }).click();
+      await page.getByRole("button", { name: /김민준/ }).click();
       await expect(page.getByRole("menu")).toBeVisible();
       await shootOne(page, "task3-user-menu", 1440, theme);
       await page.keyboard.press("Escape");
@@ -114,14 +132,14 @@ test.describe("screens", () => {
     await as(page, "steward", baseURL!);
     await page.goto("/commons/data/new");
     await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
-    await expect(page.getByRole("group", { name: /담당자/ })).toContainText("B Steward");
+    await expect(page.getByRole("group", { name: /담당자/ })).toContainText("정현우");
     await shoot(page, `${prefix}-dataset-new`);
 
     if (prefix === "task7") {
       for (const theme of ["light", "dark"] as Theme[]) {
         await setup(page, [1440, 900], theme);
-        await page.getByRole("combobox", { name: /연구책임자/ }).fill("B R");
-        await expect(page.getByRole("option", { name: /B Researcher/ })).toBeVisible();
+        await page.getByRole("combobox", { name: /연구책임자/ }).fill("최유진");
+        await expect(page.getByRole("option", { name: /최유진/ })).toBeVisible();
         await shootOne(page, `${prefix}-user-picker`, 1440, theme);
         await page.keyboard.press("Escape");
         await page.getByRole("combobox", { name: /연구책임자/ }).fill("");
@@ -146,7 +164,7 @@ test.describe("screens", () => {
     for (const [size, theme] of [[[1440, 900], "light"], [[1440, 900], "dark"], [[390, 844], "light"]] as [Size, Theme][]) {
       await setup(page, size, theme);
       await page.goto(`/commons/data/${DATASET_BATTERY}`);
-      await expect(page.getByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeVisible();
+      await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
       await page.getByRole("button", { name: "편집" }).click();
       await expect(page.getByLabel(/^제목/)).toBeVisible();
       await page.waitForLoadState("networkidle");
@@ -158,19 +176,89 @@ test.describe("screens", () => {
     await as(page, "researcher", baseURL!);
     await page.goto("/commons/projects");
     await expect(page.getByRole("heading", { level: 1, name: "프로젝트" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Seed: Battery Materials Joint Study" }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
     await shoot(page, `${prefix}-projects-list`);
 
     await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
-    await expect(page.getByRole("heading", { level: 1, name: "Seed: Battery Materials Joint Study" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
     await shoot(page, `${prefix}-project-detail-members`);
 
     await page.goto(`/commons/projects/${PROJECT_SEED}`);
-    await expect(page.getByRole("heading", { level: 1, name: "Seed: Battery Materials Joint Study" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
     await shoot(page, `${prefix}-project-detail-overview`, [[1440, 900]]);
 
     await page.goto("/commons/projects/new");
     await expect(page.getByRole("heading", { level: 1, name: "새 프로젝트" })).toBeVisible();
     await shoot(page, `${prefix}-project-new`, [[1440, 900]]);
+  });
+});
+
+test.describe("settings and organization (Task 11)", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  const prefix = process.env.SHOTS_PREFIX ?? "task11";
+
+  test("settings", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/settings");
+    await expect(page.getByRole("heading", { level: 1, name: "설정" })).toBeVisible();
+    await expect(page.getByLabel("국가연구자번호 (NTIS)")).toBeVisible();
+    await shoot(page, `${prefix}-settings`);
+  });
+
+  test("organization admin", async ({ page, baseURL }) => {
+    await as(page, "bAdmin", baseURL!);
+    await page.goto("/settings/organization");
+    await expect(page.getByRole("heading", { name: "멤버" })).toBeVisible();
+    await expect(page.getByText("최유진").first()).toBeVisible();
+    await shoot(page, `${prefix}-organization-admin`);
+  });
+
+  test("organization as platform admin (transfer)", async ({ page, baseURL }) => {
+    await as(page, "admin", baseURL!);
+    await page.goto("/settings/organization");
+    await expect(page.getByRole("region", { name: "기관 이동" })).toBeVisible();
+    await shoot(page, `${prefix}-organization-platform`);
+  });
+
+  test("organization overlays: row menu, role dialog", async ({ page, baseURL }) => {
+    await as(page, "bAdmin", baseURL!);
+    for (const theme of ["light", "dark"] as Theme[]) {
+      await setup(page, [1440, 900], theme);
+      await page.goto("/settings/organization");
+      await page.getByRole("button", { name: "정현우 관리" }).first().click();
+      await expect(page.getByRole("menu")).toBeVisible();
+      await shootOne(page, `${prefix}-member-menu`, 1440, theme);
+      await page.getByRole("menuitem", { name: "역할 변경" }).click();
+      await expect(page.getByRole("dialog", { name: "정현우 역할 변경" })).toBeVisible();
+      await shootOne(page, `${prefix}-roles-dialog`, 1440, theme);
+      await page.keyboard.press("Escape");
+    }
+  });
+});
+
+test.describe("dashboard and error pages (Task 12)", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  const prefix = process.env.SHOTS_PREFIX ?? "task12";
+
+  test("dashboard", async ({ page, baseURL }) => {
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons");
+    await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
+    await shoot(page, `${prefix}-dashboard`);
+    await page.context().clearCookies();
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons");
+    await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
+    await shoot(page, `${prefix}-dashboard-researcher`, [[1440, 900]]);
+  });
+
+  test("not-found and blocked", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/no-such-page");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await shoot(page, `${prefix}-not-found`);
+    await page.goto("/blocked?code=MEMBERSHIP_DISABLED");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await shoot(page, `${prefix}-blocked`, [[1440, 900]]);
   });
 });

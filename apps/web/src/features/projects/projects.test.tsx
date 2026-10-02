@@ -14,7 +14,7 @@ import { ProjectsListScreen } from "./projects-list-screen";
 
 const PUBLIC_PROJECT = "11111111-1111-4111-8111-111111111111";
 
-/** The real seed has no PUBLIC project: add one owned by Institute B through the mock db. */
+/** The real seed has no PUBLIC project: add one owned by 한국재료연구원 through the mock db. */
 function seedPublicProject() {
   const db = getDb();
   const seed = db.projects[0]!;
@@ -25,7 +25,7 @@ function seedPublicProject() {
     visibility: "PUBLIC",
     lead_organization_id: ORG.b,
     description: "Open benchmark.",
-    organizations: [{ organization_id: ORG.b, name: "Institute B", role: "LEAD" }],
+    organizations: [{ organization_id: ORG.b, name: "한국재료연구원", role: "LEAD" }],
     created_by: USER.bResearcher,
   });
   db.projectMembers.push({ ...db.projectMembers[1]!, project_id: PUBLIC_PROJECT, role: "PROJECT_OWNER" });
@@ -34,15 +34,15 @@ function seedPublicProject() {
 describe("ProjectsListScreen", () => {
   it("lists my projects with lead organization, my role and member count", async () => {
     renderScreen(<ProjectsListScreen />, { user: USER.aResearcher, path: "/commons/projects" });
-    const links = await screen.findAllByRole("link", { name: "Seed: Battery Materials Joint Study" });
+    const links = await screen.findAllByRole("link", { name: "차세대 이차전지 소재 공동연구" });
     expect(links[0]).toHaveAttribute("href", `/commons/projects/${PROJECT.seed}`);
-    expect(screen.getAllByText("Institute A").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("한국에너지기술연구원").length).toBeGreaterThan(0);
     expect(screen.getAllByText("소유자").length).toBeGreaterThan(0);
   });
 
   it("syncs the debounced search to the URL and shows the empty state", async () => {
     renderScreen(<ProjectsListScreen />, { user: USER.aResearcher, path: "/commons/projects" });
-    await screen.findAllByRole("link", { name: /Seed/ });
+    await screen.findAllByRole("link", { name: /차세대 이차전지/ });
     await userEvent.type(screen.getByRole("searchbox", { name: "프로젝트 검색" }), "zzz");
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/commons/projects?q=zzz", { scroll: false }));
     expect(await screen.findByText("조건에 맞는 프로젝트가 없습니다.")).toBeInTheDocument();
@@ -80,10 +80,10 @@ describe("Projects redesign (Task 8)", () => {
 
   it("detail: header actions, tabs 개요/구성원/데이터/활동 with a member count, and a right rail", async () => {
     renderScreen(<ProjectDetailScreen projectId={PROJECT.seed} />, { user: USER.aResearcher, path: `/commons/projects/${PROJECT.seed}` });
-    await screen.findByRole("heading", { level: 1, name: "Seed: Battery Materials Joint Study" });
+    await screen.findByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" });
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["개요", "구성원2", "데이터", "활동"]);
     const info = screen.getByRole("region", { name: "프로젝트 정보" });
-    expect(info).toHaveTextContent("Institute A");
+    expect(info).toHaveTextContent("한국에너지기술연구원");
     expect(info).toHaveTextContent("주관");
     const roles = screen.getByRole("region", { name: "역할 분포" });
     await waitFor(() => expect(within(roles).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["소유자1", "관리자0", "연구자1", "열람자0"]));
@@ -119,7 +119,7 @@ describe("ProjectsListScreen URL state (Back/Forward)", () => {
 
   it("does not bounce the URL back after Back clears a typed query", async () => {
     renderScreen(<ProjectsListScreen />, { user: USER.aResearcher, path: "/commons/projects" });
-    await screen.findAllByRole("link", { name: /Seed/ });
+    await screen.findAllByRole("link", { name: /차세대 이차전지/ });
     await userEvent.type(screen.getByRole("searchbox", { name: "프로젝트 검색" }), "zzz");
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/commons/projects?q=zzz", { scroll: false }));
     router.replace.mockClear();
@@ -188,8 +188,8 @@ describe("ProjectDetailScreen", () => {
 
   it("shows the overview and archives after a warning", async () => {
     open(USER.aResearcher);
-    expect(await screen.findByRole("heading", { level: 1, name: "Seed: Battery Materials Joint Study" })).toBeInTheDocument();
-    expect(screen.getByText(/Seed project shared by Institute A and Institute B/)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeInTheDocument();
+    expect(screen.getByText(/Seed project shared by 한국에너지기술연구원 and 한국재료연구원/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "프로젝트 작업 더 보기" }));
     await userEvent.click(await screen.findByRole("menuitem", { name: "보관…" }));
     const dialog = await screen.findByRole("dialog", { name: "프로젝트 보관" });
@@ -205,17 +205,17 @@ describe("ProjectDetailScreen", () => {
     const combo = await screen.findByRole("combobox", { name: "사용자 검색" });
     await userEvent.type(combo, "b.st");
     // Options show name · organization · NTIS (UserPicker on the Base UI combobox, list in a popover).
-    expect(await screen.findByRole("option", { name: /^B Steward\s*Institute B/ })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: /^정현우\s*한국재료연구원/ })).toBeInTheDocument();
     await userEvent.keyboard("{Enter}");
     await userEvent.selectOptions(screen.getByLabelText("추가할 역할"), "VIEWER");
     await userEvent.click(screen.getByRole("button", { name: "추가" }));
-    expect((await screen.findAllByText("B Steward")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("정현우")).length).toBeGreaterThan(0);
   });
 
   it("shows the server message when demoting the last owner", async () => {
     open(USER.aResearcher);
     await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
-    const selects = await screen.findAllByLabelText("A Researcher 역할");
+    const selects = await screen.findAllByLabelText("김민준 역할");
     await userEvent.selectOptions(selects[0]!, "RESEARCHER");
     expect(await screen.findByText("프로젝트에는 소유자가 최소 1명 있어야 합니다.")).toBeInTheDocument();
   });
@@ -271,14 +271,14 @@ describe("ProjectDetailScreen role rules", () => {
   it("ADMIN manages only RESEARCHER/VIEWER: no controls for the OWNER row, no archive, visibility locked", async () => {
     setRole(USER.bResearcher, "PROJECT_ADMIN");
     open(USER.bResearcher);
-    await screen.findByRole("heading", { level: 1, name: "Seed: Battery Materials Joint Study" });
+    await screen.findByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" });
     expect(screen.queryByRole("button", { name: "프로젝트 작업 더 보기" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "편집" }));
     for (const radio of screen.getAllByRole("radio")) expect(radio).toHaveAttribute("aria-disabled", "true");
     await userEvent.click(screen.getByRole("button", { name: "취소" }));
     await userEvent.click(screen.getByRole("tab", { name: /^구성원/ }));
     await screen.findByRole("combobox", { name: "사용자 검색" });
-    expect(screen.queryByLabelText("A Researcher 역할")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("김민준 역할")).not.toBeInTheDocument();
     const add = screen.getByLabelText("추가할 역할");
     expect(within(add).queryByRole("option", { name: "소유자" })).not.toBeInTheDocument();
   });
@@ -287,7 +287,7 @@ describe("ProjectDetailScreen role rules", () => {
     setRole(USER.bResearcher, "VIEWER");
     open(USER.bResearcher);
     await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
-    await screen.findAllByText("A Researcher");
+    await screen.findAllByText("김민준");
     expect(screen.queryByRole("combobox", { name: "사용자 검색" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "프로젝트 나가기" }).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "제거" })).not.toBeInTheDocument();
@@ -297,9 +297,9 @@ describe("ProjectDetailScreen role rules", () => {
     getDb().projects[0]!.status = "ARCHIVED";
     open(USER.aResearcher);
     await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
-    await screen.findAllByText("A Researcher");
+    await screen.findAllByText("김민준");
     expect(screen.queryByRole("combobox", { name: "사용자 검색" })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("B Researcher 역할")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("최유진 역할")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "제거" })).not.toBeInTheDocument();
     await userEvent.click(screen.getAllByRole("button", { name: "프로젝트 나가기" })[0]!);
     expect(screen.getByRole("dialog")).toBeInTheDocument();

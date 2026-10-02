@@ -17,20 +17,20 @@ describe("dataset form (stage 1)", () => {
     await userEvent.type(screen.getByLabelText("부제"), "전해질 후보 충방전");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     // steward contact defaults to the creating steward
-    expect(screen.getByRole("group", { name: /담당자/ })).toHaveTextContent("B StewardInstitute B · NTIS 10000004");
+    expect(screen.getByRole("group", { name: /담당자/ })).toHaveTextContent("정현우한국재료연구원 · NTIS 10000004");
     await userEvent.click(screen.getByRole("button", { name: "연구 분야 선택" }));
     await userEvent.click(await screen.findByRole("checkbox", { name: "재료" }));
     await userEvent.keyboard("{Escape}");
     expect(within(screen.getByRole("group", { name: "연구 분야" })).getByText("재료")).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText("데이터 기간 시작"), "2025-01-01");
-    await userEvent.type(screen.getByRole("combobox", { name: "공동연구자 검색" }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: "공동연구자 검색" }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     await userEvent.click(screen.getByRole("button", { name: "추가" }));
     const contributors = screen.getByRole("list", { name: "공동연구자" });
-    expect(within(contributors).getByText("B Researcher")).toBeInTheDocument();
+    expect(within(contributors).getByText("최유진")).toBeInTheDocument();
     expect(within(contributors).getByText("공동연구자")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     await waitFor(() => expect(getDb().datasets.some((d) => d.title === "Electrolyte Cycling")).toBe(true));
@@ -47,8 +47,8 @@ describe("dataset form (stage 1)", () => {
     await userEvent.type(await screen.findByLabelText(/^제목/), "Electrolyte Cycling");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("연구책임자: 소유 기관의 활성 구성원이 아닙니다");
     expect(getDb().datasets.some((d) => d.title === "Electrolyte Cycling")).toBe(false);
@@ -77,8 +77,8 @@ describe("dataset form (stage 1)", () => {
     await userEvent.type(await screen.findByLabelText(/^제목/), "Electrolyte Cycling");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     const link = await screen.findByRole("link", { name: /공동연구자: 중복된 값이 있습니다/ });
     expect(link).toHaveAttribute("href", "#dataset-contributors");
@@ -105,15 +105,15 @@ describe("dataset form layout (redesign)", () => {
   it("UserPicker is a combobox whose options show name, organization and NTIS", async () => {
     await open();
     const pi = screen.getByRole("combobox", { name: /연구책임자/ });
-    await userEvent.type(pi, "B R");
-    const option = await screen.findByRole("option", { name: /B Researcher/ });
-    expect(option).toHaveTextContent("Institute B");
+    await userEvent.type(pi, "최유진");
+    const option = await screen.findByRole("option", { name: /최유진/ });
+    expect(option).toHaveTextContent("한국재료연구원");
     expect(option).toHaveTextContent("NTIS 10000002");
-    expect(screen.getAllByText("소유 기관(Institute B)의 현재 구성원만 선택할 수 있습니다.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("소유 기관(한국재료연구원)의 현재 구성원만 선택할 수 있습니다.").length).toBeGreaterThan(0);
     await userEvent.keyboard("{ArrowDown}{Enter}");
     // The pick shows as a chip (avatar, name, org · NTIS) with a change button that brings the search back.
     const chip = await screen.findByRole("group", { name: /연구책임자/ });
-    expect(chip).toHaveTextContent("B ResearcherInstitute B · NTIS 10000002");
+    expect(chip).toHaveTextContent("최유진한국재료연구원 · NTIS 10000002");
     await userEvent.click(within(chip).getByRole("button", { name: "연구책임자 변경" }));
     expect(screen.getByRole("combobox", { name: /연구책임자/ })).toHaveFocus();
   });
@@ -140,8 +140,8 @@ describe("dataset form layout (redesign)", () => {
     await userEvent.type(screen.getByLabelText(/^제목/), "Electrolyte Cycling");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     await userEvent.click(screen.getByRole("button", { name: "미리보기" }));
     await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     const link = await screen.findByRole("link", { name: /^설명:/ });
