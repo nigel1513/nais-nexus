@@ -17,14 +17,14 @@ describe("dataset form (stage 1)", () => {
     await userEvent.type(screen.getByLabelText("부제"), "전해질 후보 충방전");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     // steward contact defaults to the creating steward
-    expect(screen.getByRole("combobox", { name: /담당자/ })).toHaveValue("B Steward (Institute B)");
+    expect(screen.getByRole("combobox", { name: /담당자/ })).toHaveValue("정현우 (한국재료연구원)");
     await userEvent.click(screen.getByRole("checkbox", { name: "재료" }));
     await userEvent.type(screen.getByLabelText("데이터 기간 시작"), "2025-01-01");
-    await userEvent.type(screen.getByRole("combobox", { name: "공동연구자 검색" }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: "공동연구자 검색" }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     await userEvent.click(screen.getByRole("button", { name: "추가" }));
     expect(screen.getByText(/공동연구자$/, { selector: "span span" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
@@ -42,8 +42,8 @@ describe("dataset form (stage 1)", () => {
     await userEvent.type(await screen.findByLabelText(/^제목/), "Electrolyte Cycling");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("연구책임자: 소유 기관의 활성 구성원이 아닙니다");
     expect(getDb().datasets.some((d) => d.title === "Electrolyte Cycling")).toBe(false);
@@ -72,8 +72,8 @@ describe("dataset form (stage 1)", () => {
     await userEvent.type(await screen.findByLabelText(/^제목/), "Electrolyte Cycling");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
     await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
-    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
-    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "최유진");
+    await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
     const link = await screen.findByRole("link", { name: /공동연구자: 중복된 값이 있습니다/ });
     expect(link).toHaveAttribute("href", "#dataset-contributors");

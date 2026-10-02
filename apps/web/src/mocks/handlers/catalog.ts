@@ -483,6 +483,18 @@ const JSONLD_CONTEXT = {
   dcat: "http://www.w3.org/ns/dcat#",
   dct: "http://purl.org/dc/terms/",
   prov: "http://www.w3.org/ns/prov#",
+  // IRI-valued properties (mirror of backend jsonld.CONTEXT).
+  inDefinedTermSet: { "@id": "https://schema.org/inDefinedTermSet", "@type": "@id" },
+  sameAs: { "@id": "https://schema.org/sameAs", "@type": "@id" },
+  url: { "@id": "https://schema.org/url", "@type": "@id" },
+  "dct:accrualPeriodicity": { "@type": "@id" },
+};
+// Dublin Core Collection Description Frequency vocabulary; ONCE has no term and is omitted.
+const FREQUENCY_IRIS: Record<string, string> = {
+  IRREGULAR: "http://purl.org/cld/freq/irregular",
+  MONTHLY: "http://purl.org/cld/freq/monthly",
+  QUARTERLY: "http://purl.org/cld/freq/quarterly",
+  YEARLY: "http://purl.org/cld/freq/annual",
 };
 
 function ldOrg(base: string, ref: Schemas["OrganizationRef"]) {
@@ -531,14 +543,16 @@ function datasetJsonLd(db: MockDb, ds: StoredDataset, base: string): Record<stri
     conditionsOfAccess: ds.access_level,
     dateCreated: ds.created_at,
     dateModified: ds.updated_at,
-    "dct:accrualPeriodicity": ds.update_frequency ?? "ONCE",
     publisher: ldOrg(base, { organization_id: ds.owner_organization_id, name: orgName(db, ds.owner_organization_id) }),
     about: [...ldTerms(db, base, "SUBJECT", ds.subject_codes ?? []), ...ldTerms(db, base, "MATERIAL", ds.material_codes ?? [])],
     measurementTechnique: ldTerms(db, base, "METHOD", ds.method_codes ?? []),
     creator: people.principal_investigator ? [ldPerson(base, people.principal_investigator)] : [],
-    contributor: people.contributors.map((c) => ({ ...ldPerson(base, c), roleName: c.role })),
+    contributor: people.contributors.map((c) => ({ "@type": "Role", roleName: c.role, contributor: ldPerson(base, c) })),
     citation: (ds.related_publications ?? []).map((p) => ({ "@type": "ScholarlyArticle", name: p.title, ...(p.doi ? { sameAs: `https://doi.org/${p.doi}` } : p.url ? { url: p.url } : {}) })),
   };
+  const frequency = FREQUENCY_IRIS[ds.update_frequency ?? ""];
+  if (frequency) doc["dct:accrualPeriodicity"] = frequency;
+  if (ds.contact_email) doc.contactPoint = { "@type": "ContactPoint", email: ds.contact_email };
   if (people.steward_contact) doc.maintainer = ldPerson(base, people.steward_contact);
   if (ds.subtitle) doc.alternativeHeadline = ds.subtitle;
   if (ds.usage_policy) doc.usageInfo = ds.usage_policy;

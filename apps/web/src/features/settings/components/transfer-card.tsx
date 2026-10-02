@@ -1,5 +1,6 @@
 "use client";
-import { Button, Card, CardContent, CardHeader, CardTitle, ConfirmDialog, Label, Select } from "@nais/ui";
+import { Badge, Button, ConfirmDialog, Label, Select } from "@nais/ui";
+import { TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useId, useState } from "react";
 import { UserPicker } from "@/features/catalog/components/user-picker";
@@ -7,11 +8,11 @@ import { useListOrganizations, useTransferUser } from "@/features/organizations/
 import type { IdentityPublicProfile } from "@/shared/api/types";
 import { notify } from "@/shared/ui/toast";
 import { ErrorView } from "@/shared/ui/state-views";
+import { SettingsSectionCard } from "./settings-layout";
 
 /** PLATFORM_ADMIN only (the caller gates it; the server still decides): move a user to another institute. */
 export function TransferCard() {
   const t = useTranslations();
-  const headingId = useId();
   const selectId = useId();
   const orgs = useListOrganizations();
   const transfer = useTransferUser();
@@ -38,14 +39,23 @@ export function TransferCard() {
     );
 
   return (
-    <Card aria-labelledby={headingId}>
-      <CardHeader>
-        <CardTitle id={headingId}>{t("org.transfer.title")}</CardTitle>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-start gap-3">
+    <SettingsSectionCard
+      id="transfer"
+      title={t("org.transfer.title")}
+      description={t("org.transfer.description")}
+      actions={<Badge tone="warning">{t("org.transfer.platformOnly")}</Badge>}
+      footer={
+        <>
+          <Button className="ml-auto" variant="primary" size="sm" disabled={!user || !orgId || transfer.isPending} onClick={() => setConfirming(true)}>
+            {t("org.transfer.submit")}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_14rem] md:items-start">
           <UserPicker key={pickerKey} label={t("org.transfer.user")} onChange={setUser} />
-          <div className="flex min-w-48 flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <Label htmlFor={selectId}>{t("org.transfer.target")}</Label>
             <Select id={selectId} value={orgId} onChange={(e) => setOrgId(e.target.value)}>
               <option value="">{t("org.transfer.choose")}</option>
@@ -59,13 +69,12 @@ export function TransferCard() {
             </Select>
           </div>
         </div>
-        <div>
-          <Button variant="primary" size="sm" disabled={!user || !orgId || transfer.isPending} onClick={() => setConfirming(true)}>
-            {t("org.transfer.submit")}
-          </Button>
-        </div>
+        <p className="flex items-start gap-2 rounded-sm border border-warning-line bg-warning-soft px-3 py-2 text-small text-fg">
+          <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
+          {t("org.transfer.warning")}
+        </p>
         {transfer.isError ? <ErrorView error={transfer.error} onRetry={() => setConfirming(true)} /> : null}
-      </CardContent>
+      </div>
       <ConfirmDialog
         open={confirming}
         onOpenChange={(o) => !o && setConfirming(false)}
@@ -78,6 +87,6 @@ export function TransferCard() {
         pending={transfer.isPending}
         onConfirm={run}
       />
-    </Card>
+    </SettingsSectionCard>
   );
 }

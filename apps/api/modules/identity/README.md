@@ -54,6 +54,11 @@ Changing the realm file needs a re-import: `kcadm.sh delete realms/nais` inside 
   (`DISABLED`, roles cleared, `ended_at` set), opens an `ACTIVE` one in the target organization, emits
   `identity.membership.changed.v1` twice, then sets the Keycloak `org_code` attribute through `KeycloakAdminPort`.
   If Keycloak is unreachable the call returns 503 `DEPENDENCY_UNAVAILABLE` and the transaction rolls back (no rows, no events).
+  Moving the last active `ORG_ADMIN` out of an organization is refused with 409 `CONFLICT`
+  (`details.reason = LAST_ORG_ADMIN`), the same rule `updateMember` applies (`members.py`).
+- Keycloak is updated BEFORE the database commit (the Keycloak call is the last step inside the request transaction).
+  If the commit then fails after Keycloak succeeded, Keycloak and the DB disagree; re-running the same transfer
+  repairs it (the transfer is idempotent and re-asserts the Keycloak `org_code`).
   Transfer to the current organization is idempotent: it only re-asserts the Keycloak attribute.
 - Tokens issued before the transfer carry the old `org_code` and get 403 `ORGANIZATION_UNKNOWN` until the user signs in again.
 - The NTIS researcher number is set by the user via `updateMe` (`PATCH /me`).

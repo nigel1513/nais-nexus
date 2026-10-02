@@ -32,21 +32,22 @@ export const REQUEST = { seedApproved: sid("3001") } as const;
 export const GRANT = { seed: sid("4001") } as const;
 
 const users: Omit<MockUser, "updated_at">[] = [
-  { user_id: USER.admin, display_name: "NAIS Admin", email: "admin@nais.local", organization_id: ORG.nais, org_roles: ["ORG_ADMIN"], platform_roles: ["PLATFORM_ADMIN"], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
-  { user_id: USER.aAdmin, display_name: "A Admin", email: "a.admin@inst-a.local", organization_id: ORG.a, org_roles: ["ORG_ADMIN"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
-  { user_id: USER.aResearcher, display_name: "A Researcher", email: "a.researcher@inst-a.local", organization_id: ORG.a, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000001", history: [] },
-  { user_id: USER.aSteward, display_name: "A Steward", email: "a.steward@inst-a.local", organization_id: ORG.a, org_roles: ["DATA_STEWARD"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000003", history: [] },
-  { user_id: USER.bAdmin, display_name: "B Admin", email: "b.admin@inst-b.local", organization_id: ORG.b, org_roles: ["ORG_ADMIN"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
-  { user_id: USER.bResearcher, display_name: "B Researcher", email: "b.researcher@inst-b.local", organization_id: ORG.b, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000002", history: [] },
-  { user_id: USER.bSteward, display_name: "B Steward", email: "b.steward@inst-b.local", organization_id: ORG.b, org_roles: ["DATA_STEWARD"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000004", history: [] },
-  { user_id: USER.bDisabled, display_name: "B Disabled", email: "b.disabled@inst-b.local", organization_id: ORG.b, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "DISABLED", national_researcher_number: null, history: [] },
+  { user_id: USER.admin, display_name: "송태호", email: "admin@nais.local", organization_id: ORG.nais, org_roles: ["ORG_ADMIN"], platform_roles: ["PLATFORM_ADMIN"], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
+  { user_id: USER.aAdmin, display_name: "박지훈", email: "a.admin@inst-a.local", organization_id: ORG.a, org_roles: ["ORG_ADMIN"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
+  { user_id: USER.aResearcher, display_name: "김민준", email: "a.researcher@inst-a.local", organization_id: ORG.a, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000001", history: [] },
+  { user_id: USER.aSteward, display_name: "이서연", email: "a.steward@inst-a.local", organization_id: ORG.a, org_roles: ["DATA_STEWARD"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000003", history: [] },
+  { user_id: USER.bAdmin, display_name: "한유나", email: "b.admin@inst-b.local", organization_id: ORG.b, org_roles: ["ORG_ADMIN"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
+  { user_id: USER.bResearcher, display_name: "최유진", email: "b.researcher@inst-b.local", organization_id: ORG.b, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000002", history: [] },
+  { user_id: USER.bSteward, display_name: "정현우", email: "b.steward@inst-b.local", organization_id: ORG.b, org_roles: ["DATA_STEWARD"], platform_roles: [], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: "10000004", history: [] },
+  { user_id: USER.bDisabled, display_name: "조하은", email: "b.disabled@inst-b.local", organization_id: ORG.b, org_roles: [], platform_roles: [], status: "ACTIVE", membership_status: "DISABLED", national_researcher_number: null, history: [] },
 ];
 
-/** Mock login choices (M10 §13: "seed 사용자 선택 드롭다운"). */
-export const SEED_USERS = users.map((u) => ({ id: u.user_id, label: u.display_name, email: u.email }));
 
 const STEWARD = { [ORG.a]: USER.aSteward, [ORG.b]: USER.bSteward } as Record<string, string>;
-const ORG_NAME = { [ORG.nais]: "NAIS", [ORG.a]: "Institute A", [ORG.b]: "Institute B" } as Record<string, string>;
+const ORG_NAME = { [ORG.nais]: "국가과학AI연구센터", [ORG.a]: "한국에너지기술연구원", [ORG.b]: "한국재료연구원" } as Record<string, string>;
+
+/** Mock login choices (M10 §13: "seed 사용자 선택 드롭다운"): name and institute, as an SSO account picker shows them. */
+export const SEED_USERS = users.map((u) => ({ id: u.user_id, label: u.display_name, email: u.email, organization: ORG_NAME[u.organization_id] ?? "" }));
 
 type Fixture = "clean_tabular" | "missing_metadata" | "invalid_units" | "missing_provenance" | null;
 type Meta = { description: string; keywords: string[]; domain: string | null; license: string; usage_policy: string | null; contact_email: string | null; provenance: string | null };
@@ -67,7 +68,7 @@ const META: Record<string, Meta> = {
     license: "CC-BY-4.0",
     usage_policy: "학술 연구 및 AI 학습 목적에 한해 사용한다. 재배포 금지. 결과 공개 시 출처를 표기한다.",
     contact_email: "steward@inst-b.example",
-    provenance: "Institute B 이차전지 실험실의 충방전 시험기(모델 BT-5000)와 항온 챔버에서 2026년 1월부터 6월까지 사이클마다 자동 수집한 측정값. 사이클 1~200은 v1.0, 201~500은 v1.1, 501~1000은 v2.0에서 추가되었다.",
+    provenance: "한국재료연구원 이차전지 실험실의 충방전 시험기(모델 BT-5000)와 항온 챔버에서 2026년 1월부터 6월까지 사이클마다 자동 수집한 측정값. 사이클 1~200은 v1.0, 201~500은 v1.1, 501~1000은 v2.0에서 추가되었다.",
   },
   [DATASET.openMaterials]: {
     description: [
@@ -79,17 +80,17 @@ const META: Record<string, Meta> = {
     license: "CC-BY-4.0",
     usage_policy: "출처를 표기하면 자유롭게 이용할 수 있다.",
     contact_email: "steward@inst-b.example",
-    provenance: "Institute B 공동 장비실의 Vickers 경도계와 분말 XRD(Cu Kα)로 시편당 5회 측정해 평균한 값.",
+    provenance: "한국재료연구원 공동 장비실의 Vickers 경도계와 분말 XRD(Cu Kα)로 시편당 5회 측정해 평균한 값.",
   },
   [DATASET.qcLogs]: {
     description: [
-      "Institute B 시제품 소결 라인 3개의 배치별 공정 온도와 압력, 검사 시각을 기록한 내부 품질관리(QC) 로그이다.",
+      "한국재료연구원 시제품 소결 라인 3개의 배치별 공정 온도와 압력, 검사 시각을 기록한 내부 품질관리(QC) 로그이다.",
       "월 단위로 누적되며 내부 공정 개선과 이상 배치 탐지 연구에만 사용한다. 일부 단위 표기가 UCUM이 아니므로 정리가 필요하다.",
     ].join("\n\n"),
     keywords: ["quality-control", "sintering", "process-log", "batch", "internal"],
     domain: "materials",
     license: "CC-BY-4.0",
-    usage_policy: "Institute B 내부 연구 목적으로만 사용한다. 외부 공유 금지.",
+    usage_policy: "한국재료연구원 내부 연구 목적으로만 사용한다. 외부 공유 금지.",
     contact_email: "steward@inst-b.example",
     provenance: "소결 라인 PLC가 배치 종료 시 기록한 공정값을 월 1회 수집해 정리한 로그.",
   },
@@ -100,7 +101,7 @@ const META: Record<string, Meta> = {
     license: "CC-BY-4.0",
     usage_policy: "시설 운영 정보이므로 승인된 학술 연구 목적에 한해 사용한다.",
     contact_email: "steward@inst-a.example",
-    provenance: "Institute A 시험동 공조 설비(HVAC 1~4호기)에 설치된 상대습도·온도·진동 센서가 15분 간격으로 기록한 스트림.",
+    provenance: "한국에너지기술연구원 시험동 공조 설비(HVAC 1~4호기)에 설치된 상대습도·온도·진동 센서가 15분 간격으로 기록한 스트림.",
   },
   [DATASET.electrolyte]: {
     description: [
@@ -112,7 +113,7 @@ const META: Record<string, Meta> = {
     license: "CC-BY-4.0",
     usage_policy: "학술 연구 및 AI 학습 목적에 한해 사용한다. 초안 단계이므로 인용하지 않는다.",
     contact_email: "steward@inst-a.example",
-    provenance: "Institute A가 합성한 조성 시료를 외부 위탁분석기관 K-Lab이 임피던스 분광과 순환전압전류법으로 측정한 결과.",
+    provenance: "한국에너지기술연구원가 합성한 조성 시료를 외부 위탁분석기관 K-Lab이 임피던스 분광과 순환전압전류법으로 측정한 결과.",
   },
 };
 function metadataFor(datasetId: string, fixture: Fixture) {
@@ -165,10 +166,7 @@ const RESEARCH: Record<string, Partial<ReturnType<typeof emptyResearch>>> = {
     funding_agency: "국가과학기술연구회",
     update_frequency: "QUARTERLY",
     contact_email_public: true,
-    related_publications: [
-      { title: "Early-cycle capacity fade prediction for NCM811 cells (mock reference)", doi: "10.99999/nais.mock.2026.0101" },
-      { title: "실리콘-탄소 음극 셀의 사이클 열화 비교 (모의 참고문헌)", doi: "10.99999/nais.mock.2026.0102", url: "https://example.org/mock/battery-fade" },
-    ],
+    related_publications: [],
   },
   [DATASET.openMaterials]: {
     subtitle: "세라믹·초내열 합금 4종의 밀도, 경도, 격자상수 (2024–2025)",
@@ -184,7 +182,7 @@ const RESEARCH: Record<string, Partial<ReturnType<typeof emptyResearch>>> = {
     project_code: "NST-2024-0207",
     funding_agency: "과학기술정보통신부",
     update_frequency: "YEARLY",
-    related_publications: [{ title: "Hardness and lattice parameters of structural ceramics (mock reference)", doi: "10.99999/nais.mock.2025.0207" }],
+    related_publications: [],
   },
   [DATASET.qcLogs]: {
     subtitle: "소결 라인 3기의 배치별 공정 온도·압력 QC 로그 (월 갱신)",
@@ -215,7 +213,7 @@ const RESEARCH: Record<string, Partial<ReturnType<typeof emptyResearch>>> = {
     project_code: "NST-2026-0415",
     funding_agency: "국가과학기술연구회",
     update_frequency: "MONTHLY",
-    related_publications: [{ title: "Vibration and humidity monitoring for precision labs (mock reference)", doi: "10.99999/nais.mock.2026.0415" }],
+    related_publications: [],
   },
   [DATASET.electrolyte]: {
     subtitle: "하이브리드 전해질 후보 24종의 이온전도도·안정창 스크리닝 (초안)",
@@ -230,7 +228,7 @@ const RESEARCH: Record<string, Partial<ReturnType<typeof emptyResearch>>> = {
     project_code: "NST-2026-0522",
     funding_agency: "한국연구재단",
     update_frequency: "IRREGULAR",
-    related_publications: [{ title: "Hybrid solid-liquid electrolytes: a screening study (mock reference)", doi: "10.99999/nais.mock.2026.0522" }],
+    related_publications: [],
   },
 };
 
@@ -265,9 +263,9 @@ export function createSeed(now: Date): MockDb {
   const ALL_PURPOSES: Schemas["Purpose"][] = ["ACADEMIC_RESEARCH", "AI_TRAINING", "COMMERCIAL_RESEARCH", "EDUCATION", "PUBLIC_INTEREST"];
 
   const organizations: Schemas["Organization"][] = [
-    { organization_id: ORG.nais, code: "nais", name: "NAIS", type: "PLATFORM_OPERATOR", ror_id: null, homepage_url: null, member_count: 1, dataset_count: 0, created_at: seedTime },
-    { organization_id: ORG.a, code: "inst-a", name: "Institute A", type: "RESEARCH_INSTITUTE", ror_id: null, homepage_url: null, member_count: 3, dataset_count: 2, created_at: seedTime },
-    { organization_id: ORG.b, code: "inst-b", name: "Institute B", type: "RESEARCH_INSTITUTE", ror_id: null, homepage_url: null, member_count: 4, dataset_count: 3, created_at: seedTime },
+    { organization_id: ORG.nais, code: "nais", name: "국가과학AI연구센터", type: "PLATFORM_OPERATOR", ror_id: null, homepage_url: null, member_count: 1, dataset_count: 0, created_at: seedTime },
+    { organization_id: ORG.a, code: "inst-a", name: "한국에너지기술연구원", type: "RESEARCH_INSTITUTE", ror_id: null, homepage_url: null, member_count: 3, dataset_count: 2, created_at: seedTime },
+    { organization_id: ORG.b, code: "inst-b", name: "한국재료연구원", type: "RESEARCH_INSTITUTE", ror_id: null, homepage_url: null, member_count: 4, dataset_count: 3, created_at: seedTime },
   ];
 
   const seedDatasets: {
@@ -279,11 +277,11 @@ export function createSeed(now: Date): MockDb {
     maxDays: number;
     fixture: Fixture;
   }[] = [
-    { id: DATASET.battery, owner: ORG.b, title: "Battery Cycling Measurements", level: "CONTROLLED", purposes: ["ACADEMIC_RESEARCH", "AI_TRAINING"], maxDays: 180, fixture: "clean_tabular" },
-    { id: DATASET.openMaterials, owner: ORG.b, title: "Open Materials Properties", level: "PUBLIC", purposes: ALL_PURPOSES, maxDays: 365, fixture: "missing_provenance" },
-    { id: DATASET.qcLogs, owner: ORG.b, title: "Inst-B Internal QC Logs", level: "INTERNAL", purposes: ["ACADEMIC_RESEARCH"], maxDays: 90, fixture: "invalid_units" },
-    { id: DATASET.sensors, owner: ORG.a, title: "Facility Sensor Streams", level: "SENSITIVE", purposes: ["ACADEMIC_RESEARCH"], maxDays: 30, fixture: "missing_metadata" },
-    { id: DATASET.electrolyte, owner: ORG.a, title: "Electrolyte Screening (draft)", level: "CONTROLLED", purposes: ["AI_TRAINING"], maxDays: 90, fixture: null },
+    { id: DATASET.battery, owner: ORG.b, title: "리튬이온 배터리 셀 사이클 시험 데이터", level: "CONTROLLED", purposes: ["ACADEMIC_RESEARCH", "AI_TRAINING"], maxDays: 180, fixture: "clean_tabular" },
+    { id: DATASET.openMaterials, owner: ORG.b, title: "구조용 세라믹·초내열합금 물성 DB", level: "PUBLIC", purposes: ALL_PURPOSES, maxDays: 365, fixture: "missing_provenance" },
+    { id: DATASET.qcLogs, owner: ORG.b, title: "소결 공정 배치별 품질관리 로그", level: "INTERNAL", purposes: ["ACADEMIC_RESEARCH"], maxDays: 90, fixture: "invalid_units" },
+    { id: DATASET.sensors, owner: ORG.a, title: "시험동 공조 설비 센서 스트림", level: "SENSITIVE", purposes: ["ACADEMIC_RESEARCH"], maxDays: 30, fixture: "missing_metadata" },
+    { id: DATASET.electrolyte, owner: ORG.a, title: "하이브리드 전해질 후보 스크리닝 (초안)", level: "CONTROLLED", purposes: ["AI_TRAINING"], maxDays: 90, fixture: null },
   ];
   const filesKey: Record<string, keyof typeof SEED_FILES> = {
     [DATASET.battery]: "battery",
@@ -349,8 +347,8 @@ export function createSeed(now: Date): MockDb {
     media_type,
     status: "VERIFIED",
   });
-  const README_V10 = "# Battery Cycling Measurements\n\n18650 셀 사이클 1~200 (v1.0).";
-  const README_V11 = "# Battery Cycling Measurements\n\n18650 셀 사이클 1~500 (v1.1), 셀 정보 추가.";
+  const README_V10 = "# 리튬이온 배터리 셀 사이클 시험 데이터\n\n18650 셀 사이클 1~200 (v1.0).";
+  const README_V11 = "# 리튬이온 배터리 셀 사이클 시험 데이터\n\n18650 셀 사이클 1~500 (v1.1), 셀 정보 추가.";
   const batteryVersion = (id: string, label: string, status: "PUBLISHED" | "DRAFT", daysAgo: number, note: string, files: Schemas["DatasetFile"][]): StoredVersion => ({
     dataset_version_id: id,
     dataset_id: DATASET.battery,
@@ -467,11 +465,11 @@ export function createSeed(now: Date): MockDb {
     {
       access_request_id: REQUEST.seedApproved,
       dataset_id: DATASET.battery,
-      dataset_title: "Battery Cycling Measurements",
+      dataset_title: "리튬이온 배터리 셀 사이클 시험 데이터",
       project_id: PROJECT.seed,
-      project_name: "Seed: Battery Materials Joint Study",
+      project_name: "차세대 이차전지 소재 공동연구",
       requester_user_id: USER.aResearcher,
-      requester_display_name: "A Researcher",
+      requester_display_name: "김민준",
       requester_organization_id: ORG.a,
       owner_organization_id: ORG.b,
       purpose: "ACADEMIC_RESEARCH",
@@ -497,9 +495,9 @@ export function createSeed(now: Date): MockDb {
       subject_user_id: USER.aResearcher,
       project_id: PROJECT.seed,
       dataset_id: DATASET.battery,
-      dataset_title: "Battery Cycling Measurements",
-      subject_display_name: "A Researcher",
-      project_name: "Seed: Battery Materials Joint Study",
+      dataset_title: "리튬이온 배터리 셀 사이클 시험 데이터",
+      subject_display_name: "김민준",
+      project_name: "차세대 이차전지 소재 공동연구",
       purpose: "ACADEMIC_RESEARCH",
       operations: ["READ"],
       valid_from: seedTime,
@@ -570,18 +568,18 @@ export function createSeed(now: Date): MockDb {
     projects: [
       {
         project_id: PROJECT.seed,
-        name: "Seed: Battery Materials Joint Study",
+        name: "차세대 이차전지 소재 공동연구",
         status: "ACTIVE",
         visibility: "PRIVATE",
         lead_organization_id: ORG.a,
         updated_at: seedTime,
-        description: "Seed project shared by Institute A and Institute B (dev only).",
+        description: "Seed project shared by 한국에너지기술연구원 and 한국재료연구원 (dev only).",
         keywords: [],
         start_date: null,
         end_date: null,
         organizations: [
-          { organization_id: ORG.a, name: "Institute A", role: "LEAD" },
-          { organization_id: ORG.b, name: "Institute B", role: "PARTNER" },
+          { organization_id: ORG.a, name: "한국에너지기술연구원", role: "LEAD" },
+          { organization_id: ORG.b, name: "한국재료연구원", role: "PARTNER" },
         ],
         created_by: USER.aResearcher,
         created_at: seedTime,
@@ -589,8 +587,8 @@ export function createSeed(now: Date): MockDb {
       },
     ],
     projectMembers: [
-      { project_id: PROJECT.seed, user_id: USER.aResearcher, display_name: "A Researcher", organization_id: ORG.a, organization_name: "Institute A", role: "PROJECT_OWNER", joined_at: seedTime, added_by: USER.aResearcher },
-      { project_id: PROJECT.seed, user_id: USER.bResearcher, display_name: "B Researcher", organization_id: ORG.b, organization_name: "Institute B", role: "RESEARCHER", joined_at: seedTime, added_by: USER.aResearcher },
+      { project_id: PROJECT.seed, user_id: USER.aResearcher, display_name: "김민준", organization_id: ORG.a, organization_name: "한국에너지기술연구원", role: "PROJECT_OWNER", joined_at: seedTime, added_by: USER.aResearcher },
+      { project_id: PROJECT.seed, user_id: USER.bResearcher, display_name: "최유진", organization_id: ORG.b, organization_name: "한국재료연구원", role: "RESEARCHER", joined_at: seedTime, added_by: USER.aResearcher },
     ],
     datasets,
     versions,
@@ -605,8 +603,8 @@ export function createSeed(now: Date): MockDb {
     objects: {},
     notifications: [
       // M09 §7.3 templates; 10_SEED_DATA §7: a.researcher's inbox holds exactly one ACCESS_EXPIRING.
-      { notification_id: sid("7001"), user_id: USER.aResearcher, type: "ACCESS_EXPIRING", title: `"Battery Cycling Measurements" 접근 권한이 ${expiresText} UTC에 만료됩니다`, link: "/commons/access?tab=grants", read: false, created_at: at(20) },
-      { notification_id: sid("7002"), user_id: USER.bResearcher, type: "PROJECT_INVITATION", title: `"Seed: Battery Materials Joint Study" 프로젝트에 참여자로 추가되었습니다`, link: `/commons/projects/${PROJECT.seed}`, read: false, created_at: at(2) },
+      { notification_id: sid("7001"), user_id: USER.aResearcher, type: "ACCESS_EXPIRING", title: `"리튬이온 배터리 셀 사이클 시험 데이터" 접근 권한이 ${expiresText} UTC에 만료됩니다`, link: "/commons/access?tab=grants", read: false, created_at: at(20) },
+      { notification_id: sid("7002"), user_id: USER.bResearcher, type: "PROJECT_INVITATION", title: `"차세대 이차전지 소재 공동연구" 프로젝트에 참여자로 추가되었습니다`, link: `/commons/projects/${PROJECT.seed}`, read: false, created_at: at(2) },
     ],
   };
 }

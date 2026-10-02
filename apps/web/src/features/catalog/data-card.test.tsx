@@ -13,7 +13,7 @@ configure({ asyncUtilTimeout: 5000 }); // the detail screen loads several querie
 describe("Data Card", () => {
   it("renders header, subtitle, tags, AI-ready badge and the metadata block", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
-    expect(await screen.findByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeInTheDocument();
     expect(screen.getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "데이터 카드" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("button", { name: /AI-ready/ })).toBeInTheDocument();
@@ -38,7 +38,7 @@ describe("Data Card", () => {
     const card = await screen.findByRole("region", { name: "담당자" });
     expect(within(card).getByText("담당자 재지정 필요")).toBeInTheDocument();
     expect(within(card).getByText(/당시 소속/)).toBeInTheDocument();
-    expect(within(card).getByText(/현재 Institute A/)).toBeInTheDocument();
+    expect(within(card).getByText(/현재 한국에너지기술연구원/)).toBeInTheDocument();
   });
 
   it("shows the steward email only when public and the inquiry button focuses the contact card", async () => {
@@ -66,7 +66,7 @@ describe("Data Card", () => {
 describe("Data Card layout", () => {
   it("orders the actions 문의 · 새 노트북 (예정, disabled) · access CTA, and has a rail with four panels", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
-    const header = (await screen.findByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).closest("header")!;
+    const header = (await screen.findByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).closest("header")!;
     await within(header).findByRole("button", { name: "접근 요청" });
     const actions = within(header).getAllByRole("button").filter((b) => /^(문의|새 노트북|접근 요청)/.test(b.textContent ?? ""));
     expect(actions.map((b) => b.textContent)).toEqual(["문의", "새 노트북예정", "접근 요청"]);

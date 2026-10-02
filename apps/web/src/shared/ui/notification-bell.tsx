@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useListNotifications, useMarkAllNotificationsRead, useMarkNotificationRead } from "@/features/notifications/api";
+import { localizeUtcTimes } from "@/shared/lib/format";
 import { safeInternalPath } from "@/shared/lib/links";
 import { DateTime } from "./date-text";
 
@@ -64,7 +65,7 @@ export function NotificationBell() {
                   >
                     <span aria-hidden="true" className={cn("mt-2 size-1.5 shrink-0 rounded-full", n.read ? "bg-transparent" : "bg-accent")} />
                     <span className="min-w-0 flex-1">
-                      <span className={cn("line-clamp-2 text-body", n.read ? "text-fg-muted" : "font-medium text-fg")}>{n.title}</span>
+                      <span className={cn("line-clamp-2 text-body", n.read ? "text-fg-muted" : "font-medium text-fg")}>{localizeUtcTimes(n.title)}</span>
                       <span className="mt-0.5 block text-caption font-normal text-fg-muted">
                         {t(`enums.NotificationType.${n.type}`)} · <DateTime value={n.created_at} />
                       </span>

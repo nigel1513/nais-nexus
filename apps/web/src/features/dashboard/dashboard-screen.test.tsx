@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { DATASET, USER } from "@/mocks/fixtures";
@@ -8,7 +8,10 @@ import { DashboardScreen } from "./dashboard-screen";
 
 const API = "http://localhost:3000/mock-api/v1";
 
-/** The real seed has no pending request: B Researcher files one against A's sensor dataset through the mock API. */
+/** A dashboard block by its heading (the heading also carries a count; table frames reuse the caption as a region name). */
+const block = async (name: string) => (await screen.findAllByRole("region", { name: new RegExp(`^${name}`) }))[0]!;
+
+/** The real seed has no pending request: 최유진 files one against A's sensor dataset through the mock API. */
 async function seedPendingSensorRequest() {
   const send = async (path: string, body: unknown) => {
     const res = await fetch(`${API}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-mock-user": USER.bResearcher }, body: JSON.stringify(body) });
@@ -27,35 +30,58 @@ async function seedPendingSensorRequest() {
 }
 
 describe("DashboardScreen", () => {
-  it("shows projects, open requests and expiring grants for a researcher (no review card)", async () => {
+  it("is a plain work screen: title, institute and role, four linked figures, no greeting", async () => {
     renderScreen(<DashboardScreen />, { user: USER.aResearcher });
     expect(await screen.findByRole("heading", { level: 1, name: "대시보드" })).toBeInTheDocument();
-    const projects = screen.getByRole("region", { name: "내 프로젝트" });
-    expect(await within(projects).findByRole("link", { name: "Seed: Battery Materials Joint Study" })).toHaveAttribute(
+    expect(screen.getByText("한국에너지기술연구원 · 연구자")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/님,|환영|Welcome|이 순서로 시작/);
+    const stats = within(screen.getByRole("list", { name: "요약" })).getAllByRole("link");
+    expect(stats.map((l) => l.querySelector(".text-small")?.textContent)).toEqual(["내 프로젝트", "진행 중인 내 요청", "활성 권한", "7일 안에 만료"]);
+    for (const s of stats) expect(s.querySelector(".num")).not.toBeNull();
+    await waitFor(() => expect(stats[2]!.querySelector(".num")).toHaveTextContent("1"));
+    expect(stats[3]!.querySelector(".num")).toHaveTextContent("1");
+    expect(stats[3]!.querySelector(".num")).toHaveClass("text-warning");
+    expect(stats[3]).toHaveAttribute("href", "/commons/access?tab=grants");
+  });
+
+  it("shows projects, open requests, grants, activity and the institute's datasets for a researcher (no review queue)", async () => {
+    renderScreen(<DashboardScreen />, { user: USER.aResearcher });
+    const projects = await block("내 프로젝트");
+    expect((await within(projects).findAllByRole("link", { name: "차세대 이차전지 소재 공동연구" }))[0]).toHaveAttribute(
       "href",
       "/commons/projects/00000000-0000-7000-8000-000000001001",
     );
-    const grants = screen.getByRole("region", { name: "내 권한" });
-    expect(await within(grants).findByText("Battery Cycling Measurements")).toBeInTheDocument();
-    expect(within(grants).getByText(/후 만료/)).toHaveClass("text-warning");
-    expect(screen.queryByRole("region", { name: "검토 대기" })).not.toBeInTheDocument();
+    const grants = await block("내 권한");
+    expect((await within(grants).findAllByText("리튬이온 배터리 셀 사이클 시험 데이터"))[0]).toBeInTheDocument();
+    // Ends within 7 days: the D-day is amber and so is its remaining-time bar.
+    expect(within(grants).getByText(/^D-\d+$|^오늘 만료$/)).toHaveClass("text-warning");
+    expect(await block("진행 중인 내 요청")).toBeInTheDocument();
+    expect(await block("최근 활동")).toBeInTheDocument();
+    const datasets = await block("한국에너지기술연구원 데이터셋 최근 버전");
+    expect((await within(datasets).findAllByRole("link", { name: "시험동 공조 설비 센서 스트림" }))[0]).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: /검토할 요청/ })).not.toBeInTheDocument();
   });
 
-  it("shows the review queue to DATA_STEWARD and the first-project CTA when empty", async () => {
+  it("shows the review queue to DATA_STEWARD and a next action on every empty block", async () => {
     await seedPendingSensorRequest();
     renderScreen(<DashboardScreen />, { user: USER.aSteward });
-    const review = await screen.findByRole("region", { name: "검토 대기" });
-    expect(await within(review).findByText("Facility Sensor Streams")).toBeInTheDocument();
-    expect(within(review).getByText("B Researcher 요청")).toBeInTheDocument();
-    const projects = screen.getByRole("region", { name: "내 프로젝트" });
+    const review = await block("검토할 요청");
+    expect((await within(review).findAllByText("시험동 공조 설비 센서 스트림"))[0]).toBeInTheDocument();
+    expect(within(review).getAllByText("최유진 요청")[0]).toBeInTheDocument();
+    const stats = within(screen.getByRole("list", { name: "요약" })).getAllByRole("link");
+    expect(stats[0]).toHaveAttribute("href", "/commons/access?tab=review");
+    await waitFor(() => expect(stats[0]!.querySelector(".num")).toHaveTextContent("1"));
+    const projects = await block("내 프로젝트");
     expect(await within(projects).findByRole("link", { name: "첫 공동 프로젝트 만들기" })).toHaveAttribute("href", "/commons/projects/new");
+    const grants = await block("내 권한");
+    expect(await within(grants).findByRole("link", { name: "데이터 찾기" })).toHaveAttribute("href", "/commons/data");
   });
 
-  it("isolates a failing card: the projects card shows an error with retry while the others still render", async () => {
+  it("isolates a failing block: projects show an error with retry while the others still render", async () => {
     server.use(http.get("*/mock-api/v1/projects", () => HttpResponse.json({ error: { code: "INTERNAL_ERROR", message: "x", trace_id: "t-1" } }, { status: 500 })));
     renderScreen(<DashboardScreen />, { user: USER.aResearcher });
-    const projects = await screen.findByRole("region", { name: "내 프로젝트" });
+    const projects = await block("내 프로젝트");
     expect(await within(projects).findByRole("button", { name: "다시 시도" })).toBeInTheDocument();
-    expect(await within(screen.getByRole("region", { name: "내 권한" })).findByText("Battery Cycling Measurements")).toBeInTheDocument();
+    expect((await within(await block("내 권한")).findAllByText("리튬이온 배터리 셀 사이클 시험 데이터"))[0]).toBeInTheDocument();
   });
 });

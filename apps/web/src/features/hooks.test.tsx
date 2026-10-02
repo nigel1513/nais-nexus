@@ -56,13 +56,13 @@ describe("domain hooks", () => {
 
   it("searchDatasets keeps the previous results while a new query loads", async () => {
     setMockUser(USER.aResearcher);
-    const { result, rerender } = renderHook(({ q }: { q: string }) => useSearchDatasets({ q }), { wrapper: wrapper(), initialProps: { q: "battery" } });
+    const { result, rerender } = renderHook(({ q }: { q: string }) => useSearchDatasets({ q }), { wrapper: wrapper(), initialProps: { q: "배터리" } });
     await waitFor(() => expect(result.current.data?.pages[0]?.items).toHaveLength(1));
     server.use(http.get("*/mock-api/v1/datasets", async () => { await delay(150); return undefined; }));
-    rerender({ q: "sensor" });
+    rerender({ q: "센서" });
     expect(result.current.isPlaceholderData).toBe(true);
-    expect(result.current.data?.pages[0]?.items[0]?.title).toBe("Battery Cycling Measurements");
-    await waitFor(() => expect(result.current.data?.pages[0]?.items[0]?.title).toBe("Facility Sensor Streams"));
+    expect(result.current.data?.pages[0]?.items[0]?.title).toBe("리튬이온 배터리 셀 사이클 시험 데이터");
+    await waitFor(() => expect(result.current.data?.pages[0]?.items[0]?.title).toBe("시험동 공조 설비 센서 스트림"));
   });
 
   it("getReadiness polls while runs are pending and stops when completed", async () => {

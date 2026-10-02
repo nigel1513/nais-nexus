@@ -1,9 +1,9 @@
-"""nais-datasets-v1 definition (M03 §10). infra/opensearch/*.json are generated from this module."""
+"""nais-datasets-v2 definition (M03 §10). infra/opensearch/*.json are generated from this module."""
 
 import copy
 from typing import Any
 
-INDEX_VERSION = 1
+INDEX_VERSION = 2
 
 
 def _text() -> dict[str, Any]:
@@ -31,6 +31,17 @@ MAPPINGS: dict[str, Any] = {
         "readiness_overall": {"type": "keyword"},
         "published_at": {"type": "date"},
         "updated_at": {"type": "date"},
+        "subtitle": _text(),
+        "subject_codes": {"type": "keyword"},
+        "material_codes": {"type": "keyword"},
+        "method_codes": {"type": "keyword"},
+        "subject_labels": _text(),
+        "temporal_start": {"type": "date", "format": "strict_date"},
+        "temporal_end": {"type": "date", "format": "strict_date"},
+        "collecting_organization_id": {"type": "keyword"},
+        "collecting_organization_name": {"type": "keyword", "fields": {"text": _text()}},
+        "principal_investigator_id": {"type": "keyword"},
+        "principal_investigator_name": {"type": "keyword", "fields": {"text": _text()}},
     },
 }
 

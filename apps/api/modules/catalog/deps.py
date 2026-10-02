@@ -1,15 +1,17 @@
 """Everything the catalog talks to, in one container registered in api.platform.ports by wire()."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
+from api.modules.catalog.adapters.grants import NoGrants
 from api.modules.catalog.interfaces import (
     MalwareScannerPort,
     OrganizationLookup,
+    PreviewGrantLookup,
     SearchIndex,
     VerificationQueue,
 )
@@ -29,6 +31,7 @@ class CatalogDeps:
     scanner: MalwareScannerPort
     verification: VerificationQueue
     search: SearchIndex
+    grants: PreviewGrantLookup = field(default_factory=NoGrants)
 
 
 def get_deps() -> CatalogDeps:

@@ -21,9 +21,9 @@ function load(request: Request, fileId: string) {
   if (!version) fail("NOT_FOUND");
   const { ds } = visibleVersion(db, version.dataset_version_id, user);
   const file = version.files.find((f) => f.file_id === fileId)!;
-  const tabular = isTabular(file.path);
-  const row = tabular ? db.previews[fileId] : undefined;
-  return { user, ds, file, row, status: row?.status ?? (tabular ? ("PENDING" as const) : ("UNSUPPORTED" as const)) };
+  const row = isTabular(file.path) ? db.previews[fileId] : undefined;
+  // service/previews._status: no preview row (or a non-tabular file) is UNSUPPORTED.
+  return { user, ds, file, row, status: row?.status ?? ("UNSUPPORTED" as const) };
 }
 
 export const previewHandlers = [

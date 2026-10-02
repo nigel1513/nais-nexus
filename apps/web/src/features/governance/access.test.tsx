@@ -15,7 +15,7 @@ const request = (id: string) => getDb().requests.find((r) => r.access_request_id
 const apiError = (status: number, code: string, details: Record<string, unknown> = {}) =>
   HttpResponse.json({ error: { code, message: code, details } }, { status });
 
-/** The real seed has no pending request: B Researcher files one against A's sensor dataset through the mock API. */
+/** The real seed has no pending request: 최유진 files one against A's sensor dataset through the mock API. */
 async function seedPending(days = 14): Promise<string> {
   const send = async (path: string, body: unknown) => {
     const res = await fetch(`${API}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-mock-user": USER.bResearcher }, body: JSON.stringify(body) });
@@ -37,7 +37,7 @@ async function seedPending(days = 14): Promise<string> {
 describe("AccessScreen", () => {
   it("researcher: my requests and my grants, no reviewer tabs", async () => {
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access" });
-    expect((await screen.findAllByRole("link", { name: "Battery Cycling Measurements" })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("tab", { name: /검토 대기/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "기관 권한" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("tab", { name: "내 권한" }));
@@ -73,7 +73,7 @@ describe("AccessScreen", () => {
     await seedPending();
     renderScreen(<AccessScreen />, { user: USER.aSteward, path: "/commons/access?tab=review" });
     expect(await screen.findByRole("tab", { name: "검토 대기 (1)" })).toHaveAttribute("aria-selected", "true");
-    expect((await screen.findAllByText("Facility Sensor Streams")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("시험동 공조 설비 센서 스트림")).length).toBeGreaterThan(0);
   });
 
   it("revoked grants show no expiry countdown or warning colour", async () => {

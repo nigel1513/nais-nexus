@@ -9,7 +9,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.modules.identity.keycloak_admin import KeycloakAdminPort, KeycloakAdminUnavailable
-from api.modules.identity.members import membership_out, membership_select, validated_roles
+from api.modules.identity.members import (
+    ORG_ADMIN,
+    _active_admin_count,
+    ensure_organization,
+    membership_out,
+    membership_select,
+    validated_roles,
+)
 from api.modules.identity.schemas import MembershipOut, TransferIn
 from api.modules.identity.tables import CURRENT_MEMBERSHIP, memberships, organizations, users
 from api.platform import clock, ports
@@ -59,6 +66,12 @@ def transfer_user(session: Session, actor: CurrentUser, user_id: UUID, body: Tra
             {"fields": [{"field": "organization_id", "reason": "UNKNOWN_ORGANIZATION"}]},
         )
     roles = validated_roles(body.roles)
+    # Lock order matches update_member (organization row, then membership) to avoid deadlocks.
+    old_org_id = session.execute(
+        select(memberships.c.organization_id).where(memberships.c.user_id == user_id, CURRENT_MEMBERSHIP)
+    ).scalar()
+    if old_org_id is not None and old_org_id != body.organization_id:
+        ensure_organization(session, old_org_id, lock=True)
     current = session.execute(
         membership_select()
         .where(memberships.c.user_id == user_id, CURRENT_MEMBERSHIP)
@@ -68,6 +81,17 @@ def transfer_user(session: Session, actor: CurrentUser, user_id: UUID, body: Tra
         _set_org_code(account.keycloak_sub, target.code)  # idempotent repair of the token claim
         return membership_out(current)
 
+    if (
+        current is not None
+        and current.status == "ACTIVE"
+        and ORG_ADMIN in current.roles
+        and _active_admin_count(session, current.organization_id) <= 1
+    ):  # same rule as update_member: an organization must keep an ORG_ADMIN
+        raise ApiError(
+            ErrorCode.CONFLICT,
+            "The user is the last ORG_ADMIN of the current organization; appoint another ORG_ADMIN first.",
+            {"reason": "LAST_ORG_ADMIN"},
+        )
     now = clock.now()
     event_actor = EventActor.for_user(actor)
     if current is not None:

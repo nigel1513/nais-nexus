@@ -181,3 +181,41 @@ def test_unique_violation_maps_to_409(
     assert response.status_code == 409, response.text
     assert keycloak.calls == []
     assert events(seeded, "identity.membership.changed.v1") == []
+
+
+def test_last_org_admin_cannot_be_transferred_away(seeded: PgUrls, keycloak: FakeKeycloakAdmin) -> None:
+    client = client_with(seeded, keycloak)
+    a_admin = USERS_BY_EMAIL["a.admin@inst-a.local"]
+    response = client.post(
+        f"/api/v1/users/{a_admin.user_id}/transfer",
+        json={"organization_id": str(INST_B), "roles": ["DATA_STEWARD"]},
+        headers=bearer(token_for(ADMIN)),
+    )
+    assert response.status_code == 409, response.text
+    error = response.json()["error"]
+    assert error["code"] == "CONFLICT" and error["details"]["reason"] == "LAST_ORG_ADMIN"
+    assert keycloak.calls == []
+    assert events(seeded, "identity.membership.changed.v1") == []
+
+
+def test_org_admin_can_be_transferred_when_another_admin_remains(
+    seeded: PgUrls, keycloak: FakeKeycloakAdmin
+) -> None:
+    client = client_with(seeded, keycloak)
+    a_admin = USERS_BY_EMAIL["a.admin@inst-a.local"]
+    org_a = ORGS_BY_CODE["inst-a"].organization_id
+    with session_factory(seeded.app)() as session, session.begin():  # promote a second admin in inst-a
+        session.execute(
+            text(
+                "UPDATE identity.organization_memberships SET roles = ARRAY['ORG_ADMIN'] "
+                "WHERE user_id = :u AND ended_at IS NULL"
+            ),
+            {"u": RESEARCHER.user_id},
+        )
+    response = client.post(
+        f"/api/v1/users/{a_admin.user_id}/transfer",
+        json={"organization_id": str(INST_B)},
+        headers=bearer(token_for(ADMIN)),
+    )
+    assert response.status_code == 200, response.text
+    assert org_a != INST_B

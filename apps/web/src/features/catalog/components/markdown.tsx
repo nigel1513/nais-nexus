@@ -2,6 +2,13 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+/** Allow only http, https, mailto and relative/fragment links; everything else (javascript:, data:, tel:, ...) is dropped. */
+export function urlTransform(url: string): string {
+  const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(url.trim());
+  if (!scheme) return url.trim().startsWith("//") ? "" : url;
+  return ["http", "https", "mailto"].includes(scheme[1].toLowerCase()) ? url : "";
+}
+
 const external = (href?: string) => !!href && /^https?:\/\//i.test(href);
 const sub = "mt-5 mb-2 text-heading text-fg first:mt-0";
 const components: Components = {
@@ -32,13 +39,13 @@ const components: Components = {
 };
 
 /**
- * Safe markdown: GFM, raw HTML skipped, default URL sanitizer (javascript: dropped); headings demoted under the page's
- * single h1. Long-form type (15/26) capped at 72ch for comfortable reading.
+ * Safe markdown: GFM, raw HTML skipped, urlTransform (http/https/mailto/relative only); headings demoted under the
+ * page's single h1. Long-form type (15/26) capped at 72ch for comfortable reading.
  */
 export function Markdown({ source }: { source: string }) {
   return (
     <div className="max-w-[72ch] break-words text-long text-fg">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={urlTransform} components={components}>
         {source}
       </ReactMarkdown>
     </div>

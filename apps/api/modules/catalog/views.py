@@ -31,6 +31,9 @@ def dataset_view(
     org_name: str | None,
     latest: Mapping[Any, Any] | None,
     latest_readiness: str | None,
+    people: Mapping[str, Any] | None = None,
+    collecting: Mapping[str, Any] | None = None,
+    stats: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     body: dict[str, Any] = {
         "dataset_id": ds["dataset_id"],
@@ -50,9 +53,27 @@ def dataset_view(
         "created_by": ds["created_by"],
         "created_at": ds["created_at"],
         "updated_at": ds["updated_at"],
+        "subtitle": ds["subtitle"],
+        "contact_email_public": ds["contact_email_public"],
+        "project_title": ds["project_title"],
+        "project_code": ds["project_code"],
+        "funding_agency": ds["funding_agency"],
+        "subject_codes": list(ds["subject_codes"]),
+        "method_codes": list(ds["method_codes"]),
+        "material_codes": list(ds["material_codes"]),
+        "method_detail": ds["method_detail"],
+        "temporal_start": ds["temporal_start"],
+        "temporal_end": ds["temporal_end"],
+        "collecting_organization": collecting,
+        "update_frequency": ds["update_frequency"],
+        "related_publications": list(ds["related_publications"]),
     }
     if org_name:
         body["owner_organization_name"] = org_name
+    if people is not None:
+        body["people"] = people
+    if stats is not None:
+        body["stats"] = stats
     return body
 
 

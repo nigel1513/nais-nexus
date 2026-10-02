@@ -125,7 +125,7 @@ describe("mock API ↔ openapi.yaml", () => {
     await call(A, "get", "/access-requests/{access_request_id}", { path: R, status: 200 });
     await call(BS, "post", "/access-requests/{access_request_id}/start-review", { path: R, status: 200 });
     const approved = await call(BS, "post", "/access-requests/{access_request_id}/approve", { path: R, body: { grant_days: 7 }, status: 200 });
-    // The real seed has no second project or pending request: B Researcher creates them through the API.
+    // The real seed has no second project or pending request: 최유진 creates them through the API.
     const bp = await call(BR, "post", "/projects", { body: { name: "B Study", description: "B 기관 연구" }, status: 201 });
     const sensors = await call(BR, "post", "/access-requests", {
       body: { dataset_id: DATASET.sensors, project_id: bp.project_id, purpose: "ACADEMIC_RESEARCH", purpose_detail: "센서 스트림 분석을 위한 충분히 긴 목적 상세 설명입니다.", operations: ["READ"], requested_days: 30 },

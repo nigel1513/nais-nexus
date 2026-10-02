@@ -113,6 +113,8 @@ def dataset_body(owner: UUID = ORG_B, **overrides: Any) -> dict[str, Any]:
         "access_level": "CONTROLLED",
         "license": "CC-BY-4.0",
         "allowed_purposes": ["ACADEMIC_RESEARCH", "AI_TRAINING"],
+        "principal_investigator_id": str(seed_user_id("0b02" if owner == ORG_B else "0a02")),
+        "data_steward_contact_id": str(seed_user_id("0b03" if owner == ORG_B else "0a03")),
     }
     body.update(overrides)
     return body
