@@ -23,6 +23,8 @@ class GrantQueryPort(Protocol):
 
 
 class DisplayNameLookup(Protocol):
-    """user_id -> display name (M01 public profiles). Unknown ids are left out of the result."""
+    """user_id -> display name (M01 public profiles), organization_id -> name (M01 organization summaries).
+    Unknown ids are left out of the result."""
 
     def get_display_names(self, user_ids: Sequence[UUID]) -> dict[UUID, str]: ...
+    def get_organization_names(self, organization_ids: Sequence[UUID]) -> dict[UUID, str]: ...

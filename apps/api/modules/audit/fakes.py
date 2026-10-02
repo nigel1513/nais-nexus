@@ -11,7 +11,7 @@ from uuid import UUID
 
 from nais_contracts.api_models import ProjectSummary
 
-from api.modules.catalog.public import AccessLevel, DatasetPolicyView, VersionView
+from api.modules.catalog.public import AccessLevel, DatasetPolicyView, DatasetSummary, VersionView
 from api.modules.identity.public import IdentityPublicProfile, OrganizationSummary
 from api.platform import ports
 from api.platform.auth import CurrentUser
@@ -191,6 +191,9 @@ class FakeCatalog:
 
     def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool:
         raise NotImplementedError  # M09 never calls is_visible; visibility is the catalog's decision (D-012)
+
+    def list_visible_dataset_summaries(self, ctx: CurrentUser) -> list[DatasetSummary]:
+        raise NotImplementedError  # M09 never lists datasets
 
 
 class FakeGrants:

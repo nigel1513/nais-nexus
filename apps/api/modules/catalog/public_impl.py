@@ -9,6 +9,7 @@ from uuid import UUID
 
 from botocore.exceptions import BotoCoreError
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 from urllib3.exceptions import HTTPError as Urllib3Error
@@ -21,6 +22,7 @@ from api.modules.catalog.objects import StorageUnavailable as InternalStorageUna
 from api.modules.catalog.public import (
     CatalogNotFound,
     DatasetPolicyView,
+    DatasetSummary,
     FileRef,
     ObjectMissing,
     PresignedGet,
@@ -33,8 +35,10 @@ from api.modules.catalog.repo import (
     load_dataset,
     load_version,
     must,
+    readiness_overall,
 )
-from api.modules.catalog.tables import dataset_files, dataset_versions
+from api.modules.catalog.service.vocabulary import labels
+from api.modules.catalog.tables import dataset_files, dataset_versions, datasets
 from api.platform import clock
 from api.platform.auth import CurrentUser
 from api.platform.storage import StorageNotConfigured
@@ -87,6 +91,61 @@ class CatalogQueryService:
         with self._deps.session_factory() as session:
             ds = load_dataset(session, dataset_id)
         return ds is not None and can_see_dataset(ctx, ds)
+
+    def list_visible_dataset_summaries(self, ctx: CurrentUser) -> list[DatasetSummary]:
+        latest = (
+            select(
+                dataset_versions.c.dataset_id,
+                dataset_versions.c.dataset_version_id,
+                dataset_versions.c.published_at,
+            )
+            .ext(distinct_on(dataset_versions.c.dataset_id))
+            .where(dataset_versions.c.status == "PUBLISHED")
+            .order_by(
+                dataset_versions.c.dataset_id,
+                dataset_versions.c.published_at.desc(),
+                dataset_versions.c.dataset_version_id.desc(),
+            )
+            .subquery()
+        )
+        stmt = (
+            select(
+                datasets,
+                latest.c.dataset_version_id.label("latest_version_id"),
+                latest.c.published_at.label("latest_published_at"),
+                latest.c.dataset_version_id.is_not(None).label("has_published_version"),
+            )
+            .select_from(datasets.outerjoin(latest, latest.c.dataset_id == datasets.c.dataset_id))
+            .order_by(datasets.c.dataset_id)
+        )
+        with self._deps.session_factory() as session:
+            visible = [ds for ds in session.execute(stmt).mappings() if can_see_dataset(ctx, ds)]
+            readiness = readiness_overall(
+                session, [ds["latest_version_id"] for ds in visible if ds["latest_version_id"]]
+            )
+            subjects = labels(
+                session, "SUBJECT", sorted({c for ds in visible for c in ds["subject_codes"] or ()})
+            )
+        orgs = self._deps.organizations.get_organization_summaries(
+            list({ds["owner_organization_id"] for ds in visible})
+        )
+        return [
+            DatasetSummary(
+                dataset_id=ds["dataset_id"],
+                title=ds["title"],
+                owner_organization_id=ds["owner_organization_id"],
+                owner_organization_name=org.name if (org := orgs.get(ds["owner_organization_id"])) else "",
+                access_level=ds["access_level"],
+                status=ds["status"],
+                subject_labels=tuple(
+                    subjects[code]["label_ko"] for code in ds["subject_codes"] or () if code in subjects
+                ),
+                readiness_overall=readiness.get(ds["latest_version_id"]) if ds["latest_version_id"] else None,
+                updated_at=ds["updated_at"],
+                latest_published_at=ds["latest_published_at"],
+            )
+            for ds in visible
+        ]
 
 
 def _version_view(session: Session, version: RowMapping) -> VersionView:

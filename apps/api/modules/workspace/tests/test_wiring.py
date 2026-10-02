@@ -3,21 +3,22 @@
 import ast
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from api.modules.identity.public import IdentityPublicProfile, IdentityQueryPort
+from api.modules.identity.public import IdentityPublicProfile, IdentityQueryPort, OrganizationSummary
 from api.modules.workspace.adapters.grants import NoGrants
 from api.modules.workspace.adapters.identity import IdentityDisplayNames
 from api.modules.workspace.deps import WorkspaceDeps, get_deps
 from api.modules.workspace.public import PinnedInput, WorkspaceQueryPort
 from api.modules.workspace.public_impl import SqlWorkspaceQuery
-from api.modules.workspace.tables import inputs
+from api.modules.workspace.tables import comments, inputs, threads
 from api.modules.workspace.tests.conftest import WorkspaceApi, World
-from api.modules.workspace.tests.fakes import USERS
+from api.modules.workspace.tests.fakes import ORG_A, USERS
 from api.modules.workspace.wiring import build_default_deps, wire
 from api.platform import ports
 from api.platform.db import session_factory
@@ -133,3 +134,62 @@ def test_one_live_input_per_dataset_is_enforced_by_the_database(db: PgUrls) -> N
         session.execute(inputs.insert().values(**row()))  # the removed one does not count
     with pytest.raises(IntegrityError), session_factory(db.app)() as session, session.begin():
         session.execute(inputs.insert().values(**row()))
+
+
+class _Organizations:
+    """Only get_organization_summary is used by IdentityDisplayNames.get_organization_names."""
+
+    def __init__(self) -> None:
+        self.calls: list[UUID] = []
+
+    def get_organization_summary(self, organization_id: UUID) -> OrganizationSummary | None:
+        self.calls.append(organization_id)
+        if organization_id != ORG_A:
+            return None
+        return OrganizationSummary(
+            organization_id=ORG_A, code="inst-a", name="Institute A", type="RESEARCH_INSTITUTE"
+        )
+
+
+def test_organization_names_come_from_identity_summaries() -> None:
+    organizations = _Organizations()
+    ports.provide(IdentityQueryPort, organizations)  # type: ignore[arg-type]
+    unknown = new_id()
+    assert IdentityDisplayNames().get_organization_names([ORG_A, unknown, ORG_A]) == {ORG_A: "Institute A"}
+    assert organizations.calls == [ORG_A, unknown]
+    assert IdentityDisplayNames().get_organization_names([]) == {}
+
+
+def test_discussion_rules_are_enforced_by_the_database(db: PgUrls) -> None:
+    def thread(**values: object) -> dict[str, object]:
+        now = datetime(2026, 10, 1, tzinfo=UTC)
+        base: dict[str, object] = {
+            "thread_id": new_id(),
+            "scope": "PROJECT",
+            "target_id": new_id(),
+            "project_id": new_id(),
+            "title": "t",
+            "created_by": new_id(),
+            "comment_count": 1,
+            "last_comment_at": now,
+        }
+        return base | values
+
+    bad = (
+        thread(scope="DATASET"),  # DATASET threads have no project
+        thread(project_id=None),  # project threads need one
+        thread(scope="NOTE"),
+        thread(title=""),
+    )
+    for values in bad:
+        with pytest.raises(IntegrityError), session_factory(db.app)() as session, session.begin():
+            session.execute(threads.insert().values(**values))
+    good = thread()
+    with session_factory(db.app)() as session, session.begin():
+        session.execute(threads.insert().values(**good))
+    with pytest.raises(IntegrityError), session_factory(db.app)() as session, session.begin():
+        session.execute(
+            comments.insert().values(
+                comment_id=new_id(), thread_id=good["thread_id"], body="x" * 10_001, author_id=new_id()
+            )
+        )

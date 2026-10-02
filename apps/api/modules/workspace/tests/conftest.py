@@ -38,7 +38,12 @@ def db(workspace_db: PgUrls) -> Iterator[PgUrls]:
     """Empty workspace tables and outbox for every test."""
     engine = create_engine(workspace_db.migrator)
     with engine.begin() as conn:
-        conn.execute(text("TRUNCATE workspace.inputs, workspace.processed_events"))
+        conn.execute(
+            text(
+                "TRUNCATE workspace.inputs, workspace.processed_events, workspace.threads, workspace.comments,"
+                " workspace.dataset_activity, workspace.hub_access_requests"
+            )
+        )
         conn.execute(text("DELETE FROM platform.outbox_events"))
     engine.dispose()
     yield workspace_db

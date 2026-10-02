@@ -9,16 +9,25 @@ EXPECTED = {
     "addProjectInput",
     "updateProjectInput",
     "removeProjectInput",
+    "listThreads",
+    "createThread",
+    "updateThread",
+    "listComments",
+    "addComment",
+    "getHubOverview",
+    "listDatasetProjects",
+    "listDatasetActivity",
 }
+TAGS = {"workspace", "hub"}
 
 
 def workspace_operations() -> dict[str, tuple[str, str]]:
-    """operationId -> (path, method) of every route tagged "workspace", read from the app's generated OpenAPI."""
+    """operationId -> (path, method) of every route tagged workspace/hub, read from the app's generated OpenAPI."""
     app = create_test_app(modules=[MODULE])
     found: dict[str, tuple[str, str]] = {}
     for path, item in app.openapi()["paths"].items():
         for method, op in item.items():
-            if "workspace" in op.get("tags", []):
+            if TAGS & set(op.get("tags", [])):
                 found[op["operationId"]] = (path, method)
     return found
 

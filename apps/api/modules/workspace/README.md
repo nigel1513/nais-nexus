@@ -1,7 +1,7 @@
 # M13 Project Workspace & Data Hub (`api.modules.workspace`)
 
-Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4–5. Contract 1.6.0 (openapi tag
-`workspace`). Schema `workspace`, migrations in `migrations/` (revision ids `workspace_NNNN`).
+Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4–5. Contract 1.6.0 (openapi tags
+`workspace`, `hub`). Schema `workspace`, migrations in `migrations/` (revision ids `workspace_NNNN`).
 
 ## What it does (so far)
 - Pinned dataset inputs: `GET/POST /projects/{p}/inputs`, `PATCH/DELETE /projects/{p}/inputs/{i}`.
@@ -16,6 +16,28 @@ Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4
   - Version change re-checks access; removal is a soft delete (`removed_at`).
 - Events (outbox, same transaction): `workspace.input.added.v1`, `workspace.input.version_changed.v1`,
   `workspace.input.removed.v1`. Note-only edits emit nothing.
+- Discussions (`service/threads.py`): `GET/POST /threads`, `PATCH /threads/{t}`, `GET/POST /threads/{t}/comments`.
+  - PROJECT/OUTPUT/RECIPE: read = project member (404 otherwise); write = member of an ACTIVE project (archived →
+    403 `FORBIDDEN`; the contract has no 409 here). OUTPUT/RECIPE targets resolve to their project through
+    `service.threads.TARGET_PROJECT`, which the output/recipe tasks extend (unregistered scope → 404).
+  - DATASET: anyone who sees the dataset reads and writes (any organization); `project_id` is null.
+  - Update: author, PROJECT_OWNER/PROJECT_ADMIN, or the dataset owner organization's DATA_STEWARD.
+  - Markdown body ≤ 10,000 characters (422 `VALIDATION_FAILED`, also a DB check). Each comment, including the
+    first one, emits `workspace.comment.added.v1` (`project_id` null iff `scope == DATASET`; `owner_organization_id`
+    = dataset owner for DATASET threads, else null).
+- Data-Hub (`service/hub.py`, tag `hub`): `GET /hub/overview`, `GET /datasets/{d}/projects`,
+  `GET /datasets/{d}/activity`.
+  - Visibility is the catalog's: one batched `CatalogQueryPort.list_visible_dataset_summaries` for the overview
+    (only ACTIVE datasets), `is_visible` (else 404) for the per-dataset reads.
+  - Rails (≤ 6 each): trending = `governance.access.requested.v1` count of the last 7 days (> 0 only), recent =
+    latest publication, most_used = live project inputs (> 0 only). Organization rows count the visible ACTIVE
+    datasets (controlled = CONTROLLED + SENSITIVE).
+  - Projects: the caller's projects by name; the rest only in `hidden_count`.
+  - Activity: rows of `dataset_activity`, written by `handlers.py` from catalog version/metadata/policy events,
+    readiness completions, `workspace.input.added.v1` and new DATASET threads. Project-linked rows show
+    `project_id`, `ref_id`, project name and actor only to that project's members.
+  - There is no governance backend yet, so nothing produces `governance.access.requested.v1` and trending stays
+    empty in the backend until M04 ships (the web mock exercises it).
 
 ## Layout
 `routes/` (thin HTTP) → `service/` (rules, events) → `repo.py` (SQL Core on `tables.py`). `access.py` holds the
@@ -29,6 +51,7 @@ contract models; request bodies mirror them with the null/minProperties rules.
 - **No governance backend yet:** `grants` defaults to `adapters.grants.NoGrants` (always False, fail closed).
   When M04 ships, replace it in `wiring.build_default_deps()` with an adapter over M04's public port.
 - Provided: `public.WorkspaceQueryPort.list_pinned_inputs(project_id)` (leaf module; `public_impl.py`).
+- Event consumers (`handlers.py`, idempotent through `workspace.processed_events`): see Data-Hub above.
 
 ## Tests
 `uv run pytest apps/api/modules/workspace -q`. Fakes for every consumed port live in `tests/fakes.py`;

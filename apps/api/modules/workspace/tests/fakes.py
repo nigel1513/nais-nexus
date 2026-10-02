@@ -2,23 +2,27 @@
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from uuid import UUID
 
 from nais_contracts.api_models import ProjectSummary
 
-from api.modules.catalog.public import AccessLevel, DatasetPolicyView, VersionView
+from api.modules.catalog.public import AccessLevel, DatasetPolicyView, DatasetSummary, VersionView
 from api.platform.auth import CurrentUser
 from api.platform.ids import new_id
 
 ORG_A = UUID("00000000-0000-7000-8000-00000000000a")
 ORG_B = UUID("00000000-0000-7000-8000-00000000000b")
+ORG_NAMES = {ORG_A: "Institute A", ORG_B: "Institute B"}
+T0 = datetime(2026, 9, 1, tzinfo=UTC)
 
 
-def _user(suffix: str, org: UUID, name: str) -> CurrentUser:
+def _user(suffix: str, org: UUID, name: str, roles: frozenset[str] = frozenset()) -> CurrentUser:
     return CurrentUser(
         user_id=UUID(f"00000000-0000-7000-8000-00000000{suffix}"),
         organization_id=org,
+        org_roles=roles,
         session_id=f"s-{suffix}",
         display_name=name,
     )
@@ -28,7 +32,10 @@ USERS: dict[str, CurrentUser] = {
     "a.researcher": _user("0a02", ORG_A, "A Researcher"),
     "a.viewer": _user("0a05", ORG_A, "A Viewer"),
     "a.outsider": _user("0a06", ORG_A, "A Outsider"),
+    "a.owner": _user("0a01", ORG_A, "A Owner"),
     "b.researcher": _user("0b02", ORG_B, "B Researcher"),
+    "b.steward": _user("0b03", ORG_B, "B Steward", frozenset({"DATA_STEWARD"})),
+    "a.steward": _user("0a03", ORG_A, "A Steward", frozenset({"DATA_STEWARD"})),
 }
 
 
@@ -38,9 +45,13 @@ class FakeProjects:
 
     roles: dict[UUID, dict[UUID, str]] = field(default_factory=dict)
     archived: set[UUID] = field(default_factory=set)
+    names: dict[UUID, str] = field(default_factory=dict)
+    lead: dict[UUID, UUID] = field(default_factory=dict)
 
     def add(self, project_id: UUID, user: CurrentUser, role: str) -> None:
         self.roles.setdefault(project_id, {})[user.user_id] = role
+        self.names.setdefault(project_id, f"Project {str(project_id)[-4:]}")
+        self.lead.setdefault(project_id, user.organization_id)
 
     def is_active_member(self, project_id: UUID, user_id: UUID) -> bool:
         return project_id not in self.archived and user_id in self.roles.get(project_id, {})
@@ -49,7 +60,17 @@ class FakeProjects:
         return self.roles.get(project_id, {}).get(user_id)
 
     def get_summary(self, project_id: UUID) -> ProjectSummary | None:
-        return None
+        if project_id not in self.names:
+            return None
+        return ProjectSummary.model_validate(
+            {
+                "project_id": project_id,
+                "name": self.names[project_id],
+                "status": "ARCHIVED" if project_id in self.archived else "ACTIVE",
+                "visibility": "PRIVATE",
+                "lead_organization_id": self.lead[project_id],
+            }
+        )
 
     def list_active_member_ids(self, project_id: UUID) -> list[UUID]:
         return list(self.roles.get(project_id, {}))
@@ -64,8 +85,13 @@ class FakeCatalog:
 
     datasets: dict[UUID, DatasetPolicyView] = field(default_factory=dict)
     versions: dict[UUID, VersionView] = field(default_factory=dict)
+    published_at: dict[UUID, datetime] = field(default_factory=dict)
+    subjects: dict[UUID, tuple[str, ...]] = field(default_factory=dict)
+    summary_calls: int = 0
 
-    def add_dataset(self, title: str, access_level: AccessLevel, owner: UUID = ORG_B) -> DatasetPolicyView:
+    def add_dataset(
+        self, title: str, access_level: AccessLevel, owner: UUID = ORG_B, subjects: tuple[str, ...] = ()
+    ) -> DatasetPolicyView:
         view = DatasetPolicyView(
             dataset_id=new_id(),
             owner_organization_id=owner,
@@ -77,6 +103,7 @@ class FakeCatalog:
             title=title,
         )
         self.datasets[view.dataset_id] = view
+        self.subjects[view.dataset_id] = subjects
         return view
 
     def add_version(
@@ -84,6 +111,7 @@ class FakeCatalog:
         dataset: DatasetPolicyView,
         label: str,
         status: Literal["DRAFT", "PUBLISHED", "WITHDRAWN"] = "PUBLISHED",
+        published_at: datetime | None = None,
     ) -> VersionView:
         view = VersionView(
             dataset_version_id=new_id(),
@@ -96,10 +124,40 @@ class FakeCatalog:
             files=(),
         )
         self.versions[view.dataset_version_id] = view
+        if status == "PUBLISHED":
+            self.published_at[view.dataset_version_id] = published_at or T0 + timedelta(
+                hours=len(self.versions)
+            )
         return view
 
     def set_access_level(self, dataset_id: UUID, level: AccessLevel) -> None:
         self.datasets[dataset_id] = replace(self.datasets[dataset_id], access_level=level)
+
+    def withdraw(self, dataset_id: UUID) -> None:
+        self.datasets[dataset_id] = replace(self.datasets[dataset_id], status="WITHDRAWN")
+
+    def list_visible_dataset_summaries(self, ctx: CurrentUser) -> list[DatasetSummary]:
+        self.summary_calls += 1
+        summaries: list[DatasetSummary] = []
+        for ds in self.datasets.values():
+            if not self.is_visible(ctx, ds.dataset_id):
+                continue
+            latest = self.get_latest_published_version(ds.dataset_id)
+            summaries.append(
+                DatasetSummary(
+                    dataset_id=ds.dataset_id,
+                    title=ds.title,
+                    owner_organization_id=ds.owner_organization_id,
+                    owner_organization_name=ORG_NAMES.get(ds.owner_organization_id, ""),
+                    access_level=ds.access_level,
+                    status=ds.status,
+                    subject_labels=self.subjects.get(ds.dataset_id, ()),
+                    readiness_overall="PASS" if latest else None,
+                    updated_at=T0,
+                    latest_published_at=self.published_at[latest.dataset_version_id] if latest else None,
+                )
+            )
+        return summaries
 
     def get_policy_view(self, dataset_id: UUID) -> DatasetPolicyView | None:
         return self.datasets.get(dataset_id)
@@ -150,3 +208,6 @@ class FakePeople:
 
     def get_display_names(self, user_ids: Sequence[UUID]) -> dict[UUID, str]:
         return {i: self._names[i] for i in user_ids if i in self._names}
+
+    def get_organization_names(self, organization_ids: Sequence[UUID]) -> dict[UUID, str]:
+        return {i: ORG_NAMES[i] for i in organization_ids if i in ORG_NAMES}

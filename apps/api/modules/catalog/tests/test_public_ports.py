@@ -287,3 +287,33 @@ def test_presign_rejects_a_non_positive_ttl(api: CatalogApi, db: PgUrls) -> None
     _, version_id = published_version(api, db)
     with pytest.raises(ValueError):
         ports.get(StoragePort).presign_get(UUID(version_id), None, 0)
+
+
+def test_list_visible_dataset_summaries_uses_d012_in_one_batch(api: CatalogApi, db: PgUrls) -> None:
+    from api.modules.catalog.public import DatasetSummary
+
+    shared = UUID(create_dataset(api, title="Shared", subject_codes=["MATERIALS", "ENERGY"])["dataset_id"])
+    insert_version(db, shared, label="v1", published=True, published_at=datetime(2026, 9, 1, tzinfo=UTC))
+    insert_version(db, shared, label="v2", published=True, published_at=datetime(2026, 9, 3, tzinfo=UTC))
+    internal = UUID(create_dataset(api, title="Internal", access_level="INTERNAL")["dataset_id"])
+    insert_version(db, internal, published=True)
+    unpublished = UUID(create_dataset(api, title="Draft only")["dataset_id"])
+    port = ports.get(CatalogQueryPort)
+
+    outsider = {s.dataset_id: s for s in port.list_visible_dataset_summaries(USERS["a.researcher"])}
+    assert set(outsider) == {shared}
+    summary = outsider[shared]
+    assert isinstance(summary, DatasetSummary)
+    assert (summary.title, summary.owner_organization_id, summary.owner_organization_name) == (
+        "Shared",
+        ORG_B,
+        "Institute B",
+    )
+    assert summary.subject_labels == ("재료", "에너지")
+    assert (summary.access_level, summary.status, summary.readiness_overall) == ("CONTROLLED", "ACTIVE", None)
+    assert summary.latest_published_at == datetime(2026, 9, 3, tzinfo=UTC)
+    assert summary.updated_at is not None
+
+    owner = {s.dataset_id: s for s in port.list_visible_dataset_summaries(USERS["b.researcher"])}
+    assert set(owner) == {shared, internal, unpublished}
+    assert owner[unpublished].latest_published_at is None

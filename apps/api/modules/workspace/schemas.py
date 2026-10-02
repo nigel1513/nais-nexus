@@ -5,10 +5,20 @@ cannot express: explicit null only where the contract type is nullable, and Proj
 from typing import Annotated, Any, ClassVar
 from uuid import UUID
 
-from nais_contracts.api_models import ProjectInput
+from nais_contracts.api_models import (
+    Comment,
+    DatasetActivity,
+    DatasetProjectsResult,
+    HubOverview,
+    ProjectInput,
+    Thread,
+    ThreadScope,
+)
 from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
 
 Note = Annotated[str, StringConstraints(max_length=2000)]
+Title = Annotated[str, StringConstraints(min_length=1, max_length=200)]
+Markdown = Annotated[str, StringConstraints(min_length=1, max_length=10_000)]
 
 
 class StrictIn(BaseModel):
@@ -52,4 +62,46 @@ class ProjectInputList(BaseModel):
     items: list[ProjectInput]
 
 
-__all__ = ["InputCreateIn", "InputUpdateIn", "ProjectInput", "ProjectInputList"]
+class ThreadCreateIn(StrictIn):
+    """openapi ThreadCreate (body: Markdown, at most 10,000 characters)."""
+
+    scope: ThreadScope
+    target_id: UUID
+    title: Title
+    body: Markdown
+
+
+class ThreadUpdateIn(StrictIn):
+    """openapi ThreadUpdate (minProperties: 1)."""
+
+    resolved: bool | None = None
+    title: Title | None = None
+
+    @model_validator(mode="after")
+    def _not_empty(self) -> "ThreadUpdateIn":
+        if not self.model_fields_set:
+            raise ValueError("at least one property is required")
+        return self
+
+
+class CommentCreateIn(StrictIn):
+    """openapi CommentCreate."""
+
+    body: Markdown
+
+
+__all__ = [
+    "Comment",
+    "CommentCreateIn",
+    "DatasetActivity",
+    "DatasetProjectsResult",
+    "HubOverview",
+    "InputCreateIn",
+    "InputUpdateIn",
+    "ProjectInput",
+    "ProjectInputList",
+    "Thread",
+    "ThreadCreateIn",
+    "ThreadScope",
+    "ThreadUpdateIn",
+]

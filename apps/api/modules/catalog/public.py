@@ -25,6 +25,22 @@ class DatasetPolicyView:
 
 
 @dataclass(frozen=True)
+class DatasetSummary:
+    """Card-level facts for the M13 Data-Hub (no data values). subject_labels: Korean SUBJECT labels in code order."""
+
+    dataset_id: UUID
+    title: str
+    owner_organization_id: UUID
+    owner_organization_name: str  # "" when the organization is unknown
+    access_level: AccessLevel
+    status: Literal["ACTIVE", "WITHDRAWN"]
+    subject_labels: tuple[str, ...]
+    readiness_overall: str | None  # latest PUBLISHED version, D-028 primary profile rule
+    updated_at: datetime
+    latest_published_at: datetime | None
+
+
+@dataclass(frozen=True)
 class FileRef:
     file_id: UUID
     path: str
@@ -81,6 +97,9 @@ class CatalogQueryPort(Protocol):
         ...
 
     def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool: ...
+    def list_visible_dataset_summaries(self, ctx: CurrentUser) -> list[DatasetSummary]:
+        """Every dataset is_visible(ctx, ...) would accept (D-012, WITHDRAWN included for the owner), batched."""
+        ...
 
 
 class StoragePort(Protocol):
@@ -106,6 +125,7 @@ __all__ = [
     "CatalogQueryPort",
     "CatalogReadPort",
     "DatasetPolicyView",
+    "DatasetSummary",
     "FileRef",
     "ObjectMissing",
     "PresignedGet",

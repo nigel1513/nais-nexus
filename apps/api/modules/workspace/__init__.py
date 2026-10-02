@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from api.modules.workspace import handlers  # noqa: F401  (registers the @subscribe event consumers)
 from api.modules.workspace.router import router
 from api.modules.workspace.wiring import wire
 from api.platform.modules import ModuleSpec
