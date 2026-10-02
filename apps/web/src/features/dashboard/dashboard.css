@@ -1,0 +1,7 @@
+/* Dashboard entrance: marks grow from their baseline once per session (purpose: show the data arriving, not decoration).
+   Transform only; content is fully visible at rest and whenever the animation is skipped. prefers-reduced-motion is
+   handled globally (globals.css drops animations). */
+@keyframes dash-grow-y { from { transform: scaleY(0.04); } }
+@keyframes dash-grow-x { from { transform: scaleX(0.04); } }
+.dash-enter .dash-grow { transform-origin: 50% 100%; animation: dash-grow-y 520ms var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 12ms); }
+.dash-enter .dash-grow-x { transform-origin: 0 50%; animation: dash-grow-x 600ms var(--ease-out) backwards; animation-delay: 80ms; }
