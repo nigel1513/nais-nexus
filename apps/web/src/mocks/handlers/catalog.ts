@@ -20,7 +20,7 @@ const MAX_PARTS = 10_000;
 const MAX_FILES_PER_VERSION = 10_000;
 const SESSION_TTL_MS = 3_600_000;
 const PURPOSES: Schemas["Purpose"][] = ["ACADEMIC_RESEARCH", "AI_TRAINING", "COMMERCIAL_RESEARCH", "EDUCATION", "PUBLIC_INTEREST"];
-const ALLOWED_MEDIA: Record<string, string> = {
+export const ALLOWED_MEDIA: Record<string, string> = {
   ".csv": "text/csv",
   ".tsv": "text/tab-separated-values",
   ".json": "application/json",

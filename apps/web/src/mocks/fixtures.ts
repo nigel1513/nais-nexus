@@ -4,7 +4,9 @@ import * as tables from "./seed-tables";
 import { buildResult } from "./readiness-results";
 import { SEED_FILES } from "./seed-files";
 import { VOCABULARY } from "./vocabulary";
-import type { MockDb, MockUser, StoredDataset, StoredValidation, StoredVersion } from "./types";
+import { contentHash, nextChainHash, seoulDate } from "./note-hash";
+import { sha256Hex } from "./sha256";
+import type { MockDb, MockUser, StoredDataset, StoredNote, StoredValidation, StoredVersion } from "./types";
 
 /**
  * Mirrors the real seed (NAIS_PRD/10_SEED_DATA.md): ids and titles come from
@@ -30,6 +32,12 @@ export const DATASET = { battery: sid("2001"), openMaterials: sid("2002"), qcLog
 export const VERSION = { batteryV10: sid("2111"), batteryV11: sid("2112"), batteryDraft: sid("2113"), battery: sid("2101"), openMaterials: sid("2102"), qcLogs: sid("2103"), sensors: sid("2104"), electrolyte: sid("2105") } as const;
 export const REQUEST = { seedApproved: sid("3001") } as const;
 export const GRANT = { seed: sid("4001") } as const;
+export const INPUT = { battery: sid("5101"), openMaterials: sid("5102") } as const;
+export const RECIPE = { capacity: sid("5201") } as const;
+export const RUN = { capacity: sid("5301") } as const;
+export const OUTPUT = { capacity: sid("5401") } as const;
+export const THREAD = { project: sid("5501"), dataset: sid("5502") } as const;
+export const NOTE = { signed: sid("5701"), draft: sid("5702") } as const;
 
 const users: Omit<MockUser, "updated_at">[] = [
   { user_id: USER.admin, display_name: "송태호", email: "admin@nais.local", organization_id: ORG.nais, org_roles: ["ORG_ADMIN"], platform_roles: ["PLATFORM_ADMIN"], status: "ACTIVE", membership_status: "ACTIVE", national_researcher_number: null, history: [] },
@@ -601,10 +609,163 @@ export function createSeed(now: Date): MockDb {
     vocabulary: [...VOCABULARY],
     previews,
     objects: {},
+    ...workspaceSeed(t),
     notifications: [
       // M09 §7.3 templates; 10_SEED_DATA §7: a.researcher's inbox holds exactly one ACCESS_EXPIRING.
       { notification_id: sid("7001"), user_id: USER.aResearcher, type: "ACCESS_EXPIRING", title: `"리튬이온 배터리 셀 사이클 시험 데이터" 접근 권한이 ${expiresText} UTC에 만료됩니다`, link: "/commons/access?tab=grants", read: false, created_at: at(20) },
       { notification_id: sid("7002"), user_id: USER.bResearcher, type: "PROJECT_INVITATION", title: `"차세대 이차전지 소재 공동연구" 프로젝트에 참여자로 추가되었습니다`, link: `/commons/projects/${PROJECT.seed}`, read: false, created_at: at(2) },
     ],
+  };
+}
+
+type WorkspaceSeed = Pick<MockDb, "inputs" | "recipes" | "runs" | "outputs" | "blobs" | "publishRequests" | "threads" | "comments" | "activity" | "notes" | "noteSettings" | "noteChains" | "notebookActivity" | "llmEnabled">;
+
+/**
+ * Project workspace and research notes of the seed project (차세대 이차전지 소재 공동연구): two pinned inputs, one recipe with
+ * a succeeded run and its derived output, a project and a dataset discussion, 김민준's signed note of three days ago and
+ * today's draft, both in the standard seven-section template. No notebook activity: Jupyter (M07) does not exist yet.
+ */
+function workspaceSeed(t: number): WorkspaceSeed {
+  const ago = (days: number, hours = 0) => new Date(t - days * 86_400_000 - hours * 3_600_000).toISOString();
+  const recipeName = "용량 유지율 추이 (사이클 1~300)";
+  const steps: Schemas["RecipeStep"][] = [
+    { type: "select_columns", columns: ["cycle", "capacity_ah", "temp_c"] },
+    { type: "filter_rows", column: "cycle", op: "le", value: 300 },
+    { type: "convert_unit", column: "capacity_ah", factor: 1000, offset: 0, unit_label: "mA.h" },
+    { type: "sort", by: ["cycle"], descending: false },
+  ];
+  const batteryLineage = { input_id: INPUT.battery, dataset_id: DATASET.battery, dataset_version_id: VERSION.batteryV11, dataset_title: "리튬이온 배터리 셀 사이클 시험 데이터", version_label: "v1.1" };
+  const outputKey = `workspace/${PROJECT.seed}/outputs/${OUTPUT.capacity}/result.parquet`;
+  const outputSha = sha256Hex(`${OUTPUT.capacity}/result.parquet`);
+  const human = (section: Schemas["NoteSection"], text: string, n: string): Schemas["NoteBlock"] => ({ block_id: sid(n), section, text, origin: "HUMAN", accepted: true, evidence: [] });
+
+  const signedDate = seoulDate(t - 3 * 86_400_000);
+  const signed: StoredNote = {
+    note_id: NOTE.signed,
+    project_id: PROJECT.seed,
+    organization_id: ORG.a,
+    recorder_id: USER.aResearcher,
+    note_date: signedDate,
+    version: 1,
+    previous_version_id: null,
+    status: "SIGNED",
+    revision: 3,
+    blocks: [
+      human("OBJECTIVE", "NCM811/흑연 셀과 NCM811/실리콘-탄소 셀의 초기 300 사이클 용량 유지율 차이를 정량화한다.", "5801"),
+      human("METHOD", "입력 데이터: 리튬이온 배터리 셀 사이클 시험 데이터 v1.1(사이클 1~500, 셀 12개). 레시피로 cycle, capacity_ah, temp_c 열만 선택하고 사이클 300 이하로 거른 뒤 용량을 mA·h로 환산했다.", "5802"),
+      human("PROCEDURE", `레시피 「${recipeName}」 v1을 저장하고 실행했다. 실행은 입력 500행을 읽어 300행을 산출했고, 결과는 프로젝트 산출물로 등록되었다.`, "5803"),
+      human("RESULTS", "사이클 300 시점의 평균 방전 용량은 초기 대비 약 4.3 % 감소했다. 셀 표면 온도는 24.0~26.8 ℃ 범위에서 항온 챔버 주기를 따라 변동했다.", "5804"),
+      human("DISCUSSION", "7 사이클 주기의 미세한 용량 진동이 항온 챔버 운전 주기와 겹친다. 온도 보정 없이 유지율을 비교하면 실리콘-탄소 셀의 열화가 과대평가될 수 있다.", "5805"),
+      human("NEXT", "v2.0 입력(사이클 1~1000)으로 같은 레시피를 다시 실행하고, 셀 화학계별 집계 단계를 추가한다.", "5806"),
+      human("REFERENCES", "한국재료연구원 충방전 시험 프로토콜(BT-5000, 1C CC-CV), 데이터셋 README v1.1", "5807"),
+    ],
+    draft_status: "NONE",
+    draft_error: null,
+    draft_requested_at: null,
+    signatures: [],
+    witness_required: false,
+    witness_user_ids: [],
+    content_hash: null,
+    chain_hash: null,
+    chain_seq: null,
+    signed_at: null,
+    submitted_at: ago(3, -2),
+    rejected_reason: null,
+    created_at: ago(3, -1),
+    updated_at: ago(3, -3),
+  };
+  signed.content_hash = contentHash(signed);
+  signed.chain_seq = 1;
+  signed.chain_hash = nextChainHash(null, signed.content_hash);
+  signed.signed_at = ago(3, -3);
+  signed.signatures = [{ signer_id: USER.aResearcher, role: "RECORDER", signed_at: signed.signed_at, content_hash: signed.content_hash }];
+
+  const draft: StoredNote = {
+    note_id: NOTE.draft,
+    project_id: PROJECT.seed,
+    organization_id: ORG.a,
+    recorder_id: USER.aResearcher,
+    note_date: seoulDate(t),
+    version: 1,
+    previous_version_id: null,
+    status: "DRAFT",
+    revision: 2,
+    blocks: [
+      human("OBJECTIVE", "사이클 300 이후 C07 셀의 표면 온도 편차가 측정 이상인지 실제 발열인지 판별한다.", "5811"),
+      human("METHOD", "입력 데이터 v1.1의 temp_c 열을 셀별로 비교하고, 같은 기간 항온 챔버 설정 온도 기록과 대조한다.", "5812"),
+      human("PROCEDURE", "데이터셋 토론에 C07 셀 온도 기록 확인을 요청했다. 비교를 위해 사이클 250~350 구간만 거르는 레시피 단계를 추가해 미리보기로 확인했다.", "5813"),
+      human("RESULTS", "미리보기 기준 C07 셀은 같은 사이클의 다른 셀보다 평균 약 2 ℃ 높게 기록되었다. 용량 감소율은 다른 NCM811/흑연 셀과 비슷했다.", "5814"),
+      human("DISCUSSION", "온도만 높고 용량 열화는 비슷하므로 열전대 부착 위치 문제일 가능성이 있다. 데이터 관리 기관의 확인이 필요하다.", "5815"),
+      human("NEXT", "한국재료연구원 데이터 관리자 답변을 받은 뒤 C07 셀 포함 여부를 정하고 레시피에 반영한다.", "5816"),
+      human("REFERENCES", "데이터셋 토론 「C07 셀 온도 기록 확인 요청」", "5817"),
+    ],
+    draft_status: "NONE",
+    draft_error: null,
+    draft_requested_at: null,
+    signatures: [],
+    witness_required: null,
+    witness_user_ids: null,
+    content_hash: null,
+    chain_hash: null,
+    chain_seq: null,
+    signed_at: null,
+    submitted_at: null,
+    rejected_reason: null,
+    created_at: ago(0, 3),
+    updated_at: ago(0, 1),
+  };
+
+  return {
+    inputs: [
+      { input_id: INPUT.battery, project_id: PROJECT.seed, dataset_id: DATASET.battery, dataset_version_id: VERSION.batteryV11, added_by: USER.aResearcher, added_at: ago(10), note: "사이클 수명 분석 기준 데이터", removed_at: null },
+      { input_id: INPUT.openMaterials, project_id: PROJECT.seed, dataset_id: DATASET.openMaterials, dataset_version_id: VERSION.openMaterials, added_by: USER.bResearcher, added_at: ago(8), note: null, removed_at: null },
+    ],
+    recipes: [
+      { recipe_id: RECIPE.capacity, project_id: PROJECT.seed, name: recipeName, input_ids: [INPUT.battery], steps, version: 1, updated_by: USER.aResearcher, updated_at: ago(4), deleted_at: null, history: [{ version: 1, name: recipeName, input_ids: [INPUT.battery], steps }] },
+    ],
+    runs: [
+      { run_id: RUN.capacity, project_id: PROJECT.seed, recipe_id: RECIPE.capacity, recipe_version: 1, status: "SUCCEEDED", started_by: USER.aResearcher, started_by_organization_id: ORG.a, queued_at: ago(3, -1), started_at: ago(3, -1), finished_at: ago(3, -1), input_rows: 500, output_rows: 300, error: null, output_id: OUTPUT.capacity, pinned: [batteryLineage], polls: 2 },
+    ],
+    outputs: [
+      {
+        output_id: OUTPUT.capacity,
+        project_id: PROJECT.seed,
+        kind: "DERIVED_DATASET",
+        title: `${recipeName} (v1)`,
+        access_level: "CONTROLLED",
+        status: "READY",
+        bucket: "nais-inst-a",
+        upload_expires_at: null,
+        files: [{ name: "result.parquet", size_bytes: 6143, sha256: outputSha, media_type: "application/vnd.apache.parquet", key: outputKey }],
+        produced_by_run_id: RUN.capacity,
+        lineage: [batteryLineage],
+        recipe_id: RECIPE.capacity,
+        recipe_version: 1,
+        publish_status: "NONE",
+        created_by: USER.aResearcher,
+        created_at: ago(3, -1),
+      },
+    ],
+    blobs: { [`nais-inst-a/${outputKey}`]: { size_bytes: 6143, sha256: outputSha } },
+    publishRequests: [],
+    threads: [
+      { thread_id: THREAD.project, scope: "PROJECT", target_id: PROJECT.seed, project_id: PROJECT.seed, title: "배터리 입력을 v2.0으로 올릴지 논의", created_by: USER.bResearcher, created_at: ago(2), resolved: false, comment_count: 2, last_comment_at: ago(1), owner_organization_id: null },
+      { thread_id: THREAD.dataset, scope: "DATASET", target_id: DATASET.battery, project_id: null, title: "C07 셀 온도 기록 확인 요청", created_by: USER.aResearcher, created_at: ago(0, 4), resolved: false, comment_count: 1, last_comment_at: ago(0, 4), owner_organization_id: ORG.b },
+    ],
+    comments: [
+      { comment_id: sid("5601"), thread_id: THREAD.project, body: "v2.0에 사이클 501~1000과 셀 정보 파일이 추가되었습니다. 지금 레시피는 v1.1 기준인데 입력 버전을 올릴까요?", author_id: USER.bResearcher, created_at: ago(2), edited_at: null },
+      { comment_id: sid("5602"), thread_id: THREAD.project, body: "레시피 검증이 끝나면 다음 주에 v2.0으로 바꾸겠습니다. 비교를 위해 v1.1 산출물은 그대로 둡니다.", author_id: USER.aResearcher, created_at: ago(1), edited_at: null },
+      { comment_id: sid("5603"), thread_id: THREAD.dataset, body: "사이클 300 이후 C07 셀의 표면 온도가 다른 셀보다 2 ℃가량 높게 기록되어 있습니다. 측정 이상인지 확인 부탁드립니다.", author_id: USER.aResearcher, created_at: ago(0, 4), edited_at: null },
+    ],
+    activity: [
+      { activity_id: sid("5901"), dataset_id: DATASET.battery, type: "USED_IN_PROJECT", label: null, ref_id: PROJECT.seed, actor_id: USER.aResearcher, project_id: PROJECT.seed, occurred_at: ago(10) },
+      { activity_id: sid("5902"), dataset_id: DATASET.openMaterials, type: "USED_IN_PROJECT", label: null, ref_id: PROJECT.seed, actor_id: USER.bResearcher, project_id: PROJECT.seed, occurred_at: ago(8) },
+      { activity_id: sid("5903"), dataset_id: DATASET.battery, type: "DISCUSSION_STARTED", label: "C07 셀 온도 기록 확인 요청", ref_id: THREAD.dataset, actor_id: USER.aResearcher, project_id: null, occurred_at: ago(0, 4) },
+    ],
+    notes: [signed, draft],
+    noteSettings: {},
+    noteChains: { [`${PROJECT.seed}:${ORG.a}`]: { last_seq: 1, last_chain_hash: signed.chain_hash } },
+    notebookActivity: [],
+    llmEnabled: true,
   };
 }

@@ -10,6 +10,12 @@ export const storageHandlers = [
     // Single-PUT uploads (`.../uploads/<file_id>`, no part segment) of ≤ 2 MiB are kept so publish can profile them.
     const match = /\/uploads\/([^/]+)$/.exec(new URL(request.url).pathname);
     if (match && data.byteLength <= 2 * 1024 * 1024) getDb().objects[match[1]!] = new TextDecoder().decode(data);
+    // Workspace output objects (`<bucket>/workspace/<project>/outputs/<output>/<name>`): completeOutputUpload re-checks size and sha256.
+    const workspace = /\/mock-storage\/([^/]+\/workspace\/.+)$/.exec(new URL(request.url).pathname);
+    if (workspace) {
+      const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+      getDb().blobs[decodeURIComponent(workspace[1]!)] = { size_bytes: data.byteLength, sha256: Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("") };
+    }
     etagSeq += 1;
     return new HttpResponse(null, { status: 200, headers: { ETag: `"mock-etag-${etagSeq}"` } });
   }),
