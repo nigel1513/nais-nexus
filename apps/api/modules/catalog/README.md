@@ -29,10 +29,14 @@ Produces `catalog.dataset.created.v1`, `catalog.dataset.access_level_changed.v1`
 Dramatiq actor `catalog.verify_file` (queue `catalog`). Full rebuild: `python -m api.modules.catalog.reindex`.
 
 ## Search
-Index `nais-datasets-v1` behind alias `nais-datasets` (`infra/opensearch`). Without the `analysis-nori`
+Index `nais-datasets-v2` behind alias `nais-datasets` (`infra/opensearch`). Without the `analysis-nori`
 plugin the catalog creates the index with the fallback analyzer (`standard` + `cjk_bigram`). The compose
 `opensearch` service builds `infra/opensearch/Dockerfile` (nori); an index created earlier with the fallback
 analyzer is rebuilt with `python -m api.modules.catalog.reindex`.
+Mapping v2 (Wave 1.5) adds subtitle, subject/material/method codes, data period, collecting organization and PI;
+existing deployments must run `reindex` once (new `nais-datasets-v{n}` + alias swap). Period filters are overlap
+tests (`temporal_end >= temporal_from` with a missing end = ongoing, `temporal_start <= temporal_to`); datasets
+without `temporal_start` never match a period filter.
 
 ## Integration notes
 - **M04 Governance:** use `api.platform.ports.get(CatalogQueryPort)` and `ports.get(StoragePort)` with the Protocol

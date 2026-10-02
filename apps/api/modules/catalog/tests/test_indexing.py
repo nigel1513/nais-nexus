@@ -12,6 +12,7 @@ import pytest
 from api.modules.catalog.reindex import reindex_all
 from api.modules.catalog.repo import enqueue_index
 from api.modules.catalog.search.drain import backoff_seconds, drain_index_queue
+from api.modules.catalog.search.index_body import INDEX_VERSION
 from api.modules.catalog.search.opensearch import OpenSearchIndex, SearchUnavailable
 from api.modules.catalog.testing import RecordingSearchIndex
 from api.modules.catalog.tests.support import SHA_A, execute, insert_version, rows
@@ -136,7 +137,7 @@ def test_reindex_all_swaps_the_alias(
     second = create_dataset(search_api, title="Second dataset")["dataset_id"]
     drain_index_queue(search_api.deps)
     new_index = reindex_all(search_api.deps)
-    assert new_index == f"{search_index.alias}-v2"
+    assert new_index == f"{search_index.alias}-v{INDEX_VERSION + 1}"
     assert list(httpx.get(f"{opensearch_url}/_alias/{search_index.alias}").json()) == [new_index]
     assert fetch(search_index, first) is not None and fetch(search_index, second) is not None
     assert {r["dataset_id"] for r in rows(db, "SELECT dataset_id FROM catalog.index_queue")} == {
@@ -150,12 +151,32 @@ def test_reindex_refuses_to_write_into_an_existing_index(
 ) -> None:
     create_dataset(search_api)
     search_index.ensure()
-    httpx.put(f"{opensearch_url}/{search_index.alias}-v2").raise_for_status()  # squatting on the next name
+    squatted = f"{search_index.alias}-v{INDEX_VERSION + 1}"
+    httpx.put(f"{opensearch_url}/{squatted}").raise_for_status()  # squatting on the next name
     with pytest.raises(SearchUnavailable):
-        search_index.create_index(f"{search_index.alias}-v2", exist_ok=False)
+        search_index.create_index(squatted, exist_ok=False)
     assert list(httpx.get(f"{opensearch_url}/_alias/{search_index.alias}").json()) == [
-        f"{search_index.alias}-v1"
+        f"{search_index.alias}-v{INDEX_VERSION}"
     ]
+
+
+def test_reindex_moves_a_v1_deployment_onto_the_v2_mapping(
+    search_api: CatalogApi, search_index: OpenSearchIndex, opensearch_url: str
+) -> None:  # the live upgrade path (Task 12): alias on an old v1 index without the Wave 1.5 fields
+    old = f"{search_index.alias}-v1"
+    httpx.put(f"{opensearch_url}/{old}").raise_for_status()
+    httpx.post(
+        f"{opensearch_url}/_aliases", json={"actions": [{"add": {"index": old, "alias": search_index.alias}}]}
+    ).raise_for_status()
+    dataset_id = create_dataset(search_api, subject_codes=["MATERIALS"], temporal_start="2025-01-01")[
+        "dataset_id"
+    ]
+    assert reindex_all(search_api.deps) == f"{search_index.alias}-v2"
+    search_index.refresh()
+    doc = fetch(search_index, dataset_id)
+    assert doc is not None and doc["subject_codes"] == ["MATERIALS"] and doc["temporal_start"] == "2025-01-01"
+    mapping = httpx.get(f"{opensearch_url}/{search_index.alias}-v2/_mapping").json()
+    assert mapping[f"{search_index.alias}-v2"]["mappings"]["properties"]["temporal_start"]["type"] == "date"
 
 
 def test_next_index_name_does_not_treat_client_errors_as_no_indices(search_index: OpenSearchIndex) -> None:

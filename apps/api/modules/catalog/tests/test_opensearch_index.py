@@ -33,14 +33,25 @@ def make_doc(**overrides: Any) -> dict[str, Any]:
         "readiness_overall": None,
         "published_at": "2026-10-01T00:00:00+00:00",
         "updated_at": "2026-10-01T00:00:00+00:00",
+        "subtitle": None,
+        "subject_codes": [],
+        "material_codes": [],
+        "method_codes": [],
+        "subject_labels": "",
+        "temporal_start": None,
+        "temporal_end": None,
+        "collecting_organization_id": None,
+        "collecting_organization_name": None,
+        "principal_investigator_id": None,
+        "principal_investigator_name": None,
     }
     doc.update(overrides)
     return doc
 
 
 def test_infra_templates_match_the_code() -> None:
-    assert json.loads((INFRA / "nais-datasets-v1.json").read_text(encoding="utf-8")) == index_body(nori=True)
-    assert json.loads((INFRA / "nais-datasets-v1.fallback.json").read_text(encoding="utf-8")) == index_body(
+    assert json.loads((INFRA / "nais-datasets-v2.json").read_text(encoding="utf-8")) == index_body(nori=True)
+    assert json.loads((INFRA / "nais-datasets-v2.fallback.json").read_text(encoding="utf-8")) == index_body(
         nori=False
     )
     assert "analysis-nori" in (INFRA / "Dockerfile").read_text(encoding="utf-8")
@@ -50,7 +61,7 @@ def test_ensure_creates_versioned_index_behind_alias_with_fallback_analyzer(
     search_index: OpenSearchIndex, opensearch_url: str
 ) -> None:
     search_index.ensure()
-    concrete = f"{search_index.alias}-v1"
+    concrete = f"{search_index.alias}-v2"
     assert list(httpx.get(f"{opensearch_url}/_alias/{search_index.alias}").json()) == [concrete]
     settings = httpx.get(f"{opensearch_url}/{concrete}/_settings").json()[concrete]["settings"]["index"]
     assert settings["analysis"]["analyzer"]["ko_en"]["tokenizer"] == "standard"  # stock image has no nori
@@ -109,13 +120,13 @@ def test_credentials_in_the_url_become_basic_auth() -> None:
 
 def test_next_index_name_and_atomic_alias_swap(search_index: OpenSearchIndex, opensearch_url: str) -> None:
     search_index.ensure()
-    assert search_index.next_index_name() == f"{search_index.alias}-v2"
-    search_index.create_index(f"{search_index.alias}-v2")
-    assert search_index.swap_alias(f"{search_index.alias}-v2") == [f"{search_index.alias}-v1"]
-    assert list(httpx.get(f"{opensearch_url}/_alias/{search_index.alias}").json()) == [
-        f"{search_index.alias}-v2"
-    ]
     assert search_index.next_index_name() == f"{search_index.alias}-v3"
+    search_index.create_index(f"{search_index.alias}-v3")
+    assert search_index.swap_alias(f"{search_index.alias}-v3") == [f"{search_index.alias}-v2"]
+    assert list(httpx.get(f"{opensearch_url}/_alias/{search_index.alias}").json()) == [
+        f"{search_index.alias}-v3"
+    ]
+    assert search_index.next_index_name() == f"{search_index.alias}-v4"
 
 
 @pytest.mark.skipif(
@@ -132,7 +143,7 @@ def test_nori_image_uses_the_nori_analyzer() -> None:
             index = OpenSearchIndex(url, "nori-check")
             assert index.nori_available()
             index.ensure()
-            analyzer = httpx.get(f"{url}/nori-check-v1/_settings").json()["nori-check-v1"]["settings"][
+            analyzer = httpx.get(f"{url}/nori-check-v2/_settings").json()["nori-check-v2"]["settings"][
                 "index"
             ]
             assert analyzer["analysis"]["analyzer"]["ko_en"]["tokenizer"] == "nori_mixed"
