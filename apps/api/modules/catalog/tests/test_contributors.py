@@ -82,22 +82,30 @@ def test_stored_vocabulary_term_deactivated_does_not_block_unrelated_patch(
     api: CatalogApi, db: PgUrls
 ) -> None:
     ds = create_dataset(api, subject_codes=["MATERIALS"])
-    execute(
-        db,
-        "UPDATE catalog.vocabulary_terms SET active = false WHERE scheme = 'SUBJECT' AND code = 'MATERIALS'",
-    )
-    ok = api.patch(
-        "b.steward",
-        f"/datasets/{ds['dataset_id']}",
-        json={"title": "Renamed", "subject_codes": ["MATERIALS"]},
-    )
-    assert ok.status_code == 200, ok.text
-    execute(
-        db, "UPDATE catalog.vocabulary_terms SET active = false WHERE scheme = 'SUBJECT' AND code = 'ENERGY'"
-    )
-    added = api.patch(
-        "b.steward", f"/datasets/{ds['dataset_id']}", json={"subject_codes": ["MATERIALS", "ENERGY"]}
-    )
-    assert {"field": "subject_codes", "reason": "VOCABULARY_TERM_UNKNOWN"} in assert_error(
-        "updateDataset", added, 422, "VALIDATION_FAILED"
-    )["details"]["fields"]
+    try:
+        execute(
+            db,
+            "UPDATE catalog.vocabulary_terms SET active = false WHERE scheme = 'SUBJECT' AND code = 'MATERIALS'",
+        )
+        ok = api.patch(
+            "b.steward",
+            f"/datasets/{ds['dataset_id']}",
+            json={"title": "Renamed", "subject_codes": ["MATERIALS"]},
+        )
+        assert ok.status_code == 200, ok.text
+        execute(
+            db,
+            "UPDATE catalog.vocabulary_terms SET active = false WHERE scheme = 'SUBJECT' AND code = 'ENERGY'",
+        )
+        added = api.patch(
+            "b.steward", f"/datasets/{ds['dataset_id']}", json={"subject_codes": ["MATERIALS", "ENERGY"]}
+        )
+        assert {"field": "subject_codes", "reason": "VOCABULARY_TERM_UNKNOWN"} in assert_error(
+            "updateDataset", added, 422, "VALIDATION_FAILED"
+        )["details"]["fields"]
+    finally:  # the vocabulary is shared seed data; later tests must see it active again
+        execute(
+            db,
+            "UPDATE catalog.vocabulary_terms SET active = true"
+            " WHERE scheme = 'SUBJECT' AND code IN ('MATERIALS', 'ENERGY')",
+        )

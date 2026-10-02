@@ -9,6 +9,13 @@ def _text(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _steward_reachable(snap: dict[str, Any]) -> bool:
+    people = snap.get("people")
+    return bool(_text(snap.get("data_steward_contact_id"))) and (
+        isinstance(people, dict) and people.get("steward_contact_absent") is False
+    )
+
+
 def check(ctx: EvaluationContext) -> CheckOutcome:
     snap = ctx.snapshot
     p = ctx.params
@@ -23,11 +30,9 @@ def check(ctx: EvaluationContext) -> CheckOutcome:
             ("description", description_length >= p.description_min_length),
             ("license", bool(_text(snap.get("license")))),
             # A frozen steward contact satisfies the contact requirement: the snapshot never carries the steward's
-            # private account email (Ruling P23), but the platform can still route a contact request to them.
-            (
-                "contact_email",
-                bool(_text(snap.get("contact_email")) or _text(snap.get("data_steward_contact_id"))),
-            ),
+            # private account email (Ruling P23), but the platform can still route a contact request to them --
+            # only while the steward is still an eligible member of the owner org (people.steward_contact_absent).
+            ("contact_email", bool(_text(snap.get("contact_email"))) or _steward_reachable(snap)),
             ("keywords", keyword_count >= 1),
         )
         if not ok

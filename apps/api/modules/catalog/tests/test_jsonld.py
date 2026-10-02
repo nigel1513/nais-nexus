@@ -1,3 +1,5 @@
+import pytest
+
 from api.modules.catalog.tests.support import ORG_B
 from api.modules.catalog.tests.support_api import CatalogApi, create_dataset
 from api.platform.testing.contracts import assert_matches_response
@@ -95,3 +97,60 @@ def test_open_ended_period_and_visibility(api: CatalogApi) -> None:
     doc = api.get("b.researcher", f"/datasets/{ds['dataset_id']}/metadata.jsonld").json()
     assert doc["temporalCoverage"] == "2025-07-01/.."
     assert api.get("a.researcher", f"/datasets/{ds['dataset_id']}/metadata.jsonld").status_code == 404
+
+
+def test_iri_valued_properties_are_coerced_to_ids(api: CatalogApi) -> None:
+    ds = create_dataset(
+        api, subject_codes=["MATERIALS"], related_publications=[{"title": "P", "url": "https://x.org/p"}]
+    )
+    doc = api.get("b.researcher", f"/datasets/{ds['dataset_id']}/metadata.jsonld").json()
+    for term in ("inDefinedTermSet", "sameAs", "url", "dct:accrualPeriodicity"):
+        assert doc["@context"][term]["@type"] == "@id", term
+    assert doc["@context"]["sameAs"]["@id"] == "https://schema.org/sameAs"
+    assert doc["citation"] == [{"@type": "ScholarlyArticle", "name": "P", "url": "https://x.org/p"}]
+
+
+@pytest.mark.parametrize(
+    ("frequency", "iri"),
+    [
+        ("MONTHLY", "http://purl.org/cld/freq/monthly"),
+        ("QUARTERLY", "http://purl.org/cld/freq/quarterly"),
+        ("YEARLY", "http://purl.org/cld/freq/annual"),
+        ("IRREGULAR", "http://purl.org/cld/freq/irregular"),
+        ("ONCE", None),
+    ],
+)
+def test_accrual_periodicity_is_a_frequency_iri(api: CatalogApi, frequency: str, iri: str | None) -> None:
+    ds = create_dataset(api, update_frequency=frequency)
+    doc = api.get("b.researcher", f"/datasets/{ds['dataset_id']}/metadata.jsonld").json()
+    assert doc.get("dct:accrualPeriodicity") == iri
+    if iri is None:
+        assert "dct:accrualPeriodicity" not in doc
+
+
+def test_public_dataset_contact_email_is_a_contact_point(api: CatalogApi) -> None:
+    with_contact = create_dataset(api, contact_email="lab@example.org")
+    doc = api.get("b.researcher", f"/datasets/{with_contact['dataset_id']}/metadata.jsonld").json()
+    assert doc["contactPoint"] == {"@type": "ContactPoint", "email": "lab@example.org"}
+    without = create_dataset(api)
+    assert (
+        "contactPoint"
+        not in api.get("b.researcher", f"/datasets/{without['dataset_id']}/metadata.jsonld").json()
+    )
+
+
+def test_contributor_role_is_a_schema_role_not_a_person_property(api: CatalogApi) -> None:
+    ds = create_dataset(api)
+    steward = ds["people"]["steward_contact"]["user_id"]
+    response = api.request(
+        "PUT",
+        "b.steward",
+        f"/datasets/{ds['dataset_id']}/contributors",
+        json={"contributors": [{"user_id": steward, "role": "DATA_CURATOR"}]},
+    )
+    assert response.status_code == 200, response.text
+    doc = api.get("b.researcher", f"/datasets/{ds['dataset_id']}/metadata.jsonld").json()
+    [role] = doc["contributor"]
+    assert role["@type"] == "Role" and role["roleName"] == "DATA_CURATOR"
+    assert role["contributor"]["@type"] == "Person" and "roleName" not in role["contributor"]
+    assert role["contributor"]["@id"] == f"{BASE}/id/person/{steward}"

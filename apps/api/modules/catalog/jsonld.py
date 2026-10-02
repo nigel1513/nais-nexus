@@ -1,7 +1,8 @@
 """Machine-readable dataset metadata (Wave 1.5 spec §2): schema.org Dataset + DCAT + PROV context, for M11 / AI.
 
-IRIs are minted under CatalogSettings.nais_public_base_url (never a hardcoded host). The only email that can appear is
-the steward contact's, and only when contact_email_public is true (people_block enforces it)."""
+IRIs are minted under CatalogSettings.nais_public_base_url (never a hardcoded host). Person emails: only the steward
+contact's, and only when contact_email_public is true (people_block enforces it). The dataset's own contact_email is
+public dataset metadata (getDataset returns it) and is emitted as a schema:ContactPoint."""
 
 from collections.abc import Mapping
 from typing import Any
@@ -13,11 +14,23 @@ from api.modules.catalog.repo import latest_published_version
 from api.modules.catalog.research import people_block
 from api.modules.catalog.service.vocabulary import labels
 
-CONTEXT = {
+CONTEXT: dict[str, Any] = {
     "@vocab": "https://schema.org/",
     "dcat": "http://www.w3.org/ns/dcat#",
     "dct": "http://purl.org/dc/terms/",
     "prov": "http://www.w3.org/ns/prov#",
+    # IRI-valued properties: plain strings here are IRIs, not literals.
+    "inDefinedTermSet": {"@id": "https://schema.org/inDefinedTermSet", "@type": "@id"},
+    "sameAs": {"@id": "https://schema.org/sameAs", "@type": "@id"},
+    "url": {"@id": "https://schema.org/url", "@type": "@id"},
+    "dct:accrualPeriodicity": {"@type": "@id"},
+}
+# Dublin Core Collection Description Frequency vocabulary; ONCE has no term and is omitted.
+FREQUENCY_IRIS = {
+    "IRREGULAR": "http://purl.org/cld/freq/irregular",
+    "MONTHLY": "http://purl.org/cld/freq/monthly",
+    "QUARTERLY": "http://purl.org/cld/freq/quarterly",
+    "YEARLY": "http://purl.org/cld/freq/annual",
 }
 
 
@@ -103,15 +116,22 @@ def dataset_jsonld(session: Session, deps: CatalogDeps, ds: Mapping[Any, Any]) -
         "conditionsOfAccess": ds["access_level"],
         "dateCreated": ds["created_at"].isoformat(),
         "dateModified": ds["updated_at"].isoformat(),
-        "dct:accrualPeriodicity": ds["update_frequency"],
         "publisher": _org(base, owner),
         "about": _terms(session, base, "SUBJECT", list(ds["subject_codes"] or []))
         + _terms(session, base, "MATERIAL", list(ds["material_codes"] or [])),
         "measurementTechnique": _terms(session, base, "METHOD", list(ds["method_codes"] or [])),
         "creator": [_person(base, pi)] if pi else [],
-        "contributor": [{**_person(base, c), "roleName": c["role"]} for c in people["contributors"]],
+        # schema.org Role pattern: roleName belongs to the Role wrapping the Person, not to the Person.
+        "contributor": [
+            {"@type": "Role", "roleName": c["role"], "contributor": _person(base, c)}
+            for c in people["contributors"]
+        ],
         "citation": [_citation(p) for p in ds["related_publications"] or []],
     }
+    if frequency := FREQUENCY_IRIS.get(ds["update_frequency"] or ""):
+        doc["dct:accrualPeriodicity"] = frequency
+    if ds["contact_email"]:
+        doc["contactPoint"] = {"@type": "ContactPoint", "email": ds["contact_email"]}
     if people["steward_contact"]:
         doc["maintainer"] = _person(base, people["steward_contact"])
     if ds["subtitle"]:
