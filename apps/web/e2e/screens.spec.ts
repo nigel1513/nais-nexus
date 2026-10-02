@@ -107,4 +107,49 @@ test.describe("screens", () => {
     await expect(page.getByRole("dialog", { name: "메뉴" })).toBeVisible();
     await shootOne(page, "task3-sheet", 390, "light");
   });
+
+  test("dataset register form and edit sheet (Task 7)", async ({ page, baseURL }) => {
+    const prefix = process.env.SHOT_PREFIX ?? "task7";
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/data/new");
+    await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /담당자/ })).toHaveValue(/B Steward/);
+    await shoot(page, `${prefix}-dataset-new`);
+
+    if (prefix === "task7") {
+      for (const theme of ["light", "dark"] as Theme[]) {
+        await setup(page, [1440, 900], theme);
+        await page.getByRole("combobox", { name: /연구책임자/ }).fill("B R");
+        await expect(page.getByRole("option", { name: /B Researcher/ })).toBeVisible();
+        await shootOne(page, `${prefix}-user-picker`, 1440, theme);
+        await page.keyboard.press("Escape");
+        await page.getByRole("combobox", { name: /연구책임자/ }).fill("");
+
+        await page.getByRole("button", { name: "연구 분야 선택" }).click();
+        const vocab = page.getByRole("dialog", { name: "연구 분야" });
+        for (const name of ["재료", "에너지"]) await vocab.getByRole("checkbox", { name }).check();
+        await shootOne(page, `${prefix}-vocabulary-picker`, 1440, theme);
+        await page.keyboard.press("Escape");
+
+        await page.getByLabel("데이터 기간 시작").fill("2025-03-02");
+        await page.getByLabel("데이터 기간 끝").fill("2025-03-20");
+        await page.getByRole("button", { name: "달력에서 기간 고르기" }).click();
+        await expect(page.getByRole("grid")).toBeVisible();
+        await shootOne(page, `${prefix}-date-range`, 1440, theme);
+        await page.keyboard.press("Escape");
+        await page.reload();
+        await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
+      }
+    }
+
+    for (const [size, theme] of [[[1440, 900], "light"], [[1440, 900], "dark"], [[390, 844], "light"]] as [Size, Theme][]) {
+      await setup(page, size, theme);
+      await page.goto(`/commons/data/${DATASET_BATTERY}`);
+      await expect(page.getByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeVisible();
+      await page.getByRole("button", { name: "편집" }).click();
+      await expect(page.getByLabel(/^제목/)).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await shootOne(page, `${prefix}-dataset-edit-sheet`, size[0], theme);
+    }
+  });
 });

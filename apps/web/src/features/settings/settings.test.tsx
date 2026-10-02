@@ -180,7 +180,7 @@ describe("NTIS number and institute transfer (Wave 1.5)", () => {
     renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
     const card = await screen.findByRole("region", { name: "기관 이동" });
     await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "A R");
-    await userEvent.click(await within(card).findByRole("option", { name: /A Researcher/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /A Researcher/ })); // the result list is a popover outside the card
     await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "Institute B");
     await userEvent.click(within(card).getByRole("button", { name: "이동" }));
     await userEvent.click(await screen.findByRole("button", { name: "이동 확인" }));
@@ -192,7 +192,7 @@ describe("NTIS number and institute transfer (Wave 1.5)", () => {
     renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
     const card = await screen.findByRole("region", { name: "기관 이동" });
     await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "A R");
-    await userEvent.click(await within(card).findByRole("option", { name: /A Researcher/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /A Researcher/ })); // the result list is a popover outside the card
     await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "Institute B");
     await userEvent.click(within(card).getByRole("button", { name: "이동" }));
     await userEvent.click(await screen.findByRole("button", { name: "이동 확인" }));

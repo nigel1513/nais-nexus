@@ -161,7 +161,8 @@ describe("ProjectDetailScreen", () => {
     await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
     const combo = await screen.findByRole("combobox", { name: "사용자 검색" });
     await userEvent.type(combo, "b.st");
-    expect(await screen.findByRole("option", { name: "B Steward (Institute B)" })).toBeInTheDocument();
+    // Options show name · organization · NTIS (UserPicker on the Base UI combobox, list in a popover).
+    expect(await screen.findByRole("option", { name: /^B Steward\s*Institute B/ })).toBeInTheDocument();
     await userEvent.keyboard("{Enter}");
     await userEvent.selectOptions(screen.getByLabelText("추가할 역할"), "VIEWER");
     await userEvent.click(screen.getByRole("button", { name: "추가" }));

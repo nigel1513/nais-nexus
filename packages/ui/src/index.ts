@@ -15,6 +15,7 @@ export { MiniHistogram } from "./mini-histogram";
 export { Checkbox, FormField, Input, Label, Select, Textarea, type FieldA11y } from "./form";
 export { SelectMenu, type SelectMenuProps, type SelectOption } from "./select";
 export { Combobox, type ComboboxProps } from "./combobox";
+export { SearchCombobox, type SearchComboboxProps } from "./search-combobox";
 export { SegmentedControl, type SegmentedItem } from "./segmented";
 export { Switch } from "./switch";
 export { Radio, RadioGroup } from "./radio";

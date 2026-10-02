@@ -3,8 +3,9 @@ import { expect, test } from "@playwright/test";
 
 const A_RESEARCHER = "00000000-0000-7000-8000-000000000a02";
 
-async function seriousViolations(page: import("@playwright/test").Page) {
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+async function seriousViolations(page: import("@playwright/test").Page, include?: string) {
+  const builder = new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]);
+  const results = await (include ? builder.include(include) : builder).analyze();
   return results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.help}`);
 }
 
@@ -193,5 +194,53 @@ test("shell: ⌘K, notifications, user menu and the phone sheet pass axe in both
     await expect(page).toHaveURL(/\/commons\/data$/);
     await expect(sheet).toBeHidden();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("dataset form: sections, pickers and the edit sheet pass axe in both themes and work by keyboard", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b03", url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/data/new");
+    await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    const pi = page.getByRole("combobox", { name: /연구책임자/ });
+    await pi.fill("B R");
+    await expect(page.getByRole("option", { name: /B Researcher/ })).toBeVisible();
+    // Base UI's combobox marks everything outside the input and list aria-hidden while the list is open (its
+    // FloatingFocusManager runs modal when the input sits outside the popup), which axe reports as aria-hidden-focus
+    // on the page behind; it is lifted on close. Check the open list itself.
+    expect(await seriousViolations(page, "[role=listbox]")).toEqual([]);
+    await page.keyboard.press("Enter");
+    await expect(pi).toHaveValue("B Researcher (Institute B)");
+
+    await page.getByRole("button", { name: "연구 분야 선택" }).click();
+    const vocab = page.getByRole("dialog", { name: "연구 분야" });
+    await expect(vocab).toBeVisible();
+    // Scoped to the popover: axe's target-size rule flags whatever input the popover half covers on the page behind.
+    expect(await seriousViolations(page, "[role=dialog]")).toEqual([]);
+    await vocab.getByRole("checkbox", { name: "재료" }).check();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("group", { name: "연구 분야" })).toContainText("재료");
+
+    await page.getByRole("button", { name: "달력에서 기간 고르기" }).click();
+    await expect(page.getByRole("grid")).toBeVisible();
+    expect(await seriousViolations(page, "[role=dialog]")).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/data/00000000-0000-7000-8000-000000002001");
+    await page.getByRole("button", { name: "편집" }).click();
+    const sheet = page.getByRole("dialog", { name: "데이터셋 편집" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByLabel(/^제목/)).toHaveValue("Battery Cycling Measurements");
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
   }
 });
