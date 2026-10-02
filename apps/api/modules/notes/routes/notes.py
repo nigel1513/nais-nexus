@@ -20,7 +20,7 @@ from api.modules.notes.schemas import (
     ResearchNote,
     ResearchNoteSummary,
 )
-from api.modules.notes.service import export, signing
+from api.modules.notes.service import drafting, export, signing
 from api.modules.notes.service import notes as service
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
@@ -121,6 +121,11 @@ def update_note_blocks(
     deps: NotesDepsDep,
 ) -> ResearchNote:
     return service.update_blocks(session, deps, user, note_id, int(if_match.strip('"')), body)
+
+
+@router.post("/notes/{note_id}/draft", operation_id="draftNote", status_code=202)
+def draft_note(note_id: UUID, user: CurrentUserDep, session: SessionDep, deps: NotesDepsDep) -> ResearchNote:
+    return drafting.request_draft(session, deps, user, note_id)
 
 
 @router.post("/notes/{note_id}/submit", operation_id="submitNote")

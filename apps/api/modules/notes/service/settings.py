@@ -26,7 +26,7 @@ def _view(deps: NotesDeps, project_id: UUID, required: bool, witnesses: list[UUI
             "project_id": project_id,
             "witness_required": required,
             "witness_user_ids": witnesses,
-            "llm_enabled": deps.settings.nais_llm_enabled,
+            "llm_enabled": deps.llm() is not None,
         }
     )
 

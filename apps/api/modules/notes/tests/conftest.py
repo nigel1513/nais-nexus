@@ -8,17 +8,19 @@ from uuid import UUID
 
 import httpx
 import pytest
+from dramatiq.brokers.stub import StubBroker
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from api.modules.notes import MODULE
+from api.modules.notes import MODULE, jobs
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.settings import NotesSettings
-from api.modules.notes.tests.fakes import USERS, FakePeople, FakeProjects
+from api.modules.notes.tests.fakes import USERS, FakeLlm, FakePeople, FakeProjects
 from api.modules.notes.wiring import install
 from api.modules.project.public import ProjectQueryPort
 from api.platform import clock, ports
 from api.platform.auth import CurrentUser, PrincipalResolver, TokenVerifier, get_token_verifier
+from api.platform.broker import configure_broker
 from api.platform.ids import new_id
 from api.platform.migrate import upgrade_all
 from api.platform.settings import Settings
@@ -27,6 +29,11 @@ from api.platform.testing.fixtures import PgUrls
 from api.platform.testing.tokens import FakeIssuer
 
 ISSUER = FakeIssuer()
+# The draft actor binds to the global Dramatiq broker when the module is imported (D-036); bind it to our StubBroker.
+STUB_BROKER = configure_broker(Settings(), StubBroker())
+if jobs.draft_note_actor.broker is not STUB_BROKER:
+    jobs.draft_note_actor.broker = STUB_BROKER
+    STUB_BROKER.declare_actor(jobs.draft_note_actor)
 TABLES = (
     "notes.signatures, notes.blocks, notes.notes, notes.chains, notes.settings, notes.evidence,"
     " notes.processed_events"
@@ -41,14 +48,21 @@ def notes_db(migrated_db: PgUrls) -> PgUrls:
 
 
 @pytest.fixture
-def db(notes_db: PgUrls) -> PgUrls:
-    """Empty notes tables and outbox for every test (TRUNCATE fires no row triggers)."""
+def db(notes_db: PgUrls) -> Iterator[PgUrls]:
+    """Empty notes tables, outbox and draft queue for every test (TRUNCATE fires no row triggers); the drafting job
+    works on the test database."""
     engine = create_engine(notes_db.migrator)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {TABLES}"))
         conn.execute(text("DELETE FROM platform.outbox_events"))
     engine.dispose()
-    return notes_db
+    STUB_BROKER.flush_all()
+    previous = jobs.RUNTIME.database_url
+    jobs.RUNTIME.database_url = notes_db.app
+    try:
+        yield notes_db
+    finally:
+        jobs.RUNTIME.database_url = previous
 
 
 class FakePrincipals:
@@ -63,6 +77,18 @@ class World:
     projects: FakeProjects
     people: FakePeople
     project_id: UUID
+    llm: FakeLlm
+    llm_enabled: bool = True
+
+    def install(self) -> None:
+        """(Re)register NotesDeps with this world's fakes; llm_enabled=False makes the platform LLM client None."""
+        install(
+            NotesDeps(
+                settings=NotesSettings(),
+                people=self.people,
+                llm=lambda: self.llm if self.llm_enabled else None,
+            )
+        )
 
 
 @pytest.fixture
@@ -76,7 +102,9 @@ def world() -> World:
         projects.add(project_id, USERS[name], "RESEARCHER")
     projects.add(project_id, USERS["a.member"], "VIEWER")
     ports.provide(ProjectQueryPort, projects)
-    return World(projects, FakePeople(), project_id)
+    world = World(projects, FakePeople(), project_id, FakeLlm())
+    world.install()
+    return world
 
 
 class NotesApi:
@@ -168,7 +196,7 @@ class NotesApi:
 @pytest.fixture
 def api(db: PgUrls, world: World) -> Iterator[NotesApi]:
     app = create_test_app(modules=[MODULE], settings=Settings(database_url=db.app))
-    install(NotesDeps(settings=NotesSettings(nais_llm_enabled=True), people=world.people))
+    world.install()
     app.dependency_overrides[get_token_verifier] = lambda: TokenVerifier(
         issuer=ISSUER.issuer, audience=ISSUER.audience, jwk_client=ISSUER.jwk_client()
     )

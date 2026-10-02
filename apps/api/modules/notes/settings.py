@@ -8,9 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class NotesSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
-    # NAIS_LLM_ENABLED, the platform's switch for the local LLM (also read by api.platform.settings); getNoteSettings
-    # mirrors it as llm_enabled so the web hides the draft button.
-    nais_llm_enabled: bool = False
+    # No module keys yet. The local LLM switch (NAIS_LLM_*) is the platform's (api.platform.settings /
+    # api.platform.llm); notes read it through NotesDeps.llm, and getNoteSettings.llm_enabled mirrors it.
 
 
 @lru_cache(maxsize=1)

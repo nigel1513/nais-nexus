@@ -38,6 +38,7 @@ notes = Table(
     Column("revision", Integer, nullable=False, server_default=text("1")),
     Column("draft_status", Text, nullable=False, server_default=text("'NONE'")),
     Column("draft_error", Text),
+    Column("draft_requested_at", DateTime(timezone=True)),  # last draftNote / scheduled draft (rate limit)
     Column("witness_required", Boolean),
     Column("witness_user_ids", ARRAY(PG_UUID(as_uuid=True))),
     Column("content_hash", Text),

@@ -14,13 +14,15 @@ from api.modules.notes.wiring import build_default_deps, wire
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.ids import new_id
+from api.platform.llm import get_llm_client
 
 
 def test_wire_registers_deps() -> None:
     wire()
     deps = ports.get(NotesDeps)
     assert isinstance(deps.people, IdentityDisplayNames)
-    assert deps.settings.nais_llm_enabled is False
+    assert deps.llm is get_llm_client  # None unless NAIS_LLM_ENABLED and NAIS_LLM_BASE_URL are set
+    assert deps.llm() is None
 
 
 def test_unwired_ports_fail_with_503() -> None:

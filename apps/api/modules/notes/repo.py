@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
-from api.modules.notes.tables import blocks, chains, notes, settings, signatures
+from api.modules.notes.tables import blocks, chains, evidence, notes, settings, signatures
 
 ListKey = tuple[date, UUID]  # (note_date, note_id), newest first
 
@@ -289,3 +289,46 @@ def export_notes(
         limit
     )
     return list(session.execute(stmt).mappings())
+
+
+# ---------------------------------------------------------------- evidence and drafting (Task 10)
+
+
+def insert_evidence(session: Session, **values: Any) -> None:
+    """At most one row per source event (unique source_event_id)."""
+    session.execute(
+        pg_insert(evidence)
+        .values(**values)
+        .on_conflict_do_nothing(index_elements=[evidence.c.source_event_id])
+    )
+
+
+def day_evidence(session: Session, project_id: UUID, actor_id: UUID, note_date: date) -> list[RowMapping]:
+    stmt = (
+        select(evidence.c.type, evidence.c.ref_id, evidence.c.label, evidence.c.at)
+        .where(
+            evidence.c.project_id == project_id,
+            evidence.c.actor_id == actor_id,
+            evidence.c.note_date == note_date,
+        )
+        .order_by(evidence.c.at, evidence.c.evidence_id)
+    )
+    return list(session.execute(stmt).mappings())
+
+
+def day_recorders(session: Session, note_date: date) -> list[RowMapping]:
+    """(project_id, actor_id, organization_id) for every researcher with evidence on the day; organization_id is the
+    actor's organization recorded with their own events (None when only others' decisions name them)."""
+    organization = func.max(evidence.c.payload["organization_id"].astext)
+    stmt = (
+        select(evidence.c.project_id, evidence.c.actor_id, organization.label("organization_id"))
+        .where(evidence.c.note_date == note_date)
+        .group_by(evidence.c.project_id, evidence.c.actor_id)
+        .order_by(evidence.c.project_id, evidence.c.actor_id)
+    )
+    return list(session.execute(stmt).mappings())
+
+
+def append_blocks(session: Session, note_id: UUID, rows: Sequence[dict[str, Any]]) -> None:
+    if rows:
+        session.execute(insert(blocks), [dict(row, note_id=note_id) for row in rows])

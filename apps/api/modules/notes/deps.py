@@ -1,6 +1,7 @@
 """Everything the notes module talks to, in one container registered in api.platform.ports by wiring.install()."""
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Annotated
 
 from fastapi import Depends
@@ -11,12 +12,15 @@ from api.modules.project.public import ProjectQueryPort
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
+from api.platform.llm import LlmClient, get_llm_client
 
 
 @dataclass(frozen=True)
 class NotesDeps:
     settings: NotesSettings
     people: DisplayNameLookup
+    # The platform LLM client, resolved per use (None while NAIS_LLM_ENABLED is false or no base URL is set).
+    llm: Callable[[], LlmClient | None] = field(default=get_llm_client)
 
     @property
     def projects(self) -> ProjectQueryPort:

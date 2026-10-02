@@ -2,11 +2,13 @@
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 from uuid import UUID
 
 from nais_contracts.api_models import ProjectSummary
 
 from api.platform.auth import CurrentUser
+from api.platform.llm import ChatMessage
 
 ORG_A = UUID("00000000-0000-7000-8000-00000000000a")
 ORG_B = UUID("00000000-0000-7000-8000-00000000000b")
@@ -85,3 +87,31 @@ class FakePeople:
 
     def get_display_names(self, user_ids: Sequence[UUID]) -> dict[UUID, str]:
         return {i: self._names[i] for i in user_ids if i in self._names}
+
+
+class FakeLlm:
+    """LlmClient stand-in (never the network). Each call takes the next scripted answer: a dict is returned, an
+    exception is raised, a callable is called with the messages (side effects) and its result used the same way."""
+
+    def __init__(self, *answers: Any) -> None:
+        self.answers: list[Any] = list(answers)
+        self.calls: list[list[ChatMessage]] = []
+
+    def script(self, *answers: Any) -> None:
+        self.answers = list(answers)
+
+    def chat_json(
+        self, messages: list[ChatMessage], *, max_tokens: int = 800, temperature: float = 0.2
+    ) -> dict[str, Any]:
+        self.calls.append(list(messages))
+        if not self.answers:
+            raise AssertionError("FakeLlm called more often than scripted")
+        answer = self.answers.pop(0)
+        if callable(answer) and not isinstance(answer, type):
+            answer = answer(messages)
+        if isinstance(answer, BaseException) or (
+            isinstance(answer, type) and issubclass(answer, BaseException)
+        ):
+            raise answer
+        result: dict[str, Any] = answer
+        return result
