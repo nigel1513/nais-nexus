@@ -1,9 +1,9 @@
 "use client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  Button, Checkbox, ConfirmDialog, FormField, IconButton, Input, Label, Radio, RadioGroup, SegmentedControl, SelectMenu, Tag, Textarea, cn,
+  Button, Checkbox, ConfirmDialog, FormField, IconButton, Input, Label, Radio, RadioGroup, SegmentedControl, SelectMenu, Textarea, cn,
 } from "@nais/ui";
-import { CircleAlert, Plus, X } from "lucide-react";
+import { Check, CircleAlert, Plus, X } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState, type ComponentProps } from "react";
 import { Controller, useFieldArray, useForm, useWatch, type Control, type FieldErrors } from "react-hook-form";
@@ -57,23 +57,70 @@ function PeriodField({ control, ...props }: Omit<ComponentProps<typeof DateRange
   return <DateRangePicker start={start} end={end} {...props} />;
 }
 
-/** Right rail of the register page (canvas A1): how the data card will read, plus two short notes. */
-function CardPreview({ control }: { control: Control<DatasetFormValues> }) {
+const SECTION_KEYS = ["basic", "people", "context", "data", "classify", "terms", "publications"] as const;
+
+/**
+ * Right rail of the register page (canvas A1): how the data card will read (the start page's product panel), the
+ * sections in order with the required ones ticked as they are filled, and two short notes.
+ */
+function CardPreview({ control, ownerName }: { control: Control<DatasetFormValues>; ownerName: string }) {
   const t = useTranslations();
-  const [title, subtitle, level, license] = useWatch({ control, name: ["title", "subtitle", "access_level", "license"] });
+  const [title, subtitle, level, license, pi, steward, purposes] = useWatch({
+    control,
+    name: ["title", "subtitle", "access_level", "license", "principal_investigator", "steward_contact", "allowed_purposes"],
+  });
+  const required: Partial<Record<(typeof SECTION_KEYS)[number], boolean>> = {
+    basic: title.trim().length >= 3,
+    people: !!pi && !!steward,
+    terms: purposes.length > 0,
+  };
+  const sectionTitle = (k: (typeof SECTION_KEYS)[number]) => (k === "publications" ? t("data.form.relatedPublications") : t(`data.form.section${k[0]!.toUpperCase()}${k.slice(1)}` as "data.form.sectionBasic"));
   return (
     <aside aria-label={t("data.form.previewTitle")} className="hidden min-[1360px]:block">
-      <div className="sticky top-18 flex flex-col gap-4">
-        <section className="flex flex-col gap-2 rounded-md border border-border bg-bg-panel p-4">
-          <h2 className="text-caption text-fg-muted">{t("data.form.previewTitle")}</h2>
-          <p className={cn("break-words text-heading", title.trim() ? "text-fg" : "text-fg-muted")}>{title.trim() || t("data.form.previewUntitled")}</p>
-          {subtitle.trim() ? <p className="break-words text-small text-fg-muted">{subtitle}</p> : null}
-          <div className="mt-1 flex flex-wrap items-center gap-1.5">
-            <AccessLevelBadge level={level} />
-            {license.trim() ? <Tag>{license.trim()}</Tag> : null}
+      <div className="sticky top-18 flex flex-col gap-6">
+        <section aria-labelledby="dataset-preview-title" className="overflow-hidden rounded-md border border-border bg-bg-panel">
+          <div className="border-b border-border px-4 pt-3.5 pb-3">
+            <h2 id="dataset-preview-title" className="sv-kicker">
+              {t("data.form.previewTitle")}
+            </h2>
+            <p className={cn("mt-1 break-words text-[19px] leading-[1.3] font-bold tracking-[-0.03em]", title.trim() ? "text-fg" : "text-fg-muted")}>{title.trim() || t("data.form.previewUntitled")}</p>
+            {subtitle.trim() ? <p className="mt-1 break-words text-small text-fg-muted">{subtitle}</p> : null}
           </div>
+          <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 px-4 py-3 text-small">
+            <dt className="text-fg-muted">{t("data.form.owner")}</dt>
+            <dd className="min-w-0 truncate text-fg">{ownerName}</dd>
+            <dt className="text-fg-muted">{t("data.form.previewAccess")}</dt>
+            <dd>
+              <AccessLevelBadge level={level} />
+            </dd>
+            <dt className="text-fg-muted">{t("data.form.previewLicense")}</dt>
+            <dd className="min-w-0 truncate font-mono text-mono text-fg">{license.trim() || <span className="font-sans text-fg-muted">—</span>}</dd>
+          </dl>
         </section>
-        <section className="flex flex-col gap-2 break-keep rounded-md border border-border bg-bg-subtle p-4 text-small text-fg-muted">
+        <nav aria-label={t("data.form.outline")}>
+          <p className="sv-kicker mb-1.5">{t("data.form.outline")}</p>
+          <ol className="flex flex-col">
+            {SECTION_KEYS.map((k, i) => (
+              <li key={k} className="border-t border-border first:border-t-0">
+                <a
+                  href={`#dataset-section-${k}`}
+                  className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-xs py-1.5 text-small text-fg-muted transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  <span className="font-mono text-caption font-normal tabular-nums">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="truncate text-fg">{sectionTitle(k)}</span>
+                  {k in required ? (
+                    required[k] ? (
+                      <Check aria-label={t("data.form.outlineDone")} className="size-3.5 text-success" strokeWidth={2.25} />
+                    ) : (
+                      <span className="text-caption font-normal text-fg-muted">{t("data.form.outlineRequired")}</span>
+                    )
+                  ) : null}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+        <section className="flex flex-col gap-2 break-keep border-t border-border pt-4 text-small leading-relaxed text-fg-muted">
           <h2 className="text-small font-semibold text-fg">{t("data.form.guideTitle")}</h2>
           <p>{t("data.form.guideAccess")}</p>
           <p>{t("data.form.guideNext")}</p>
@@ -213,7 +260,7 @@ export function DatasetForm({
 
   const fields = (
     <>
-      <FormSection id="dataset-section-basic" title={t("data.form.sectionBasic")} description={t("data.form.sectionBasicHint")}>
+      <FormSection id="dataset-section-basic" index={1} kicker={t("data.form.kicker.basic")} title={t("data.form.sectionBasic")} description={t("data.form.sectionBasicHint")}>
         <FormField id="dataset-title" label={labels.title} required requiredLabel={t("common.required")} hint={t("data.form.titleHint")} error={err("title")}>
           {(a11y) => <Input {...a11y} {...form.register("title")} />}
         </FormField>
@@ -254,7 +301,7 @@ export function DatasetForm({
         </div>
       </FormSection>
 
-      <FormSection id="dataset-section-people" title={t("data.form.sectionPeople")} description={t("data.form.peopleHint")}>
+      <FormSection id="dataset-section-people" index={2} kicker={t("data.form.kicker.people")} title={t("data.form.sectionPeople")} description={t("data.form.peopleHint")}>
         <div className="grid grid-cols-1 gap-4 @xl/form:grid-cols-2">
           <UserPicker
             id="dataset-principal_investigator"
@@ -294,7 +341,7 @@ export function DatasetForm({
         </div>
       </FormSection>
 
-      <FormSection id="dataset-section-context" title={t("data.form.sectionContext")} description={t("data.form.sectionContextHint")}>
+      <FormSection id="dataset-section-context" index={3} kicker={t("data.form.kicker.context")} title={t("data.form.sectionContext")} description={t("data.form.sectionContextHint")}>
         <FormField id="dataset-project_title" label={labels.project_title} error={err("project_title")}>
           {(a11y) => <Input {...a11y} {...form.register("project_title")} />}
         </FormField>
@@ -308,7 +355,7 @@ export function DatasetForm({
         </div>
       </FormSection>
 
-      <FormSection id="dataset-section-data" title={t("data.form.sectionData")} description={t("data.form.sectionDataHint")}>
+      <FormSection id="dataset-section-data" index={4} kicker={t("data.form.kicker.data")} title={t("data.form.sectionData")} description={t("data.form.sectionDataHint")}>
         <div className="grid grid-cols-1 gap-4 @xl/form:grid-cols-[minmax(0,1fr)_12rem]">
           <PeriodField
             control={form.control}
@@ -395,7 +442,7 @@ export function DatasetForm({
         </FormField>
       </FormSection>
 
-      <FormSection id="dataset-section-classify" title={t("data.form.sectionClassify")} description={t("data.form.sectionClassifyHint")}>
+      <FormSection id="dataset-section-classify" index={5} kicker={t("data.form.kicker.classify")} title={t("data.form.sectionClassify")} description={t("data.form.sectionClassifyHint")}>
         <VocabularyPicker id="dataset-subject_codes" scheme="SUBJECT" legend={labels.subject_codes} max={5} value={subjectCodes} onChange={setList("subject_codes")} error={err("subject_codes")} />
         <VocabularyPicker id="dataset-method_codes" scheme="METHOD" legend={labels.method_codes} max={10} value={methodCodes} onChange={setList("method_codes")} error={err("method_codes")} />
         <VocabularyPicker id="dataset-material_codes" scheme="MATERIAL" legend={labels.material_codes} max={20} value={materialCodes} onChange={setList("material_codes")} error={err("material_codes")} />
@@ -404,7 +451,7 @@ export function DatasetForm({
         </FormField>
       </FormSection>
 
-      <FormSection id="dataset-section-terms" title={t("data.form.sectionTerms")} description={mode === "edit" ? t("data.form.sectionTermsEditHint") : t("data.form.sectionTermsHint")}>
+      <FormSection id="dataset-section-terms" index={6} kicker={t("data.form.kicker.terms")} title={t("data.form.sectionTerms")} description={mode === "edit" ? t("data.form.sectionTermsEditHint") : t("data.form.sectionTermsHint")}>
         <div id="dataset-access_level" className="flex flex-col gap-2">
           <span id="dataset-access_level-label" className="text-small font-medium text-fg">
             {labels.access_level}
@@ -475,7 +522,7 @@ export function DatasetForm({
         </FormField>
       </FormSection>
 
-      <FormSection id="dataset-section-publications" title={t("data.form.relatedPublications")} description={t("data.form.sectionPublicationsHint")}>
+      <FormSection id="dataset-section-publications" index={7} kicker={t("data.form.kicker.publications")} title={t("data.form.relatedPublications")} description={t("data.form.sectionPublicationsHint")}>
         <div id="dataset-related_publications" className="flex flex-col gap-2">
           {publications.fields.length ? (
             <ul aria-label={labels.related_publications} className="overflow-hidden rounded-md border border-border bg-bg-panel">
@@ -549,7 +596,7 @@ export function DatasetForm({
     </div>
   );
 
-  const preview = <CardPreview control={form.control} />;
+  const preview = <CardPreview control={form.control} ownerName={ownerName} />;
 
   return (
     <form

@@ -1,7 +1,8 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { PageHeader } from "@/shared/ui/page-header";
+import { useMeData } from "@/shared/hooks/use-me";
+import { ScreenTitle } from "@/shared/ui/screen-v2";
 import { notify } from "@/shared/ui/toast";
 import { useCreateProject } from "./api";
 import { ProjectForm } from "./components/project-form";
@@ -12,10 +13,11 @@ export function ProjectNewScreen() {
   const t = useTranslations();
   useBreadcrumbs([{ label: t("projects.new.title") }]);
   const router = useRouter();
+  const me = useMeData();
   const create = useCreateProject();
   return (
     <>
-      <PageHeader title={t("projects.new.title")} description={t("projects.new.description")} />
+      <ScreenTitle context={[t("projects.list.context"), t("projects.detail.leadBy", { org: me.organization.name })]} title={t("projects.new.title")} description={t("projects.new.description")} />
       <ProjectForm
         defaultValues={emptyProjectForm}
         submitLabel={t("projects.new.submit")}

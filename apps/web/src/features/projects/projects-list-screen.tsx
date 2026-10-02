@@ -10,7 +10,8 @@ import { useUrlText } from "@/shared/hooks/use-url-text";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
 import { ProjectStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
-import { PageHeader } from "@/shared/ui/page-header";
+import { useMeData } from "@/shared/hooks/use-me";
+import { ScreenTitle } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { useListProjects } from "./api";
 import { ProjectRoleBadge } from "./components/project-role-badge";
@@ -20,6 +21,7 @@ type Tab = "mine" | "discover";
 export function ProjectsListScreen() {
   const t = useTranslations();
   const orgNames = useOrgNames();
+  const me = useMeData();
   const [params, setParams] = useUrlQuery();
   const tab: Tab = params.get("tab") === "discover" ? "discover" : "mine";
   const status = params.get("status") ?? "";
@@ -60,13 +62,15 @@ export function ProjectsListScreen() {
               header: t("projects.list.name"),
               className: "min-w-64",
               cell: (p) => (
-                <span className="flex min-w-0 items-center gap-2">
-                  {p.visibility === "PUBLIC" ? (
-                    <Globe aria-label={t("enums.ProjectVisibility.PUBLIC")} className="size-3.5 shrink-0 text-fg-muted" strokeWidth={1.75} />
-                  ) : (
-                    <Lock aria-label={t("enums.ProjectVisibility.PRIVATE")} className="size-3.5 shrink-0 text-fg-muted" strokeWidth={1.75} />
-                  )}
-                  <Link href={`/commons/projects/${p.project_id}`} className="truncate font-medium text-fg underline-offset-4 hover:underline">
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-sm border border-border bg-bg-subtle text-fg-muted">
+                    {p.visibility === "PUBLIC" ? (
+                      <Globe aria-label={t("enums.ProjectVisibility.PUBLIC")} className="size-3.5" strokeWidth={1.75} />
+                    ) : (
+                      <Lock aria-label={t("enums.ProjectVisibility.PRIVATE")} className="size-3.5" strokeWidth={1.75} />
+                    )}
+                  </span>
+                  <Link href={`/commons/projects/${p.project_id}`} className="truncate text-[14.5px] font-semibold tracking-[-0.02em] text-fg underline-offset-4 hover:underline">
                     {p.name}
                   </Link>
                   {p.status === "ARCHIVED" ? <ProjectStatusBadge status={p.status} /> : null}
@@ -74,9 +78,9 @@ export function ProjectsListScreen() {
               ),
             },
             { key: "lead", header: t("projects.list.lead"), cell: (p) => <span className="text-fg-muted">{p.lead_organization_name ?? orgNames[p.lead_organization_id] ?? "—"}</span> },
-            { key: "members", header: t("projects.list.members"), numeric: true, cell: (p) => p.member_count ?? "—" },
+            { key: "members", header: t("projects.list.members"), numeric: true, cell: (p) => <span className="font-mono text-mono">{p.member_count ?? "—"}</span> },
             { key: "role", header: t("projects.list.myRole"), cell: (p) => (p.my_role ? <ProjectRoleBadge role={p.my_role} /> : <span className="text-fg-muted">—</span>) },
-            { key: "updated", header: t("projects.list.updated"), numeric: true, cell: (p) => (p.updated_at ? <DateTime value={p.updated_at} dateOnly /> : "—") },
+            { key: "updated", header: t("projects.list.updated"), numeric: true, cell: (p) => (p.updated_at ? <span className="font-mono text-mono text-fg-muted"><DateTime value={p.updated_at} dateOnly /></span> : "—") },
           ]}
         />
       )}
@@ -86,7 +90,7 @@ export function ProjectsListScreen() {
 
   return (
     <>
-      <PageHeader title={t("projects.list.title")} description={t("projects.list.description")} actions={newProject} />
+      <ScreenTitle context={[t("projects.list.context"), me.organization.name]} title={t("projects.list.title")} description={t("projects.list.description")} actions={newProject} />
       <Tabs
         value={tab}
         onValueChange={(v) => {

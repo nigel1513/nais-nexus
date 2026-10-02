@@ -1,5 +1,5 @@
 "use client";
-import { Badge, Button, ConfirmDialog, Menu, Tabs, TabsContent, TabsList, TabsTrigger, Tag, buttonClass } from "@nais/ui";
+import { Badge, ConfirmDialog, Menu, Tabs, TabsContent, TabsList, TabsTrigger, Tag, cn, focusRing } from "@nais/ui";
 import { Archive, Ellipsis, Globe, Lock, Pencil } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
@@ -11,16 +11,14 @@ import { flattenPages } from "@/shared/api/pagination";
 import { useErrorText } from "@/shared/api/use-error-text";
 import type { Project, ProjectRole } from "@/shared/api/types";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
-import { ProjectStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
-import { PageHeader } from "@/shared/ui/page-header";
+import { BandTag, Crumb, ScreenTitle, SummaryBand } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
 import { useArchiveProject, useGetProject, useListProjectMembers, useListProjects, useUpdateProject } from "./api";
 import { MembersTab } from "./components/members-tab";
 import { ProjectDataTab } from "./components/project-data-tab";
 import { ProjectForm } from "./components/project-form";
-import { ProjectRoleBadge } from "./components/project-role-badge";
 import { fromProject, toProjectUpdate } from "./schemas";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 
@@ -28,11 +26,11 @@ const TABS = ["overview", "members", "data", "activity"] as const;
 type Tab = (typeof TABS)[number];
 const ROLE_ORDER: ProjectRole[] = ["PROJECT_OWNER", "PROJECT_ADMIN", "RESEARCHER", "VIEWER"];
 
-/** Right-rail panel (detail template): caption title + definition list, 1px border. */
-function RailPanel({ title, children }: { title: string; children: ReactNode }) {
+/** Right-rail panel (detail template): crumb label (accent eyebrow + title) over its content, 1px border. */
+function RailPanel({ kicker, title, children }: { kicker?: string; title: string; children: ReactNode }) {
   return (
     <section aria-label={title} className="rounded-md border border-border bg-bg-panel p-4">
-      <h2 className="mb-3 text-caption text-fg-muted">{title}</h2>
+      <Crumb kicker={kicker} title={title} className="mb-3 [&_h2]:text-[15px]" />
       {children}
     </section>
   );
@@ -41,7 +39,7 @@ function RailPanel({ title, children }: { title: string; children: ReactNode }) 
 function Period({ project }: { project: Pick<Project, "start_date" | "end_date"> }) {
   if (!project.start_date && !project.end_date) return <span className="text-fg-muted">—</span>;
   return (
-    <span className="num">
+    <span className="num font-mono text-mono">
       {project.start_date ?? "…"} – {project.end_date ?? "…"}
     </span>
   );
@@ -54,14 +52,14 @@ function PublicSummary({ projectId }: { projectId: string }) {
   const p = flattenPages(discover.data).find((x) => x.project_id === projectId);
   return (
     <>
-      <PageHeader title={p?.name ?? t("projects.detail.title")} badges={p ? <Badge>{t(`enums.ProjectVisibility.${p.visibility}`)}</Badge> : null} />
+      <ScreenTitle context={[t("projects.detail.context"), p ? t(`enums.ProjectVisibility.${p.visibility}`) : null]} title={p?.name ?? t("projects.detail.title")} />
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
         <p role="alert" className="flex items-start gap-3 self-start rounded-md border border-info-line bg-info-soft p-4 text-body text-fg">
           <Lock aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-info" strokeWidth={1.75} />
           {t("projects.detail.membersOnly")}
         </p>
         {p ? (
-          <RailPanel title={t("projects.detail.info")}>
+          <RailPanel kicker={t("projects.detail.kicker.info")} title={t("projects.detail.info")}>
             <dl className="grid grid-cols-[6rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-small">
               <dt className="text-fg-muted">{t("projects.list.lead")}</dt>
               <dd>{orgNames[p.lead_organization_id] ?? "—"}</dd>
@@ -103,9 +101,7 @@ function Overview({ project, editing, onEditDone, canArchive }: { project: Proje
   return (
     <div className="flex flex-col gap-8">
       <section aria-labelledby="project-about">
-        <h2 id="project-about" className="mb-2 text-heading text-fg">
-          {t("projects.detail.about")}
-        </h2>
+        <Crumb id="project-about" kicker={t("projects.detail.kicker.about")} title={t("projects.detail.about")} className="mb-3" />
         {project.description ? (
           <p className="max-w-[72ch] whitespace-pre-wrap break-keep text-[15px] leading-[26px] text-fg">{project.description}</p>
         ) : (
@@ -113,9 +109,7 @@ function Overview({ project, editing, onEditDone, canArchive }: { project: Proje
         )}
       </section>
       <section aria-labelledby="project-keywords">
-        <h2 id="project-keywords" className="mb-2 text-heading text-fg">
-          {t("projects.form.keywords")}
-        </h2>
+        <Crumb id="project-keywords" kicker={t("projects.detail.kicker.keywords")} title={t("projects.form.keywords")} count={project.keywords?.length || undefined} className="mb-3" />
         {project.keywords?.length ? (
           <ul className="flex flex-wrap gap-1.5">
             {project.keywords.map((k) => (
@@ -141,7 +135,7 @@ function ProjectRail({ project }: { project: Project }) {
   const max = Math.max(1, ...counts.map(([, n]) => n));
   return (
     <aside className="flex flex-col gap-4">
-      <RailPanel title={t("projects.detail.info")}>
+      <RailPanel kicker={t("projects.detail.kicker.info")} title={t("projects.detail.info")}>
         <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2.5 text-small">
           <dt className="text-fg-muted">{t("projects.detail.organizations")}</dt>
           <dd>
@@ -173,7 +167,7 @@ function ProjectRail({ project }: { project: Project }) {
           </dd>
         </dl>
       </RailPanel>
-      <RailPanel title={t("projects.detail.roleSplit")}>
+      <RailPanel kicker={t("projects.detail.kicker.roles")} title={t("projects.detail.roleSplit")}>
         {members.isPending ? (
           <p className="text-small text-fg-muted">{t("common.loading")}</p>
         ) : (
@@ -184,7 +178,7 @@ function ProjectRail({ project }: { project: Project }) {
                 <span aria-hidden="true" className="h-1.5 overflow-hidden rounded-full bg-bg-hover">
                   <span className="block h-full rounded-full bg-chart-1" style={{ width: `${(n / max) * 100}%` }} />
                 </span>
-                <span className="num text-right text-fg">{n}</span>
+                <span className="text-right font-mono text-mono tabular-nums text-fg">{n}</span>
               </li>
             ))}
           </ul>
@@ -220,42 +214,38 @@ export function ProjectDetailScreen({ projectId }: { projectId: string }) {
 
   return (
     <>
-      <PageHeader
+      <SummaryBand
+        label={t("projects.detail.summary")}
+        context={[t("projects.detail.context"), lead?.name ? t("projects.detail.leadBy", { org: lead.name }) : null]}
         title={p.name}
-        meta={
+        tags={
           <>
-            {lead?.name ? <span>{t("projects.detail.leadBy", { org: lead.name })}</span> : null}
-            <span className="num">{t("projects.detail.orgCount", { count: p.organizations.length })}</span>
-            <span className="num">
-              {t("projects.detail.updatedAt")} <DateTime value={p.updated_at ?? p.created_at} dateOnly />
-            </span>
-          </>
-        }
-        badges={
-          <>
-            <ProjectStatusBadge status={p.status} />
-            <Badge>{t(`enums.ProjectVisibility.${p.visibility}`)}</Badge>
-            {p.my_role ? <ProjectRoleBadge role={p.my_role} /> : null}
+            <BandTag tone={archived ? "warn" : "ok"}>{t(`enums.ProjectStatus.${p.status}`)}</BandTag>
+            <BandTag icon={p.visibility === "PUBLIC" ? <Globe aria-hidden="true" strokeWidth={1.75} /> : <Lock aria-hidden="true" strokeWidth={1.75} />}>
+              {t(`enums.ProjectVisibility.${p.visibility}`)}
+            </BandTag>
+            {p.my_role ? <BandTag tone="accent">{t("projects.detail.myRole", { role: t(`enums.ProjectRole.${p.my_role}`) })}</BandTag> : null}
           </>
         }
         actions={
           manager || canArchive ? (
             <>
               {manager ? (
-                <Button
-                  variant="secondary"
+                <button
+                  type="button"
+                  className={cn("sv-hb sv-hb-w", focusRing)}
                   onClick={() => {
                     setEditing(true);
                     setParams({ tab: null });
                   }}
                 >
-                  <Pencil aria-hidden="true" />
+                  <Pencil aria-hidden="true" strokeWidth={1.75} />
                   {t("common.edit")}
-                </Button>
+                </button>
               ) : null}
               {canArchive ? (
                 <Menu.Root>
-                  <Menu.Trigger aria-label={t("projects.detail.more")} className={buttonClass("secondary", "md", "w-8 px-0")}>
+                  <Menu.Trigger aria-label={t("projects.detail.more")} className={cn("sv-hb sv-hb-g sv-hb-i", focusRing)}>
                     <Ellipsis aria-hidden="true" strokeWidth={1.75} />
                   </Menu.Trigger>
                   <Menu.Content align="end">
@@ -268,6 +258,16 @@ export function ProjectDetailScreen({ projectId }: { projectId: string }) {
             </>
           ) : null
         }
+        facts={[
+          { label: t("projects.detail.factMembers"), value: p.member_count ?? "—", unit: p.member_count !== undefined ? t("projects.detail.unitPeople") : undefined },
+          { label: t("projects.detail.factOrgs"), value: p.organizations.length, unit: t("projects.detail.unitOrgs") },
+          {
+            label: t("projects.detail.period"),
+            kind: p.start_date || p.end_date ? "mono" : "text",
+            value: p.start_date || p.end_date ? `${p.start_date ?? "…"} – ${p.end_date ?? "…"}` : t("projects.detail.noPeriod"),
+          },
+          { label: t("projects.detail.updatedAt"), kind: "mono", value: <DateTime value={p.updated_at ?? p.created_at} dateOnly /> },
+        ]}
       />
       {archived ? (
         <p role="status" className="mb-6 flex items-center gap-2 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-small text-fg">

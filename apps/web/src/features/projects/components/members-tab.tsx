@@ -9,6 +9,7 @@ import { useErrorText } from "@/shared/api/use-error-text";
 import type { IdentityPublicProfile, Project, ProjectMember, ProjectRole } from "@/shared/api/types";
 import { useMeData } from "@/shared/hooks/use-me";
 import { DateTime } from "@/shared/ui/date-text";
+import { Crumb } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
 import { useAddProjectMember, useListProjectMembers, useRemoveProjectMember, useUpdateProjectMemberRole } from "../api";
@@ -53,7 +54,7 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
       {manager ? (
         <form
           aria-labelledby="invite-title"
-          className="flex flex-col gap-3 rounded-md border border-border bg-bg-subtle p-3"
+          className="flex flex-col gap-3 rounded-md border border-border bg-bg-panel p-4"
           onSubmit={(e) => {
             e.preventDefault();
             if (!picked) return;
@@ -70,11 +71,9 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
             );
           }}
         >
-          <div className="flex items-baseline justify-between gap-2">
-            <h2 id="invite-title" className="text-small font-semibold text-fg">
-              {t("projects.members.inviteTitle")}
-            </h2>
-            <span className="text-caption font-normal text-fg-muted">{t("projects.members.inviteHint")}</span>
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+            <Crumb id="invite-title" kicker={t("projects.members.kicker.invite")} title={t("projects.members.inviteTitle")} className="[&_h2]:text-[15px]" />
+            <span className="break-keep text-small text-fg-muted">{t("projects.members.inviteHint")}</span>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
             <UserCombobox key={comboKey} value={picked} onChange={setPicked} />
@@ -95,6 +94,7 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
           </div>
         </form>
       ) : null}
+      <Crumb kicker={t("projects.members.kicker.list")} title={t("projects.members.listTitle")} count={members.data.items.length} className="mt-4" />
       <DataTable<ProjectMember>
         caption={t("projects.members.caption")}
         rows={members.data.items}

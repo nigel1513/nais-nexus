@@ -76,7 +76,7 @@ export function ProjectForm({
         </div>
       ) : null}
 
-      <FormSection id="project-section-basic" title={t("projects.form.sectionBasic")} description={t("projects.form.sectionBasicHint")}>
+      <FormSection id="project-section-basic" index={1} kicker={t("projects.form.kicker.basic")} title={t("projects.form.sectionBasic")} description={t("projects.form.sectionBasicHint")}>
         <FormField id="project-name" label={labels.name} required requiredLabel={t("common.required")} error={tv(errors.name?.message)}>
           {(a11y) => <Input {...a11y} autoComplete="off" {...form.register("name")} />}
         </FormField>
@@ -89,7 +89,7 @@ export function ProjectForm({
       </FormSection>
 
       <FormSection
-        id="project-section-visibility"
+        id="project-section-visibility" index={2} kicker={t("projects.form.kicker.visibility")}
         title={labels.visibility}
         description={visibilityLocked ? t("projects.form.visibilityOwnerOnly") : t("projects.form.sectionVisibilityHint")}
       >
@@ -123,7 +123,7 @@ export function ProjectForm({
         </div>
       </FormSection>
 
-      <FormSection id="project-section-period" title={t("projects.detail.period")} description={t("projects.form.sectionPeriodHint")}>
+      <FormSection id="project-section-period" index={3} kicker={t("projects.form.kicker.period")} title={t("projects.detail.period")} description={t("projects.form.sectionPeriodHint")}>
         <div className="max-w-md">
           <DateRangePicker
             id="project-period"

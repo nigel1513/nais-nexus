@@ -8,6 +8,7 @@ import { flattenPages } from "@/shared/api/pagination";
 import type { AccessGrant, AccessRequest } from "@/shared/api/types";
 import { GrantStatusBadge, RequestStatusBadge } from "@/shared/ui/badges";
 import { DateTime, ExpiryText } from "@/shared/ui/date-text";
+import { Crumb } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 
 export function ProjectDataTab({ projectId }: { projectId: string }) {
@@ -17,10 +18,7 @@ export function ProjectDataTab({ projectId }: { projectId: string }) {
   return (
     <div className="flex flex-col gap-8">
       <section aria-labelledby="project-grants">
-        <h2 id="project-grants" className="mb-3 flex items-baseline gap-2 text-heading text-fg">
-          {t("projects.data.grants")}
-          {grants.isSuccess ? <span className="num text-small font-normal text-fg-muted">{flattenPages(grants.data).length}</span> : null}
-        </h2>
+        <Crumb id="project-grants" kicker={t("projects.data.kicker.grants")} title={t("projects.data.grants")} count={grants.isSuccess ? flattenPages(grants.data).length : undefined} className="mb-3" />
         {grants.isPending ? (
           <DelayedSkeleton />
         ) : grants.isError ? (
@@ -41,10 +39,7 @@ export function ProjectDataTab({ projectId }: { projectId: string }) {
         )}
       </section>
       <section aria-labelledby="project-requests">
-        <h2 id="project-requests" className="mb-3 flex items-baseline gap-2 text-heading text-fg">
-          {t("projects.data.requests")}
-          {requests.isSuccess ? <span className="num text-small font-normal text-fg-muted">{flattenPages(requests.data).length}</span> : null}
-        </h2>
+        <Crumb id="project-requests" kicker={t("projects.data.kicker.requests")} title={t("projects.data.requests")} count={requests.isSuccess ? flattenPages(requests.data).length : undefined} className="mb-3" />
         {requests.isPending ? (
           <DelayedSkeleton />
         ) : requests.isError ? (

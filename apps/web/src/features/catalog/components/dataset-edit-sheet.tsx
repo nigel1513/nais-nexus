@@ -33,10 +33,22 @@ export function DatasetEditSheet({ dataset, open, onOpenChange }: { dataset: Dat
   return (
     <>
       <Sheet open={open} onOpenChange={(o) => (o ? onOpenChange(true) : requestClose())}>
-        <SheetContent closeLabel={t("common.close")} className="max-w-[640px]">
-          <SheetHeader className="sticky top-0 z-[var(--z-sticky)] bg-bg-panel">
-            <SheetTitle>{t("data.edit.title")}</SheetTitle>
-            <SheetDescription className="truncate">{t("data.edit.description", { title: dataset.title })}</SheetDescription>
+        {/* The close × sits over the sticky header (it is the popup's last child): pin it so it neither hides under the header nor scrolls away. */}
+        <SheetContent closeLabel={t("common.close")} className="max-w-[640px] [&>button:last-child]:fixed [&>button:last-child]:z-[calc(var(--z-sticky)+1)]">
+          {/* Two-step title: the sheet's name (its accessible name) as the muted context line, the dataset as the heavy name. */}
+          <SheetHeader className="sticky top-0 z-[var(--z-sticky)] gap-1 bg-bg-panel pr-14">
+            <div className="flex min-w-0 items-center gap-2 text-[13.5px] font-medium tracking-[-0.015em] text-fg-muted">
+              <SheetTitle className="text-[13.5px] font-medium text-fg-muted">{t("data.edit.title")}</SheetTitle>
+              {dataset.owner_organization_name ? (
+                <>
+                  <span aria-hidden="true" className="text-border-strong">
+                    ·
+                  </span>
+                  <span className="truncate">{dataset.owner_organization_name}</span>
+                </>
+              ) : null}
+            </div>
+            <SheetDescription className="line-clamp-2 break-keep text-[21px] leading-[1.3] font-[760] tracking-[-0.04em] text-fg">{t("data.edit.description", { title: dataset.title })}</SheetDescription>
           </SheetHeader>
           <DatasetForm
             mode="edit"

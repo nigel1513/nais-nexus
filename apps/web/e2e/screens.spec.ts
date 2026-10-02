@@ -193,6 +193,47 @@ test.describe("screens", () => {
   });
 });
 
+test.describe("v2 track B: dataset form and projects", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  // V2_PHASE=before|after: v2-dataset-form-<phase>-*, v2-projects-<phase>-*.
+  const phase = process.env.V2_PHASE ?? "after";
+
+  test("dataset form (new page and edit sheet)", async ({ page, baseURL }) => {
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/data/new");
+    await expect(page.getByRole("heading", { level: 1, name: /데이터셋 등록/ })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByRole("group", { name: /담당자/ })).toContainText("정현우");
+    await shoot(page, `v2-dataset-form-${phase}-new`);
+    await setup(page, [1440, 900], "light");
+    await shootOne(page, `v2-dataset-form-${phase}-new-fold`, 1440, "light");
+    for (const [size, theme] of [[[1440, 900], "light"], [[1440, 900], "dark"], [[390, 844], "light"]] as [Size, Theme][]) {
+      await setup(page, size, theme);
+      await page.goto(`/commons/data/${DATASET_BATTERY}`);
+      await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+      await page.getByRole("button", { name: "편집" }).click();
+      await expect(page.getByLabel(/^제목/)).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await shootOne(page, `v2-dataset-form-${phase}-edit`, size[0], theme);
+    }
+  });
+
+  test("projects list, detail and new", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/projects");
+    await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
+    await shoot(page, `v2-projects-${phase}-list`);
+    await page.goto(`/commons/projects/${PROJECT_SEED}`);
+    await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
+    await shoot(page, `v2-projects-${phase}-detail`);
+    await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
+    await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
+    await shoot(page, `v2-projects-${phase}-members`, [[1440, 900]]);
+    await page.goto("/commons/projects/new");
+    await expect(page.getByRole("heading", { level: 1, name: /새 프로젝트/ })).toBeVisible();
+    await shoot(page, `v2-projects-${phase}-new`);
+  });
+});
+
 test.describe("settings and organization (Task 11)", () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
   const prefix = process.env.SHOTS_PREFIX ?? "task11";

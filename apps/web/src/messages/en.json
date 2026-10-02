@@ -335,7 +335,21 @@
       "vocabNoMatch": "No matching terms.",
       "vocabCount": "{count} / {max} chosen",
       "vocabFull": "Up to {max} can be chosen",
-      "personChange": "Change {field}"
+      "personChange": "Change {field}",
+      "previewAccess": "Access",
+      "previewLicense": "License",
+      "outline": "Sections",
+      "outlineDone": "Filled in",
+      "outlineRequired": "Required",
+      "kicker": {
+        "basic": "Identity",
+        "people": "People",
+        "context": "Origin",
+        "data": "Scope",
+        "classify": "Search",
+        "terms": "Access",
+        "publications": "Citations"
+      }
     },
     "explorer": {
       "view": "View",
@@ -392,7 +406,12 @@
       "stepProcessing": "Processing log",
       "stepPublish": "Publish",
       "stepPlanned": "Planned",
-      "stepCurrent": "Current step"
+      "stepCurrent": "Current step",
+      "context": "Data",
+      "stepInfoHint": "You are here",
+      "stepUploadHint": "On the version page after registering",
+      "stepProcessingHint": "Processing log",
+      "stepPublishHint": "Published after checks"
     },
     "edit": {
       "title": "Edit dataset",
@@ -428,7 +447,8 @@
       "description": "Joint studies you take part in and projects open to the council.",
       "emptyMineHint": "A project keeps data access requests and members in one place.",
       "count": "{more, select, more {{count}+} other {{count}}}",
-      "members": "Members"
+      "members": "Members",
+      "context": "Joint research"
     },
     "detail": {
       "about": "About",
@@ -443,23 +463,49 @@
       "archiveEllipsis": "Archive…",
       "tabs": {
         "members": "Members"
+      },
+      "context": "Project",
+      "summary": "Project summary",
+      "myRole": "My role {role}",
+      "factMembers": "Members",
+      "factOrgs": "Institutes",
+      "noPeriod": "Not set",
+      "kicker": {
+        "about": "Overview",
+        "keywords": "Search",
+        "info": "Institutes",
+        "roles": "Members"
       }
     },
     "members": {
       "inviteTitle": "Invite a member",
       "inviteHint": "Anyone in the council can be invited.",
-      "you": "You"
+      "you": "You",
+      "listTitle": "Members",
+      "kicker": {
+        "invite": "Invite",
+        "list": "Roster"
+      }
     },
     "data": {
       "noGrantsHint": "Approved access requests show up here.",
       "noRequestsHint": "Request access for this project from a dataset page.",
-      "findData": "Find data"
+      "findData": "Find data",
+      "kicker": {
+        "grants": "Granted",
+        "requests": "Requested"
+      }
     },
     "form": {
       "sectionBasic": "Basics",
       "sectionBasicHint": "Name and description are shown to members and in the public list.",
       "sectionVisibilityHint": "Public projects show a summary to everyone; details stay with members.",
-      "sectionPeriodHint": "When the study runs. Optional."
+      "sectionPeriodHint": "When the study runs. Optional.",
+      "kicker": {
+        "basic": "Identity",
+        "visibility": "Visibility",
+        "period": "Schedule"
+      }
     }
   },
   "settings": {
