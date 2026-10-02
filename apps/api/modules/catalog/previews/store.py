@@ -43,10 +43,11 @@ def backfill_previews(session: Session) -> int:
     for row in missing:
         if not table_format(row.path):
             continue
-        result = session.execute(
+        inserted = session.execute(
             pg_insert(file_previews)
             .values(file_id=row.file_id, dataset_version_id=row.dataset_version_id)
             .on_conflict_do_nothing(index_elements=[file_previews.c.file_id])
-        )
-        queued += result.rowcount  # type: ignore[attr-defined]
+            .returning(file_previews.c.file_id)
+        ).all()
+        queued += len(inserted)
     return queued
