@@ -714,8 +714,6 @@
   "settings": {
     "title": "설정",
     "profile": "내 정보",
-    "name": "이름",
-    "email": "이메일",
     "organization": "기관",
     "roles": "기관 역할",
     "profileHint": "정보 변경은 기관 관리자에게 문의하세요.",
@@ -732,7 +730,27 @@
       "remove": "번호 삭제",
       "format": "8자리 숫자로 입력하세요.",
       "duplicate": "이미 다른 사용자가 등록한 번호입니다.",
-      "saved": "저장했습니다."
+      "saved": "저장했습니다.",
+      "title": "연구자 번호",
+      "description": "국가연구자번호(NTIS)를 등록합니다.",
+      "registered": "등록됨",
+      "notRegistered": "미등록"
+    },
+    "description": "내 계정 정보와 화면 설정을 관리합니다.",
+    "profileDescription": "기관 계정에서 가져온 정보입니다.",
+    "noRoles": "부여된 역할 없음",
+    "theme": "화면 테마",
+    "themeDescription": "이 브라우저에만 적용됩니다.",
+    "languageDescription": "화면에 표시되는 언어입니다.",
+    "notificationsDescription": "프로젝트 초대, 접근 요청 처리, 권한 만료, 데이터셋 게시 소식입니다.",
+    "notificationSummary": "전체 {total}개 · 읽지 않음 {unread}개",
+    "nav": {
+      "label": "설정 메뉴",
+      "profile": "프로필",
+      "researcherNumber": "연구자 번호",
+      "theme": "화면 테마",
+      "language": "언어",
+      "notifications": "알림"
     }
   },
   "org": {
@@ -740,15 +758,10 @@
     "description": "기관 멤버의 역할과 상태를 관리합니다.",
     "code": "기관 코드",
     "type": "기관 유형",
-    "memberCount": "멤버 수",
-    "datasetCount": "데이터셋 수",
     "members": "멤버",
     "rolesFor": "{name} 역할",
     "saveChanges": "변경 저장",
-    "confirmTitle": "{name} 설정 변경",
-    "confirmDescription": "역할과 상태를 변경합니다.",
     "disableWarning": "이 사용자의 모든 데이터 접근 권한이 회수됩니다. 계속하시겠습니까?",
-    "confirm": "변경",
     "saved": "변경했습니다.",
     "selfDemotionTitle": "본인 권한 해제 확인",
     "selfDemotionWarning": "본인의 기관 관리자 권한을 해제하면 이 화면에 다시 들어올 수 없습니다. 정말 해제하시겠습니까?",
@@ -765,7 +778,33 @@
       "confirmTitle": "{name} 님을 {org}(으)로 이동",
       "warning": "이전 기관의 역할과 접근 권한은 종료되고, 사용자는 다시 로그인해야 합니다. 과거 데이터에는 당시 소속이 그대로 남습니다.",
       "confirm": "이동 확인",
-      "done": "{name} 님을 {org}(으)로 옮겼습니다."
+      "done": "{name} 님을 {org}(으)로 옮겼습니다.",
+      "description": "사용자를 다른 기관으로 옮깁니다.",
+      "platformOnly": "플랫폼 관리자 전용"
+    },
+    "actionsFor": "{name} 관리",
+    "changeRoles": "역할 변경",
+    "disable": "비활성화",
+    "enable": "다시 활성화",
+    "rolesTitle": "{name} 역할 변경",
+    "rolesDescription": "이 멤버에게 줄 기관 역할을 고르세요.",
+    "disableTitle": "{name} 비활성화",
+    "enableTitle": "{name} 다시 활성화",
+    "enableDescription": "이 멤버가 다시 기관 역할을 사용할 수 있게 됩니다.",
+    "you": "나",
+    "noRoles": "역할 없음",
+    "memberTotal": "{count}명",
+    "memberTable": "기관 멤버",
+    "noMembers": "멤버가 없습니다.",
+    "memberCountValue": "멤버 {count}명",
+    "datasetCountValue": "데이터셋 {count}개",
+    "columns": {
+      "member": "멤버",
+      "email": "이메일",
+      "roles": "역할",
+      "status": "상태",
+      "updated": "최근 변경",
+      "actions": "관리"
     }
   },
   "reserved": {

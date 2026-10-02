@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 // Screenshot harness for the UI redesign (spec §8). SHOTS_DIR lets a worktree write into the main checkout.
 // Run: corepack pnpm --dir apps/web exec playwright test e2e/screens.spec.ts --project=chromium
 const OUT = process.env.SHOTS_DIR ?? "../../.superpowers/sdd/2026-10-01-ui-redesign/shots";
-const USERS = { steward: "00000000-0000-7000-8000-000000000b03", researcher: "00000000-0000-7000-8000-000000000a02", admin: "00000000-0000-7000-8000-000000000101" };
+const USERS = { steward: "00000000-0000-7000-8000-000000000b03", researcher: "00000000-0000-7000-8000-000000000a02", admin: "00000000-0000-7000-8000-000000000101", bAdmin: "00000000-0000-7000-8000-000000000b01" };
 const DATASET_BATTERY = "00000000-0000-7000-8000-000000002001";
 
 type Size = readonly [number, number];
@@ -106,5 +106,48 @@ test.describe("screens", () => {
     await page.getByRole("button", { name: "메뉴" }).click();
     await expect(page.getByRole("dialog", { name: "메뉴" })).toBeVisible();
     await shootOne(page, "task3-sheet", 390, "light");
+  });
+});
+
+test.describe("settings and organization (Task 11)", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  const prefix = process.env.SHOTS_PREFIX ?? "task11";
+
+  test("settings", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/settings");
+    await expect(page.getByRole("heading", { level: 1, name: "설정" })).toBeVisible();
+    await expect(page.getByLabel("국가연구자번호 (NTIS)")).toBeVisible();
+    await shoot(page, `${prefix}-settings`);
+  });
+
+  test("organization admin", async ({ page, baseURL }) => {
+    await as(page, "bAdmin", baseURL!);
+    await page.goto("/settings/organization");
+    await expect(page.getByRole("heading", { name: "멤버" })).toBeVisible();
+    await expect(page.getByText("B Researcher").first()).toBeVisible();
+    await shoot(page, `${prefix}-organization-admin`);
+  });
+
+  test("organization as platform admin (transfer)", async ({ page, baseURL }) => {
+    await as(page, "admin", baseURL!);
+    await page.goto("/settings/organization");
+    await expect(page.getByRole("region", { name: "기관 이동" })).toBeVisible();
+    await shoot(page, `${prefix}-organization-platform`);
+  });
+
+  test("organization overlays: row menu, role dialog", async ({ page, baseURL }) => {
+    await as(page, "bAdmin", baseURL!);
+    for (const theme of ["light", "dark"] as Theme[]) {
+      await setup(page, [1440, 900], theme);
+      await page.goto("/settings/organization");
+      await page.getByRole("button", { name: "B Steward 관리" }).first().click();
+      await expect(page.getByRole("menu")).toBeVisible();
+      await shootOne(page, `${prefix}-member-menu`, 1440, theme);
+      await page.getByRole("menuitem", { name: "역할 변경" }).click();
+      await expect(page.getByRole("dialog", { name: "B Steward 역할 변경" })).toBeVisible();
+      await shootOne(page, `${prefix}-roles-dialog`, 1440, theme);
+      await page.keyboard.press("Escape");
+    }
   });
 });
