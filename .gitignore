@@ -10,3 +10,4 @@ dist/
 .env
 *.egg-info/
 .superpowers/
+infra/nginx/opensearch-auth.conf

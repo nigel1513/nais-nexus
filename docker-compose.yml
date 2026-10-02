@@ -18,6 +18,7 @@ services:
     volumes:
       - ./infra/nginx/nais.conf:/etc/nginx/conf.d/default.conf:ro
       - ./infra/nginx/htpasswd:/etc/nginx/htpasswd:ro
+      - ./infra/nginx/opensearch-auth.conf:/etc/nginx/opensearch-auth.conf:ro
     depends_on: [api]
     restart: unless-stopped
     healthcheck:
@@ -92,13 +93,14 @@ services:
     image: nais-opensearch:2.19.1-nori
     environment:
       discovery.type: single-node
-      DISABLE_SECURITY_PLUGIN: "true"
-      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      # 보안 플러그인 켬 (2026-10-02): 계정 인증, HTTP 유지(전송 계층만 데모 인증서 TLS)
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_ADMIN_PASSWORD:?set OPENSEARCH_ADMIN_PASSWORD}
+      plugins.security.ssl.http.enabled: "false"
       OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
     volumes: ["osdata:/usr/share/opensearch/data"]
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://127.0.0.1:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:9200/ | grep -qE '200|401'"]
       interval: 10s
       timeout: 5s
       retries: 30
