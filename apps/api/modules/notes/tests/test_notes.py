@@ -646,3 +646,20 @@ def test_database_refuses_changes_to_locked_notes(api: NotesApi, world: World, d
     _as_app(db, "DELETE FROM notes.signatures WHERE note_id = :n", n=signed["note_id"])
     stored = api.get("a.recorder", f"/notes/{signed['note_id']}").json()
     assert stored == signed
+
+
+def test_app_role_cannot_truncate_notes_tables(db: PgUrls) -> None:
+    rows = sql(
+        db,
+        "SELECT tablename, has_table_privilege('nais_app', 'notes.' || tablename, 'TRUNCATE') AS can"
+        " FROM pg_tables WHERE schemaname = 'notes'",
+    )
+    assert {r["tablename"] for r in rows} >= {
+        "notes",
+        "blocks",
+        "signatures",
+        "chains",
+        "settings",
+        "evidence",
+    }
+    assert not any(r["can"] for r in rows), rows

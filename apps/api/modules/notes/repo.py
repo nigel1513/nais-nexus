@@ -26,6 +26,15 @@ def load_note(session: Session, note_id: UUID, *, for_update: bool = False) -> R
     return session.execute(stmt).mappings().first()
 
 
+def load_notes(session: Session, note_ids: Sequence[UUID]) -> dict[UUID, RowMapping]:
+    if not note_ids:
+        return {}
+    return {
+        r["note_id"]: r
+        for r in session.execute(select(notes).where(notes.c.note_id.in_(note_ids))).mappings()
+    }
+
+
 def latest_version(
     session: Session, project_id: UUID, recorder_id: UUID, note_date: date
 ) -> RowMapping | None:
@@ -262,6 +271,7 @@ def export_notes(
     organization_id: UUID | None,
     date_from: date | None,
     date_to: date | None,
+    limit: int,
 ) -> list[RowMapping]:
     """Every version of the recorder's own notes in the project, plus (organization_id given: the caller is that
     organization's ORG_ADMIN) other recorders' SUBMITTED/SIGNED notes of that organization. Oldest first."""
@@ -272,5 +282,7 @@ def export_notes(
             and_(notes.c.organization_id == organization_id, notes.c.status.in_(("SUBMITTED", "SIGNED"))),
         )
     stmt = _dated(select(notes).where(notes.c.project_id == project_id, scope), date_from, date_to)
-    stmt = stmt.order_by(notes.c.note_date, notes.c.recorder_id, notes.c.version)
+    stmt = stmt.order_by(notes.c.note_date, notes.c.recorder_id, notes.c.version, notes.c.note_id).limit(
+        limit
+    )
     return list(session.execute(stmt).mappings())

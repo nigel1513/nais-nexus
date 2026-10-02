@@ -44,6 +44,8 @@ def require_fresh_login(user: CurrentUser) -> None:
 
 def sign(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) -> ResearchNote:
     note, relation = load(session, deps, user, note_id, for_update=True)
+    if relation is Relation.MEMBER:  # not the recorder and not a snapshot witness, whatever the note's state
+        raise not_witness()
     require_fresh_login(user)
     if note["status"] == SIGNED:
         raise locked()
@@ -55,11 +57,9 @@ def sign(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) ->
                 raise conflict("The project requires a witness: submit the note first.")
             note = fix_content(session, note, witness_required=False, witness_user_ids=[])
         role = RECORDER
-    elif relation is Relation.WITNESS:
+    else:  # Relation.WITNESS
         require_active(deps, note["project_id"], user)
         role = WITNESS
-    else:
-        raise not_witness()
 
     note_id = note["note_id"]
     signed_roles = {s["role"] for s in repo.load_signatures(session, [note_id])[note_id]}
@@ -165,7 +165,18 @@ def chain_is_intact(session: Session, project_id: UUID, organization_id: UUID) -
 
 
 def _signatures_cover(note: RowMapping, recomputed: str, signatures: Sequence[RowMapping]) -> bool:
-    roles = {s["role"] for s in signatures}
-    if any(s["content_hash"] != recomputed for s in signatures):
-        return False
+    """The signatures attest this content and were made by the right people before the note was completed: the
+    RECORDER signature by the note's recorder, the WITNESS signature by a snapshot witness other than the recorder."""
+    witnesses = set(note["witness_user_ids"] or ())
+    roles: set[str] = set()
+    for s in signatures:
+        if s["content_hash"] != recomputed or s["signed_at"] > note["signed_at"]:
+            return False
+        if s["role"] == RECORDER and s["signer_id"] != note["recorder_id"]:
+            return False
+        if s["role"] == WITNESS and (
+            s["signer_id"] not in witnesses or s["signer_id"] == note["recorder_id"]
+        ):
+            return False
+        roles.add(s["role"])
     return RECORDER in roles and (not note["witness_required"] or WITNESS in roles)

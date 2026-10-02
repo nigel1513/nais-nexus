@@ -5,8 +5,9 @@ SIGNED notes of other recorders of the admin's organization in that project (nev
 of another recorder is logged as notes.note.viewed.v1, as getNote does. A caller who is neither a member of the project
 nor gets any note sees 404 (the project is not revealed).
 
-Everything is read inside the request transaction (the session commits before the response body streams); the
-generator only formats the loaded rows. Each notes/<file>.json is canonical JSON whose `content` object re-hashes
+prepare() runs in the request transaction (which commits before the response body streams): scope, the cap of
+MAX_EXPORT_NOTES notes (422 beyond: narrow the date range) and the view log. stream() then reads the notes in batches
+of BATCH_SIZE through its own read-only snapshot session while writing the ZIP. Each notes/<file>.json is canonical JSON whose `content` object re-hashes
 (sha256 of its canonical JSON) to content_hash, so an archive can be checked offline. Only this module's data plus
 project and people names go into the archive.
 """
@@ -15,7 +16,7 @@ import csv
 import html
 import io
 import zipfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
@@ -26,14 +27,17 @@ from sqlalchemy.orm import Session
 
 from api.modules.notes import repo
 from api.modules.notes.deps import NotesDeps
-from api.modules.notes.errors import not_found
+from api.modules.notes.errors import invalid, not_found
 from api.modules.notes.hashing import canonical_json, note_document
 from api.modules.notes.service.notes import KST, check_range, emit_viewed
 from api.modules.notes.views import evidence_view, project_name
 from api.platform import clock
 from api.platform.auth import CurrentUser
+from api.platform.db import session_factory
 
 ORG_ADMIN = "ORG_ADMIN"
+MAX_EXPORT_NOTES = 5000  # more -> 422: narrow the date range
+BATCH_SIZE = 100
 FORMAT = "nais.research-note.v1"
 SECTIONS = {
     "DIRECTION": "연구 방향",
@@ -68,10 +72,12 @@ class ExportedNote:
 
 @dataclass(frozen=True)
 class Archive:
+    """What prepare() decided inside the request transaction: which notes (in archive order), for whom. The bytes
+    are produced later by stream(), which reads the notes in batches through its own read-only session."""
+
     filename: str
     project_name: str
-    names: dict[UUID, str]
-    notes: list[ExportedNote]
+    note_ids: list[UUID]
     created_at: datetime
 
 
@@ -83,6 +89,8 @@ def prepare(
     date_from: date | None,
     date_to: date | None,
 ) -> Archive:
+    """Scope check, size cap and view logging, committed with the request before any byte streams: every exported
+    note of another recorder is logged as viewed (열람 관리대장) even if the client aborts the download."""
     check_range(date_from, date_to)
     is_admin = ORG_ADMIN in user.org_roles
     rows = repo.export_notes(
@@ -92,30 +100,51 @@ def prepare(
         organization_id=user.organization_id if is_admin else None,
         date_from=date_from,
         date_to=date_to,
+        limit=MAX_EXPORT_NOTES + 1,
     )
     if not rows and deps.projects.get_member_role(project_id, user.user_id) is None:
         raise not_found("Project")
-    ids = [r["note_id"] for r in rows]
-    blocks = repo.load_blocks(session, ids)
-    signatures = repo.load_signatures(session, ids)
+    if len(rows) > MAX_EXPORT_NOTES:
+        raise invalid(
+            "from",
+            "TOO_MANY_NOTES",
+            f"An export holds at most {MAX_EXPORT_NOTES} notes; narrow the date range (from/to).",
+        )
     for row in rows:
         if row["recorder_id"] != user.user_id:
             emit_viewed(session, user, row)
-    people = [r["recorder_id"] for r in rows] + [s["signer_id"] for sigs in signatures.values() for s in sigs]
     span = f"{date_from.isoformat() if date_from else 'all'}-{date_to.isoformat() if date_to else 'all'}"
     return Archive(
         filename=f"research-notes-{project_id}-{span}.zip",
         project_name=project_name(deps, project_id),
-        names=deps.people.get_display_names(list(dict.fromkeys(people))),
-        notes=[ExportedNote(r, blocks[r["note_id"]], signatures[r["note_id"]]) for r in rows],
+        note_ids=[r["note_id"] for r in rows],
         created_at=clock.now(),
     )
+
+
+def _batches(
+    session: Session, deps: NotesDeps, note_ids: Sequence[UUID]
+) -> Iterator[tuple[ExportedNote, dict[UUID, str]]]:
+    """Notes with their blocks and signatures, BATCH_SIZE at a time, in archive order. A note deleted since
+    prepare() (a DRAFT) is skipped."""
+    for start in range(0, len(note_ids), BATCH_SIZE):
+        ids = list(note_ids[start : start + BATCH_SIZE])
+        notes = repo.load_notes(session, ids)
+        blocks = repo.load_blocks(session, ids)
+        signatures = repo.load_signatures(session, ids)
+        people = [n["recorder_id"] for n in notes.values()] + [
+            s["signer_id"] for sig in signatures.values() for s in sig
+        ]
+        names = deps.people.get_display_names(list(dict.fromkeys(people)))
+        for note_id in ids:
+            if note_id in notes:
+                yield ExportedNote(notes[note_id], blocks[note_id], signatures[note_id]), names
 
 
 # ---------------------------------------------------------------- formatting
 
 
-def _record(archive: Archive, item: ExportedNote) -> dict[str, Any]:
+def _record(archive: Archive, item: ExportedNote, names: dict[UUID, str]) -> dict[str, Any]:
     note = item.note
     return {
         "format": FORMAT,
@@ -125,7 +154,7 @@ def _record(archive: Archive, item: ExportedNote) -> dict[str, Any]:
         "chain_hash": note["chain_hash"],
         "status": note["status"],
         "project_name": archive.project_name,
-        "recorder_display_name": archive.names.get(note["recorder_id"], ""),
+        "recorder_display_name": names.get(note["recorder_id"], ""),
         "blocks": [
             {"block_id": b["block_id"], "accepted": b["accepted"], "origin": b["origin"]} for b in item.blocks
         ],
@@ -134,7 +163,7 @@ def _record(archive: Archive, item: ExportedNote) -> dict[str, Any]:
         "signatures": [
             {
                 "signer_id": s["signer_id"],
-                "signer_display_name": archive.names.get(s["signer_id"], ""),
+                "signer_display_name": names.get(s["signer_id"], ""),
                 "role": s["role"],
                 "signed_at": s["signed_at"],
                 "content_hash": s["content_hash"],
@@ -153,7 +182,7 @@ def _kst(value: datetime | None) -> str:
     return value.astimezone(KST).strftime("%Y-%m-%d %H:%M:%S KST") if value else "-"
 
 
-def _html(archive: Archive, item: ExportedNote) -> str:
+def _html(archive: Archive, item: ExportedNote, names: dict[UUID, str]) -> str:
     """Human-readable page. Every stored value is HTML-escaped and the page forbids scripts and remote loads."""
     note = item.note
 
@@ -172,7 +201,7 @@ def _html(archive: Archive, item: ExportedNote) -> str:
             f"<p>{e(b['text'])}</p>{f'<ul>{evidence}</ul>' if evidence else ''}</section>"
         )
     signatures = "".join(
-        f"<tr><td>{e(ROLES.get(s['role'], s['role']))}</td><td>{e(archive.names.get(s['signer_id'], s['signer_id']))}"
+        f"<tr><td>{e(ROLES.get(s['role'], s['role']))}</td><td>{e(names.get(s['signer_id'], s['signer_id']))}"
         f"</td><td>{e(_kst(s['signed_at']))}</td><td><code>{e(s['content_hash'])}</code></td></tr>"
         for s in item.signatures
     )
@@ -186,7 +215,7 @@ def _html(archive: Archive, item: ExportedNote) -> str:
         f"<h1>연구노트 {e(note['note_date'])} (v{e(note['version'])})</h1>"
         "<dl>"
         f"<dt>과제</dt><dd>{e(archive.project_name)}</dd>"
-        f"<dt>기록자</dt><dd>{e(archive.names.get(note['recorder_id'], note['recorder_id']))}</dd>"
+        f"<dt>기록자</dt><dd>{e(names.get(note['recorder_id'], note['recorder_id']))}</dd>"
         f"<dt>상태</dt><dd>{e(STATUSES.get(note['status'], note['status']))}</dd>"
         f"<dt>제출</dt><dd>{e(_kst(note['submitted_at']))}</dd>"
         f"<dt>서명 완료</dt><dd>{e(_kst(note['signed_at']))}</dd>"
@@ -200,28 +229,28 @@ def _html(archive: Archive, item: ExportedNote) -> str:
     )
 
 
-def _csv(notes: Sequence[ExportedNote]) -> bytes:
+def _csv_row(n: RowMapping) -> list[Any]:
     """Only ids, dates, enums and hex digests: no free text, so no spreadsheet formula can be injected."""
+    return [
+        n["note_id"],
+        n["note_date"].isoformat(),
+        n["version"],
+        n["recorder_id"],
+        n["organization_id"],
+        n["status"],
+        n["content_hash"] or "",
+        n["chain_seq"] or "",
+        n["chain_hash"] or "",
+        n["submitted_at"].isoformat() if n["submitted_at"] else "",
+        n["signed_at"].isoformat() if n["signed_at"] else "",
+    ]
+
+
+def _csv(rows: Sequence[list[Any]]) -> bytes:
     out = io.StringIO()
     writer = csv.writer(out, lineterminator="\n")
     writer.writerow(CSV_COLUMNS)
-    for item in notes:
-        n = item.note
-        writer.writerow(
-            [
-                n["note_id"],
-                n["note_date"].isoformat(),
-                n["version"],
-                n["recorder_id"],
-                n["organization_id"],
-                n["status"],
-                n["content_hash"] or "",
-                n["chain_seq"] or "",
-                n["chain_hash"] or "",
-                n["submitted_at"].isoformat() if n["submitted_at"] else "",
-                n["signed_at"].isoformat() if n["signed_at"] else "",
-            ]
-        )
+    writer.writerows(rows)
     return out.getvalue().encode("utf-8")
 
 
@@ -247,8 +276,23 @@ class _Sink:
         return data
 
 
-def stream(archive: Archive) -> Iterator[bytes]:
+def stream(archive: Archive, deps: NotesDeps, database_url: str) -> Iterator[bytes]:
+    """The ZIP, entry by entry. Reads through its own session (the request's has committed by now) in one
+    REPEATABLE READ READ ONLY transaction, so the archive is a consistent snapshot."""
+    session = session_factory(database_url)()
+    try:
+        session.connection(
+            execution_options={"isolation_level": "REPEATABLE READ", "postgresql_readonly": True}
+        )
+        yield from _zip(archive, _batches(session, deps, archive.note_ids))
+    finally:
+        session.rollback()
+        session.close()
+
+
+def _zip(archive: Archive, items: Iterable[tuple[ExportedNote, dict[UUID, str]]]) -> Iterator[bytes]:
     stamp = archive.created_at.astimezone(KST).timetuple()[:6]
+    csv_rows: list[list[Any]] = []
     sink = _Sink()
     with zipfile.ZipFile(sink, "w", compression=zipfile.ZIP_DEFLATED) as zf:
 
@@ -257,12 +301,13 @@ def stream(archive: Archive) -> Iterator[bytes]:
             info.compress_type = zipfile.ZIP_DEFLATED
             zf.writestr(info, data)
 
-        for item in archive.notes:
+        for item, names in items:
             n = item.note
             base = f"notes/{n['note_date'].isoformat()}_v{n['version']}_{n['note_id']}"
-            put(f"{base}.json", canonical_json(_record(archive, item)))
+            put(f"{base}.json", canonical_json(_record(archive, item, names)))
             yield sink.drain()
-            put(f"{base}.html", _html(archive, item).encode("utf-8"))
+            put(f"{base}.html", _html(archive, item, names).encode("utf-8"))
             yield sink.drain()
-        put("hashes.csv", _csv(archive.notes))
+            csv_rows.append(_csv_row(n))
+        put("hashes.csv", _csv(csv_rows))
     yield sink.drain()

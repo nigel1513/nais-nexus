@@ -330,3 +330,63 @@ def test_concurrent_signatures_serialize_on_the_chain_head(api: NotesApi, world:
     )
     assert [r["chain_seq"] for r in rows] == [1, 2, 3, 4]
     assert api.get("a.recorder", f"/notes/{notes[0]['note_id']}/verify").json()["chain_valid"] is True
+
+
+def test_non_witness_member_gets_not_witness_whatever_the_state_or_token(api: NotesApi, world: World) -> None:
+    signed = api.signed(world)
+    for note in (signed, api.submitted(world, user="a.colleague")):
+        for age in (0, None, 3600):
+            response = sign(api, "b.recorder", note, auth_age=age)
+            assert response.status_code == 403 and code(response) == "NOTE_NOT_WITNESS", (note["status"], age)
+
+
+def _witnessed_and_signed(api: NotesApi, world: World) -> dict[str, Any]:
+    api.witnessed(world)
+    note = api.submitted(world)
+    sign(api, "a.recorder", note)
+    body: dict[str, Any] = sign(api, "b.witness", note).json()
+    assert body["status"] == "SIGNED"
+    return body
+
+
+def test_verify_detects_a_forged_recorder_signer(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = _witnessed_and_signed(api, world)
+    tamper(
+        db,
+        "signatures",
+        "UPDATE notes.signatures SET signer_id = :u WHERE note_id = :n AND role = 'RECORDER'",
+        u=USERS["a.colleague"].user_id,
+        n=note["note_id"],
+    )
+    result = api.get("a.recorder", f"/notes/{note['note_id']}/verify").json()
+    assert (result["valid"], result["chain_valid"]) == (True, False)  # the content itself is intact
+
+
+def test_verify_detects_a_forged_witness_signer(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = _witnessed_and_signed(api, world)
+    for forged in (USERS["a.colleague"].user_id, USERS["a.recorder"].user_id):  # not a witness / the recorder
+        tamper(
+            db,
+            "signatures",
+            "UPDATE notes.signatures SET signer_id = :u WHERE note_id = :n AND role = 'WITNESS'",
+            u=forged,
+            n=note["note_id"],
+        )
+        assert api.get("a.recorder", f"/notes/{note['note_id']}/verify").json()["chain_valid"] is False
+
+
+def test_verify_detects_a_signature_dated_after_completion(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = _witnessed_and_signed(api, world)
+    tamper(
+        db,
+        "signatures",
+        "UPDATE notes.signatures SET signed_at = signed_at + interval '1 day' WHERE note_id = :n AND role = 'WITNESS'",
+        n=note["note_id"],
+    )
+    assert api.get("a.recorder", f"/notes/{note['note_id']}/verify").json()["chain_valid"] is False
+
+
+def test_verify_accepts_an_untampered_witnessed_chain(api: NotesApi, world: World) -> None:
+    note = _witnessed_and_signed(api, world)
+    result = api.get("b.witness", f"/notes/{note['note_id']}/verify").json()
+    assert (result["valid"], result["chain_valid"]) == (True, True)

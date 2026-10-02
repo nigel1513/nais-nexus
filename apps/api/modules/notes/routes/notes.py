@@ -8,7 +8,7 @@ from datetime import date
 from typing import Annotated, Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from api.modules.notes.deps import NotesDepsDep
@@ -25,6 +25,7 @@ from api.modules.notes.service import notes as service
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 from api.platform.pagination import Page, PageParams, page_params
+from api.platform.settings import Settings, get_settings
 
 router = APIRouter(tags=["notes"])
 PageDep = Annotated[PageParams, Depends(page_params)]
@@ -64,6 +65,7 @@ def list_notes(
 )
 def export_notes(
     project_id: UUID,
+    request: Request,
     user: CurrentUserDep,
     session: SessionDep,
     deps: NotesDepsDep,
@@ -72,7 +74,7 @@ def export_notes(
 ) -> StreamingResponse:
     archive = export.prepare(session, deps, user, project_id, date_from, date_to)
     return StreamingResponse(
-        export.stream(archive),
+        export.stream(archive, deps, _database_url(request)),
         media_type="application/zip",
         headers={
             "Content-Disposition": f'attachment; filename="{archive.filename}"',
@@ -80,6 +82,12 @@ def export_notes(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+def _database_url(request: Request) -> str:
+    """The database the request's own session uses (api.platform.db.get_session)."""
+    settings: Settings = getattr(request.app.state, "settings", None) or get_settings()
+    return settings.database_url
 
 
 @router.post("/projects/{project_id}/notes/today", operation_id="getOrCreateTodayNote", status_code=200)

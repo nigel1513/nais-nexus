@@ -128,3 +128,35 @@ def test_export_date_range_is_inclusive(api: NotesApi, world: World, db: PgUrls)
     assert response.headers["content-disposition"].endswith(f'-{day}-{day}.zip"')
     sql(db, "SELECT 1")
     assert notes_in(archive(export(api, "a.recorder", world, **{"to": "2000-01-01"}))) == {}
+
+
+def test_export_is_capped(api: NotesApi, world: World, db: PgUrls, monkeypatch: Any) -> None:
+    from api.modules.notes.service import export as service
+
+    monkeypatch.setattr(service, "MAX_EXPORT_NOTES", 2)
+    for user in ("a.recorder", "a.colleague", "a.owner"):
+        api.signed(world, user=user)
+    response = export(api, "a.admin", world)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_FAILED"
+    assert response.json()["error"]["details"]["fields"][0]["reason"] == "TOO_MANY_NOTES"
+    assert outbox(db, "notes.note.viewed.v1") == []  # nothing exported, nothing logged
+    assert len(notes_in(archive(export(api, "a.recorder", world)))) == 1
+
+
+def test_export_streams_notes_in_batches(api: NotesApi, world: World, db: PgUrls, monkeypatch: Any) -> None:
+    from api.modules.notes.service import export as service
+
+    monkeypatch.setattr(service, "BATCH_SIZE", 2)
+    signed = [api.signed(world, user=user) for user in ("a.recorder", "a.colleague", "a.owner")]
+    zf = archive(export(api, "a.admin", world))
+    assert set(notes_in(zf)) == {n["note_id"] for n in signed}
+    assert len(zf.read("hashes.csv").decode().splitlines()) == 4
+    assert len(outbox(db, "notes.note.viewed.v1")) == 3
+    for record, note in zip(
+        sorted(notes_in(zf).values(), key=lambda r: r["content"]["note_id"]),
+        sorted(signed, key=lambda n: n["note_id"]),
+        strict=True,
+    ):
+        assert record["recorder_display_name"] and record["signatures"][0]["signer_display_name"]
+        assert hashlib.sha256(canonical_json(record["content"])).hexdigest() == note["content_hash"]
