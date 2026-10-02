@@ -386,7 +386,7 @@ export interface paths {
         /** @description Non-stewards see only PUBLISHED versions. */
         get: operations["listDatasetVersions"];
         put?: never;
-        /** @description Owner-org DATA_STEWARD. Creates a DRAFT version. */
+        /** @description Owner-org DATA_STEWARD. Creates a DRAFT version branched from the latest PUBLISHED version (zero-copy file inheritance, spec §3.3b). Several drafts may exist at once. */
         post: operations["createDatasetVersion"];
         delete?: never;
         options?: never;
@@ -405,6 +405,90 @@ export interface paths {
         };
         /** @description Includes file manifest (names, sizes, checksums) - manifest is metadata, not data. */
         get: operations["getDatasetVersion"];
+        put?: never;
+        post?: never;
+        /** @description Owner-org DATA_STEWARD. Deletes a DRAFT version, its upload sessions and files. Stored objects are removed only when no other version references them. */
+        delete: operations["discardDatasetVersion"];
+        options?: never;
+        head?: never;
+        /** @description Owner-org DATA_STEWARD. DRAFT only. Sets the change note (required at publish). */
+        patch: operations["updateDatasetVersion"];
+        trace?: never;
+    };
+    "/dataset-versions/{version_id}/rebase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Owner-org DATA_STEWARD. DRAFT only. Re-applies the draft's changes on top of the latest PUBLISHED version. Paths changed on both sides need a resolution (MINE keeps the draft's file, THEIRS takes the latest version's); without one the call returns 409 CONFLICT with details.conflicts and changes nothing. */
+        post: operations["rebaseDatasetVersion"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dataset-versions/{version_id}/diff": {
+        parameters: {
+            query?: {
+                /** @description Default: base_version_id for a DRAFT, previous_version_id otherwise (none -> everything ADDED) */
+                against?: components["schemas"]["Id"];
+            };
+            header?: never;
+            path: {
+                version_id: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        /** @description Three-layer comparison (files, schema from column profiles - no raw values, metadata snapshot). Both versions must be visible and belong to the same dataset. */
+        get: operations["compareDatasetVersions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/file-history": {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        /** @description State of one path in every PUBLISHED/WITHDRAWN version the caller can see, oldest first. */
+        get: operations["getFileHistory"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dataset-versions/{version_id}/citation": {
+        parameters: {
+            query?: {
+                style?: components["schemas"]["CitationStyle"];
+            };
+            header?: never;
+            path: {
+                version_id: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getDatasetCitation"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1181,6 +1265,8 @@ export interface components {
             /** @enum {string} */
             format?: "csv" | "tsv" | "parquet";
             rows_sampled?: number;
+            /** @description Exact row count when known (parquet metadata, or a CSV/TSV read to the end) */
+            total_rows?: number | null;
             /** @description Sample stopped at the row/byte limit */
             truncated?: boolean;
             columns_truncated?: boolean;
@@ -1353,6 +1439,13 @@ export interface components {
             /** @description sha256 over sorted 'path\tsize\tsha256' lines; set on publish */
             manifest_sha256?: string | null;
             created_at: components["schemas"]["Timestamp"];
+            created_by?: components["schemas"]["Id"];
+            base_version_id?: components["schemas"]["Id"] | null;
+            source_version_id?: components["schemas"]["Id"] | null;
+            previous_version_id?: components["schemas"]["Id"] | null;
+            /** @description DRAFT only: base_version_id is the latest PUBLISHED version (publishable without rebase) */
+            base_is_latest?: boolean | null;
+            change_summary?: components["schemas"]["ChangeSummary"] | null;
         };
         DatasetFile: {
             file_id: components["schemas"]["Id"];
@@ -1362,6 +1455,92 @@ export interface components {
             sha256: string;
             media_type: string;
             status: components["schemas"]["FileStatus"];
+            /** @description Inherited from the base/source version without re-upload (same stored object) */
+            inherited?: boolean;
+        };
+        DatasetVersionUpdate: {
+            change_note: string;
+        };
+        /** @enum {string} */
+        RebaseResolution: "MINE" | "THEIRS";
+        RebaseRequest: {
+            /** @description path -> MINE | THEIRS for conflicting paths */
+            resolutions?: {
+                [key: string]: components["schemas"]["RebaseResolution"];
+            };
+        };
+        ChangeSummary: {
+            added: number;
+            removed: number;
+            changed: number;
+            unchanged: number;
+        };
+        /** @enum {string} */
+        FileChangeStatus: "ADDED" | "REMOVED" | "CHANGED" | "UNCHANGED";
+        FileSide: {
+            size_bytes: number;
+            sha256: string;
+        };
+        FileChange: {
+            path: string;
+            status: components["schemas"]["FileChangeStatus"];
+            before: components["schemas"]["FileSide"] | null;
+            after: components["schemas"]["FileSide"] | null;
+            size_delta: number;
+        };
+        ColumnChange: {
+            name: string;
+            type: (string | null)[] | null;
+            unit: (string | null)[] | null;
+            missing_ratio: number[] | null;
+        };
+        SchemaChange: {
+            path: string;
+            /** @enum {string} */
+            status: "COMPARED" | "PROFILE_MISSING";
+            rows?: (number | null)[];
+            columns_added?: string[];
+            columns_removed?: string[];
+            columns_changed?: components["schemas"]["ColumnChange"][];
+        };
+        MetadataChange: {
+            field: string;
+            before: unknown;
+            after: unknown;
+        };
+        VersionDiff: {
+            from_version_id: components["schemas"]["Id"] | null;
+            to_version_id: components["schemas"]["Id"];
+            summary: components["schemas"]["ChangeSummary"];
+            files: components["schemas"]["FileChange"][];
+            schema: components["schemas"]["SchemaChange"][];
+            metadata: components["schemas"]["MetadataChange"][];
+        };
+        FileHistoryEntry: {
+            dataset_version_id: components["schemas"]["Id"];
+            version_label: string;
+            /** Format: date-time */
+            published_at: string;
+            /** @enum {string} */
+            state: "ADDED" | "CHANGED" | "UNCHANGED" | "REMOVED" | "ABSENT";
+            sha256?: string | null;
+            size_bytes?: number | null;
+        };
+        FileHistory: {
+            dataset_id: components["schemas"]["Id"];
+            path: string;
+            items: components["schemas"]["FileHistoryEntry"][];
+        };
+        /**
+         * @default text
+         * @enum {string}
+         */
+        CitationStyle: "text" | "bibtex" | "datacite-json";
+        DatasetCitation: {
+            dataset_version_id: components["schemas"]["Id"];
+            style: components["schemas"]["CitationStyle"];
+            /** @description datacite-json: a serialized DataCite 4.5 attributes object */
+            content: string;
         };
         UploadSessionCreate: {
             files: {
@@ -2523,6 +2702,13 @@ export interface operations {
                      */
                     version_label: string;
                     change_note?: string;
+                    /** @description PUBLISHED version of this dataset whose files the draft inherits without re-upload (revert = an older version). Default: the latest PUBLISHED version. */
+                    from_version_id?: components["schemas"]["Id"];
+                    /**
+                     * @description Start without files (still based on the latest PUBLISHED version). Mutually exclusive with from_version_id.
+                     * @default false
+                     */
+                    empty?: boolean;
                 };
             };
         };
@@ -2540,6 +2726,7 @@ export interface operations {
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
         };
     };
     getDatasetVersion: {
@@ -2564,6 +2751,174 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+        };
+    };
+    discardDatasetVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Discarded */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateDatasetVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetVersionUpdate"];
+            };
+        };
+        responses: {
+            /** @description Version */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetVersion"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    rebaseDatasetVersion: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RebaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Rebased draft */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetVersion"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    compareDatasetVersions: {
+        parameters: {
+            query?: {
+                /** @description Default: base_version_id for a DRAFT, previous_version_id otherwise (none -> everything ADDED) */
+                against?: components["schemas"]["Id"];
+            };
+            header?: never;
+            path: {
+                version_id: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Diff */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VersionDiff"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getFileHistory: {
+        parameters: {
+            query: {
+                path: string;
+            };
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description History */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileHistory"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getDatasetCitation: {
+        parameters: {
+            query?: {
+                style?: components["schemas"]["CitationStyle"];
+            };
+            header?: never;
+            path: {
+                version_id: components["parameters"]["VersionId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Citation */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetCitation"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
     createUploadSession: {

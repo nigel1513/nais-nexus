@@ -23,6 +23,7 @@ class ErrorCode(StrEnum):
     DATASET_VERSION_NOT_PUBLISHED = "DATASET_VERSION_NOT_PUBLISHED"
     DATASET_VERSION_INCOMPLETE = "DATASET_VERSION_INCOMPLETE"
     DATASET_VERSION_LABEL_EXISTS = "DATASET_VERSION_LABEL_EXISTS"
+    DATASET_VERSION_STALE_BASE = "DATASET_VERSION_STALE_BASE"
     UPLOAD_SESSION_EXPIRED = "UPLOAD_SESSION_EXPIRED"
     UPLOAD_CHECKSUM_MISMATCH = "UPLOAD_CHECKSUM_MISMATCH"
     FILE_TYPE_NOT_ALLOWED = "FILE_TYPE_NOT_ALLOWED"
@@ -71,6 +72,7 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.DATASET_VERSION_NOT_PUBLISHED: 409,
     ErrorCode.DATASET_VERSION_INCOMPLETE: 409,
     ErrorCode.DATASET_VERSION_LABEL_EXISTS: 409,
+    ErrorCode.DATASET_VERSION_STALE_BASE: 409,
     ErrorCode.UPLOAD_SESSION_EXPIRED: 409,
     ErrorCode.UPLOAD_CHECKSUM_MISMATCH: 422,
     ErrorCode.FILE_TYPE_NOT_ALLOWED: 422,
@@ -119,6 +121,7 @@ DESCRIPTION: dict[ErrorCode, str] = {
     ErrorCode.DATASET_VERSION_NOT_PUBLISHED: "Operation requires a PUBLISHED version. Shared: used by catalog, governance, readiness.",
     ErrorCode.DATASET_VERSION_INCOMPLETE: "Publish requested but some files are not uploaded/verified, or no files exist.",
     ErrorCode.DATASET_VERSION_LABEL_EXISTS: "Version label already used in this dataset.",
+    ErrorCode.DATASET_VERSION_STALE_BASE: "The draft is based on an older version than the latest PUBLISHED one; rebase it first.",
     ErrorCode.UPLOAD_SESSION_EXPIRED: "Upload session expired; create a new one.",
     ErrorCode.UPLOAD_CHECKSUM_MISMATCH: "Stored object sha256/size does not match manifest.",
     ErrorCode.FILE_TYPE_NOT_ALLOWED: "Media type or extension is not in the allow list.",

@@ -9,6 +9,8 @@ type Doc = { paths: Record<string, Record<string, { operationId: string }>> };
 const doc = YAML.parse(readFileSync(path.resolve(process.cwd(), "../../NAIS_PRD/contracts/openapi.yaml"), "utf8")) as Doc;
 
 const exercised = new Set<string>();
+// Wave 1.5 Stage 2 operations: mock/handlers land in later tasks.
+const PENDING_W15_S2 = new Set(["updateDatasetVersion", "discardDatasetVersion", "rebaseDatasetVersion", "compareDatasetVersions", "getFileHistory", "getDatasetCitation"]);
 
 async function call(user: string | null, method: string, pathKey: string, opts: { path?: Record<string, string>; query?: string; body?: unknown; status: number }) {
   const url = pathKey.replace(/\{(\w+)\}/g, (_, k: string) => opts.path![k]!) + (opts.query ? `?${opts.query}` : "");
@@ -158,7 +160,7 @@ describe("mock API ↔ openapi.yaml", () => {
 
     const METHODS = ["get", "post", "put", "patch", "delete"];
     const all = Object.values(doc.paths).flatMap((item) => Object.entries(item).filter(([m]) => METHODS.includes(m)).map(([, op]) => op.operationId));
-    expect(all).toHaveLength(58);
-    expect(all.filter((id) => !exercised.has(id))).toEqual([]);
+    expect(all).toHaveLength(64);
+    expect(all.filter((id) => !exercised.has(id) && !PENDING_W15_S2.has(id))).toEqual([]);
   });
 });

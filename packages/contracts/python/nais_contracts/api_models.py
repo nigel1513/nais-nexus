@@ -548,6 +548,10 @@ class FileProfile(BaseModel):
     generated_at: AwareDatetime | None = None
     format: Format | None = None
     rows_sampled: int | None = None
+    total_rows: int | None = Field(
+        None,
+        description='Exact row count when known (parquet metadata, or a CSV/TSV read to the end)',
+    )
     truncated: bool | None = Field(
         None, description='Sample stopped at the row/byte limit'
     )
@@ -703,6 +707,133 @@ class DatasetFile(BaseModel):
     sha256: constr(pattern=r'^[a-f0-9]{64}$')
     media_type: str
     status: FileStatus
+    inherited: bool | None = Field(
+        None,
+        description='Inherited from the base/source version without re-upload (same stored object)',
+    )
+
+
+class DatasetVersionUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    change_note: constr(min_length=3, max_length=2000)
+
+
+class RebaseResolution(StrEnum):
+    MINE = 'MINE'
+    THEIRS = 'THEIRS'
+
+
+class RebaseRequest(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    resolutions: dict[str, RebaseResolution] | None = Field(
+        None,
+        description='path -> MINE | THEIRS for conflicting paths',
+        max_length=10000,
+    )
+
+
+class ChangeSummary(BaseModel):
+    added: conint(ge=0)
+    removed: conint(ge=0)
+    changed: conint(ge=0)
+    unchanged: conint(ge=0)
+
+
+class FileChangeStatus(StrEnum):
+    ADDED = 'ADDED'
+    REMOVED = 'REMOVED'
+    CHANGED = 'CHANGED'
+    UNCHANGED = 'UNCHANGED'
+
+
+class FileSide(BaseModel):
+    size_bytes: int
+    sha256: constr(pattern=r'^[a-f0-9]{64}$')
+
+
+class FileChange(BaseModel):
+    path: str
+    status: FileChangeStatus
+    before: FileSide | None
+    after: FileSide | None
+    size_delta: int
+
+
+class ColumnChange(BaseModel):
+    name: str
+    type: list[str | None] | None = Field(..., max_length=2, min_length=2)
+    unit: list[str | None] | None = Field(..., max_length=2, min_length=2)
+    missing_ratio: list[float] | None = Field(..., max_length=2, min_length=2)
+
+
+class Status1(StrEnum):
+    COMPARED = 'COMPARED'
+    PROFILE_MISSING = 'PROFILE_MISSING'
+
+
+class SchemaChange(BaseModel):
+    path: str
+    status: Status1
+    rows: list[int | None] | None = Field(None, max_length=2, min_length=2)
+    columns_added: list[str] | None = None
+    columns_removed: list[str] | None = None
+    columns_changed: list[ColumnChange] | None = None
+
+
+class MetadataChange(BaseModel):
+    field: str
+    before: Any
+    after: Any
+
+
+class VersionDiff(BaseModel):
+    from_version_id: Id | None
+    to_version_id: Id
+    summary: ChangeSummary
+    files: list[FileChange]
+    schema_: list[SchemaChange] = Field(..., alias='schema')
+    metadata: list[MetadataChange]
+
+
+class State(StrEnum):
+    ADDED = 'ADDED'
+    CHANGED = 'CHANGED'
+    UNCHANGED = 'UNCHANGED'
+    REMOVED = 'REMOVED'
+    ABSENT = 'ABSENT'
+
+
+class FileHistoryEntry(BaseModel):
+    dataset_version_id: Id
+    version_label: str
+    published_at: AwareDatetime
+    state: State
+    sha256: str | None = None
+    size_bytes: int | None = None
+
+
+class FileHistory(BaseModel):
+    dataset_id: Id
+    path: str
+    items: list[FileHistoryEntry]
+
+
+class CitationStyle(StrEnum):
+    text = 'text'
+    bibtex = 'bibtex'
+    datacite_json = 'datacite-json'
+
+
+class DatasetCitation(BaseModel):
+    dataset_version_id: Id
+    style: CitationStyle
+    content: str = Field(
+        ..., description='datacite-json: a serialized DataCite 4.5 attributes object'
+    )
 
 
 class File(BaseModel):
@@ -724,7 +855,7 @@ class UploadSessionCreate(BaseModel):
     files: list[File] = Field(..., max_length=500, min_length=1)
 
 
-class Status1(StrEnum):
+class Status2(StrEnum):
     OPEN = 'OPEN'
     COMPLETED = 'COMPLETED'
     EXPIRED = 'EXPIRED'
@@ -758,7 +889,7 @@ class File1(BaseModel):
 class UploadSession(BaseModel):
     upload_session_id: Id
     dataset_version_id: Id
-    status: Status1
+    status: Status2
     expires_at: Timestamp
     files: list[File1]
 
@@ -1089,6 +1220,15 @@ class DatasetVersion(DatasetVersionSummary):
         description="sha256 over sorted 'path\\tsize\\tsha256' lines; set on publish",
     )
     created_at: Timestamp
+    created_by: Id | None = None
+    base_version_id: Id | None = None
+    source_version_id: Id | None = None
+    previous_version_id: Id | None = None
+    base_is_latest: bool | None = Field(
+        None,
+        description='DRAFT only: base_version_id is the latest PUBLISHED version (publishable without rebase)',
+    )
+    change_summary: ChangeSummary | None = None
 
 
 class AccessDecisionResult(BaseModel):

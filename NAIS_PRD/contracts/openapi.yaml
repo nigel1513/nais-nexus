@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: NAIS AI-OS / Research Commons API
-  version: 1.3.0
+  version: 1.4.0
   description: |
     P0 contract. Owner: Agent 0 (Platform). Changes only via CONTRACT_CHANGE_REQUEST.md.
 
@@ -463,7 +463,7 @@ paths:
     post:
       tags: [catalog]
       operationId: createDatasetVersion
-      description: Owner-org DATA_STEWARD. Creates a DRAFT version.
+      description: Owner-org DATA_STEWARD. Creates a DRAFT version branched from the latest PUBLISHED version (zero-copy file inheritance, spec §3.3b). Several drafts may exist at once.
       requestBody:
         required: true
         content:
@@ -475,12 +475,15 @@ paths:
               properties:
                 version_label: { type: string, pattern: "^[A-Za-z0-9._-]{1,32}$", examples: ["v1", "2026.09"] }
                 change_note: { type: string, maxLength: 2000 }
+                from_version_id: { $ref: "#/components/schemas/Id", description: "PUBLISHED version of this dataset whose files the draft inherits without re-upload (revert = an older version). Default: the latest PUBLISHED version." }
+                empty: { type: boolean, default: false, description: "Start without files (still based on the latest PUBLISHED version). Mutually exclusive with from_version_id." }
       responses:
         "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersion" } } } }
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
   /dataset-versions/{version_id}:
     parameters: [ { $ref: "#/components/parameters/VersionId" } ]
     get:
@@ -491,6 +494,87 @@ paths:
         "200": { description: Version, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersion" } } } }
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [catalog]
+      operationId: updateDatasetVersion
+      description: Owner-org DATA_STEWARD. DRAFT only. Sets the change note (required at publish).
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersionUpdate" } } }
+      responses:
+        "200": { description: Version, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersion" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [catalog]
+      operationId: discardDatasetVersion
+      description: Owner-org DATA_STEWARD. Deletes a DRAFT version, its upload sessions and files. Stored objects are removed only when no other version references them.
+      responses:
+        "204": { description: Discarded }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}/rebase:
+    parameters: [ { $ref: "#/components/parameters/VersionId" } ]
+    post:
+      tags: [catalog]
+      operationId: rebaseDatasetVersion
+      description: >-
+        Owner-org DATA_STEWARD. DRAFT only. Re-applies the draft's changes on top of the latest PUBLISHED version.
+        Paths changed on both sides need a resolution (MINE keeps the draft's file, THEIRS takes the latest version's);
+        without one the call returns 409 CONFLICT with details.conflicts and changes nothing.
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/RebaseRequest" } } }
+      responses:
+        "200": { description: Rebased draft, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetVersion" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}/diff:
+    parameters:
+      - { $ref: "#/components/parameters/VersionId" }
+      - { name: against, in: query, required: false, schema: { $ref: "#/components/schemas/Id" }, description: "Default: base_version_id for a DRAFT, previous_version_id otherwise (none -> everything ADDED)" }
+    get:
+      tags: [catalog]
+      operationId: compareDatasetVersions
+      description: Three-layer comparison (files, schema from column profiles - no raw values, metadata snapshot). Both versions must be visible and belong to the same dataset.
+      responses:
+        "200": { description: Diff, content: { application/json: { schema: { $ref: "#/components/schemas/VersionDiff" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /datasets/{dataset_id}/file-history:
+    parameters:
+      - { $ref: "#/components/parameters/DatasetId" }
+      - { name: path, in: query, required: true, schema: { type: string, pattern: "^[A-Za-z0-9._/-]{1,512}$" } }
+    get:
+      tags: [catalog]
+      operationId: getFileHistory
+      description: State of one path in every PUBLISHED/WITHDRAWN version the caller can see, oldest first.
+      responses:
+        "200": { description: History, content: { application/json: { schema: { $ref: "#/components/schemas/FileHistory" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /dataset-versions/{version_id}/citation:
+    parameters:
+      - { $ref: "#/components/parameters/VersionId" }
+      - { name: style, in: query, required: false, schema: { $ref: "#/components/schemas/CitationStyle" } }
+    get:
+      tags: [catalog]
+      operationId: getDatasetCitation
+      responses:
+        "200": { description: Citation, content: { application/json: { schema: { $ref: "#/components/schemas/DatasetCitation" } } } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /dataset-versions/{version_id}/upload-session:
     parameters: [ { $ref: "#/components/parameters/VersionId" } ]
     post:
@@ -1260,6 +1344,7 @@ components:
         generated_at: { type: [string, "null"], format: date-time }
         format: { type: string, enum: [csv, tsv, parquet] }
         rows_sampled: { type: integer }
+        total_rows: { type: [integer, "null"], description: "Exact row count when known (parquet metadata, or a CSV/TSV read to the end)" }
         truncated: { type: boolean, description: "Sample stopped at the row/byte limit" }
         columns_truncated: { type: boolean }
         columns: { type: array, items: { $ref: "#/components/schemas/ColumnProfile" } }
@@ -1424,6 +1509,12 @@ components:
             total_bytes: { type: integer }
             manifest_sha256: { type: [string, "null"], description: "sha256 over sorted 'path\\tsize\\tsha256' lines; set on publish" }
             created_at: { $ref: "#/components/schemas/Timestamp" }
+            created_by: { $ref: "#/components/schemas/Id" }
+            base_version_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+            source_version_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+            previous_version_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+            base_is_latest: { type: [boolean, "null"], description: "DRAFT only: base_version_id is the latest PUBLISHED version (publishable without rebase)" }
+            change_summary: { oneOf: [ { $ref: "#/components/schemas/ChangeSummary" }, { type: "null" } ] }
     DatasetFile:
       type: object
       required: [file_id, path, size_bytes, sha256, media_type, status]
@@ -1434,6 +1525,107 @@ components:
         sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
         media_type: { type: string }
         status: { $ref: "#/components/schemas/FileStatus" }
+        inherited: { type: boolean, description: "Inherited from the base/source version without re-upload (same stored object)" }
+    DatasetVersionUpdate:
+      type: object
+      additionalProperties: false
+      required: [change_note]
+      properties:
+        change_note: { type: string, minLength: 3, maxLength: 2000 }
+    RebaseResolution: { type: string, enum: [MINE, THEIRS] }
+    RebaseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        resolutions:
+          type: object
+          maxProperties: 10000
+          additionalProperties: { $ref: "#/components/schemas/RebaseResolution" }
+          description: "path -> MINE | THEIRS for conflicting paths"
+    ChangeSummary:
+      type: object
+      required: [added, removed, changed, unchanged]
+      properties:
+        added: { type: integer, minimum: 0 }
+        removed: { type: integer, minimum: 0 }
+        changed: { type: integer, minimum: 0 }
+        unchanged: { type: integer, minimum: 0 }
+    FileChangeStatus: { type: string, enum: [ADDED, REMOVED, CHANGED, UNCHANGED] }
+    FileSide:
+      type: object
+      required: [size_bytes, sha256]
+      properties:
+        size_bytes: { type: integer }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+    FileChange:
+      type: object
+      required: [path, status, before, after, size_delta]
+      properties:
+        path: { type: string }
+        status: { $ref: "#/components/schemas/FileChangeStatus" }
+        before: { oneOf: [ { $ref: "#/components/schemas/FileSide" }, { type: "null" } ] }
+        after: { oneOf: [ { $ref: "#/components/schemas/FileSide" }, { type: "null" } ] }
+        size_delta: { type: integer }
+    ColumnChange:
+      type: object
+      required: [name, type, unit, missing_ratio]
+      properties:
+        name: { type: string }
+        type: { type: [array, "null"], items: { type: [string, "null"] }, minItems: 2, maxItems: 2 }
+        unit: { type: [array, "null"], items: { type: [string, "null"] }, minItems: 2, maxItems: 2 }
+        missing_ratio: { type: [array, "null"], items: { type: number }, minItems: 2, maxItems: 2 }
+    SchemaChange:
+      type: object
+      required: [path, status]
+      properties:
+        path: { type: string }
+        status: { type: string, enum: [COMPARED, PROFILE_MISSING] }
+        rows: { type: array, items: { type: [integer, "null"] }, minItems: 2, maxItems: 2 }
+        columns_added: { type: array, items: { type: string } }
+        columns_removed: { type: array, items: { type: string } }
+        columns_changed: { type: array, items: { $ref: "#/components/schemas/ColumnChange" } }
+    MetadataChange:
+      type: object
+      required: [field, before, after]
+      properties:
+        field: { type: string }
+        before: {}
+        after: {}
+    VersionDiff:
+      type: object
+      required: [from_version_id, to_version_id, summary, files, schema, metadata]
+      properties:
+        from_version_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        to_version_id: { $ref: "#/components/schemas/Id" }
+        summary: { $ref: "#/components/schemas/ChangeSummary" }
+        files: { type: array, items: { $ref: "#/components/schemas/FileChange" } }
+        schema: { type: array, items: { $ref: "#/components/schemas/SchemaChange" } }
+        metadata: { type: array, items: { $ref: "#/components/schemas/MetadataChange" } }
+    FileHistoryEntry:
+      type: object
+      required: [dataset_version_id, version_label, published_at, state]
+      properties:
+        dataset_version_id: { $ref: "#/components/schemas/Id" }
+        version_label: { type: string }
+        published_at: { type: string, format: date-time }
+        state: { type: string, enum: [ADDED, CHANGED, UNCHANGED, REMOVED, ABSENT] }
+        sha256: { type: [string, "null"] }
+        size_bytes: { type: [integer, "null"] }
+    FileHistory:
+      type: object
+      required: [dataset_id, path, items]
+      properties:
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        path: { type: string }
+        items: { type: array, items: { $ref: "#/components/schemas/FileHistoryEntry" } }
+    CitationStyle: { type: string, enum: [text, bibtex, datacite-json], default: text }
+    DatasetCitation:
+      type: object
+      required: [dataset_version_id, style, content]
+      properties:
+        dataset_version_id: { $ref: "#/components/schemas/Id" }
+        style: { $ref: "#/components/schemas/CitationStyle" }
+        content: { type: string, description: "datacite-json: a serialized DataCite 4.5 attributes object" }
     UploadSessionCreate:
       type: object
       additionalProperties: false

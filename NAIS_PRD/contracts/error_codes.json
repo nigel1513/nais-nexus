@@ -123,6 +123,12 @@
       "description": "Version label already used in this dataset."
     },
     {
+      "code": "DATASET_VERSION_STALE_BASE",
+      "http": 409,
+      "module": "catalog",
+      "description": "The draft is based on an older version than the latest PUBLISHED one; rebase it first."
+    },
+    {
       "code": "UPLOAD_SESSION_EXPIRED",
       "http": 409,
       "module": "catalog",

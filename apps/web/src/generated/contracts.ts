@@ -21,6 +21,7 @@ export const ERROR_HTTP: Record<string, number> = {
   "DATASET_VERSION_NOT_PUBLISHED": 409,
   "DATASET_VERSION_INCOMPLETE": 409,
   "DATASET_VERSION_LABEL_EXISTS": 409,
+  "DATASET_VERSION_STALE_BASE": 409,
   "UPLOAD_SESSION_EXPIRED": 409,
   "UPLOAD_CHECKSUM_MISMATCH": 422,
   "FILE_TYPE_NOT_ALLOWED": 422,
@@ -69,6 +70,7 @@ export const ERROR_CODES = [
   "DATASET_VERSION_NOT_PUBLISHED",
   "DATASET_VERSION_INCOMPLETE",
   "DATASET_VERSION_LABEL_EXISTS",
+  "DATASET_VERSION_STALE_BASE",
   "UPLOAD_SESSION_EXPIRED",
   "UPLOAD_CHECKSUM_MISMATCH",
   "FILE_TYPE_NOT_ALLOWED",
@@ -264,5 +266,20 @@ export const ENUMS = {
     "READY",
     "FAILED",
     "UNSUPPORTED"
+  ],
+  "RebaseResolution": [
+    "MINE",
+    "THEIRS"
+  ],
+  "FileChangeStatus": [
+    "ADDED",
+    "REMOVED",
+    "CHANGED",
+    "UNCHANGED"
+  ],
+  "CitationStyle": [
+    "text",
+    "bibtex",
+    "datacite-json"
   ]
 } as const;
