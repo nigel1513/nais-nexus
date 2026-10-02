@@ -215,7 +215,8 @@ export const governanceHandlers = [
     if (!comment?.trim() || comment.length > 2000) validationFailed("comment", "LENGTH");
     transition(r, "CHANGE_REQUESTED", user, comment);
     notify(db, [r.requester_user_id], "ACCESS_CHANGES_REQUESTED", `${r.dataset_title} 접근 요청에 수정이 요청되었습니다`, `/commons/access/${r.access_request_id}`);
-    recordAudit(db, { action: "ACCESS_CHANGES_REQUESTED", actor: user, resource: { type: "ACCESS_REQUEST", id: r.access_request_id, owner_organization_id: r.owner_organization_id }, project_id: r.project_id });
+    // Like the backend (audit/mapping.py reason_key="comment"), the comment is the audit reason.
+    recordAudit(db, { action: "ACCESS_CHANGES_REQUESTED", actor: user, resource: { type: "ACCESS_REQUEST", id: r.access_request_id, owner_organization_id: r.owner_organization_id }, project_id: r.project_id, reason: comment });
     return HttpResponse.json({ access_request: r, access_grant: null });
   }),
 

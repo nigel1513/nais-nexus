@@ -1,8 +1,7 @@
 "use client";
-import { Button, buttonClass, Checkbox, cn, EmptyState, Input, Popover, PopoverContent, PopoverTitle, PopoverTrigger, SelectMenu } from "@nais/ui";
+import { Button, buttonClass, Checkbox, cn, EmptyState, fieldClass, Input, Popover, PopoverContent, PopoverTitle, PopoverTrigger, SelectMenu } from "@nais/ui";
 import { ChevronDown, History, Search, SearchX } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useState } from "react";
 import { ENUMS } from "@/generated/contracts";
 import { useListProjects } from "@/features/projects/api";
 import { flattenPages } from "@/shared/api/pagination";
@@ -70,7 +69,6 @@ export function ActivityScreen() {
   const projects = useListProjects({ scope: "mine", limit: 100 });
   const projectList = flattenPages(projects.data);
   const names = useTargetNames();
-  const [customPeriod, setCustomPeriod] = useState(false);
 
   const query: Query<"listAuditEvents"> = {
     ...(actions.length ? { action: actions } : {}),
@@ -87,19 +85,16 @@ export function ActivityScreen() {
   const scope = me.platform_roles.includes("PLATFORM_ADMIN") ? "platform" : hasOrgRole(me, "ORG_ADMIN", "DATA_STEWARD") ? "org" : "self";
 
   const preset = (Object.keys(PRESETS) as (keyof typeof PRESETS)[]).find((k) => toMs === null && fromParam === seoulDaysAgo(PRESETS[k] - 1));
-  const period: Period = customPeriod ? "custom" : fromMs === null && toMs === null ? "all" : (preset ?? "custom");
+  // "직접 지정" lives in the URL too (?period=custom), so Back/Forward and 필터 초기화 restore the select.
+  const period: Period = params.get("period") === "custom" ? "custom" : fromMs === null && toMs === null ? "all" : (preset ?? "custom");
   const choosePeriod = (p: string | null) => {
-    if (p === "custom") return setCustomPeriod(true);
-    setCustomPeriod(false);
-    if (!p || p === "all") return setParams({ from: null, to: null });
-    setParams({ from: seoulDaysAgo(PRESETS[p as keyof typeof PRESETS] - 1), to: null });
+    if (p === "custom") return setParams({ period: "custom" });
+    if (!p || p === "all") return setParams({ period: null, from: null, to: null });
+    setParams({ period: null, from: seoulDaysAgo(PRESETS[p as keyof typeof PRESETS] - 1), to: null });
   };
   const toggleAction = (a: AuditAction) => setParams({ action: actions.includes(a) ? actions.filter((x) => x !== a) : [...actions, a] });
   const filtered = actions.length > 0 || !!projectId || !!resourceType || fromMs !== null || toMs !== null || !!text;
-  const reset = () => {
-    setCustomPeriod(false);
-    setParams({ action: null, project_id: null, resource_type: null, from: null, to: null, q: null });
-  };
+  const reset = () => setParams({ action: null, project_id: null, resource_type: null, from: null, to: null, q: null, period: null });
 
   return (
     <>
@@ -127,14 +122,17 @@ export function ActivityScreen() {
             <Input type="date" aria-label={t("activity.filter.to")} className="sm:w-40" value={toMs !== null ? (toParam ?? "") : ""} onChange={(e) => setParams({ to: e.target.value || null })} />
           </span>
         ) : null}
+        {/* The trigger has the same field look as the SelectMenu triggers beside it. */}
         <Popover>
           <PopoverTrigger
             aria-label={actions.length ? t("activity.filter.actionsCount", { count: actions.length }) : t("activity.filter.actions")}
-            className={buttonClass("secondary", "md", cn("w-full justify-between gap-2 sm:w-auto", actions.length && "border-border-strong"))}
+            className={cn(fieldClass, "flex cursor-pointer items-center justify-between gap-2 text-left sm:w-40")}
           >
-            {t("activity.filter.actions")}
-            {actions.length ? <span className="num rounded-sm bg-bg-active px-1.5 text-caption text-fg-muted">{actions.length}</span> : null}
-            <ChevronDown aria-hidden="true" className="text-fg-muted" strokeWidth={1.75} />
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate">{t("activity.filter.actions")}</span>
+              {actions.length ? <span className="num rounded-sm bg-bg-active px-1.5 text-caption text-fg-muted">{actions.length}</span> : null}
+            </span>
+            <ChevronDown aria-hidden="true" className="size-4 shrink-0 text-fg-muted" strokeWidth={1.75} />
           </PopoverTrigger>
           <PopoverContent align="start" className="flex w-80 flex-col p-0">
             <div className="flex h-10 shrink-0 items-center border-b border-border pl-3 pr-1">
@@ -198,6 +196,18 @@ export function ActivityScreen() {
         <DelayedSkeleton lines={6} />
       ) : q.isError ? (
         <ErrorView error={q.error} onRetry={() => void q.refetch()} />
+      ) : rows.length === 0 && needle && q.hasNextPage ? (
+        // The search only sees what is loaded; say so and offer the next page instead of "nothing found".
+        <EmptyState
+          className="rounded-md border border-border"
+          icon={SearchX}
+          title={t("activity.emptyLoaded")}
+          action={
+            <Button variant="secondary" loading={q.isFetchingNextPage} onClick={() => void q.fetchNextPage()}>
+              {t("activity.loadMoreToSearch")}
+            </Button>
+          }
+        />
       ) : rows.length === 0 ? (
         <EmptyState
           className="rounded-md border border-border"

@@ -39,7 +39,8 @@ describe("ActivityScreen", () => {
     const header = within(timeline()).getAllByRole("heading", { level: 2 })[0]!;
     expect(header).toHaveClass("sticky");
     expect(header).toHaveTextContent("오늘");
-    expect(header).toHaveTextContent(/\d+건/);
+    // A single day: the result count above already says how many, so the header carries no count.
+    expect(header).not.toHaveTextContent(/\d+건/);
     const entry = (await within(timeline()).findAllByText("프로젝트를 만들었습니다"))[0]!.closest("li")!;
     const time = entry.querySelector("time")!;
     expect(time).toHaveClass("font-mono", "num");
@@ -88,19 +89,61 @@ describe("ActivityScreen", () => {
     expect(screen.getByRole("combobox", { name: "기간" })).toHaveTextContent("최근 7일");
     await userEvent.click(screen.getByRole("combobox", { name: "기간" }));
     await userEvent.click(await screen.findByRole("option", { name: "직접 지정" }));
+    await waitFor(() => expect(router.replace).toHaveBeenLastCalledWith(`/commons/activity?from=${from}&period=custom`, { scroll: false }));
     expect(await screen.findByLabelText("시작일")).toHaveValue(from);
     expect(screen.getByLabelText("종료일")).toHaveValue("");
+    // Back to the preset URL: the custom fields go away (the choice is URL-derived, not component state).
+    act(() => setLocation(`/commons/activity?from=${from}`));
+    await waitFor(() => expect(screen.queryByLabelText("시작일")).not.toBeInTheDocument());
+    expect(screen.getByRole("combobox", { name: "기간" })).toHaveTextContent("최근 7일");
   });
 
   it("the target search narrows the loaded rows and keeps the term in the URL", async () => {
     open(USER.aResearcher, "/commons/activity?q=seed");
     await screen.findByRole("region", { name: "활동 목록" });
-    expect(screen.getByRole("searchbox", { name: "대상 검색" })).toHaveValue("seed");
+    expect(screen.getByRole("searchbox", { name: "행위자·대상 검색" })).toHaveValue("seed");
     await waitFor(() => expect(within(timeline()).queryAllByText("접근을 요청했습니다")).toHaveLength(0));
     expect(within(timeline()).getAllByText("프로젝트를 만들었습니다").length).toBeGreaterThan(0);
     expect(screen.getByText(/건 표시 중 · 불러온 \d+건에서 검색/)).toBeInTheDocument();
     await userEvent.click(screen.getAllByRole("button", { name: "필터 초기화" })[0]!);
     expect(router.replace).toHaveBeenLastCalledWith("/commons/activity", { scroll: false });
+  });
+
+  it("a search with nothing in the loaded rows offers to load more instead of claiming there is nothing", async () => {
+    open(USER.admin, "/commons/activity?q=nothing-matches-this");
+    expect(await screen.findByText("불러온 활동 중 일치하는 항목이 없습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "더 불러오기" })).toBeInTheDocument();
+  });
+
+  it("collapses a run of identical consecutive events into one expandable row", async () => {
+    open(USER.admin);
+    const run = await within(await screen.findByRole("region", { name: "활동 목록" })).findByText(/^AI-Ready 검증 \d+건을 마쳤습니다$/);
+    const count = Number(run.textContent!.match(/\d+/)![0]);
+    expect(count).toBeGreaterThan(1);
+    const row = run.closest("li")!;
+    expect(within(row).queryByText("AI-Ready 검증을 마쳤습니다")).not.toBeInTheDocument();
+    await userEvent.click(within(row).getByRole("button", { name: `${count}건 펼치기` }));
+    expect(within(row).getAllByRole("listitem")).toHaveLength(count);
+  });
+
+  it("shows the reason recorded on a successful event (a rejection) muted, and in the details", async () => {
+    const steward = getDb().users.find((u) => u.user_id === USER.bSteward)!;
+    recordAudit(getDb(), {
+      action: "ACCESS_REJECTED",
+      actor: steward,
+      resource: { type: "ACCESS_REQUEST", id: "00000000-0000-7000-8000-00000000a001", owner_organization_id: ORG.b },
+      reason: "목적이 데이터 정책과 맞지 않습니다",
+    });
+    getDb().audit.at(-1)!.occurred_at = new Date(Date.now() + 60_000).toISOString(); // newest, so it is on the first page
+    open(USER.bSteward);
+    const verb = (await within(await screen.findByRole("region", { name: "활동 목록" })).findAllByText("접근 요청을 거절했습니다"))[0]!;
+    const entry = verb.closest("li")!;
+    const reason = within(entry).getByText(/목적이 데이터 정책과 맞지 않습니다/, { selector: "p" });
+    expect(reason).toHaveClass("text-fg-muted");
+    expect(reason).not.toHaveClass("text-danger");
+    expect(within(entry).queryByText("거부")).not.toBeInTheDocument();
+    await userEvent.click(within(entry).getByRole("button", { name: "상세 보기" }));
+    expect(within(entry).getByText("사유", { selector: "dt" }).nextElementSibling).toHaveTextContent("목적이 데이터 정책과 맞지 않습니다");
   });
 
   it("an empty filtered result says so and offers a reset", async () => {
@@ -149,7 +192,9 @@ describe("ActivityScreen", () => {
     const { unmount } = open(USER.aSteward);
     const denied = await within(await screen.findByRole("region", { name: "활동 목록" })).findAllByText("다운로드가 거부되었습니다");
     expect(denied.length).toBeGreaterThan(0);
-    expect(within(denied[0]!.closest("li")!).getByText("거부")).toBeInTheDocument();
+    const deniedRow = denied[0]!.closest("li")!;
+    expect(within(deniedRow).getByText("거부")).toBeInTheDocument();
+    expect(within(deniedRow).getByText(/승인된 접근 권한이 없습니다|ACCESS_NOT_GRANTED/, { selector: "p" })).toHaveClass("text-danger");
     unmount();
     open(USER.aResearcher);
     await screen.findByRole("region", { name: "활동 목록" });
@@ -176,6 +221,8 @@ describe("ActivityTimeline", () => {
     const events: AuditEvent[] = Array.from({ length: 1200 }, (_, i) => ({
       ...base,
       audit_event_id: `e-${i}`,
+      // Alternate the action so no two neighbours collapse into a run.
+      action: i % 2 ? "DATASET_CREATED" : "PROJECT_CREATED",
       occurred_at: new Date(Date.now() - i * 3_600_000).toISOString(),
     }));
     renderScreen(<ActivityTimeline events={events} label="활동 목록" />, { user: USER.admin, path: "/commons/activity" });

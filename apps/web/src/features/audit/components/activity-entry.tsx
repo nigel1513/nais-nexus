@@ -66,16 +66,68 @@ export function searchText(e: AuditEvent, names: TargetNames, t: ReturnType<type
     .toLowerCase();
 }
 
-/**
- * One audit event: Seoul time (mono, tabular), actor avatar + name + organization, a verb phrase, the target as a link
- * when the app has a page for it, the result when it was denied, and the trace on demand.
- */
-export function ActivityEntry({ event: e, names, compact = false }: { event: AuditEvent; names: TargetNames; compact?: boolean }) {
+/** Reason text: a known error code is localized; anything else (a reviewer's reason or comment) is shown as written. */
+function useReasonText() {
   const t = useTranslations();
-  const [open, setOpen] = useState(false);
-  const detailsId = useId();
+  return (reason: string) => (t.has(`errors.${reason}`) ? t(`errors.${reason}`) : reason);
+}
+
+function ActorChip({ e, names }: { e: AuditEvent; names: TargetNames }) {
+  const t = useTranslations();
   const actor = actorName(e, t("activity.system"));
   const org = e.actor.organization_id ? names.orgs[e.actor.organization_id] : undefined;
+  return (
+    <span className="inline-flex min-w-0 items-center gap-2">
+      {e.actor.type === "SYSTEM" ? (
+        <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-full bg-bg-active text-fg-muted">
+          <Bot className="size-3" strokeWidth={1.75} />
+        </span>
+      ) : (
+        <Avatar name={actor} size={20} decorative />
+      )}
+      <span className="font-medium text-fg">{actor}</span>
+      {org ? <span className="text-small text-fg-muted">{org}</span> : null}
+    </span>
+  );
+}
+
+function Time({ iso, full }: { iso: string; full?: boolean }) {
+  return (
+    <time dateTime={iso} title={new Date(iso).toISOString()} className={cn("num font-mono text-mono text-fg-muted", full ? "" : "leading-6")}>
+      {full ? formatDateTime(iso) : formatDateTime(iso).slice(11)}
+    </time>
+  );
+}
+
+/** 24px disclosure in its own grid column, aligned with the entry's first line. */
+function Disclosure({ open, onToggle, controls, label }: { open: boolean; onToggle: () => void; controls: string; label: string }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      aria-expanded={open}
+      aria-controls={controls}
+      onClick={onToggle}
+      className="inline-flex size-6 cursor-pointer items-center justify-center self-start rounded-sm text-fg-subtle outline-none hover:bg-bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus aria-expanded:text-fg"
+    >
+      <ChevronDown aria-hidden="true" className={cn("size-4", open && "rotate-180")} strokeWidth={1.75} />
+    </button>
+  );
+}
+
+const rowGrid = (compact: boolean) => cn("grid gap-x-3 border-b border-border py-2", compact ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[3rem_minmax(0,1fr)_auto]");
+
+/**
+ * One audit event: Seoul time (mono, tabular), actor avatar + name + organization, a verb phrase, the target as a link
+ * when the app has a page for it, the result when it was denied, any recorded reason (a rejection reason, a change
+ * request comment, a denial code) and the trace on demand. `inRun` drops actor and verb (the run's row says them).
+ */
+export function ActivityEntry({ event: e, names, compact = false, inRun = false }: { event: AuditEvent; names: TargetNames; compact?: boolean; inRun?: boolean }) {
+  const t = useTranslations();
+  const reasonText = useReasonText();
+  const [open, setOpen] = useState(false);
+  const detailsId = useId();
   const target = targetOf(e, names);
   const denied = e.result !== "SUCCESS";
   const label = target.name ?? null;
@@ -89,26 +141,16 @@ export function ActivityEntry({ event: e, names, compact = false }: { event: Aud
   );
 
   return (
-    <div className={cn("grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 border-b border-border py-2", compact && "grid-cols-[minmax(0,1fr)]")}>
-      {compact ? null : (
-        <time dateTime={e.occurred_at} title={new Date(e.occurred_at).toISOString()} className="num pt-0.5 font-mono text-mono text-fg-muted">
-          {formatDateTime(e.occurred_at).slice(11)}
-        </time>
-      )}
+    <div className={cn(rowGrid(compact), inRun && "border-b-0 py-1")}>
+      {compact ? null : <Time iso={e.occurred_at} />}
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-body">
-          <span className="inline-flex min-w-0 items-center gap-2">
-            {e.actor.type === "SYSTEM" ? (
-              <span aria-hidden="true" className="flex size-5 shrink-0 items-center justify-center rounded-full bg-bg-active text-fg-muted">
-                <Bot className="size-3" strokeWidth={1.75} />
-              </span>
-            ) : (
-              <Avatar name={actor} size={20} decorative />
-            )}
-            <span className="font-medium text-fg">{actor}</span>
-            {org ? <span className="text-small text-fg-muted">{org}</span> : null}
-          </span>
-          <span className="text-fg">{t(`activity.verb.${e.action}`)}</span>
+        <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-body">
+          {inRun ? null : (
+            <>
+              <ActorChip e={e} names={names} />
+              <span className="text-fg">{t(`activity.verb.${e.action}`)}</span>
+            </>
+          )}
           {target.href ? (
             <Link href={target.href} className="min-w-0 truncate text-fg underline decoration-border-strong underline-offset-4 hover:decoration-fg">
               {targetText}
@@ -118,26 +160,25 @@ export function ActivityEntry({ event: e, names, compact = false }: { event: Aud
           )}
           {denied ? <StatusBadge tone="danger" label={t(`activity.result.${e.result}`)} /> : null}
           {compact ? (
-            <time dateTime={e.occurred_at} className="num text-small text-fg-muted">
-              {formatDateTime(e.occurred_at)}
-            </time>
+            <span className="text-small">
+              <Time iso={e.occurred_at} full />
+            </span>
           ) : null}
-          {/* Icon-only so forty rows do not repeat the same words; the name is still "상세 보기". */}
-          <button
-            type="button"
-            aria-label={t("activity.showDetails")}
-            title={t("activity.showDetails")}
-            aria-expanded={open}
-            aria-controls={detailsId}
-            onClick={() => setOpen((o) => !o)}
-            className="ml-auto inline-flex size-6 cursor-pointer items-center justify-center rounded-sm text-fg-subtle outline-none hover:bg-bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus aria-expanded:text-fg"
-          >
-            <ChevronDown aria-hidden="true" className={cn("size-4", open && "rotate-180")} strokeWidth={1.75} />
-          </button>
         </div>
-        {denied && e.reason ? <p className="mt-1 text-small text-danger">{t.has(`errors.${e.reason}`) ? t(`errors.${e.reason}`) : e.reason}</p> : null}
+        {/* Plain text only: a reviewer's reason or comment is user input (M10 §16). */}
+        {e.reason ? (
+          <p className={cn("mt-1 whitespace-pre-wrap break-words text-small", denied ? "text-danger" : "text-fg-muted")}>
+            <span className="font-medium">{t("activity.reason")}</span> · {reasonText(e.reason)}
+          </p>
+        ) : null}
         {open ? (
           <dl id={detailsId} className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 rounded-md border border-border bg-bg-subtle px-3 py-2 text-small">
+            {e.reason ? (
+              <>
+                <dt className="text-fg-muted">{t("activity.reason")}</dt>
+                <dd className="whitespace-pre-wrap break-words text-fg">{reasonText(e.reason)}</dd>
+              </>
+            ) : null}
             <dt className="text-fg-muted">{t("common.traceId")}</dt>
             <dd className="min-w-0">
               <PathText value={e.trace_id} copyLabel={t("common.copyTraceId")} copiedLabel={t("common.copied")} />
@@ -153,6 +194,48 @@ export function ActivityEntry({ event: e, names, compact = false }: { event: Aud
           </dl>
         ) : null}
       </div>
+      <Disclosure open={open} onToggle={() => setOpen((o) => !o)} controls={detailsId} label={t("activity.showDetails")} />
+    </div>
+  );
+}
+
+/** Same actor, action and result back to back: one entry, so twelve validations read as one line. */
+export const sameRun = (a: AuditEvent, b: AuditEvent) =>
+  a.action === b.action && a.result === b.result && a.actor.type === b.actor.type && (a.actor.user_id ?? null) === (b.actor.user_id ?? null);
+
+/** A collapsed run of identical consecutive events; expands to the individual targets (newest first). */
+export function ActivityRun({ events, names, compact = false }: { events: AuditEvent[]; names: TargetNames; compact?: boolean }) {
+  const t = useTranslations();
+  const [open, setOpen] = useState(false);
+  const listId = useId();
+  const first = events[0]!;
+  const last = events.at(-1)!;
+  return (
+    <div className={rowGrid(compact)}>
+      {compact ? null : <Time iso={first.occurred_at} />}
+      <div className="min-w-0">
+        <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-body">
+          <ActorChip e={first} names={names} />
+          <span className="text-fg">{t(`activity.verbMany.${first.action}`, { count: events.length })}</span>
+          {first.result !== "SUCCESS" ? <StatusBadge tone="danger" label={t(`activity.result.${first.result}`)} /> : null}
+          {/* The span of the run, only when it is longer than the minute the time column already shows. */}
+          {formatDateTime(last.occurred_at) !== formatDateTime(first.occurred_at) ? (
+            <span className="num text-small text-fg-muted">
+              {formatDateTime(last.occurred_at).slice(11)}–{formatDateTime(first.occurred_at).slice(11)}
+            </span>
+          ) : null}
+        </div>
+        {open ? (
+          <ol id={listId} className="mt-1 border-l border-border pl-3">
+            {events.map((e) => (
+              <li key={e.audit_event_id}>
+                <ActivityEntry event={e} names={names} compact inRun />
+              </li>
+            ))}
+          </ol>
+        ) : null}
+      </div>
+      <Disclosure open={open} onToggle={() => setOpen((o) => !o)} controls={listId} label={t("activity.expandRun", { count: events.length })} />
     </div>
   );
 }
