@@ -555,6 +555,9 @@ describe("Stage 1 research metadata (mock mirrors backend Tasks 5–9)", () => {
     expect(doc["@type"]).toEqual(["Dataset", "dcat:Dataset"]);
     expect(doc.temporalCoverage).toBe("2026-01-12/2026-06-30");
     expect(doc.about[0]).toMatchObject({ "@type": "DefinedTerm", "@id": expect.stringContaining("/vocabulary/SUBJECT/") });
+    expect(doc["@context"]).toMatchObject({ sameAs: { "@type": "@id" }, "dct:accrualPeriodicity": { "@type": "@id" } });
+    for (const c of doc.contributor) expect(c).toMatchObject({ "@type": "Role", contributor: { "@type": "Person" } });
+    expect(String(doc["dct:accrualPeriodicity"] ?? "http://purl.org/cld/freq/")).toMatch(/^http:\/\/purl\.org\/cld\/freq\//);
   });
 
   it("updateMe sets the NTIS number; duplicates are 409", async () => {
@@ -635,9 +638,9 @@ describe("Data Explorer mocks (web Task 2)", () => {
     expect(await getJson(USER.aSteward, `/dataset-files/${id("p.parquet")}/profile`)).toMatchObject({ status: "FAILED", failure_code: "GENERATION_FAILED" });
   });
 
-  it("reports a tabular file without a preview row as PENDING", async () => {
+  it("reports a file without a preview row as UNSUPPORTED", async () => {
     const data = await dataFile(VERSION.battery);
     delete getDb().previews[data.file_id];
-    expect((await getJson(USER.aResearcher, `/dataset-files/${data.file_id}/profile`)).status).toBe("PENDING");
+    expect((await getJson(USER.aResearcher, `/dataset-files/${data.file_id}/profile`)).status).toBe("UNSUPPORTED");
   });
 });
