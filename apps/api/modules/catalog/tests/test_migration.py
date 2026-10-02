@@ -22,7 +22,7 @@ from api.platform.testing.fixtures import PgUrls
 
 
 def test_catalog_schema_is_migrated_with_its_own_version_table(db: PgUrls) -> None:
-    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0002"}]
+    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0003"}]
     tables = {
         r["table_name"]
         for r in rows(db, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'catalog'")
@@ -37,6 +37,7 @@ def test_catalog_schema_is_migrated_with_its_own_version_table(db: PgUrls) -> No
         "processed_events",
         "vocabulary_terms",
         "dataset_contributors",
+        "file_previews",
     } <= tables
 
 
@@ -210,5 +211,32 @@ def test_catalog_0002_downgrade_and_upgrade_round_trip(db: PgUrls) -> None:
     assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0001"}]
     assert rows(db, "SELECT 1 FROM information_schema.tables WHERE table_name = 'vocabulary_terms'") == []
     command.upgrade(config, "head")
-    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0002"}]
+    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0003"}]
     assert rows(db, "SELECT count(*) AS n FROM catalog.vocabulary_terms")[0]["n"] > 50
+
+
+def test_catalog_0003_downgrade_and_upgrade_round_trip(db: PgUrls) -> None:
+    (target,) = [t for t in migration_targets([MODULE]) if t.name == "catalog"]
+    config = alembic_config(db.migrator, target)
+    command.downgrade(config, "catalog_0002")
+    assert rows(db, "SELECT 1 FROM information_schema.tables WHERE table_name = 'file_previews'") == []
+    command.upgrade(config, "head")
+    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0003"}]
+    dataset_id = insert_dataset(db)
+    version_id = insert_version(db, dataset_id, published=True, files=[("data/a.csv", 10, SHA_A)])
+    [file_row] = rows(
+        db, "SELECT file_id FROM catalog.dataset_files WHERE dataset_version_id = :v", v=version_id
+    )
+    execute(
+        db,
+        "INSERT INTO catalog.file_previews (file_id, dataset_version_id) VALUES (:f, :v)",
+        f=file_row["file_id"],
+        v=version_id,
+    )
+    for sql in (
+        "UPDATE catalog.file_previews SET status = 'READY'",  # READY needs profile and preview
+        "UPDATE catalog.file_previews SET status = 'UNSUPPORTED'",  # never stored: derived by the API
+        "UPDATE catalog.file_previews SET status = 'FAILED', failure_code = 'NOPE'",
+    ):
+        with pytest.raises(DBAPIError, match="ck_file_previews"):
+            execute(db, sql)

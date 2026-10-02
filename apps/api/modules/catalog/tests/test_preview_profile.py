@@ -709,7 +709,7 @@ def test_dictionary_page_is_sized_at_the_decoder_start_offset() -> None:
 
     from api.modules.catalog.previews.profile import _dictionary_page_size
 
-    pages = {100: _page(2, 5_000_000), 200: _page(0, 10), 300: _page(2, 7), 400: _page(0, 10)}
+    pages = {100: _page(2, 5_000_000), 200: _page(0, 10), 300: _page(2, 7, 7), 400: _page(0, 10)}
 
     def peek(offset: int, n: int) -> bytes:
         return pages.get(offset, b"\xff" * n)[:n]
@@ -939,3 +939,104 @@ def test_real_plain_page_with_large_statistics_is_still_decoded() -> None:
     assert result.rows_sampled == 2
     assert [c["kind"] for c in result.preview["columns"]][1] == "numeric"
     assert result.preview["rows"][0][0] is not None
+
+
+def test_uncompressed_page_is_sized_by_the_larger_of_both_sizes() -> None:
+    # for UNCOMPRESSED chunks pyarrow reads compressed_page_size (field 3) bytes and ignores field 2
+    from api.modules.catalog.previews.profile import page_header_sizes
+
+    assert page_header_sizes(_page(2, 8, 20_000_004)) == (2, 20_000_004)
+    assert page_header_sizes(_page(2, 20_000_004, 8)) == (2, 20_000_004)
+
+
+@pytest.mark.parametrize(
+    "header",
+    [b"\x15\x04\x39" + b"\x19" * n for n in (9, 100, 2_000, 60_000)]
+    + [b"\x15\x04\x3a" + b"\x1a" * 2_000, b"\x15\x04\x3b" + b"\x01\xbb" * 30_000],
+    ids=["list9", "list100", "list2000", "list60000", "set2000", "map30000"],
+)
+def test_nested_collections_are_depth_bounded_and_never_raise(header: bytes) -> None:
+    from api.modules.catalog.previews.profile import _peek_page_header, page_header_sizes
+
+    assert page_header_sizes(header) is None
+    padded = header + b"\x00" * 70_000
+    assert _peek_page_header(lambda o, n: padded[o : o + n], 0) is None
+
+
+def test_recursion_error_never_escapes_the_parser(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api.modules.catalog.previews import profile as P
+
+    def boom(self, wire, depth):  # type: ignore[no-untyped-def]
+        raise RecursionError
+
+    monkeypatch.setattr(P._ThriftCompact, "value", boom)
+    header = b"\x15\x04\x15\x04\x15\x04\x19\x00\x00"
+    assert P.page_header_sizes(header) is None
+    assert P._peek_page_header(lambda o, n: header[o : o + n], 0) is None
+
+
+_UNCOMPRESSED_BOMB_SCRIPT = """
+import io, resource, struct, sys
+import pyarrow as pa, pyarrow.parquet as pq
+from api.modules.catalog.previews import profile as P
+
+entry = int(sys.argv[1])
+d = pa.DictionaryArray.from_arrays(pa.array([0] * 200_000, pa.int32()), pa.array(["x" * entry]))
+sink = io.BytesIO()
+pq.write_table(pa.Table.from_arrays([d, d], names=["s", "s"]), sink, store_schema=False,
+               dictionary_pagesize_limit=256 << 20, compression="none")
+data = sink.getvalue()
+del d
+
+
+def zz(n):
+    n, out = (n << 1) ^ (n >> 63), b""
+    while n >= 0x80:
+        out, n = out + bytes([n & 0x7F | 0x80]), n >> 7
+    return out + bytes([n])
+
+
+# r5 small2: the second column's UNCOMPRESSED dictionary page declares uncompressed_page_size = 8 while
+# compressed_page_size stays real; pyarrow reads field 3 bytes for UNCOMPRESSED chunks
+cm = pq.ParquetFile(io.BytesIO(data)).metadata.row_group(0).column(1)
+dic, dat, total = cm.dictionary_page_offset, cm.data_page_offset, cm.total_compressed_size
+size = entry + 4
+old = b"\\x15\\x04\\x15" + zz(size) + b"\\x15" + zz(size)
+assert data[dic : dic + len(old)] == old
+new = b"\\x15\\x04\\x15" + zz(8) + b"\\x15" + zz(size)
+shift = len(new) - len(old)
+body = data[:dic] + new + data[dic + len(old) :]
+start = len(data) - 8 - struct.unpack("<i", data[-8:-4])[0]
+footer = data[start : len(data) - 8]
+old_f = b"\\x16" + zz(total) + b"\\x26" + zz(dat) + b"\\x26" + zz(dic)
+assert footer.count(old_f) == 1
+footer = footer.replace(old_f, b"\\x16" + zz(total + shift) + b"\\x26" + zz(dat + shift) + b"\\x26" + zz(dic))
+data = body[: start + shift] + footer + struct.pack("<i", len(footer)) + b"PAR1"
+before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+r = P.profile_table(lambda s, e: io.BytesIO(data[s : e + 1]), len(data), path="m.parquet", hints={},
+                    limits=P.PreviewLimits(), deadline=P.make_deadline(60))
+grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) // 1024
+print(r.rows_sampled, int(r.truncated), ",".join(c["kind"] for c in r.preview["columns"]), grown)
+"""
+
+
+@pytest.mark.parametrize("entry", [4_000_000, 20_000_000])
+def test_uncompressed_dictionary_with_tiny_declared_size_stays_bounded(entry: int) -> None:
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
+    out = subprocess.run(
+        ["prlimit", "--as=8589934592", sys.executable, "-c", _UNCOMPRESSED_BOMB_SCRIPT, str(entry)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    ).stdout.split()
+    rows, truncated, kinds, grown_mb = int(out[0]), out[1] == "1", out[2].split(","), int(out[3])
+    assert rows > 0 and truncated
+    if entry > PreviewLimits().max_bytes // 4:
+        assert kinds == ["other", "other"]
+    assert grown_mb < 512

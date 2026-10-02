@@ -8,6 +8,7 @@ from api.modules.catalog.routes import (
     dataset_update,
     datasets,
     jsonld,
+    previews,
     publish,
     search,
     uploads,
@@ -27,5 +28,6 @@ for sub in (
     contributors.router,
     publish.router,
     vocabulary.router,
+    previews.router,
 ):
     router.include_router(sub)

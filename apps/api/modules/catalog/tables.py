@@ -160,3 +160,18 @@ dataset_contributors = Table(
     Column("position", Integer),
     _ts("created_at"),
 )
+
+file_previews = Table(
+    "file_previews",
+    metadata,
+    _uuid("file_id", primary_key=True),
+    _uuid("dataset_version_id"),
+    Column("status", Text),
+    Column("failure_code", Text),
+    Column("column_profile", JSONB),
+    Column("preview", JSONB),
+    Column("attempts", Integer),
+    _ts("next_attempt_at"),
+    _ts("generated_at"),
+    _ts("created_at"),
+)

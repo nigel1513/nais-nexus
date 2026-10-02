@@ -5,7 +5,7 @@ Spec: `NAIS_PRD/modules/M03_data_catalog.md`. Schema `catalog`, migrations in `m
 ## HTTP (openapi operationIds)
 searchDatasets, createDataset, getDataset, updateDataset, getDatasetPolicy, listDatasetVersions,
 createDatasetVersion, getDatasetVersion, createUploadSession, getUploadSession, completeUploadSession,
-deleteDraftFile, publishDatasetVersion. No endpoint returns a download URL, bucket or storage key.
+deleteDraftFile, publishDatasetVersion, getFileProfile, getFilePreview. No endpoint returns a download URL, bucket or storage key.
 
 ## Upload flow
 1. `POST /dataset-versions/{id}/upload-session` → per file either `PUT` (sign `Content-Type` and
@@ -27,6 +27,26 @@ Produces `catalog.dataset.created.v1`, `catalog.dataset.access_level_changed.v1`
 ## Worker
 `catalog.index_drain` (2 s), `catalog.expire_upload_sessions` (5 min, also re-queues stale verifications),
 Dramatiq actor `catalog.verify_file` (queue `catalog`). Full rebuild: `python -m api.modules.catalog.reindex`.
+
+## Data Explorer previews (Wave 1.5 spec §7)
+- Publishing queues one `catalog.file_previews` row per CSV/TSV/parquet file (PENDING). `catalog.preview_dispatch`
+  (10 s) leases due rows (at most 2 live leases; 3 attempts, then FAILED/GENERATION_FAILED) and sends
+  `catalog.generate_preview` on the dedicated queue `catalog_previews` (1 worker thread, ruling P25).
+- `getFileProfile` (metadata only, no raw values) is visible to everyone who can see the version; `getFilePreview`
+  (first 100 rows, distributions) needs download permission: PLATFORM_ADMIN, owner-organization member, PUBLIC
+  dataset, or an ACTIVE grant via `PreviewGrantLookup` (NoGrants until M04), else 403
+  `details.reason = DOWNLOAD_PERMISSION_REQUIRED`.
+- Profiling runs in a separate interpreter per file (`previews/sandbox.py`, ruling P24) under RLIMIT_AS
+  (`CATALOG_PREVIEW_MEMORY_LIMIT_BYTES`, 1.5 GiB), RLIMIT_CPU, RLIMIT_FSIZE (64 KiB), PR_SET_PDEATHSIG and a wall
+  clock (`CATALOG_PREVIEW_TIMEOUT_SECONDS` + 15 s). It reads the object only through byte-range requests the worker
+  serves (request and byte budgets), gets an environment without secrets, and its output is re-validated against
+  the contract shapes and size ceilings before it is stored.
+- Residual risk (accepted): the child runs as the worker's uid with the network available. The worker marks itself
+  non-dumpable (`PR_SET_DUMPABLE 0`) so the child cannot read its `/proc/<pid>/environ` or memory, but the child
+  could still read any file that uid can read (e.g. a mounted `.env`) and open network connections. Only a code-
+  execution bug in pyarrow/CPython parsing would expose that; a separate uid, seccomp or a network namespace would
+  close it. In compose the api runs in its own container (separate PID namespace), so only worker processes are
+  visible to the child.
 
 ## Search
 Index `nais-datasets-v2` behind alias `nais-datasets` (`infra/opensearch`). Without the `analysis-nori`

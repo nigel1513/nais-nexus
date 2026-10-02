@@ -30,6 +30,8 @@ EXPECTED = {
     "completeUploadSession",
     "deleteDraftFile",
     "publishDatasetVersion",
+    "getFileProfile",
+    "getFilePreview",
 }
 
 

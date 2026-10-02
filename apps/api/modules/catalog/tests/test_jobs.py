@@ -89,8 +89,12 @@ def test_stale_uploaded_files_are_requeued_once(api: CatalogApi, db: PgUrls) -> 
 def test_register_worker_schedules_the_catalog_jobs() -> None:
     scheduler = Scheduler()
     register_worker(StubBroker(), scheduler)
-    assert scheduler.job_names == ["catalog.index_drain", "catalog.expire_upload_sessions"]
-    assert [job.interval_s for job in scheduler._jobs] == [2.0, 300.0]
+    assert scheduler.job_names == [
+        "catalog.index_drain",
+        "catalog.expire_upload_sessions",
+        "catalog.preview_dispatch",
+    ]
+    assert [job.interval_s for job in scheduler._jobs] == [2.0, 300.0, 10.0]
 
 
 def test_worker_boots_with_the_catalog_module() -> None:
