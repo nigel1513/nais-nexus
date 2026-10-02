@@ -487,3 +487,16 @@ def test_integer_sum_overflow_is_a_clear_step_error() -> None:
     ok = pa.table({"g": ["a", "a"], "v": pa.array([2**61, 2**61], pa.int64())})
     got = run([{"type": "aggregate", "group_by": ["g"], "metrics": [{"column": "v", "fn": "sum"}]}], base=ok)
     assert col(got, "v_sum") == [2**62]
+
+
+def test_unsigned_and_signed_join_keys() -> None:
+    step = parse_steps([{"type": "join", "right_input_id": str(RIGHT), "on": ["k"], "how": "inner"}])
+    left = pa.table({"k": pa.array([1, 2], pa.int32())})
+    small = pa.table({"k": pa.array([2], pa.uint32()), "v": ["two"]})
+    got = S.apply(step, {BASE: left, RIGHT: small}, IDS, max_rows=10)
+    assert got.schema.field("k").type == pa.int64() and got.to_pylist() == [{"k": 2, "v": "two"}]
+    huge = pa.table({"k": pa.array([2**63 + 5], pa.uint64()), "v": ["huge"]})
+    with pytest.raises(S.StepError) as exc:
+        S.apply(step, {BASE: left, RIGHT: huge}, IDS, max_rows=10)
+    assert (exc.value.step_index, exc.value.reason) == (0, "STEP_FAILED")
+    assert "common integer type" in exc.value.message and str(2**63 + 5) not in exc.value.message

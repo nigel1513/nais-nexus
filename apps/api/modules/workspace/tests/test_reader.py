@@ -168,3 +168,28 @@ def test_csv_typing_keeps_identifiers_as_text() -> None:
     }
     assert table.column("zip").to_pylist() == ["007", "10"]
     assert table.column("big").to_pylist() == ["12345678901234567890", "1"]
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        ["12345678901234567890", "1.5"],  # beyond int64 next to a decimal
+        ["9007199254740993", "1.5"],  # within int64, not exact in float64
+        ["0.12345678901234567891", "1.5"],  # more digits than float64 keeps
+    ],
+)
+def test_float_columns_must_be_exact(values: list[str]) -> None:
+    port = FakeReader()
+    body = ("x\n" + "\n".join(values) + "\n").encode()
+    table = R.read_table(port, port.add("f.csv", body), max_rows=10, truncate=False).table
+    assert table.schema.field("x").type == pa.string()
+    assert table.column("x").to_pylist() == values
+
+
+def test_exact_long_decimals_are_still_floats() -> None:
+    port = FakeReader()
+    values = ["0.1", "1.50", "1e3", "123456789012345", "0.30000000000000004", "9007199254740992"]
+    body = ("x\n" + "\n".join([*values, "2.5"]) + "\n").encode()
+    table = R.read_table(port, port.add("g.csv", body), max_rows=10, truncate=False).table
+    assert table.schema.field("x").type == pa.float64()
+    assert table.column("x").to_pylist()[:4] == [0.1, 1.5, 1000.0, 123456789012345.0]

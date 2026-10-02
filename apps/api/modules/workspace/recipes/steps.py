@@ -253,7 +253,10 @@ def join_key_type(left: pa.DataType, right: pa.DataType) -> pa.DataType:
     if pa.types.is_integer(left) and pa.types.is_integer(right):
         if pa.types.is_signed_integer(left) == pa.types.is_signed_integer(right):
             return left if left.bit_width >= right.bit_width else right
-        return pa.int64()
+        signed, unsigned = (left, right) if pa.types.is_signed_integer(left) else (right, left)
+        # the smallest signed type holding both; uint64 values >= 2**63 cannot be joined (StepError at execution)
+        width = min(64, max(signed.bit_width, unsigned.bit_width * 2))
+        return {8: pa.int8(), 16: pa.int16(), 32: pa.int32(), 64: pa.int64()}[width]
     if pa.types.is_large_string(left) or pa.types.is_large_string(right):
         return pa.large_string()
     return left
@@ -519,10 +522,17 @@ def _join(
     for key in keys:  # same family was planned; both sides take the wider type
         lt, rt = table.schema.field(key).type, right.schema.field(key).type
         common = join_key_type(lt, rt)
-        if lt != common:
-            table = _replace(table, key, pc.cast(table.column(key), common), table.schema.field(key).metadata)
-        if rt != common:
-            right = _replace(right, key, pc.cast(right.column(key), common))
+        try:
+            if lt != common:
+                table = _replace(
+                    table, key, pc.cast(table.column(key), common), table.schema.field(key).metadata
+                )
+            if rt != common:
+                right = _replace(right, key, pc.cast(right.column(key), common))
+        except pa.ArrowInvalid as exc:
+            raise fail(
+                "STEP_FAILED", f"key '{key}' has values that do not fit a common integer type ({common})."
+            ) from exc
     expected = _join_rows(table, right, keys, s.how)
     if expected > max_rows:
         raise fail(

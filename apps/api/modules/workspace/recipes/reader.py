@@ -22,6 +22,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, BinaryIO
 
 import pyarrow as pa
@@ -198,20 +199,42 @@ def _csv_problem(exc: BaseException) -> str:
     return "The CSV file cannot be parsed."
 
 
-# canonical number spellings only: no "+", no leading zeros (but "0" and "0.5"), so "007" / "+1" / zip codes and
-# other identifiers stay text and every typed value prints back as it was written
+# Canonical number spellings only: no "+", no leading zeros (but "0" and "0.5"), so "007" / "+1" / zip codes and
+# other identifiers stay text. A column typed float must also be exact: every value's float64 is the same number as
+# its text (see _floats_exact); otherwise the column stays text.
 _INTEGER = r"^(0|-?[1-9][0-9]*)$"
 _DECIMAL = r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$|^-?\.[0-9]+$"
 _BOOLEAN = r"^(?i:true|false)$"
+SAFE_SIGNIFICANT_DIGITS = 15  # any decimal with at most 15 significant digits survives float64 exactly
 
 
 def _all_match(values: pa.ChunkedArray, pattern: str) -> bool:
     return bool(pc.all(pc.match_substring_regex(values, pattern)).as_py())
 
 
+def _floats_exact(values: pa.ChunkedArray) -> bool:
+    """Every value converts to a finite float64 that is the same number as its text, and integer-looking values fit
+    int64. Values with at most 15 significant digits are exact by construction; only the longer ones are checked one
+    by one (Decimal(text) == Decimal(repr(float)))."""
+    integers = values.filter(pc.match_substring_regex(values, _INTEGER))
+    if len(integers):
+        try:
+            pc.cast(integers, pa.int64())
+        except pa.ArrowInvalid:
+            return False
+    floats = pc.cast(values, pa.float64())
+    if not bool(pc.all(pc.is_finite(floats)).as_py()):
+        return False
+    mantissa = pc.replace_substring_regex(values, r"[eE].*$", "")
+    digits = pc.replace_substring_regex(pc.replace_substring_regex(mantissa, r"[^0-9]", ""), r"^0+|0+$", "")
+    long = values.filter(pc.greater(pc.utf8_length(digits), SAFE_SIGNIFICANT_DIGITS))
+    return all(Decimal(text) == Decimal(repr(float(text))) for text in pc.unique(long).to_pylist())
+
+
 def _typed(table: pa.Table) -> pa.Table:
     """Text columns -> integer / float / boolean when every value read is a canonical spelling of one;
-    otherwise text. An integer column that overflows int64 stays text (never float: identifiers would lose digits)."""
+    otherwise text. Integer columns must fit int64 and float columns must be exact (_floats_exact); anything else
+    stays text, so identifiers and long numbers never lose digits."""
     for i, name in enumerate(table.column_names):
         col = table.column(i)
         if col.null_count == len(col):
@@ -221,9 +244,8 @@ def _typed(table: pa.Table) -> pa.Table:
         try:
             if _all_match(trimmed, _INTEGER):
                 typed = pc.cast(trimmed, pa.int64())
-            elif _all_match(trimmed, _DECIMAL):
-                floats = pc.cast(trimmed, pa.float64())
-                typed = floats if bool(pc.all(pc.is_finite(floats)).as_py()) else None
+            elif _all_match(trimmed, _DECIMAL) and _floats_exact(trimmed):
+                typed = pc.cast(trimmed, pa.float64())
             elif _all_match(trimmed, _BOOLEAN):
                 typed = pc.cast(pc.utf8_lower(trimmed), pa.bool_())
         except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
