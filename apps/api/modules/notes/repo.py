@@ -1,6 +1,6 @@
 """SQL for notes tables (Core). Callers own the transaction."""
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from datetime import date, datetime
 from typing import Any
 from uuid import UUID
@@ -400,14 +400,16 @@ def search_scope(user_id: UUID, *, witness_project_ids: Sequence[UUID], project_
     return (union_all(*parts) if len(parts) > 1 else parts[0]).subquery("scope")
 
 
-def scope_vectors(session: Session, scope: Subquery) -> list[RowMapping]:
-    """(note_id, project_id, note_date, vector) of the scope's notes that have a non-empty embedding."""
+def scope_vectors(session: Session, scope: Subquery) -> Iterator[RowMapping]:
+    """(note_id, project_id, note_date, vector) of the scope's notes that have a non-empty embedding, streamed in
+    chunks of 500 (consume it fully before the next statement)."""
     stmt = (
         select(scope.c.note_id, scope.c.project_id, scope.c.note_date, embeddings.c.vector)
         .join(embeddings, embeddings.c.note_id == scope.c.note_id)
         .where(func.cardinality(embeddings.c.vector) > 0)
+        .execution_options(yield_per=500)
     )
-    return list(session.execute(stmt).mappings())
+    yield from session.execute(stmt).mappings()
 
 
 def _like_literal(q: str) -> str:
@@ -473,10 +475,9 @@ def upsert_embedding(
     )
 
 
-def touch_embeddings(session: Session, note_ids: Sequence[UUID], at: datetime) -> None:
-    """The stored vectors were checked against the notes' current text (unchanged) at `at`."""
-    if note_ids:
-        session.execute(update(embeddings).where(embeddings.c.note_id.in_(note_ids)).values(updated_at=at))
+def touch_embedding(session: Session, note_id: UUID, at: datetime) -> None:
+    """The stored vector was checked against the note as it was at `at` (its updated_at): still current."""
+    session.execute(update(embeddings).where(embeddings.c.note_id == note_id).values(updated_at=at))
 
 
 def unembedded_note_ids(session: Session, *, limit: int) -> list[UUID]:

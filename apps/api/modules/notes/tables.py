@@ -129,8 +129,9 @@ daily_runs = Table(
     Column("ran_at", DateTime(timezone=True), nullable=False),
 )
 
-# searchNotes (Task 11): the bge-m3 vector of a note version's searchable text (search.searchable_text: HUMAN blocks
-# and accepted AI blocks) and that text's sha256; updated_at = when it was last checked against the note (jobs).
+# searchNotes (Task 11): the unit-length bge-m3 vector of a note version's searchable text (search.searchable_text:
+# HUMAN blocks and accepted AI blocks; empty when there is none or the model refused it), text_hash = sha256 of the
+# embedding model id + that text, updated_at = the note's updated_at as of the last check (jobs.embed_notes).
 embeddings = Table(
     "embeddings",
     metadata,

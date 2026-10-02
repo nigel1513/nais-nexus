@@ -16,6 +16,7 @@ from api.platform.llm import (
     EmbeddingClient,
     LlmClient,
     RerankClient,
+    embedding_model,
     get_embedding_client,
     get_llm_client,
     get_rerank_client,
@@ -28,9 +29,11 @@ class NotesDeps:
     people: DisplayNameLookup
     # The platform LLM client, resolved per use (None while NAIS_LLM_ENABLED is false or no base URL is set).
     llm: Callable[[], LlmClient | None] = field(default=get_llm_client)
-    # searchNotes (bge-m3 embeddings, bge-reranker), resolved per use; None while switched off or unconfigured.
-    embedder: Callable[[], EmbeddingClient | None] = field(default=get_embedding_client)
-    reranker: Callable[[], RerankClient | None] = field(default=get_rerank_client)
+    # searchNotes (bge-m3 embeddings, bge-reranker), resolved per use with an optional timeout_s (the request path
+    # passes NotesSettings.nais_search_timeout_s); None while switched off or unconfigured.
+    embedder: Callable[..., EmbeddingClient | None] = field(default=get_embedding_client)
+    reranker: Callable[..., RerankClient | None] = field(default=get_rerank_client)
+    embed_model: Callable[[], str] = field(default=embedding_model)
 
     @property
     def projects(self) -> ProjectQueryPort:

@@ -59,7 +59,7 @@ from api.platform import clock, ports
 from api.platform.db import session_factory
 from api.platform.errors import ApiError
 from api.platform.ids import new_id
-from api.platform.llm import ChatMessage, LlmTruncated, LlmUnavailable
+from api.platform.llm import ChatMessage, EmbeddingClient, LlmTruncated, LlmUnavailable
 from api.platform.scheduler import Scheduler
 
 logger = logging.getLogger("nais.notes")
@@ -252,54 +252,64 @@ def enqueue_after_commit(session: Session, note_id: UUID) -> None:
 # ---------------------------------------------------------------- embeddings (searchNotes)
 
 
-def _texts(session: Session, note_ids: list[UUID]) -> dict[UUID, str]:
-    return {n: search.searchable_text(t) for n, t in repo.searchable_blocks(session, note_ids).items()}
+def _embed_batch(embedder: EmbeddingClient, texts: list[str]) -> list[list[float]]:
+    """Vectors for the texts. A refused batch (ValueError: bad request, odd answer) is retried one text at a time and
+    a text refused alone gets an empty vector (not searched semantically until its text changes). LlmUnavailable
+    propagates: nothing more is sent now."""
+    clipped = [t[: search.EMBED_CHARS] for t in texts]
+    try:
+        return [search.unit(v) for v in embedder.embed(clipped)]
+    except ValueError:
+        if len(clipped) == 1:
+            logger.warning("embedding refused for a note; stored empty")
+            return [[]]
+    return [_embed_batch(embedder, [t])[0] for t in clipped]
 
 
 def embed_notes(note_ids: list[UUID]) -> int:
-    """(Re)compute the vectors of the notes whose searchable text changed. Returns how many were stored."""
-    embedder = _deps().embedder()
+    """(Re)compute the vectors of the notes whose searchable text (or the embedding model) changed. Returns how many
+    were stored. Each row is stamped with the note's updated_at as read, so a change made while the GPU answered
+    leaves the row older than the note and the sweep queues it again."""
+    deps = _deps()
+    embedder = deps.embedder()
     if embedder is None or not note_ids:
         return 0
+    model = deps.embed_model()
     with _session() as session, session.begin():
         found = repo.load_notes(session, note_ids)
-        ids = list(found)
-        texts = _texts(session, ids)
-        stored = repo.embedding_hashes(session, ids)
-        repo.touch_embeddings(
-            session, [n for n in ids if stored.get(n) == search.text_hash(texts[n])], clock.now()
-        )
-    todo = [n for n in ids if stored.get(n) != search.text_hash(texts[n])]
+        texts = {
+            n: search.searchable_text(t) for n, t in repo.searchable_blocks(session, list(found)).items()
+        }
+        stored = repo.embedding_hashes(session, list(found))
+        hashes = {n: search.text_hash(model, texts[n]) for n in found}
+        for n in found:
+            if stored.get(n) == hashes[n]:
+                repo.touch_embedding(session, n, found[n]["updated_at"])
+    todo = [n for n in found if stored.get(n) != hashes[n]]
     vectors: dict[UUID, list[float]] = {n: [] for n in todo if not texts[n]}  # nothing to search by
     pending = [n for n in todo if texts[n]]
     for start in range(0, len(pending), EMBED_BATCH):
         batch = pending[start : start + EMBED_BATCH]
         try:
-            answer = embedder.embed([texts[n][: search.EMBED_CHARS] for n in batch])
-        except (LlmUnavailable, ValueError) as exc:  # left for a later message or the sweep
+            answer = _embed_batch(embedder, [texts[n] for n in batch])
+        except LlmUnavailable as exc:  # left for a later message or the sweep
             logger.warning("embedding failed", extra={"notes": len(batch), "error_type": type(exc).__name__})
             break
         vectors.update(zip(batch, answer, strict=True))
     if not vectors:
         return 0
-    stored_count = 0
     with _session() as session, session.begin():
-        now = clock.now()
-        current = _texts(session, list(vectors))
         for note_id, vector in vectors.items():
-            text = texts[note_id]
-            if current.get(note_id) != text:  # changed (or deleted) meanwhile: its own message re-embeds it
-                continue
+            note = found[note_id]
             repo.upsert_embedding(
                 session,
                 note_id,
-                version=found[note_id]["version"],
+                version=note["version"],
                 vector=vector,
-                text_hash=search.text_hash(text),
-                at=now,
+                text_hash=hashes[note_id],
+                at=note["updated_at"],
             )
-            stored_count += 1
-    return stored_count
+    return len(vectors)
 
 
 @dramatiq.actor(

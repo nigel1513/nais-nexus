@@ -156,15 +156,21 @@ def get_llm_client() -> LlmClient | None:
     return OpenAiChatClient(s.nais_llm_base_url, s.nais_llm_model, s.nais_llm_timeout_s)
 
 
-def get_embedding_client() -> EmbeddingClient | None:
+def get_embedding_client(timeout_s: float | None = None) -> EmbeddingClient | None:
+    """timeout_s: a caller's own limit (a request path waits less than a worker); default NAIS_LLM_TIMEOUT_S."""
     s = get_settings()
     if not (s.nais_llm_enabled and s.nais_embed_base_url):
         return None
-    return OpenAiEmbeddingClient(s.nais_embed_base_url, s.nais_embed_model, s.nais_llm_timeout_s)
+    return OpenAiEmbeddingClient(s.nais_embed_base_url, s.nais_embed_model, timeout_s or s.nais_llm_timeout_s)
 
 
-def get_rerank_client() -> RerankClient | None:
+def get_rerank_client(timeout_s: float | None = None) -> RerankClient | None:
     s = get_settings()
     if not (s.nais_llm_enabled and s.nais_rerank_base_url):
         return None
-    return HttpRerankClient(s.nais_rerank_base_url, s.nais_rerank_model, s.nais_llm_timeout_s)
+    return HttpRerankClient(s.nais_rerank_base_url, s.nais_rerank_model, timeout_s or s.nais_llm_timeout_s)
+
+
+def embedding_model() -> str:
+    """The configured embedding model id (part of what a stored vector depends on)."""
+    return get_settings().nais_embed_model

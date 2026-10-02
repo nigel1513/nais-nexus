@@ -130,6 +130,7 @@ class FakeEmbedder:
     def __init__(self) -> None:
         self.calls: list[list[str]] = []
         self.fail: BaseException | None = None
+        self.refuse: str | None = None  # a batch with a text containing this is refused (ValueError)
 
     @staticmethod
     def vector(text: str) -> list[float]:
@@ -139,6 +140,8 @@ class FakeEmbedder:
         self.calls.append(list(texts))
         if self.fail is not None:
             raise self.fail
+        if self.refuse is not None and any(self.refuse in t for t in texts):
+            raise ValueError("/v1/embeddings: HTTP 400")
         return [self.vector(t) for t in texts]
 
 

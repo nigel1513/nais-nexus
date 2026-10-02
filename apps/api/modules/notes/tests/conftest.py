@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
 
@@ -90,6 +90,13 @@ class World:
     # Search (Task 11): None = the embedding / rerank service is off (the default, as NAIS_LLM_ENABLED=false).
     embedder: FakeEmbedder | None = None
     reranker: FakeReranker | None = None
+    embed_model: str = "bge-m3"
+    # (client, kwargs) of every embedder/reranker lookup (the request path passes its own timeout_s)
+    lookups: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+
+    def _lookup(self, client: str, kwargs: dict[str, Any]) -> Any:
+        self.lookups.append((client, kwargs))
+        return self.embedder if client == "embedder" else self.reranker
 
     def install(self) -> None:
         """(Re)register NotesDeps with this world's fakes; llm_enabled=False makes the platform LLM client None."""
@@ -98,8 +105,9 @@ class World:
                 settings=NotesSettings(),
                 people=self.people,
                 llm=lambda: self.llm if self.llm_enabled else None,
-                embedder=lambda: self.embedder,
-                reranker=lambda: self.reranker,
+                embedder=lambda **kw: self._lookup("embedder", kw),
+                reranker=lambda **kw: self._lookup("reranker", kw),
+                embed_model=lambda: self.embed_model,
             )
         )
 

@@ -11,6 +11,9 @@ import pytest
 from dramatiq.brokers.stub import StubBroker
 
 from api.modules.notes import jobs
+from api.modules.notes.deps import NotesDeps
+from api.modules.notes.search import unit
+from api.modules.notes.settings import NotesSettings
 from api.modules.notes.tests.conftest import NotesApi, World, add_ai_block, sql
 from api.modules.notes.tests.fakes import USERS, FakeEmbedder, FakeReranker
 from api.platform import clock
@@ -149,6 +152,8 @@ def test_query_validation(api: NotesApi) -> None:
     assert api.get("a.recorder", "/notes/search", params={"q": "x" * 501}).status_code == 422
     assert api.get("a.recorder", "/notes/search").status_code == 422
     assert api.get("a.recorder", "/notes/search", params={"q": "용량\x00"}).status_code == 422
+    blank = api.get("a.recorder", "/notes/search", params={"q": "   "})
+    assert blank.status_code == 422 and blank.json()["error"]["code"] == "VALIDATION_FAILED"
     assert api.get(None, "/notes/search", params={"q": "용량"}).status_code == 401
 
 
@@ -183,10 +188,10 @@ def test_rerank_orders_the_cosine_candidates(api: NotesApi, semantic: World) -> 
     assert query == "용량" and len(documents) == 2
 
 
-def bulk_notes(db: PgUrls, world: World, count: int, text_: str) -> list[str]:
-    """count DRAFT notes of a.recorder (one per day back from 2026-09-30), each embedded as FakeEmbedder would."""
+def bulk_notes(db: PgUrls, world: World, texts: list[str], *, embed: bool = True) -> list[str]:
+    """DRAFT notes of a.recorder with the given texts (one per day back from 2026-09-30), embedded by the job."""
     note_ids = []
-    for i in range(count):
+    for i, text_ in enumerate(texts):
         note_id = str(new_id())
         note_ids.append(note_id)
         sql(
@@ -207,32 +212,52 @@ def bulk_notes(db: PgUrls, world: World, count: int, text_: str) -> list[str]:
             " VALUES (:b, :id, 0, 'MEMO', :text, 'HUMAN', true)",
             b=new_id(),
             id=note_id,
-            text=f"{text_} {'용량 ' * (i % 7)}",
+            text=text_,
         )
-    jobs.embed_notes([UUID(n) for n in note_ids])
+    if embed:
+        assert jobs.embed_notes([UUID(n) for n in note_ids]) == len(note_ids)
     return note_ids
 
 
 def test_cosine_top_50_reranked_to_top_20(api: NotesApi, semantic: World, db: PgUrls) -> None:
-    bulk_notes(db, semantic, 55, "온도 기록")
-    assert len(search(api, "a.recorder", "용량")) == 20  # cosine alone: top 20
+    bulk_notes(db, semantic, [f"온도 기록 {'용량 ' * (i % 7)}" for i in range(55)])
+    assert len(search(api, "a.recorder", "용량")) == 20  # fused (no reranker): top 20
 
     semantic.reranker = FakeReranker(lambda q, d: float(len(d)))
     semantic.install()
     hits = search(api, "a.recorder", "용량")
     assert len(hits) == 20
     [(_, documents)] = semantic.reranker.calls
+    # cosine top 50 united with the keyword top 20 (here all keyword hits are among the cosine top 50)
     assert len(documents) == 50
     assert [h["score"] for h in hits] == sorted((h["score"] for h in hits), reverse=True)
 
 
-def test_semantic_hits_come_before_keyword_hits_of_unembedded_notes(api: NotesApi, semantic: World) -> None:
-    embedded = note_on(api, semantic, 1, "용량 측정")
-    pending = note_on(api, semantic, 2, "용량 감소")  # saved, not embedded yet
-    embed_all(embedded)
+def test_an_unembedded_keyword_match_joins_the_candidates(api: NotesApi, semantic: World, db: PgUrls) -> None:
+    bulk_notes(db, semantic, ["온도 기록"] * 25)
+    pending = note_on(api, semantic, 1, "용량 감소")  # saved, not embedded yet
     hits = search(api, "a.recorder", "용량")
-    assert ids(hits) == [embedded["note_id"], pending["note_id"]]
-    assert hits[0]["score"] is not None and hits[1]["score"] is None
+    assert len(hits) == 20 and pending["note_id"] in ids(hits)
+    hit = next(h for h in hits if h["note_id"] == pending["note_id"])
+    assert isinstance(hit["score"], float)  # fused rank, not null: semantic search ran
+
+    # with the reranker the unembedded note gets a real rerank score
+    semantic.reranker = FakeReranker(lambda q, d: 0.9 if q in d else 0.1)
+    semantic.install()
+    hits = search(api, "a.recorder", "용량")
+    assert hits[0]["note_id"] == pending["note_id"] and hits[0]["score"] == pytest.approx(0.9)
+    [(_, documents)] = semantic.reranker.calls
+    assert len(documents) == 26
+
+
+def test_a_literal_match_outside_the_cosine_top_50_still_appears(
+    api: NotesApi, semantic: World, db: PgUrls
+) -> None:
+    # the query has no word the fake model knows, so plain notes are its nearest and the match is far away
+    [target, *_] = bulk_notes(db, semantic, ["용량 용량 용량 시료 ABC-123", *["기록 일지"] * 60])
+    hits = search(api, "a.recorder", "ABC-123")
+    assert target in ids(hits)
+    assert "ABC-123" in next(h for h in hits if h["note_id"] == target)["snippet"]
 
 
 def test_embedding_service_down_falls_back_to_keywords(api: NotesApi, semantic: World) -> None:
@@ -245,7 +270,7 @@ def test_embedding_service_down_falls_back_to_keywords(api: NotesApi, semantic: 
     assert ids(hits) == [capacity["note_id"]] and hits[0]["score"] is None
 
 
-def test_rerank_failure_keeps_the_cosine_order(api: NotesApi, semantic: World) -> None:
+def test_rerank_failure_keeps_the_fused_order(api: NotesApi, semantic: World) -> None:
     semantic.reranker = FakeReranker()
     semantic.reranker.fail = LlmUnavailable("down")
     semantic.install()
@@ -287,7 +312,8 @@ def test_embedding_uses_human_and_accepted_ai_text_once(api: NotesApi, semantic:
     row = stored_embedding(db, note["note_id"])
     assert row is not None and row["version"] == 1
     assert len(row["text_hash"]) == 64
-    assert row["vector"] == pytest.approx(FakeEmbedder.vector("용량 측정"))
+    assert row["vector"] == pytest.approx(unit(FakeEmbedder.vector("용량 측정")), rel=1e-6)
+    assert sum(x * x for x in row["vector"]) == pytest.approx(1.0, rel=1e-5)
 
     # unchanged text: no second embedding
     assert embed_all(note) == 0
@@ -364,3 +390,55 @@ def test_deleting_a_draft_removes_its_embedding(api: NotesApi, semantic: World, 
     embed_all(note)
     assert api.delete("a.recorder", f"/notes/{note['note_id']}").status_code == 204
     assert stored_embedding(db, note["note_id"]) is None
+
+
+def test_search_uses_the_short_request_timeout(api: NotesApi, semantic: World) -> None:
+    semantic.reranker = FakeReranker()
+    semantic.install()
+    embed_all(note_on(api, semantic, 1, "용량 측정"))
+    semantic.lookups.clear()
+    search(api, "a.recorder", "용량")
+    assert semantic.lookups == [("embedder", {"timeout_s": 5.0}), ("reranker", {"timeout_s": 5.0})]
+
+
+def test_search_timeout_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert NotesSettings().nais_search_timeout_s == 5.0
+    monkeypatch.setenv("NAIS_SEARCH_TIMEOUT_S", "2.5")
+    assert NotesSettings().nais_search_timeout_s == 2.5
+    assert NotesDeps(settings=NotesSettings(), people=None).embedder is not None  # type: ignore[arg-type]
+
+
+def test_a_refused_text_gets_an_empty_vector_and_the_batch_goes_on(
+    api: NotesApi, semantic: World, db: PgUrls
+) -> None:
+    notes = [
+        note_on(api, semantic, day, text_) for day, text_ in ((1, "용량 1"), (2, "거부 2"), (3, "용량 3"))
+    ]
+    assert semantic.embedder is not None
+    semantic.embedder.refuse = "거부"
+    assert embed_all(*notes) == 3
+    assert [len(c) for c in semantic.embedder.calls] == [3, 1, 1, 1]  # the batch, then one at a time
+    vectors = [stored_embedding(db, n["note_id"]) for n in notes]
+    assert all(v is not None for v in vectors)
+    assert [len(v["vector"]) for v in vectors if v is not None] == [7, 0, 7]
+    assert embed_all(*notes) == 0  # not retried until its text changes
+
+
+def test_rows_are_stamped_with_the_notes_updated_at(api: NotesApi, semantic: World, db: PgUrls) -> None:
+    note = api.written(semantic, "용량 측정")
+    with clock.frozen(NOW + timedelta(hours=1)):
+        embed_all(note)
+    row = stored_embedding(db, note["note_id"])
+    [stored] = sql(db, "SELECT updated_at FROM notes.notes WHERE note_id = :id", id=note["note_id"])
+    assert row is not None and row["updated_at"] == stored["updated_at"]
+
+
+def test_a_new_embedding_model_re_embeds(api: NotesApi, semantic: World, db: PgUrls) -> None:
+    note = api.written(semantic, "용량 측정")
+    embed_all(note)
+    before = stored_embedding(db, note["note_id"])
+    semantic.embed_model = "bge-m3-v2"
+    semantic.install()
+    assert embed_all(note) == 1
+    after = stored_embedding(db, note["note_id"])
+    assert before is not None and after is not None and before["text_hash"] != after["text_hash"]

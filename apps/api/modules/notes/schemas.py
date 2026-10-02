@@ -23,7 +23,7 @@ def no_nul(value: str) -> str:
     return value
 
 
-def _not_blank(value: str) -> str:
+def not_blank(value: str) -> str:
     if not value.strip():
         raise ValueError("must not be blank")
     return value
@@ -37,7 +37,7 @@ def _unique[T](values: list[T]) -> list[T]:
 
 BlockText = Annotated[str, StringConstraints(min_length=1, max_length=4000), AfterValidator(no_nul)]
 Reason = Annotated[
-    str, StringConstraints(min_length=1, max_length=2000), AfterValidator(no_nul), AfterValidator(_not_blank)
+    str, StringConstraints(min_length=1, max_length=2000), AfterValidator(no_nul), AfterValidator(not_blank)
 ]
 WitnessIds = Annotated[list[UUID], Field(max_length=20), AfterValidator(_unique)]
 

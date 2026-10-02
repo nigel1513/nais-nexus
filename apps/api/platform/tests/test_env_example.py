@@ -22,6 +22,8 @@ MODULE_KEYS = {
     "WORKSPACE_MAX_INPUT_BYTES": "1073741824",
     "WORKSPACE_RUN_TIMEOUT_SECONDS": "1800",
     "WORKSPACE_WORKER_CONCURRENCY": "1",
+    # M14 notes
+    "NAIS_SEARCH_TIMEOUT_S": "5",
     # M09 audit / notification
     "SMTP_FROM": '"NAIS AI-OS <no-reply@nais.local>"',
     "NOTIFICATION_EMAIL_ENABLED": "true",

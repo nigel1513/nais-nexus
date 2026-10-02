@@ -1,5 +1,5 @@
-"""notes: one embedding per note version for searchNotes (bge-m3 vectors as real[]; cosine is computed in Python over
-the caller's readable notes, a recorder's scope being a few thousand notes at most, so no pgvector)
+"""notes: one embedding per note version for searchNotes (unit-length bge-m3 vectors as real[]; cosine = dot product
+computed in Python while streaming the caller's readable notes, a few thousand at most, so no pgvector)
 
 Revision ID: notes_0004
 Revises: notes_0003
@@ -27,7 +27,9 @@ def upgrade() -> None:
             primary_key=True,
         ),
         sa.Column("version", sa.Integer, nullable=False),
-        sa.Column("vector", ARRAY(sa.REAL), nullable=False),  # empty for a note without searchable text
+        sa.Column(
+            "vector", ARRAY(sa.REAL), nullable=False
+        ),  # empty: no searchable text, or the model refused it
         sa.Column("text_hash", sa.Text, nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("text_hash ~ '^[a-f0-9]{64}$'", name="ck_embeddings_text_hash"),

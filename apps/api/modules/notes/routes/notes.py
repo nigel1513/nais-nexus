@@ -23,6 +23,7 @@ from api.modules.notes.schemas import (
     ResearchNote,
     ResearchNoteSummary,
     no_nul,
+    not_blank,
 )
 from api.modules.notes.service import drafting, export, signing
 from api.modules.notes.service import notes as service
@@ -63,7 +64,7 @@ def list_notes(
 
 @router.get("/notes/search", operation_id="searchNotes")
 def search_notes(
-    q: Annotated[str, Query(min_length=1, max_length=500), AfterValidator(no_nul)],
+    q: Annotated[str, Query(min_length=1, max_length=500), AfterValidator(no_nul), AfterValidator(not_blank)],
     user: CurrentUserDep,
     session: SessionDep,
     deps: NotesDepsDep,
