@@ -12,11 +12,16 @@ from api.platform.testing.app import create_test_app
 from api.platform.testing.contracts import operation
 
 EXPECTED = {
+    "listVocabulary",
+    "createVocabularyTerm",
+    "listDatasetContributors",
+    "putDatasetContributors",
     "searchDatasets",
     "createDataset",
     "getDataset",
     "updateDataset",
     "getDatasetPolicy",
+    "getDatasetJsonLd",
     "listDatasetVersions",
     "createDatasetVersion",
     "getDatasetVersion",

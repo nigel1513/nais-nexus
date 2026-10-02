@@ -14,11 +14,24 @@ class OrganizationSummary:
     type: str
 
 
+@dataclass(frozen=True)
+class PersonSummary:
+    user_id: UUID
+    display_name: str
+    organization_id: UUID
+    organization_name: str | None
+    status: str  # ACTIVE only when user and current membership are both ACTIVE
+    national_researcher_number: str | None = None
+
+
 class OrganizationLookup(Protocol):
-    """M03 §3.1 IdentityPort. The organization code selects the storage (STORAGE_<CODE>_*, D-024)."""
+    """M03 §3.1 IdentityPort. The organization code selects the storage (STORAGE_<CODE>_*, D-024); persons come from
+    M01's public profiles (Wave 1.5 research metadata)."""
 
     def get_organization_summary(self, organization_id: UUID) -> OrganizationSummary | None: ...
     def get_organization_summaries(self, ids: Sequence[UUID]) -> dict[UUID, OrganizationSummary]: ...
+    def get_people(self, ids: Sequence[UUID]) -> dict[UUID, PersonSummary]: ...
+    def get_email(self, user_id: UUID) -> str | None: ...
 
 
 ScanStatus = Literal["CLEAN", "INFECTED", "SKIPPED"]

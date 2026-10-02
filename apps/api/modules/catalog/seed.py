@@ -98,6 +98,7 @@ def _seed_one(session: Session, deps: CatalogDeps, item: SeedDataset) -> None:
             version=must(load_version(session, item.version_id), "version"),
             published_by=item.steward,
             actor=actor,
+            deps=deps,
         )
 
 

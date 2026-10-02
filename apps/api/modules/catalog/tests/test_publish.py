@@ -6,7 +6,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy.exc import DBAPIError
 
-from api.modules.catalog.domain import manifest_sha256
+from api.modules.catalog.domain import SNAPSHOT_FIELDS, manifest_sha256
 from api.modules.catalog.service import publish as publish_service
 from api.modules.catalog.tests.support import execute, outbox_events, rows
 from api.modules.catalog.tests.support_api import USERS, CatalogApi, new_draft
@@ -56,19 +56,7 @@ def test_publish_freezes_manifest_and_metadata(api: CatalogApi, db: PgUrls) -> N
         v=version_id,
     )
     snapshot = row["metadata_snapshot"]
-    assert sorted(snapshot) == [
-        "access_level",
-        "allowed_purposes",
-        "contact_email",
-        "description",
-        "domain",
-        "keywords",
-        "license",
-        "max_grant_days",
-        "provenance",
-        "title",
-        "usage_policy",
-    ]
+    assert sorted(snapshot) == sorted([*SNAPSHOT_FIELDS, "people"])
     assert snapshot["title"] == "Battery Cycling Measurements" and snapshot["allowed_purposes"] == [
         "ACADEMIC_RESEARCH",
         "AI_TRAINING",
@@ -181,8 +169,16 @@ def test_published_version_becomes_the_latest(api: CatalogApi, db: PgUrls) -> No
     dataset_id, version_id = new_draft(api)
     upload_files(api, db, version_id, FILES)
     publish(api, version_id)
-    body = api.get("a.researcher", f"/datasets/{dataset_id}").json()
+    response = api.get("a.researcher", f"/datasets/{dataset_id}")
+    body = response.json()
+    assert_matches_response("getDataset", 200, body)
     assert body["latest_published_version"]["dataset_version_id"] == version_id
+    total = sum(len(data) for data in FILES.values())
+    media_types = sorted({file_spec(path, data)["media_type"] for path, data in FILES.items()})
+    assert body["stats"] == {"file_count": 3, "total_bytes": total, "media_types": media_types}
+    # People are readable by other organizations after publish; no email unless contact_email_public.
+    assert body["people"]["principal_investigator"]["display_name"] == "B Researcher"
+    assert "email" not in body["people"]["steward_contact"]
     listed = api.get("a.researcher", f"/datasets/{dataset_id}/versions").json()["items"]
     assert [v["dataset_version_id"] for v in listed] == [version_id]
 
@@ -215,7 +211,7 @@ def test_concurrent_update_waits_for_publish_and_snapshot_is_pre_patch(
 
     monkeypatch.setattr(publish_service, "finalize_publish", finalize_with_concurrent_patch)
     with session_factory(db.app)() as session, session.begin():
-        publish_service.publish_version(session, USERS["b.steward"], UUID(version_id))
+        publish_service.publish_version(session, api.deps, USERS["b.steward"], UUID(version_id))
     threads[0].join(timeout=10)
     assert outcome.get("blocked") is True, outcome
     assert not threads[0].is_alive() and outcome.get("status") == 200, outcome

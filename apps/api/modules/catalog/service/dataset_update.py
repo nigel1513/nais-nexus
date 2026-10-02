@@ -13,6 +13,7 @@ from api.modules.catalog.access import require_steward, visible_dataset
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.domain import Policy, normalize_keywords, normalize_purposes
 from api.modules.catalog.repo import enqueue_index, load_dataset, must, rowcount
+from api.modules.catalog.research import RESEARCH_FIELDS, validate_research
 from api.modules.catalog.schemas import DatasetUpdateIn
 from api.modules.catalog.service.datasets import dataset_response, policy_or_error
 from api.modules.catalog.tables import datasets
@@ -24,6 +25,13 @@ from api.platform.generated.error_codes import ErrorCode
 from api.platform.outbox import outbox
 
 POLICY_INPUTS = ("access_level", "allowed_purposes", "max_grant_days")
+
+
+def _differs(stored: Any, new: Any) -> bool:
+    """Stored arrays come back as lists; compare the DB-ready new value against them."""
+    if isinstance(stored, (list, tuple)) or isinstance(new, (list, tuple)):
+        return list(stored or []) != list(new or [])
+    return bool(stored != new)
 
 
 def update_dataset(
@@ -51,6 +59,20 @@ def update_dataset(
     values: dict[str, Any] = {key: value for key, value in changes.items() if key not in POLICY_INPUTS}
     if "keywords" in values:
         values["keywords"] = normalize_keywords(values["keywords"])
+    values.update(
+        validate_research(
+            session,
+            deps,
+            ds["owner_organization_id"],
+            {key: value for key, value in changes.items() if key in RESEARCH_FIELDS},
+            current=ds,
+        )
+    )
+    changed = sorted(
+        key
+        for key in changes
+        if key not in POLICY_INPUTS and key != "status" and _differs(ds[key], values[key])
+    )
     values.update(
         access_level=policy.access_level,
         allowed_purposes=list(policy.allowed_purposes),
@@ -91,6 +113,13 @@ def update_dataset(
                 "previous": previous.as_event(),
                 "current": policy.as_event(),
             },
+            actor,
+        )
+    if changed:
+        outbox.write(
+            session,
+            "catalog.dataset.metadata_changed.v1",
+            {"dataset_id": str(dataset_id), "owner_organization_id": owner, "changed_fields": changed},
             actor,
         )
     enqueue_index(session, dataset_id)

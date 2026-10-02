@@ -8,6 +8,7 @@ from api.platform.migrate import upgrade_all
 from api.platform.testing.fixtures import PgUrls
 
 TRUNCATE = (
+    "catalog.dataset_contributors",
     "catalog.dataset_files",
     "catalog.upload_sessions",
     "catalog.dataset_versions",
@@ -31,5 +32,7 @@ def db(catalog_db: PgUrls) -> Iterator[PgUrls]:
     engine = create_engine(catalog_db.migrator)
     with engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {', '.join(TRUNCATE)} CASCADE"))
+        # Seeded vocabulary terms are all active; undo any deactivation a previous test left behind.
+        conn.execute(text("UPDATE catalog.vocabulary_terms SET active = true WHERE NOT active"))
     engine.dispose()
     yield catalog_db
