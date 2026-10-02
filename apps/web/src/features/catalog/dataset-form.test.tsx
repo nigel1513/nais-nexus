@@ -20,7 +20,7 @@ describe("dataset form (stage 1)", () => {
     await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
     await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
     // steward contact defaults to the creating steward
-    expect(screen.getByRole("combobox", { name: /담당자/ })).toHaveValue("B Steward (Institute B)");
+    expect(screen.getByRole("group", { name: /담당자/ })).toHaveTextContent("B StewardInstitute B · NTIS 10000004");
     await userEvent.click(screen.getByRole("button", { name: "연구 분야 선택" }));
     await userEvent.click(await screen.findByRole("checkbox", { name: "재료" }));
     await userEvent.keyboard("{Escape}");
@@ -111,7 +111,54 @@ describe("dataset form layout (redesign)", () => {
     expect(option).toHaveTextContent("NTIS 10000002");
     expect(screen.getAllByText("소유 기관(Institute B)의 현재 구성원만 선택할 수 있습니다.").length).toBeGreaterThan(0);
     await userEvent.keyboard("{ArrowDown}{Enter}");
-    await waitFor(() => expect(pi).toHaveValue("B Researcher (Institute B)"));
+    // The pick shows as a chip (avatar, name, org · NTIS) with a change button that brings the search back.
+    const chip = await screen.findByRole("group", { name: /연구책임자/ });
+    expect(chip).toHaveTextContent("B ResearcherInstitute B · NTIS 10000002");
+    await userEvent.click(within(chip).getByRole("button", { name: "연구책임자 변경" }));
+    expect(screen.getByRole("combobox", { name: /연구책임자/ })).toHaveFocus();
+  });
+
+  it("error-summary links move focus to the field, including the period inputs", async () => {
+    await open();
+    const start = screen.getByLabelText("데이터 기간 시작");
+    await userEvent.type(start, "2025-02-31");
+    await userEvent.type(screen.getByLabelText("데이터 기간 끝"), "2025-01-01");
+    await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
+    const summary = await screen.findByRole("alert");
+    const link = within(summary).getByRole("link", { name: /데이터 기간 시작/ });
+    expect(link).toHaveAttribute("href", "#dataset-temporal_start");
+    await userEvent.click(link);
+    await waitFor(() => expect(start).toHaveFocus());
+    expect(start).toHaveAttribute("aria-invalid", "true");
+    await userEvent.click(within(summary).getByRole("link", { name: /^제목/ }));
+    await waitFor(() => expect(screen.getByLabelText(/^제목/)).toHaveFocus());
+  });
+
+  it("following the description error link switches the preview back to the editor and focuses it", async () => {
+    server.use(http.post(`${API}/datasets`, () => apiError("VALIDATION_FAILED", "invalid", { fields: [{ field: "description", reason: "TOO_LONG" }] }), { once: true }));
+    await open();
+    await userEvent.type(screen.getByLabelText(/^제목/), "Electrolyte Cycling");
+    await userEvent.type(screen.getByLabelText(/^라이선스/), "CC-BY-4.0");
+    await userEvent.click(screen.getByRole("checkbox", { name: "학술 연구" }));
+    await userEvent.type(screen.getByRole("combobox", { name: /연구책임자/ }), "B R");
+    await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
+    await userEvent.click(screen.getByRole("button", { name: "미리보기" }));
+    await userEvent.click(screen.getByRole("button", { name: "데이터셋 등록" }));
+    const link = await screen.findByRole("link", { name: /^설명:/ });
+    const textarea = screen.getByLabelText("설명");
+    expect(textarea).toHaveClass("hidden");
+    expect(textarea.getAttribute("aria-describedby")).toMatch(/^dataset-description-error/);
+    await userEvent.click(link);
+    await waitFor(() => expect(textarea).toHaveFocus());
+    expect(textarea).not.toHaveClass("hidden");
+  });
+
+  it("the subtitle counter turns red past 160 characters", async () => {
+    await open();
+    await userEvent.click(screen.getByLabelText("부제"));
+    await userEvent.paste("가".repeat(161));
+    const counter = screen.getByText("161 / 160");
+    expect(counter.className).toMatch(/text-danger/);
   });
 
   it("VocabularyPicker opens a searchable tree and stops at the limit with 최대 5개", async () => {

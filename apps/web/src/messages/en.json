@@ -280,7 +280,8 @@
       "vocabSearchPlaceholder": "Find by name",
       "vocabNoMatch": "No matching terms.",
       "vocabCount": "{count} / {max} chosen",
-      "vocabFull": "Up to {max} can be chosen"
+      "vocabFull": "Up to {max} can be chosen",
+      "personChange": "Change {field}"
     },
     "explorer": {
       "view": "View",
@@ -341,7 +342,11 @@
     },
     "edit": {
       "title": "Edit dataset",
-      "description": "{title}"
+      "description": "{title}",
+      "discardTitle": "Discard unsaved changes?",
+      "discardDescription": "Your edits will be lost.",
+      "discard": "Discard",
+      "keepEditing": "Keep editing"
     }
   },
   "validation": {

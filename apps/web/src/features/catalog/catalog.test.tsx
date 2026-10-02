@@ -123,7 +123,8 @@ describe("DatasetNewScreen", () => {
 
   it("caps SENSITIVE at 30 days and creates the dataset for the steward's organization", async () => {
     renderScreen(<DatasetNewScreen />, { user: USER.aSteward, path: "/commons/data/new" });
-    expect(await screen.findByText("Institute A")).toBeInTheDocument();
+    // Owner shown in the action bar (the steward chip also says "Institute A").
+    expect(await screen.findByText((_, el) => el?.tagName === "P" && el.textContent === "소유 기관 Institute A")).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/^제목/), "Pilot Line Vibration");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "NAIS-CONTROLLED-1.0");
     await userEvent.click(screen.getByRole("radio", { name: /민감/ }));
@@ -278,6 +279,29 @@ describe("DatasetDetailScreen", () => {
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "데이터셋 편집" })).not.toBeInTheDocument());
   });
 
+  it("closing the edit sheet with unsaved changes asks first (Esc, 취소); a clean sheet closes at once", async () => {
+    open(USER.bSteward, DATASET.battery);
+    await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    let sheet = await screen.findByRole("dialog", { name: "데이터셋 편집" });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "데이터셋 편집" })).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "편집" }));
+    sheet = await screen.findByRole("dialog", { name: "데이터셋 편집" });
+    await userEvent.type(within(sheet).getByLabelText(/^제목/), " v2");
+    await userEvent.click(within(sheet).getByRole("button", { name: "취소" }));
+    let confirm = await screen.findByRole("dialog", { name: "저장하지 않은 변경 사항을 버릴까요?" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "계속 편집" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "저장하지 않은 변경 사항을 버릴까요?" })).not.toBeInTheDocument());
+    expect(within(sheet).getByLabelText(/^제목/)).toHaveValue("Battery Cycling Measurements v2");
+
+    await userEvent.keyboard("{Escape}");
+    confirm = await screen.findByRole("dialog", { name: "저장하지 않은 변경 사항을 버릴까요?" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "버리기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "데이터셋 편집" })).not.toBeInTheDocument());
+    expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.title).toBe("Battery Cycling Measurements");
+  });
+
   it("editing cannot silently clear a previously set optional field", async () => {
     let patches = 0;
     server.use(http.patch("*/mock-api/v1/datasets/:id", () => { patches += 1; return HttpResponse.json({}); }));
@@ -307,13 +331,15 @@ describe("DatasetDetailScreen", () => {
     const piBefore = getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.principal_investigator_id;
     open(USER.bSteward, DATASET.battery);
     await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    const chip = screen.getByRole("group", { name: /연구책임자/ });
+    const original = chip.textContent;
+    expect(original).toMatch(/B Researcher/);
+    await userEvent.click(within(chip).getByRole("button", { name: "연구책임자 변경" }));
     const pi = screen.getByRole("combobox", { name: /연구책임자/ });
-    const original = (pi as HTMLInputElement).value;
-    expect(original).not.toBe("");
     await userEvent.type(pi, "zz");
-    expect(pi).toHaveValue(`${original}zz`);
+    expect(pi).toHaveValue("zz");
     await userEvent.tab();
-    expect(pi).toHaveValue(original);
+    expect(screen.getByRole("group", { name: /연구책임자/ })).toHaveTextContent(original!);
     await userEvent.clear(screen.getByLabelText(/^제목/));
     await userEvent.type(screen.getByLabelText(/^제목/), "Renamed Battery");
     await userEvent.click(screen.getByRole("button", { name: "저장" }));

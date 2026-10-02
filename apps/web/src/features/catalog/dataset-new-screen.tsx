@@ -20,7 +20,7 @@ function NewDataset() {
   const defaults = {
     ...emptyDatasetForm,
     // The creating steward is a valid default contact (an active member of the owner organization).
-    steward_contact: { user_id: me.user_id, label: `${me.display_name} (${me.organization.name})` },
+    steward_contact: { user_id: me.user_id, label: `${me.display_name} (${me.organization.name})`, ntis: me.national_researcher_number ?? null },
   };
   return (
     <DatasetForm

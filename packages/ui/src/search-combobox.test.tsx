@@ -95,4 +95,14 @@ describe("SearchCombobox", () => {
     await waitFor(() => expect(screen.getByText("3")).toBeInTheDocument());
     await waitFor(() => expect(screen.queryByRole("listbox")).not.toBeInTheDocument());
   });
+
+  it("pressing a row does not count as leaving without a pick", async () => {
+    const user = userEvent.setup();
+    render(<H restore />);
+    const input = screen.getByRole("combobox", { name: "연구책임자" });
+    await user.type(input, "박");
+    await user.click(await screen.findByRole("option", { name: /박측정/ }));
+    await waitFor(() => expect(screen.getByText("3")).toBeInTheDocument());
+    expect(input).toHaveValue("박측정");
+  });
 });

@@ -38,7 +38,6 @@ const DateInput = forwardRef<HTMLInputElement, InputProps & { id: string; label:
         ref={ref}
         id={id}
         type="text"
-        inputMode="numeric"
         autoComplete="off"
         placeholder="YYYY-MM-DD"
         maxLength={10}
@@ -58,6 +57,8 @@ const DateInput = forwardRef<HTMLInputElement, InputProps & { id: string; label:
  */
 export function DateRangePicker({
   id,
+  startId = `${id}-start`,
+  endId = `${id}-end`,
   label,
   startLabel,
   endLabel,
@@ -70,6 +71,9 @@ export function DateRangePicker({
   onPick,
 }: {
   id: string;
+  /** Input ids; default `${id}-start` / `${id}-end`. Match them to the form's error-summary anchors. */
+  startId?: string;
+  endId?: string;
   label: string;
   startLabel: string;
   endLabel: string;
@@ -86,8 +90,6 @@ export function DateRangePicker({
   const from = parseIsoDate(start);
   const to = parseIsoDate(end);
   const days = rangeDays(start, end);
-  const startId = `${id}-start`;
-  const endId = `${id}-end`;
   const errors = [startError ? [`${startId}-error`, startError] : null, endError && endError !== startError ? [`${endId}-error`, endError] : null].filter(
     (x): x is [string, string] => !!x,
   );
@@ -111,6 +113,9 @@ export function DateRangePicker({
           <PopoverContent align="end" className="p-3">
             <DayPicker
               mode="range"
+              captionLayout="dropdown"
+              startMonth={new Date(1950, 0)}
+              endMonth={new Date(new Date().getFullYear() + 5, 11)}
               locale={locale === "en" ? enUS : ko}
               selected={{ from, to } as DateRange}
               defaultMonth={from ?? to}
@@ -120,6 +125,10 @@ export function DateRangePicker({
                 months: "relative flex flex-col",
                 month: "flex flex-col gap-2",
                 month_caption: "flex h-7 items-center justify-center px-8 text-small font-semibold",
+                dropdowns: "flex items-center gap-1",
+                dropdown_root: "relative inline-flex rounded-sm has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-focus",
+                dropdown: "absolute inset-0 z-10 w-full cursor-pointer appearance-none opacity-0",
+                caption_label: "num flex h-7 items-center gap-0.5 rounded-sm px-1.5 text-small font-semibold hover:bg-bg-hover [&>svg]:size-3.5 [&>svg]:fill-fg-muted",
                 nav: "absolute inset-x-0 top-0 flex items-center justify-between",
                 button_previous: navButton,
                 button_next: navButton,

@@ -113,7 +113,7 @@ test.describe("screens", () => {
     await as(page, "steward", baseURL!);
     await page.goto("/commons/data/new");
     await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
-    await expect(page.getByRole("combobox", { name: /담당자/ })).toHaveValue(/B Steward/);
+    await expect(page.getByRole("group", { name: /담당자/ })).toContainText("B Steward");
     await shoot(page, `${prefix}-dataset-new`);
 
     if (prefix === "task7") {

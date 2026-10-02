@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, type ComponentProps, type ReactNode } from
 import { Controller, useFieldArray, useForm, useWatch, type Control, type FieldErrors } from "react-hook-form";
 import { ENUMS } from "@/generated/contracts";
 import { asApiError, fieldErrors } from "@/shared/api/errors";
+import type { IdentityPublicProfile } from "@/shared/api/types";
 import { useValidationText } from "@/shared/hooks/use-validation-text";
 import { AccessLevelBadge } from "@/shared/ui/badges";
 import { DateRangePicker } from "@/shared/ui/date-range-picker";
@@ -60,7 +61,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 
 function SubtitleCount({ control }: { control: Control<DatasetFormValues> }) {
   const subtitle = useWatch({ control, name: "subtitle" });
-  return <span className="num block text-right">{`${subtitle.length} / 160`}</span>;
+  return <span className={cn("num block text-right", subtitle.length > 160 && "font-medium text-danger")}>{`${subtitle.length} / 160`}</span>;
 }
 
 function DescriptionPreview({ control, emptyText }: { control: Control<DatasetFormValues>; emptyText: string }) {
@@ -111,6 +112,7 @@ export function DatasetForm({
   onSubmit,
   onCancel,
   layout = "page",
+  onDirtyChange,
 }: {
   mode: "create" | "edit";
   defaultValues: DatasetFormValues;
@@ -120,6 +122,8 @@ export function DatasetForm({
   onCancel?: () => void;
   /** "page": sections + preview rail + action bar pinned to the viewport bottom. "sheet": single column, bar pinned to the sheet bottom. */
   layout?: "page" | "sheet";
+  /** Reports unsaved changes (the edit sheet asks before discarding them). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const t = useTranslations();
   const tv = useValidationText();
@@ -136,8 +140,8 @@ export function DatasetForm({
   defaultsRef.current = defaultValues;
   const lastPerson = useRef({ principal_investigator: defaultValues.principal_investigator, steward_contact: defaultValues.steward_contact });
   const personProps = (field: "principal_investigator" | "steward_contact") => ({
-    onChange: (u: { user_id: string } | null) => {
-      const value = u ? { user_id: u.user_id, label: userLabel(u as Parameters<typeof userLabel>[0]) } : null;
+    onChange: (u: IdentityPublicProfile | null) => {
+      const value = u ? { user_id: u.user_id, label: userLabel(u), ntis: u.national_researcher_number ?? null } : null;
       if (value) lastPerson.current[field] = value;
       form.setValue(field, value, { shouldValidate: form.formState.isSubmitted, shouldDirty: true });
     },
@@ -147,7 +151,7 @@ export function DatasetForm({
         ? () => {
             const p = lastPerson.current[field];
             if (!p) return null;
-            form.setValue(field, p, { shouldValidate: form.formState.isSubmitted });
+            form.setValue(field, p, { shouldValidate: form.formState.isSubmitted, shouldDirty: true });
             return p.label;
           }
         : undefined,
@@ -162,6 +166,10 @@ export function DatasetForm({
     <K extends "subject_codes" | "method_codes" | "material_codes" | "contributors">(k: K) =>
     (v: DatasetFormValues[K]) =>
       form.setValue(k, v as never, { shouldValidate: form.formState.isSubmitted, shouldDirty: true });
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   useEffect(() => {
     // M10 §7.5: SENSITIVE caps max_grant_days at 30 before the server has to say INVALID_POLICY.
@@ -254,7 +262,7 @@ export function DatasetForm({
           <Textarea
             id="dataset-description"
             rows={8}
-            aria-describedby="dataset-description-hint"
+            aria-describedby={errors.description ? "dataset-description-error dataset-description-hint" : "dataset-description-hint"}
             aria-invalid={errors.description ? true : undefined}
             className={cn(descriptionView === "preview" && "hidden")}
             {...form.register("description")}
@@ -274,7 +282,8 @@ export function DatasetForm({
             label={labels.principal_investigator}
             organizationId={ownerOrganizationId}
             required
-            initialText={defaultValues.principal_investigator?.label}
+            chip
+            initialPerson={defaultValues.principal_investigator}
             error={err("principal_investigator")}
             footer={<span className="break-keep">{t("data.form.ownerMembersOnly", { org: ownerName })}</span>}
             {...personProps("principal_investigator")}
@@ -285,7 +294,8 @@ export function DatasetForm({
               label={labels.steward_contact}
               organizationId={ownerOrganizationId}
               required
-              initialText={defaultValues.steward_contact?.label}
+              chip
+              initialPerson={defaultValues.steward_contact}
               error={err("steward_contact")}
               footer={<span className="break-keep">{t("data.form.ownerMembersOnly", { org: ownerName })}</span>}
               {...personProps("steward_contact")}
@@ -324,6 +334,8 @@ export function DatasetForm({
           <PeriodField
             control={form.control}
             id="dataset-temporal"
+            startId="dataset-temporal_start"
+            endId="dataset-temporal_end"
             label={t("data.form.period")}
             startLabel={labels.temporal_start}
             endLabel={labels.temporal_end}
@@ -429,6 +441,7 @@ export function DatasetForm({
                     value={v}
                     className={cn(
                       "items-start rounded-md border border-border bg-bg-panel p-3 [&>[role=radio]]:mt-0.5",
+                      "[&>[role=radio][data-checked]]:border-accent [&>[role=radio][data-checked]]:bg-accent",
                       "hover:border-border-strong has-[[data-checked]]:border-accent has-[[data-checked]]:bg-accent-soft",
                     )}
                     label={
@@ -580,7 +593,7 @@ export function DatasetForm({
       <div className={cn("flex min-w-0 flex-col", !sheet && "@container/form max-w-[52rem]")}>
         {summary.length || submitError ? (
           <div className="mb-6 flex flex-col gap-3">
-            <FormErrorSummary errors={summary} />
+            <FormErrorSummary errors={summary} onNavigate={(id) => id === "dataset-description" && setDescriptionView("write")} />
             {submitError ? <ErrorView error={submitError} /> : null}
           </div>
         ) : null}

@@ -214,7 +214,7 @@ test("dataset form: sections, pickers and the edit sheet pass axe in both themes
     // on the page behind; it is lifted on close. Check the open list itself.
     expect(await seriousViolations(page, "[role=listbox]")).toEqual([]);
     await page.keyboard.press("Enter");
-    await expect(pi).toHaveValue("B Researcher (Institute B)");
+    await expect(page.getByRole("group", { name: /연구책임자/ })).toContainText("B Researcher");
 
     await page.getByRole("button", { name: "연구 분야 선택" }).click();
     const vocab = page.getByRole("dialog", { name: "연구 분야" });

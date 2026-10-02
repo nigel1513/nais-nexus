@@ -44,7 +44,7 @@ const row = [
 /**
  * Combobox over server-side results (spec §4 Combobox / UserPicker): the caller owns the query text and the item list,
  * so typing, debouncing and fetching stay outside. Arrow keys move, Enter picks, Esc closes. Blur behaviour (restore or
- * keep the typed text) is the caller's decision via `onBlur`. Enter with nothing highlighted picks the first result.
+ * keep the typed text) is the caller's decision via `onBlur`, which is not called while a row is being pressed. Enter with nothing highlighted picks the first result.
  */
 export function SearchCombobox<T>({
   items,
@@ -67,6 +67,8 @@ export function SearchCombobox<T>({
 }: SearchComboboxProps<T>) {
   const [open, setOpen] = React.useState(false);
   const highlighted = React.useRef<T | null>(null);
+  // A press on a row blurs the input before the click picks it: that blur is not "leaving without a pick".
+  const pressInList = React.useRef(false);
   return (
     <Base.Root
       items={items}
@@ -94,7 +96,10 @@ export function SearchCombobox<T>({
         placeholder={placeholder}
         autoComplete="off"
         className={cn(field, className)}
-        onBlur={onBlur}
+        onBlur={(e) => {
+          if (pressInList.current) return;
+          onBlur?.(e);
+        }}
         onKeyDown={(e) => {
           // Results arrive after typing, so nothing may be highlighted yet: Enter then takes the first result.
           if (e.key === "Enter" && open && !highlighted.current && items[0] !== undefined) {
@@ -111,7 +116,16 @@ export function SearchCombobox<T>({
       </span>
       <Base.Portal>
         <Base.Positioner sideOffset={4} collisionPadding={8} className="z-[var(--z-popover)]">
-          <Base.Popup className={cn(floating, "flex max-h-[min(var(--available-height),22rem)] w-[max(var(--anchor-width),18rem)] flex-col overflow-hidden")}>
+          <Base.Popup
+            onPointerDownCapture={() => {
+              pressInList.current = true;
+              const release = () => {
+                pressInList.current = false;
+                window.removeEventListener("pointerup", release, true);
+              };
+              window.addEventListener("pointerup", release, true);
+            }}
+            className={cn(floating, "flex max-h-[min(var(--available-height),22rem)] w-[max(var(--anchor-width),18rem)] flex-col overflow-hidden")}>
             <div className="min-h-0 flex-1 overflow-y-auto p-1">
               <Base.Empty className="px-2 py-1.5 text-small text-fg-muted empty:hidden">{emptyText}</Base.Empty>
               <Base.List>

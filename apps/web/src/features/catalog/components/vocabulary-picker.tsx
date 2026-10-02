@@ -68,59 +68,87 @@ export function VocabularyPicker({
     return [row(r, false), ...shownKids.map((c) => row(c, true))];
   });
 
+  const legendEl = (
+    <span id={legendId} className="text-small font-medium text-fg">
+      {legend}
+    </span>
+  );
+  const countEl = (
+    <span className="num text-caption font-normal text-fg-muted">
+      {value.length} / {max}
+    </span>
+  );
+  const picker = (
+    <Popover onOpenChange={(o) => !o && setQuery("")}>
+      <PopoverTrigger className={buttonClass("ghost", "sm", "border border-dashed border-border-strong")} aria-label={t("data.form.vocabOpen", { legend })}>
+        <Plus aria-hidden="true" strokeWidth={1.75} />
+        {value.length ? t("data.form.vocabEdit") : t("data.form.vocabChoose")}
+      </PopoverTrigger>
+      <PopoverContent className="flex w-80 flex-col p-0">
+        <div className="flex flex-col gap-2 border-b border-border p-2">
+          <PopoverTitle className="px-1 pt-1 text-small font-semibold">{legend}</PopoverTitle>
+          <div className="relative">
+            <Search aria-hidden="true" strokeWidth={1.75} className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
+            <Input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label={t("data.form.vocabSearch", { legend })}
+              placeholder={t("data.form.vocabSearchPlaceholder")}
+              className="pl-8"
+            />
+          </div>
+        </div>
+        <div className="max-h-72 overflow-y-auto p-1">
+          {terms.isPending ? <p className="px-2 py-1.5 text-small text-fg-muted">{t("common.loading")}</p> : null}
+          {!terms.isPending && !tree.length ? <p className="px-2 py-1.5 text-small text-fg-muted">{t("data.form.vocabNoMatch")}</p> : null}
+          <ul aria-label={legend}>{tree}</ul>
+        </div>
+        <p role="status" className={cn("flex items-center gap-1.5 border-t border-border px-3 py-2 text-caption font-normal", full ? "text-warning" : "text-fg-muted")}>
+          {full ? <CircleAlert aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} /> : null}
+          <span className="num">{t("data.form.vocabCount", { count: value.length, max })}</span>
+          <span aria-hidden="true">·</span>
+          <span>{full ? t("data.form.vocabFull", { max }) : t("data.form.maxCount", { max })}</span>
+        </p>
+      </PopoverContent>
+    </Popover>
+  );
+
   return (
     <div id={id} role="group" aria-labelledby={legendId} aria-describedby={error ? `${baseId}-error` : undefined} className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-2">
-        <span id={legendId} className="text-small font-medium text-fg">
-          {legend}
-        </span>
-        <span className="num text-caption font-normal text-fg-muted">
-          {value.length} / {max}
-        </span>
-      </div>
+      {value.length ? (
+        <div className="flex items-baseline justify-between gap-2">
+          {legendEl}
+          {countEl}
+        </div>
+      ) : null}
+      {/* One keyed row so the picker keeps its open popover while chips come and go. With nothing chosen the row is
+          label · add button · count on one line. */}
       <div className="flex min-h-8 flex-wrap items-center gap-1.5">
-        {value.map((code) => {
-          const term = byCode.get(code);
-          const name = term ? label(term) : code;
-          return (
-            <Tag key={code} onRemove={() => toggle(code, false)} removeLabel={t("data.form.vocabRemove", { name })}>
-              {name}
-            </Tag>
-          );
-        })}
-        <Popover onOpenChange={(o) => !o && setQuery("")}>
-          <PopoverTrigger className={buttonClass("ghost", "sm", "border border-dashed border-border-strong")} aria-label={t("data.form.vocabOpen", { legend })}>
-            <Plus aria-hidden="true" strokeWidth={1.75} />
-            {value.length ? t("data.form.vocabEdit") : t("data.form.vocabChoose")}
-          </PopoverTrigger>
-          <PopoverContent className="flex w-80 flex-col p-0">
-            <div className="flex flex-col gap-2 border-b border-border p-2">
-              <PopoverTitle className="px-1 pt-1 text-small font-semibold">{legend}</PopoverTitle>
-              <div className="relative">
-                <Search aria-hidden="true" strokeWidth={1.75} className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-muted" />
-                <Input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  aria-label={t("data.form.vocabSearch", { legend })}
-                  placeholder={t("data.form.vocabSearchPlaceholder")}
-                  className="pl-8"
-                />
-              </div>
-            </div>
-            <div className="max-h-72 overflow-y-auto p-1">
-              {terms.isPending ? <p className="px-2 py-1.5 text-small text-fg-muted">{t("common.loading")}</p> : null}
-              {!terms.isPending && !tree.length ? <p className="px-2 py-1.5 text-small text-fg-muted">{t("data.form.vocabNoMatch")}</p> : null}
-              <ul aria-label={legend}>{tree}</ul>
-            </div>
-            <p role="status" className={cn("flex items-center gap-1.5 border-t border-border px-3 py-2 text-caption font-normal", full ? "text-warning" : "text-fg-muted")}>
-              {full ? <CircleAlert aria-hidden="true" className="size-3.5 shrink-0" strokeWidth={2} /> : null}
-              <span className="num">{t("data.form.vocabCount", { count: value.length, max })}</span>
-              <span aria-hidden="true">·</span>
-              <span>{full ? t("data.form.vocabFull", { max }) : t("data.form.maxCount", { max })}</span>
-            </p>
-          </PopoverContent>
-        </Popover>
+        {[
+          value.length ? null : (
+            <span key="legend" className="mr-1.5">
+              {legendEl}
+            </span>
+          ),
+          ...value.map((code) => {
+            const term = byCode.get(code);
+            const name = term ? label(term) : code;
+            return (
+              <Tag key={`term-${code}`} onRemove={() => toggle(code, false)} removeLabel={t("data.form.vocabRemove", { name })}>
+                {name}
+              </Tag>
+            );
+          }),
+          <span key="picker" className="contents">
+            {picker}
+          </span>,
+          value.length ? null : (
+            <span key="count" className="ml-auto">
+              {countEl}
+            </span>
+          ),
+        ]}
       </div>
       {error ? (
         <p id={`${baseId}-error`} className="flex items-start gap-1.5 text-small text-danger">
