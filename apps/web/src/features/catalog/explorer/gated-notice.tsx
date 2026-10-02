@@ -14,7 +14,7 @@ export function isGated(error: unknown): boolean {
 export function GatedNotice({ dataset }: { dataset: Dataset }) {
   const t = useTranslations();
   return (
-    <div role="status" className="flex flex-col items-center gap-3 rounded-md border border-dashed border-border px-6 py-10 text-center">
+    <div role="status" className="flex flex-1 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border px-6 py-10 text-center">
       <span className="flex size-10 items-center justify-center rounded-full bg-bg-hover text-fg-muted">
         <Lock aria-hidden="true" className="size-5" strokeWidth={1.75} />
       </span>

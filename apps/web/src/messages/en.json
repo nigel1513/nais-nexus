@@ -225,6 +225,14 @@
         "explorerCrumb": "Files & distributions",
         "columnsCrumb": "Schema",
         "metaCrumb": "Provenance & use"
+      },
+      "factsTitle": "At a glance",
+      "sectionNav": "Data card sections",
+      "nav": {
+        "overview": "Overview",
+        "files": "Files",
+        "schema": "Schema",
+        "meta": "Metadata"
       }
     },
     "people": {
@@ -248,7 +256,14 @@
       "usagePolicy": "Terms of use",
       "updateFrequency": "Update frequency",
       "publications": "Related publications",
-      "legacyContact": "Contact email (legacy)"
+      "legacyContact": "Contact email (legacy)",
+      "groups": {
+        "people": "People",
+        "context": "Research context",
+        "collection": "Collection",
+        "use": "Use"
+      },
+      "export": "Export metadata"
     },
     "search": {
       "periodInvalidHint": "Correct the data period to see search results.",
@@ -472,7 +487,8 @@
         "min": "Min",
         "max": "Max",
         "mean": "Mean"
-      }
+      },
+      "fileColumns": "{count, plural, one {# column} other {# columns}}"
     },
     "new": {
       "stepsLabel": "Registration steps",

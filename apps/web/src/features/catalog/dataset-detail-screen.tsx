@@ -1,5 +1,5 @@
 "use client";
-import { Button, EmptyState, Tabs, TabsContent, TabsList, TabsTrigger } from "@nais/ui";
+import { Button, cn, EmptyState, Tabs, TabsContent, TabsList, TabsTrigger } from "@nais/ui";
 import { Info, Plus } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
@@ -15,12 +15,18 @@ import { NewVersionDialog } from "./components/new-version-dialog";
 import { About } from "./data-card/about";
 import { DataCardHeader, VersionPicker } from "./data-card/header";
 import { MetadataBlock } from "./data-card/metadata-block";
+import { FactsPanel } from "./data-card/facts-panel";
 import { pickVersion } from "./data-card/pick-version";
+import { SectionNav, sectionId } from "./data-card/section-nav";
 import { SideCard } from "./data-card/side-card";
 import { ColumnTable } from "./explorer/column-table";
 import { DataExplorer } from "./explorer/data-explorer";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 import { PanelHead } from "@/shared/ui/work-hero";
+
+// Section anchors land below the sticky top bar and section nav: html's scroll-padding-top (4rem) + 3rem = 112px.
+const sectionCls = "scroll-mt-12 outline-none";
+const rowCls = cn(sectionCls, "grid grid-cols-1 gap-6 xl:grid-cols-12");
 
 export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const t = useTranslations();
@@ -74,20 +80,46 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
             ) : null}
           </div>
         </div>
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <div className="min-w-0">
-            <TabsContent value="card" className="flex flex-col gap-10">
-              <About description={d.description} />
-              {selected ? (
-                <DataExplorer key={selected.dataset_version_id} dataset={d} versionId={selected.dataset_version_id} fileCount={selected.file_count ?? d.stats?.file_count ?? 0} />
-              ) : null}
-              <section aria-labelledby="columns-title" data-testid="column-table-slot" id="column-table-slot" className="flex flex-col gap-4">
-                <PanelHead id="columns-title" crumb={t("data.card.hero.columnsCrumb")} title={t("data.card.columnsTitle")} />
-                {selected ? <ColumnTable versionId={selected.dataset_version_id} /> : null}
-              </section>
+        <TabsContent value="card" className="pt-0">
+          <SectionNav />
+          {/* 12-column rows from xl: 개요 (About 8 · 한눈에 4), 파일·분포 (Explorer 8 · rail 4, top-aligned), then schema and
+              metadata at full width. Below xl every row stacks. */}
+          <div className="flex flex-col gap-12 pt-6">
+            <div id={sectionId("overview")} tabIndex={-1} className={cn(rowCls, "items-start")}>
+              <About description={d.description} className="xl:col-span-8" />
+              <div className="xl:col-span-4">
+                <FactsPanel dataset={d} />
+              </div>
+            </div>
+            <div id={sectionId("files")} tabIndex={-1} className={rowCls}>
+              <div className="flex min-w-0 flex-col xl:col-span-8">
+                {selected ? (
+                  <DataExplorer key={selected.dataset_version_id} className="flex-1" dataset={d} versionId={selected.dataset_version_id} fileCount={selected.file_count ?? d.stats?.file_count ?? 0} />
+                ) : (
+                  <div className="flex flex-1 flex-col justify-center rounded-md border border-dashed border-border">
+                    <EmptyState title={t("data.detail.noVersions")} />
+                  </div>
+                )}
+              </div>
+              <div className="xl:col-span-4">
+                {/* Top-aligned with the Explorer; it fills down to the Explorer's bottom while the row fits the viewport,
+                    and sticks under the section nav when the Explorer is taller (a long Column view). */}
+                <SideCard ref={contactRef} dataset={d} versions={versionItems} className="xl:sticky xl:top-28 xl:min-h-[min(100%,calc(100dvh-8.5rem))]" />
+              </div>
+            </div>
+            <section id={sectionId("schema")} tabIndex={-1} aria-labelledby="columns-title" data-testid="column-table-slot" className={cn(sectionCls, "flex flex-col gap-4")}>
+              <PanelHead id="columns-title" crumb={t("data.card.hero.columnsCrumb")} title={t("data.card.columnsTitle")} />
+              {selected ? <ColumnTable versionId={selected.dataset_version_id} /> : null}
+            </section>
+            <div id={sectionId("meta")} tabIndex={-1} className={sectionCls}>
               <MetadataBlock dataset={d} />
-            </TabsContent>
-            <TabsContent value="versions">
+            </div>
+          </div>
+          <div id="card-end" aria-hidden="true" className="h-px" />
+        </TabsContent>
+        <TabsContent value="versions">
+          <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
+            <div className="min-w-0 xl:col-span-8">
               {versions.isPending ? (
                 <DelayedSkeleton lines={2} />
               ) : versionItems.length === 0 ? (
@@ -109,12 +141,12 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
                   ))}
                 </ul>
               )}
-            </TabsContent>
+            </div>
+            <div className="xl:col-span-4">
+              <SideCard ref={contactRef} dataset={d} versions={versionItems} />
+            </div>
           </div>
-          <div className="lg:pt-10">
-            <SideCard ref={contactRef} dataset={d} versions={versionItems} />
-          </div>
-        </div>
+        </TabsContent>
       </Tabs>
       {steward ? <DatasetEditSheet dataset={d} open={editing} onOpenChange={setEditing} /> : null}
       {steward ? <NewVersionDialog datasetId={d.dataset_id} open={newVersion} onOpenChange={setNewVersion} /> : null}

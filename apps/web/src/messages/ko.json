@@ -847,6 +847,14 @@
         "explorerCrumb": "파일·분포",
         "columnsCrumb": "스키마",
         "metaCrumb": "출처·이용"
+      },
+      "factsTitle": "한눈에",
+      "sectionNav": "데이터 카드 섹션",
+      "nav": {
+        "overview": "개요",
+        "files": "파일·분포",
+        "schema": "스키마",
+        "meta": "메타데이터"
       }
     },
     "people": {
@@ -870,7 +878,14 @@
       "usagePolicy": "이용 조건",
       "updateFrequency": "갱신 주기",
       "publications": "관련 논문",
-      "legacyContact": "대표 이메일(이전)"
+      "legacyContact": "대표 이메일(이전)",
+      "groups": {
+        "people": "사람",
+        "context": "연구 맥락",
+        "collection": "수집",
+        "use": "이용"
+      },
+      "export": "메타데이터 내보내기"
     },
     "explorer": {
       "view": "보기 방식",
@@ -928,7 +943,8 @@
         "min": "최소",
         "max": "최대",
         "mean": "평균"
-      }
+      },
+      "fileColumns": "열 {count}개"
     },
     "edit": {
       "title": "데이터셋 편집",

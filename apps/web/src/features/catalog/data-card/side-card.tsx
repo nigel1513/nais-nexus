@@ -11,14 +11,14 @@ import { DefList } from "./def-list";
 import "@/shared/ui/screen-v2.css";
 
 /** One rail section: accent crumb title, then its content; sections share one bordered panel, split by 1px rules. */
-function RailPanel({ title, children, panelRef, focusable }: { title: string; children: ReactNode; panelRef?: Ref<HTMLElement>; focusable?: boolean }) {
+export function RailPanel({ title, children, panelRef, focusable }: { title: string; children: ReactNode; panelRef?: Ref<HTMLElement>; focusable?: boolean }) {
   const id = useId();
   return (
     <section
       aria-labelledby={id}
       ref={panelRef}
       tabIndex={focusable ? -1 : undefined}
-      className={cn("flex flex-col gap-3 px-4 py-4", focusable && "outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus")}
+      className={cn("flex min-w-0 flex-col gap-3 bg-bg-panel px-4 py-4 sm:[&:last-child:nth-child(odd)]:col-span-2 xl:[&:last-child:nth-child(odd)]:col-span-1 xl:last:flex-1", focusable && "outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus")}
     >
       <h2 id={id} className="sv-kicker">
         {title}
@@ -30,14 +30,15 @@ function RailPanel({ title, children, panelRef, focusable }: { title: string; ch
 
 /**
  * Right rail of the Data Card: 담당자 (the 문의 button focuses it), 연구책임자, 이용 정책, 활동.
- * Stacks under the content below lg.
+ * Beside the Data Explorer from xl (one column, top-aligned with its header); below xl it sits under the Explorer as a
+ * two-column grid. The 1px rules are the panel's own background showing through a 1px gap.
  */
-export function SideCard({ dataset: d, versions, ref }: { dataset: Dataset; versions: DatasetVersion[]; ref?: Ref<HTMLElement> }) {
+export function SideCard({ dataset: d, versions, ref, className }: { dataset: Dataset; versions: DatasetVersion[]; ref?: Ref<HTMLElement>; className?: string }) {
   const t = useTranslations();
   const steward = d.people?.steward_contact;
   const pi = d.people?.principal_investigator;
   return (
-    <aside aria-label={t("data.card.railLabel")} className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-bg-panel">
+    <aside aria-label={t("data.card.railLabel")} className={cn("grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2 xl:flex xl:flex-col", className)}>
       <RailPanel title={t("data.card.contactTitle")} panelRef={ref} focusable>
         {steward ? <PersonLine person={steward} stacked /> : null}
         {d.people?.steward_contact_absent ? (
