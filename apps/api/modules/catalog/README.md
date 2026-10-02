@@ -14,6 +14,11 @@ deleteDraftFile, publishDatasetVersion, getFileProfile, getFilePreview. No endpo
    (D-039), and presigned URLs never outlive the session (`ttl = min(UPLOAD_URL_TTL_SECONDS, seconds to expires_at)`;
    an expired session shows `status: EXPIRED` and no URLs). A re-used FAILED/expired path gets the new session's key;
    the old object is removed after commit. Seed rows created earlier keep their stored keys (the key is stored per row).
+   Shared objects (spec §3.3b): a draft row inherited from a published version shares that version's object. Such a
+   row is replaceable (re-uploading its path re-points it to the new session's key, no CONFLICT) and deletable; in
+   both cases `versioning/refs.release_objects` takes a per-object advisory lock and schedules the after-commit delete
+   only when no row references the object any more, so a published object is never removed. If the replacing upload
+   fails or expires, the row stays FAILED and the inherited link does not come back (delete the row instead).
 2. Upload through `http://localhost:21051/<bucket>/...` (gateway → SeaweedFS). Keep each part's `ETag`.
 3. `POST /upload-sessions/{id}/complete` with `{"parts": [{"file_id", "etags": [{"part_number", "etag"}]}]}`.
    Sessions ≤ 256 MiB are verified synchronously; larger ones return `UPLOADED` — poll `GET /upload-sessions/{id}`.

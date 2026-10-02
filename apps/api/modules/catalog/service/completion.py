@@ -15,14 +15,10 @@ from api.modules.catalog.errors import dependency_errors
 from api.modules.catalog.objects import MultipartFailed, ObjectStore
 from api.modules.catalog.repo import load_dataset, load_version, must, rowcount
 from api.modules.catalog.schemas import UploadCompleteIn
-from api.modules.catalog.service.uploads import (
-    StorageCleanup,
-    abort_quietly,
-    cleanup_target,
-    upload_session_response,
-)
+from api.modules.catalog.service.uploads import abort_quietly, upload_session_response
 from api.modules.catalog.tables import dataset_files, upload_sessions
 from api.modules.catalog.verification import verify_in_session
+from api.modules.catalog.versioning.refs import StorageCleanup, release_objects
 from api.platform import clock
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
@@ -68,7 +64,7 @@ def _finalize_upload(
     if size is None:
         return "FAILED", "OBJECT_MISSING"
     if size != int(f["size_bytes"]):
-        store.delete(key)
+        store.delete(key)  # session-owned key (D-039): never shared with an inherited row
         return "FAILED", "SIZE_MISMATCH"
     return "UPLOADED", None
 
@@ -168,8 +164,9 @@ def complete_upload_session(
 
 def delete_draft_file(
     session: Session, deps: CatalogDeps, user: CurrentUser, version_id: UUID, file_id: UUID
-) -> StorageCleanup:
-    """Returns the object to remove; the route deletes it after the transaction committed."""
+) -> StorageCleanup | None:
+    """Returns the object to remove (None while another row, e.g. a published one, still references it); the route
+    deletes it after the transaction committed."""
     version, _ = steward_version(session, user, version_id, for_update=True)
     require_draft(version)
     f = (
@@ -194,4 +191,5 @@ def delete_draft_file(
         if sess is not None and sess["status"] == "OPEN" and sess["expires_at"] > clock.now():
             raise ApiError(ErrorCode.CONFLICT, "The file is still being uploaded in an open session.")
     session.execute(delete(dataset_files).where(dataset_files.c.file_id == file_id))
-    return cleanup_target(f)
+    targets = release_objects(session, [f])
+    return targets[0] if targets else None
