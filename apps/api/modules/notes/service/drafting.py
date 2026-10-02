@@ -1,7 +1,8 @@
 """draftNote: queue a local-LLM draft of the recorder's DRAFT note (the work is jobs.draft_note).
 
 Recorder only (others get the getNote answer), DRAFT only (409 NOTE_LOCKED), LLM switched off -> 503
-LLM_UNAVAILABLE, once per minute per note (429 RATE_LIMITED). A request clears a previous FAILED error. While a
+LLM_UNAVAILABLE, no notebook saved in the project that day -> 422 VALIDATION_FAILED reason NO_NOTEBOOK_ACTIVITY (the
+drafting source is the NotebookActivityPort only), once per minute per note (429 RATE_LIMITED). A request clears a previous FAILED error. While a
 draft is still QUEUED/RUNNING (younger than jobs.STALE_AFTER) a request is accepted without sending a second message;
 a stuck one is reclaimed.
 """
@@ -23,6 +24,8 @@ from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
 
 MIN_INTERVAL = timedelta(minutes=1)
+NO_NOTEBOOK_ACTIVITY = "NO_NOTEBOOK_ACTIVITY"
+NO_NOTEBOOK_MESSAGE = "오늘 저장한 노트북이 없습니다."
 
 
 def request_draft(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) -> ResearchNote:
@@ -31,14 +34,16 @@ def request_draft(session: Session, deps: NotesDeps, user: CurrentUser, note_id:
         raise locked()
     if deps.llm() is None:
         raise ApiError(ErrorCode.LLM_UNAVAILABLE, "Drafting is unavailable: the local LLM is switched off.")
+    if not deps.notebooks.list_notebook_activity(note["recorder_id"], note["project_id"], note["note_date"]):
+        raise ApiError(ErrorCode.VALIDATION_FAILED, NO_NOTEBOOK_MESSAGE, {"reason": NO_NOTEBOOK_ACTIVITY})
     now = clock.now()
     last = note["draft_requested_at"]
     if last is not None and now - last < MIN_INTERVAL:
         raise ApiError(ErrorCode.RATE_LIMITED, "A draft of this note was requested less than a minute ago.")
     if jobs.in_progress(note, now):
-        return note_view(session, deps, note)
+        return note_view(session, deps, note, user.user_id)
     note = repo.update_note(
         session, note_id, draft_status=jobs.QUEUED, draft_error=None, draft_requested_at=now
     )
     jobs.enqueue_after_commit(session, note_id)
-    return note_view(session, deps, note)
+    return note_view(session, deps, note, user.user_id)

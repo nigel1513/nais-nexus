@@ -1690,11 +1690,13 @@ class NoteDraftStatus(StrEnum):
 
 
 class NoteSection(StrEnum):
-    DIRECTION = 'DIRECTION'
-    STEPS = 'STEPS'
+    OBJECTIVE = 'OBJECTIVE'
+    METHOD = 'METHOD'
+    PROCEDURE = 'PROCEDURE'
     RESULTS = 'RESULTS'
+    DISCUSSION = 'DISCUSSION'
     NEXT = 'NEXT'
-    MEMO = 'MEMO'
+    REFERENCES = 'REFERENCES'
 
 
 class NoteBlockOrigin(StrEnum):
@@ -1717,17 +1719,18 @@ class NoteEvidenceType(StrEnum):
     PUBLISH_REQUESTED = 'PUBLISH_REQUESTED'
     DATASET_DOWNLOADED = 'DATASET_DOWNLOADED'
     ACCESS_DECIDED = 'ACCESS_DECIDED'
+    NOTEBOOK = 'NOTEBOOK'
 
 
 class NoteEvidence(BaseModel):
     type: NoteEvidenceType
     ref_id: Id = Field(
         ...,
-        description='Input, recipe, run, output, publish request, dataset version or access request id',
+        description='Input, recipe, run, output, publish request, dataset version or access request id; for NOTEBOOK the notebook version id (the notebook id when unversioned)',
     )
     label: str = Field(
         ...,
-        description='Entity label only (dataset title@version, recipe name, row counts); never data values',
+        description='Entity label only (dataset title@version, recipe name, row counts, notebook title · cell k); never data values',
     )
     at: Timestamp
 
@@ -1795,6 +1798,10 @@ class ResearchNote(BaseModel):
     blocks: list[NoteBlock]
     draft_status: NoteDraftStatus
     draft_error: str | None
+    draft_source_count: conint(ge=0) = Field(
+        ...,
+        description='Notebooks the recorder saved in this project on note_date (the drafting source); shown to the recorder only, 0 for everyone else. 0 -> draftNote answers 422 NO_NOTEBOOK_ACTIVITY',
+    )
     signatures: list[NoteSignature]
     content_hash: constr(pattern=r'^[a-f0-9]{64}$') | None = Field(
         ...,

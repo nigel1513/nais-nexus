@@ -2,8 +2,9 @@
 
 A draft request (draftNote or the schedule) sets draft_status QUEUED and draft_requested_at = now; that timestamp
 identifies the request. One delivery:
-claim (note locked FOR UPDATE; DRAFT and QUEUED -> RUNNING; the day's evidence and the recorder's MEMO text read in
-the same transaction) -> no transaction held while the local LLM answers -> finish (note locked FOR UPDATE again; the
+claim (note locked FOR UPDATE; DRAFT and QUEUED -> RUNNING) -> the recorder's notebooks of the note's project and day
+read from the NotebookActivityPort (drafting/prompt.py; workspace evidence is not sent) -> no transaction held while the
+local LLM answers -> finish (note locked FOR UPDATE again; the
 answer is applied only while the note is still DRAFT, still RUNNING and still on the same request: AI blocks
 appended, revision + 1, draft_status DONE).
 - An unusable answer (ValueError: no JSON object, wrong shape) is asked again once, then FAILED.
@@ -17,8 +18,8 @@ appended, revision + 1, draft_status DONE).
 
 Daily: the scheduler ticks every 15 minutes (and at worker start). The first tick at or after 19:00 KST on a day
 claims that day in notes.daily_runs and queues drafts; later ticks that day do nothing, so a worker that was down at
-19:00 catches up that evening. Every researcher with evidence today who is an ACTIVE member of the project gets their
-latest note of today drafted (a DRAFT is created when they have none; SUBMITTED/SIGNED notes are left alone). One
+19:00 catches up that evening. Every researcher with notebooks saved today (NotebookActivityPort.list_notebook_authors;
+nobody until M07 provides it) who is an ACTIVE member of the project gets their latest note of today drafted (a DRAFT is created when they have none; SUBMITTED/SIGNED notes are left alone). One
 researcher failing does not stop the others. Nothing runs (and the day is not claimed) while the LLM is off.
 
 Embeddings (searchNotes, search.py): `notes.embed_notes` (same queue) embeds note versions whose searchable text changed
@@ -47,13 +48,7 @@ from api.modules.notes.access import DRAFT
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.drafting.apply import new_blocks
 from api.modules.notes.drafting.parse import DraftSentence, parse_draft
-from api.modules.notes.drafting.prompt import (
-    KST,
-    PromptItem,
-    build_messages,
-    evidence_rows,
-    prompt_items,
-)
+from api.modules.notes.drafting.prompt import KST, PromptItem, build_messages, notebooks, plan
 from api.modules.notes.wiring import build_default_deps
 from api.platform import clock, ports
 from api.platform.db import session_factory
@@ -67,8 +62,9 @@ logger = logging.getLogger("nais.notes")
 QUEUE = "notes"
 FAILED_MESSAGE = "초안을 만들지 못했습니다. 잠시 후 다시 시도하세요."
 MAX_ATTEMPTS = 2  # an unusable answer is asked again once
-# 4 sections x 6 sentences x 120 Korean characters inside JSON (~1 token per Hangul syllable plus keys/indexes).
-MAX_TOKENS = 2048
+# 7 sections x 6 sentences x 120 Korean characters inside JSON (~1 token per Hangul syllable plus keys/indexes); in
+# practice far fewer sections are filled.
+MAX_TOKENS = 3584
 TIME_LIMIT_MS = 10 * 60 * 1000  # waits for the shared GPU (one chat at a time per process) + two LLM timeouts
 STALE_AFTER = timedelta(milliseconds=TIME_LIMIT_MS) + timedelta(minutes=1)
 DAILY_INTERVAL_S = 900.0
@@ -121,34 +117,22 @@ class _Work:
     note_id: UUID
     request: datetime | None  # draft_requested_at of the claimed request
     items: list[PromptItem]
-    has_memo: bool
     messages: list[ChatMessage]
 
 
 def _claim(note_id: UUID) -> _Work | None:
-    """DRAFT + QUEUED -> RUNNING with the prompt built from the note's day. None: nothing to do (duplicate delivery,
-    already finished, no longer DRAFT, unknown note)."""
+    """DRAFT + QUEUED -> RUNNING, then the prompt built from the recorder's notebooks of the note's project and day.
+    None: nothing to do (duplicate delivery, already finished, no longer DRAFT, unknown note)."""
     with _session() as session, session.begin():
         note = repo.load_note(session, note_id, for_update=True)
         if note is None or note["status"] != DRAFT or note["draft_status"] != QUEUED:
             return None
-        rows = evidence_rows(
-            repo.day_evidence(session, note["project_id"], note["recorder_id"], note["note_date"])
-        )
-        memos = [
-            b["text"]
-            for b in repo.load_blocks(session, [note_id])[note_id]
-            if b["section"] == "MEMO" and b["origin"] == "HUMAN" and b["text"].strip()
-        ]
         repo.update_note(session, note_id, draft_status=RUNNING, draft_error=None)
-    items = prompt_items(rows)
-    return _Work(
-        note_id,
-        note["draft_requested_at"],
-        items,
-        bool(memos),
-        build_messages(note["note_date"], items, memos),
+    source = _deps().notebooks.list_notebook_activity(
+        note["recorder_id"], note["project_id"], note["note_date"]
     )
+    prompt = plan(notebooks(source))
+    return _Work(note_id, note["draft_requested_at"], prompt.items, build_messages(note["note_date"], prompt))
 
 
 def _finish(work: _Work, status: str, sentences: list[DraftSentence] | None = None) -> str:
@@ -178,7 +162,7 @@ def _finish(work: _Work, status: str, sentences: list[DraftSentence] | None = No
 
 
 def _ask(work: _Work) -> str:
-    if not work.items and not work.has_memo:
+    if not work.items:  # no notebook that day: nothing to draft from
         return _finish(work, DONE)
     llm = _deps().llm()
     log = {"note_id": str(work.note_id)}
@@ -188,7 +172,7 @@ def _ask(work: _Work) -> str:
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             answer = llm.chat_json(work.messages, max_tokens=MAX_TOKENS)
-            sentences = parse_draft(answer, item_count=len(work.items), has_memo=work.has_memo)
+            sentences = parse_draft(answer, work.items)
         except LlmUnavailable as exc:
             logger.warning("draft failed: LLM unavailable", extra=log | {"error": str(exc)})
             return _finish(work, FAILED)
@@ -206,7 +190,12 @@ def _ask(work: _Work) -> str:
 
 def draft_note(note_id: UUID) -> str:
     """One delivery. Returns DONE, FAILED, DISCARDED (the request no longer stands) or SKIPPED (nothing to do)."""
-    work = _claim(note_id)
+    try:
+        work = _claim(note_id)
+    except Exception as exc:  # the notebook port failed after the claim: FAILED, not stuck RUNNING
+        logger.error("draft claim crashed", extra={"note_id": str(note_id), "error_type": type(exc).__name__})
+        _fail_running(note_id)
+        raise
     if work is None:
         return "SKIPPED"
     try:
@@ -218,6 +207,13 @@ def draft_note(note_id: UUID) -> str:
         logger.error("draft crashed", extra={"note_id": str(note_id), "error_type": type(exc).__name__})
         _finish(work, FAILED)
         raise
+
+
+def _fail_running(note_id: UUID) -> None:
+    with _session() as session, session.begin():
+        note = repo.load_note(session, note_id, for_update=True)
+        if note is not None and note["status"] == DRAFT and note["draft_status"] == RUNNING:
+            repo.update_note(session, note_id, draft_status=FAILED, draft_error=FAILED_MESSAGE)
 
 
 @dramatiq.actor(actor_name="notes.draft_note", queue_name=QUEUE, max_retries=0, time_limit=TIME_LIMIT_MS)
@@ -298,8 +294,13 @@ def embed_notes(note_ids: list[UUID]) -> int:
         vectors.update(zip(batch, answer, strict=True))
     if not vectors:
         return 0
+    stored_count = 0
     with _session() as session, session.begin():
+        # Notes deleted (DRAFTs) while the GPU answered are skipped; the rest are locked against deletion until commit.
+        alive = repo.lock_existing_notes(session, list(vectors))
         for note_id, vector in vectors.items():
+            if note_id not in alive:
+                continue
             note = found[note_id]
             repo.upsert_embedding(
                 session,
@@ -309,7 +310,8 @@ def embed_notes(note_ids: list[UUID]) -> int:
                 text_hash=hashes[note_id],
                 at=note["updated_at"],
             )
-    return len(vectors)
+            stored_count += 1
+    return stored_count
 
 
 @dramatiq.actor(
@@ -384,21 +386,26 @@ def daily_drafts() -> int:
     with _session() as session, session.begin():
         if not repo.claim_daily_run(session, today, now):
             return 0
-        recorders = repo.day_recorders(session, today)
+    authors = list(dict.fromkeys(deps.notebooks.list_notebook_authors(today)))
+    try:
+        organizations = deps.people.get_organization_ids(list(dict.fromkeys(u for u, _ in authors)))
+    except ApiError:  # identity unwired: existing notes are still drafted, none can be created
+        logger.warning("daily drafts: organizations unknown, no new notes")
+        organizations = {}
     queued = 0
-    for r in recorders:
+    for user_id, project_id in authors:
         try:
-            if not projects.is_active_member(r["project_id"], r["actor_id"]):
+            if not projects.is_active_member(project_id, user_id):
                 continue
             with _session() as session, session.begin():
-                if _queue_daily(session, r["project_id"], r["actor_id"], r["organization_id"], today, now):
+                if _queue_daily(session, project_id, user_id, organizations.get(user_id), today, now):
                     queued += 1
         except Exception as exc:  # one researcher must not stop the evening's other drafts
             logger.error(
                 "daily draft failed for a researcher",
                 extra={
-                    "project_id": str(r["project_id"]),
-                    "recorder_id": str(r["actor_id"]),
+                    "project_id": str(project_id),
+                    "recorder_id": str(user_id),
                     "error_type": type(exc).__name__,
                 },
             )
@@ -409,19 +416,19 @@ def _queue_daily(
     session: Session,
     project_id: UUID,
     recorder_id: UUID,
-    organization_id: str | None,
+    organization_id: UUID | None,
     today: date,
     now: datetime,
 ) -> bool:
     note = repo.latest_version(session, project_id, recorder_id, today)
     if note is None:
-        if organization_id is None:  # their organization is known only from their own events
+        if organization_id is None:  # no public profile (unknown or removed user)
             return False
         repo.insert_note(  # ON CONFLICT DO NOTHING: a note created concurrently is simply re-read
             session,
             note_id=new_id(),
             project_id=project_id,
-            organization_id=UUID(organization_id),
+            organization_id=organization_id,
             recorder_id=recorder_id,
             note_date=today,
             version=1,

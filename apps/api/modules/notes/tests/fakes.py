@@ -1,13 +1,16 @@
-"""In-memory stand-ins for the ports the notes module consumes (project membership, display names)."""
+"""In-memory stand-ins for the ports the notes module consumes (project membership, display names, notebooks)."""
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
 from nais_contracts.api_models import ProjectSummary
 
+from api.modules.notes.interfaces import NotebookActivity, NotebookCell
 from api.platform.auth import CurrentUser
+from api.platform.ids import new_id
 from api.platform.llm import ChatMessage
 
 ORG_A = UUID("00000000-0000-7000-8000-00000000000a")
@@ -79,14 +82,71 @@ class FakeProjects:
         return [p for p, members in self.roles.items() if user_id in members]
 
 
+ORGANIZATION_NAMES = {ORG_A: "한국소재연구원", ORG_B: "한빛대학교", ORG_C: "C 기관"}
+
+
 class FakePeople:
     """DisplayNameLookup backed by USERS."""
 
     def __init__(self, users: Iterable[CurrentUser] = USERS.values()) -> None:
+        users = list(users)
         self._names = {u.user_id: u.display_name for u in users}
+        self._orgs = {u.user_id: u.organization_id for u in users}
 
     def get_display_names(self, user_ids: Sequence[UUID]) -> dict[UUID, str]:
         return {i: self._names[i] for i in user_ids if i in self._names}
+
+    def get_organization_ids(self, user_ids: Sequence[UUID]) -> dict[UUID, UUID]:
+        return {i: self._orgs[i] for i in user_ids if i in self._orgs}
+
+    def get_organization_names(self, organization_ids: Sequence[UUID]) -> dict[UUID, str]:
+        return {o: ORGANIZATION_NAMES[o] for o in organization_ids if o in ORGANIZATION_NAMES}
+
+
+def notebook(
+    title: str = "고온 구간 용량 분석",
+    *cells: NotebookCell,
+    saved_at: datetime,
+    version_id: UUID | None = None,
+) -> NotebookActivity:
+    """A saved notebook; by default a markdown goal cell and two code cells."""
+    return NotebookActivity(
+        notebook_id=new_id(),
+        title=title,
+        version_id=version_id or new_id(),
+        saved_at=saved_at,
+        cells=cells
+        or (
+            NotebookCell("markdown", "## 목표: 40도 이상 고온 구간의 용량 감소를 확인한다", (), 0, False),
+            NotebookCell("code", "df = pd.read_csv('cycle.csv')", (), 0, False),
+            NotebookCell("code", "df.groupby('temp').capacity.mean().plot()", ("display_data",), 1, False),
+        ),
+    )
+
+
+@dataclass
+class FakeNotebooks:
+    """NotebookActivityPort: (user_id, project_id, day) -> notebooks saved; records every activity lookup."""
+
+    saved: dict[tuple[UUID, UUID, date], list[NotebookActivity]] = field(default_factory=dict)
+    calls: list[tuple[UUID, UUID | None, date]] = field(default_factory=list)
+
+    def add(self, user: CurrentUser, project_id: UUID, day: date, *notebooks: NotebookActivity) -> None:
+        self.saved.setdefault((user.user_id, project_id, day), []).extend(notebooks)
+
+    def list_notebook_activity(
+        self, user_id: UUID, project_id: UUID | None, day: date
+    ) -> list[NotebookActivity]:
+        self.calls.append((user_id, project_id, day))
+        return [
+            n
+            for (u, p, d), notebooks in self.saved.items()
+            if u == user_id and d == day and project_id in (None, p)
+            for n in notebooks
+        ]
+
+    def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
+        return sorted({(u, p) for (u, p, d), notebooks in self.saved.items() if d == day and notebooks})
 
 
 class FakeLlm:

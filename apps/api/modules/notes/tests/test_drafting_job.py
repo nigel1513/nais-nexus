@@ -1,6 +1,7 @@
-"""Local-LLM drafting: draftNote (recorder, DRAFT, rate limit, LLM switch), the `notes.draft_note` job (retry once on
-an unusable answer, FAILED on an unreachable LLM, human blocks never touched, results for a note that left DRAFT
-discarded) and the `notes.daily_drafts` schedule (once per KST day, from 19:00)."""
+"""Local-LLM drafting of the standard template from the day's notebooks: draftNote (recorder, DRAFT, notebook activity
+required, rate limit, LLM switch), the `notes.draft_note` job (retry once on an unusable answer, FAILED on an
+unreachable LLM, human blocks never touched, results for a note that left DRAFT discarded) and the
+`notes.daily_drafts` schedule (once per KST day, from 19:00, for the day's notebook authors)."""
 
 import json
 from datetime import UTC, date, datetime, timedelta
@@ -11,9 +12,10 @@ import pytest
 from dramatiq.brokers.stub import StubBroker
 
 from api.modules.notes import MODULE, jobs
+from api.modules.notes.interfaces import NotebookActivity, NotebookActivityPort, NotebookCell
 from api.modules.notes.tests.conftest import NotesApi, World, sql
-from api.modules.notes.tests.fakes import USERS
-from api.platform import clock
+from api.modules.notes.tests.fakes import USERS, notebook
+from api.platform import clock, ports
 from api.platform.ids import new_id
 from api.platform.llm import LlmUnavailable
 from api.platform.scheduler import Scheduler
@@ -60,8 +62,24 @@ def add_evidence(
     return ref_id
 
 
+def add_notebook(
+    world: World,
+    user: str = "a.recorder",
+    *,
+    day: date = TODAY,
+    project_id: UUID | None = None,
+    **kwargs: Any,
+) -> NotebookActivity:
+    """A notebook the user saved in the project on the day (default: today, an hour ago, 3 cells: 1 markdown)."""
+    kwargs.setdefault("saved_at", NOW - timedelta(hours=1))
+    saved = notebook(**kwargs) if "title" not in kwargs else notebook(kwargs.pop("title"), **kwargs)
+    world.notebooks.add(USERS[user], project_id or world.project_id, day, saved)
+    return saved
+
+
 def good_answer(**sections: list[dict[str, Any]]) -> dict[str, Any]:
-    return {"sections": {"DIRECTION": [], "STEPS": [], "RESULTS": [], "NEXT": [], **sections}}
+    names = ("OBJECTIVE", "METHOD", "PROCEDURE", "RESULTS", "DISCUSSION", "NEXT", "REFERENCES")
+    return {name: [] for name in names} | sections
 
 
 def queued() -> list[dict[str, Any]]:
@@ -87,21 +105,28 @@ def stored_note(db: PgUrls, note_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------- draftNote + job
 
 
-def test_draft_appends_ai_blocks_from_the_days_evidence(api: NotesApi, world: World, db: PgUrls) -> None:
-    note = api.written(world, "고온 구간 용량을 먼저 보기로 했다.")
-    input_ref = add_evidence(
-        db, world, kind="INPUT_ADDED", label="전극 열화 측정@v2", at=NOW - timedelta(hours=2)
-    )
-    run_ref = add_evidence(db, world)
-    add_evidence(db, world, user="a.colleague", label="남의 실행")  # another researcher's day
-    add_evidence(db, world, day=TODAY - timedelta(days=1), label="어제 실행")  # another day
+def test_draft_appends_template_blocks_from_the_days_notebooks(
+    api: NotesApi, world: World, db: PgUrls
+) -> None:
+    saved = add_notebook(world)
+    note = api.written(world, "40도 이상에서 용량 감소가 뚜렷하다.")
+    add_notebook(world, "a.colleague", title="남의 노트북")  # another researcher's day
+    add_notebook(world, day=TODAY - timedelta(days=1), title="어제 노트북")  # another day
+    add_notebook(world, project_id=new_id(), title="다른 과제 노트북")  # another project
+    add_evidence(db, world, label="작업 공간 실행 근거")  # workspace evidence: listed on screen, never sent
+    assert note["draft_source_count"] == 1
     world.llm.script(
         good_answer(
-            DIRECTION=[{"text": "고온 구간 용량을 우선 분석한다.", "evidence": []}],
-            STEPS=[
-                {"text": "측정 데이터 v2를 입력으로 추가하고 평균 레시피를 실행했다.", "evidence": [1, 2]}
+            OBJECTIVE=[{"text": "고온 구간 용량 감소를 확인한다.", "evidence": ["1.1"]}],
+            METHOD=[{"text": "pandas로 충방전 데이터를 분석했다.", "evidence": ["1.2"]}],
+            PROCEDURE=[{"text": "측정 데이터를 읽고 온도별 평균 용량을 그렸다.", "evidence": ["1.2", "1.3"]}],
+            RESULTS=[
+                {"text": "근거 없는 결과.", "evidence": []},
+                {"text": "그래프가 출력되었다.", "evidence": ["1.3"]},
             ],
-            RESULTS=[{"text": "근거 없는 결과.", "evidence": []}],
+            DISCUSSION=[{"text": "설명 셀 근거가 없는 고찰.", "evidence": ["1.2"]}],
+            NEXT=[{"text": "저온 구간도 확인한다.", "evidence": ["1.1"]}],
+            REFERENCES=[{"text": "고온 구간 용량 분석 노트북.", "evidence": ["1"]}],
         )
     )
     response = draft(api, note)
@@ -115,39 +140,146 @@ def test_draft_appends_ai_blocks_from_the_days_evidence(api: NotesApi, world: Wo
 
     [messages] = world.llm.calls
     user_message = messages[1].content
-    assert "1. [INPUT_ADDED] 전극 열화 측정@v2" in user_message
-    assert "2. [RUN_SUCCEEDED] 고온 구간 평균 용량@3 · 182,340행 → 24행" in user_message
-    assert "남의 실행" not in user_message and "어제 실행" not in user_message
-    assert "고온 구간 용량을 먼저 보기로 했다." in user_message
+    assert "[1] 노트북 '고온 구간 용량 분석' (저장 18:30)" in user_message
+    assert "[1.1] 설명: ## 목표: 40도 이상 고온 구간의 용량 감소를 확인한다" in user_message
+    assert (
+        "[1.3] 코드: df.groupby('temp').capacity.mean().plot() / 출력: display_data 1개, 오류 없음"
+        in user_message
+    )
+    for absent in (
+        "남의 노트북",
+        "어제 노트북",
+        "다른 과제 노트북",
+        "작업 공간 실행 근거",
+        "40도 이상에서 용량",
+    ):
+        assert absent not in user_message
+    assert "[2]" not in user_message
 
     body = api.get("a.recorder", f"/notes/{note['note_id']}").json()
     assert body["draft_status"] == "DONE" and body["draft_error"] is None
     assert body["revision"] == note["revision"] + 1
     assert [(b["section"], b["origin"], b["accepted"]) for b in body["blocks"]] == [
-        ("MEMO", "HUMAN", True),
-        ("DIRECTION", "AI", False),
-        ("STEPS", "AI", False),
+        ("OBJECTIVE", "AI", False),
+        ("METHOD", "AI", False),
+        ("PROCEDURE", "AI", False),
+        ("RESULTS", "HUMAN", True),
+        ("RESULTS", "AI", False),
+        ("NEXT", "AI", False),
+        ("REFERENCES", "AI", False),
     ]
-    assert body["blocks"][0] == note["blocks"][0]
-    assert [e["ref_id"] for e in body["blocks"][2]["evidence"]] == [str(input_ref), str(run_ref)]
-    assert body["blocks"][2]["evidence"][1]["label"] == "고온 구간 평균 용량@3 · 182,340행 → 24행"
+    assert body["blocks"][3] == note["blocks"][0]
+    procedure = body["blocks"][2]["evidence"]
+    assert procedure == [
+        {
+            "type": "NOTEBOOK",
+            "ref_id": str(saved.version_id),
+            "label": f"{saved.title} · 셀 {k}",
+            "at": "2026-10-01T09:30:00Z",
+        }
+        for k in (2, 3)
+    ]
+    assert body["blocks"][6]["evidence"][0]["label"] == saved.title
 
-    # the same answer again adds nothing (same evidence sets / same evidence-free text)
+    # the same answer again adds nothing (same evidence sets)
     with clock.frozen(NOW + timedelta(minutes=2)):
         assert draft(api, body).status_code == 202
         world.llm.script(
             good_answer(
-                DIRECTION=[{"text": "고온 구간 용량을 우선 분석한다.", "evidence": []}],
-                STEPS=[{"text": "다른 표현, 같은 근거.", "evidence": [2, 1]}],
+                OBJECTIVE=[{"text": "다른 표현, 같은 근거.", "evidence": ["1.1"]}],
+                PROCEDURE=[{"text": "다른 표현, 같은 근거.", "evidence": ["1.3", "1.2"]}],
             )
         )
         assert jobs.draft_note(UUID(note["note_id"])) == "DONE"
-    assert len(api.get("a.recorder", f"/notes/{note['note_id']}").json()["blocks"]) == 3
+    assert len(api.get("a.recorder", f"/notes/{note['note_id']}").json()["blocks"]) == 7
+
+
+def test_output_values_from_the_port_never_reach_the_llm(api: NotesApi, world: World) -> None:
+    from dataclasses import dataclass
+
+    @dataclass(frozen=True)
+    class LeakyCell(NotebookCell):
+        outputs: tuple[str, ...] = ("SECRET-OUTPUT 홍길동 010-1234-5678",)
+
+    note = api.today(world)
+    leaky = LeakyCell("code", "print(df.head())", ("stream",), 1, False)
+    world.notebooks.add(
+        USERS["a.recorder"],
+        world.project_id,
+        TODAY,
+        notebook("분석", leaky, saved_at=NOW - timedelta(hours=1)),
+    )
+    world.llm.script(good_answer())
+    assert draft(api, note).status_code == 202
+    assert jobs.draft_note(UUID(note["note_id"])) == "DONE"
+    text = "\n".join(m.content for m in world.llm.calls[0])
+    assert "print(df.head())" in text
+    for secret in ("SECRET", "홍길동", "010-1234-5678"):
+        assert secret not in text
+
+
+def test_no_notebook_activity_is_422(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = api.written(world)
+    add_evidence(db, world)  # workspace activity alone is no drafting source
+    assert note["draft_source_count"] == 0
+    response = draft(api, note)
+    assert response.status_code == 422, response.text
+    error = response.json()["error"]
+    assert error["code"] == "VALIDATION_FAILED"
+    assert error["details"]["reason"] == "NO_NOTEBOOK_ACTIVITY"
+    assert error["message"] == "오늘 저장한 노트북이 없습니다."
+    assert stored_note(db, note["note_id"])["draft_status"] == "NONE"
+    assert queued() == [] and world.llm.calls == []
+
+
+def test_default_port_has_no_activity(api: NotesApi, world: World) -> None:
+    from api.modules.notes.adapters import NoNotebooks
+
+    ports.provide(NotebookActivityPort, NoNotebooks())  # what wire() provides until M07 replaces it
+    note = api.today(world)
+    assert note["draft_source_count"] == 0
+    response = draft(api, note)
+    assert response.status_code == 422
+    assert response.json()["error"]["details"]["reason"] == "NO_NOTEBOOK_ACTIVITY"
+
+
+def test_draft_source_count_is_for_the_recorder_only(api: NotesApi, world: World) -> None:
+    api.witnessed(world)
+    add_notebook(world)
+    add_notebook(world, title="두 번째", saved_at=NOW - timedelta(minutes=10))
+    note = api.written(world)
+    assert note["draft_source_count"] == 2
+    assert api.get("a.recorder", f"/notes/{note['note_id']}").json()["draft_source_count"] == 2
+    submitted = api.post("a.recorder", f"/notes/{note['note_id']}/submit").json()
+    assert submitted["draft_source_count"] == 2
+    witness_view = api.get("b.witness", f"/notes/{note['note_id']}")
+    assert witness_view.status_code == 200
+    assert witness_view.json()["draft_source_count"] == 0
+    assert_matches_response("getNote", 200, witness_view.json())
+
+
+def test_notebook_port_failure_fails_the_draft(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = api.written(world)
+    add_notebook(world)
+    assert draft(api, note).status_code == 202
+
+    class Broken:
+        def list_notebook_activity(self, *args: Any) -> list[NotebookActivity]:
+            raise RuntimeError("notebook store down")
+
+        def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
+            return []
+
+    ports.provide(NotebookActivityPort, Broken())
+    with pytest.raises(RuntimeError):
+        jobs.draft_note(UUID(note["note_id"]))
+    after = stored_note(db, note["note_id"])
+    assert (after["draft_status"], after["draft_error"]) == ("FAILED", FAILED_MESSAGE)
 
 
 def test_unusable_answer_twice_fails_and_keeps_human_blocks(api: NotesApi, world: World, db: PgUrls) -> None:
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
     world.llm.script(ValueError("no JSON object in LLM response"), {"sections": "nope"})
     assert draft(api, note).status_code == 202
     assert jobs.draft_note(UUID(note["note_id"])) == "FAILED"
@@ -159,20 +291,18 @@ def test_unusable_answer_twice_fails_and_keeps_human_blocks(api: NotesApi, world
 
 def test_unusable_answer_once_is_retried(api: NotesApi, world: World, db: PgUrls) -> None:
     note = api.written(world)
-    add_evidence(db, world)
-    world.llm.script(ValueError("bad"), good_answer(STEPS=[{"text": "실행했다.", "evidence": [1]}]))
+    add_notebook(world)
+    world.llm.script(ValueError("bad"), good_answer(PROCEDURE=[{"text": "실행했다.", "evidence": ["1.2"]}]))
     assert draft(api, note).status_code == 202
     assert jobs.draft_note(UUID(note["note_id"])) == "DONE"
     assert len(world.llm.calls) == 2
-    assert [b["origin"] for b in api.get("a.recorder", f"/notes/{note['note_id']}").json()["blocks"]] == [
-        "HUMAN",
-        "AI",
-    ]
+    blocks = api.get("a.recorder", f"/notes/{note['note_id']}").json()["blocks"]
+    assert [(b["section"], b["origin"]) for b in blocks] == [("PROCEDURE", "AI"), ("RESULTS", "HUMAN")]
 
 
 def test_unreachable_llm_fails_without_retry(api: NotesApi, world: World, db: PgUrls) -> None:
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
     world.llm.script(LlmUnavailable("/v1/chat/completions: ReadTimeout"))
     assert draft(api, note).status_code == 202
     assert jobs.draft_note(UUID(note["note_id"])) == "FAILED"
@@ -187,17 +317,19 @@ def test_unreachable_llm_fails_without_retry(api: NotesApi, world: World, db: Pg
     assert (again.json()["draft_status"], again.json()["draft_error"]) == ("QUEUED", None)
 
 
-def test_nothing_to_draft_finishes_without_calling_the_llm(api: NotesApi, world: World) -> None:
+def test_notebooks_gone_by_the_job_finish_without_calling_the_llm(api: NotesApi, world: World) -> None:
     note = api.today(world)
+    add_notebook(world)
     assert draft(api, note).status_code == 202
+    world.notebooks.saved.clear()
     assert jobs.draft_note(UUID(note["note_id"])) == "DONE"
     assert world.llm.calls == []
 
 
 def test_duplicate_delivery_is_skipped(api: NotesApi, world: World, db: PgUrls) -> None:
     note = api.written(world)
-    add_evidence(db, world)
-    world.llm.script(good_answer(STEPS=[{"text": "실행했다.", "evidence": [1]}]))
+    add_notebook(world)
+    world.llm.script(good_answer(PROCEDURE=[{"text": "실행했다.", "evidence": ["1.2"]}]))
     assert draft(api, note).status_code == 202
     assert jobs.draft_note(UUID(note["note_id"])) == "DONE"
     assert jobs.draft_note(UUID(note["note_id"])) == "SKIPPED"
@@ -207,12 +339,12 @@ def test_duplicate_delivery_is_skipped(api: NotesApi, world: World, db: PgUrls) 
 
 def test_result_for_a_note_signed_meanwhile_is_discarded(api: NotesApi, world: World, db: PgUrls) -> None:
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
 
     def sign_first(messages: Any) -> dict[str, Any]:
         signed = api.post("a.recorder", f"/notes/{note['note_id']}/sign")
         assert signed.status_code == 200, signed.text
-        return good_answer(STEPS=[{"text": "실행했다.", "evidence": [1]}])
+        return good_answer(PROCEDURE=[{"text": "실행했다.", "evidence": ["1.2"]}])
 
     world.llm.script(sign_first)
     assert draft(api, note).status_code == 202
@@ -227,11 +359,11 @@ def test_result_for_a_note_signed_meanwhile_is_discarded(api: NotesApi, world: W
 def test_result_for_a_submitted_note_is_discarded(api: NotesApi, world: World, db: PgUrls) -> None:
     api.witnessed(world)
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
 
     def submit_first(messages: Any) -> dict[str, Any]:
         assert api.post("a.recorder", f"/notes/{note['note_id']}/submit").status_code == 200
-        return good_answer(STEPS=[{"text": "실행했다.", "evidence": [1]}])
+        return good_answer(PROCEDURE=[{"text": "실행했다.", "evidence": ["1.2"]}])
 
     world.llm.script(submit_first)
     assert draft(api, note).status_code == 202
@@ -249,14 +381,14 @@ def test_result_after_submit_and_reject_round_trip_is_discarded(
     """claim -> submit -> witness rejects back to DRAFT -> the old answer arrives: it belongs to no request."""
     api.witnessed(world)
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
 
     def round_trip(messages: Any) -> dict[str, Any]:
         assert api.post("a.recorder", f"/notes/{note['note_id']}/submit").status_code == 200
         rejected = api.post("b.witness", f"/notes/{note['note_id']}/reject", json={"reason": "근거 보완"})
         assert rejected.status_code == 200, rejected.text
         assert rejected.json()["draft_status"] == "NONE"
-        return good_answer(STEPS=[{"text": "실행했다.", "evidence": [1]}])
+        return good_answer(PROCEDURE=[{"text": "실행했다.", "evidence": ["1.2"]}])
 
     world.llm.script(round_trip)
     assert draft(api, note).status_code == 202
@@ -271,12 +403,12 @@ def test_result_after_submit_and_reject_round_trip_is_discarded(
 def test_result_for_a_superseded_request_is_discarded(api: NotesApi, world: World, db: PgUrls) -> None:
     """A stale RUNNING draft re-requested by the recorder: the old run's late answer is not applied."""
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
 
     def re_requested(messages: Any) -> dict[str, Any]:
         with clock.frozen(NOW + jobs.STALE_AFTER + timedelta(seconds=1)):
             assert draft(api, note).status_code == 202
-        return good_answer(STEPS=[{"text": "실행했다.", "evidence": [1]}])
+        return good_answer(PROCEDURE=[{"text": "실행했다.", "evidence": ["1.2"]}])
 
     world.llm.script(re_requested)
     assert draft(api, note).status_code == 202
@@ -289,7 +421,7 @@ def test_time_limit_fails_the_draft(api: NotesApi, world: World, db: PgUrls) -> 
     from dramatiq.middleware import TimeLimitExceeded
 
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
     world.llm.script(TimeLimitExceeded())
     assert draft(api, note).status_code == 202
     jobs.draft_note_actor(note["note_id"])  # the actor body, as the worker runs it
@@ -302,7 +434,7 @@ def test_truncated_answer_fails_without_retry(api: NotesApi, world: World, db: P
     from api.platform.llm import LlmTruncated
 
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
     world.llm.script(LlmTruncated("cut"))
     assert draft(api, note).status_code == 202
     assert jobs.draft_note(UUID(note["note_id"])) == "FAILED"
@@ -326,6 +458,7 @@ def test_llm_disabled_is_503(api: NotesApi, world: World) -> None:
 
 
 def test_once_per_minute_per_note(api: NotesApi, world: World) -> None:
+    add_notebook(world)
     note = api.written(world)
     assert draft(api, note).status_code == 202
     with clock.frozen(NOW + timedelta(seconds=59)):
@@ -359,7 +492,7 @@ def kst(hour: int, minute: int) -> datetime:
 
 
 def test_daily_drafts_never_before_19_kst(api: NotesApi, world: World, db: PgUrls) -> None:
-    add_evidence(db, world)
+    add_notebook(world)
     for at in (kst(18, 59), kst(10, 0), kst(9, 0)):
         with clock.frozen(at):
             assert jobs.daily_drafts() == 0
@@ -370,7 +503,7 @@ def test_daily_drafts_never_before_19_kst(api: NotesApi, world: World, db: PgUrl
 
 def test_daily_drafts_run_once_per_day_with_catch_up(api: NotesApi, world: World, db: PgUrls) -> None:
     """A worker down at 19:00 catches up at its first tick that evening; later ticks that day do nothing."""
-    add_evidence(db, world)
+    add_notebook(world)
     with clock.frozen(kst(21, 40)):
         assert jobs.daily_drafts() == 1
     sql(db, "UPDATE notes.notes SET draft_status = 'DONE'")
@@ -378,7 +511,7 @@ def test_daily_drafts_run_once_per_day_with_catch_up(api: NotesApi, world: World
         assert jobs.daily_drafts() == 0
     assert [r["run_date"] for r in sql(db, "SELECT run_date FROM notes.daily_runs")] == [TODAY]
     next_day = datetime(2026, 10, 2, 10, 5, tzinfo=UTC)  # 19:05 KST the next day
-    add_evidence(db, world, day=TODAY + timedelta(days=1), at=next_day - timedelta(hours=1))
+    add_notebook(world, day=TODAY + timedelta(days=1), saved_at=next_day - timedelta(hours=1))
     with clock.frozen(next_day):
         assert jobs.daily_drafts() == 1
 
@@ -386,8 +519,8 @@ def test_daily_drafts_run_once_per_day_with_catch_up(api: NotesApi, world: World
 def test_daily_drafts_one_failing_recorder_does_not_block_others(
     api: NotesApi, world: World, db: PgUrls, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    add_evidence(db, world)
-    add_evidence(db, world, user="a.colleague")
+    add_notebook(world)
+    add_notebook(world, "a.colleague")
     real = jobs._queue_daily
 
     def flaky(session: Any, project_id: UUID, recorder_id: UUID, *args: Any) -> bool:
@@ -404,7 +537,7 @@ def test_daily_drafts_one_failing_recorder_does_not_block_others(
 
 def test_daily_drafts_reclaim_a_stuck_draft(api: NotesApi, world: World, db: PgUrls) -> None:
     note = api.written(world)
-    add_evidence(db, world)
+    add_notebook(world)
     sql(
         db,
         "UPDATE notes.notes SET draft_status = 'RUNNING', draft_requested_at = :at WHERE note_id = :id",
@@ -418,12 +551,12 @@ def test_daily_drafts_reclaim_a_stuck_draft(api: NotesApi, world: World, db: PgU
 
 def test_daily_drafts_queue_the_days_recorders(api: NotesApi, world: World, db: PgUrls) -> None:
     existing = api.written(world)  # a.recorder already has today's DRAFT
-    add_evidence(db, world)
-    add_evidence(db, world, user="a.colleague")  # no note yet: one is created
+    add_notebook(world)
+    add_notebook(world, "a.colleague")  # no note yet: one is created
     signed = api.signed(world, user="b.recorder")  # today's note already SIGNED: left alone
-    add_evidence(db, world, user="b.recorder")
-    add_evidence(db, world, user="c.outsider")  # not a member: ignored
-    add_evidence(db, world, user="a.member", day=TODAY - timedelta(days=1))  # yesterday: ignored
+    add_notebook(world, "b.recorder")
+    add_notebook(world, "c.outsider")  # not a member: ignored
+    add_notebook(world, "a.member", day=TODAY - timedelta(days=1))  # yesterday: ignored
     with clock.frozen(kst(19, 7)):
         assert jobs.daily_drafts() == 2
         assert jobs.daily_drafts() == 0  # one run per day
@@ -444,8 +577,27 @@ def test_daily_drafts_queue_the_days_recorders(api: NotesApi, world: World, db: 
     assert org["organization_id"] == USERS["a.colleague"].organization_id
 
 
+def test_daily_drafts_follow_notebook_authors_not_workspace_evidence(
+    api: NotesApi, world: World, db: PgUrls
+) -> None:
+    add_evidence(db, world)  # workspace activity alone: nobody is drafted
+    with clock.frozen(kst(19, 5)):
+        assert jobs.daily_drafts() == 0
+    assert sql(db, "SELECT count(*) AS n FROM notes.notes") == [{"n": 0}]
+    assert queued() == []
+
+
+def test_daily_drafts_with_the_default_port_do_nothing(api: NotesApi, world: World, db: PgUrls) -> None:
+    from api.modules.notes.adapters import NoNotebooks
+
+    ports.provide(NotebookActivityPort, NoNotebooks())
+    with clock.frozen(kst(19, 5)):
+        assert jobs.daily_drafts() == 0
+    assert sql(db, "SELECT count(*) AS n FROM notes.notes") == [{"n": 0}]
+
+
 def test_daily_drafts_do_nothing_when_the_llm_is_off(api: NotesApi, world: World, db: PgUrls) -> None:
-    add_evidence(db, world)
+    add_notebook(world)
     world.llm_enabled = False
     with clock.frozen(kst(19, 0)):
         assert jobs.daily_drafts() == 0

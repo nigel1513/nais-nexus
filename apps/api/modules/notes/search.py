@@ -133,13 +133,18 @@ def _embed_query(deps: NotesDeps, q: str, timeout_s: float) -> list[float] | Non
 
 
 def _cosine_top(session: Session, scope: Subquery, query: list[float]) -> list[tuple[float, _Candidate]]:
-    """The CANDIDATES best (dot product of unit vectors) of the scope's embedded notes, best first."""
+    """The CANDIDATES best (dot product of unit vectors) of the scope's embedded notes, best first; equal scores
+    rank the later note_date first, then by note_id (a stable order whatever order the rows stream in)."""
     scored = (
         (math.sumprod(query, row["vector"]), _Candidate(row["note_id"], row["project_id"], row["note_date"]))
         for row in repo.scope_vectors(session, scope)
         if len(row["vector"]) == len(query)
     )
-    return heapq.nlargest(CANDIDATES, scored, key=lambda pair: pair[0])
+    return heapq.nsmallest(
+        CANDIDATES,
+        scored,
+        key=lambda pair: (-pair[0], -pair[1].note_date.toordinal(), pair[1].note_id),
+    )
 
 
 def _fused(cosine_ids: list[UUID], keyword_ids: list[UUID]) -> dict[UUID, float]:

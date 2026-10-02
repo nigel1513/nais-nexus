@@ -409,11 +409,13 @@ export const ENUMS = {
     "DONE"
   ],
   "NoteSection": [
-    "DIRECTION",
-    "STEPS",
+    "OBJECTIVE",
+    "METHOD",
+    "PROCEDURE",
     "RESULTS",
+    "DISCUSSION",
     "NEXT",
-    "MEMO"
+    "REFERENCES"
   ],
   "NoteBlockOrigin": [
     "HUMAN",
@@ -432,6 +434,7 @@ export const ENUMS = {
     "OUTPUT_CREATED",
     "PUBLISH_REQUESTED",
     "DATASET_DOWNLOADED",
-    "ACCESS_DECIDED"
+    "ACCESS_DECIDED",
+    "NOTEBOOK"
   ]
 } as const;

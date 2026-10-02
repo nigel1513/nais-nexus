@@ -6,7 +6,8 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from api.modules.notes.interfaces import DisplayNameLookup
+from api.modules.notes.adapters import NoNotebooks
+from api.modules.notes.interfaces import DisplayNameLookup, NotebookActivityPort
 from api.modules.notes.settings import NotesSettings
 from api.modules.project.public import ProjectQueryPort
 from api.platform import ports
@@ -42,6 +43,15 @@ class NotesDeps:
             return ports.get(ProjectQueryPort)
         except ports.PortNotProvided as exc:
             raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "Project module is not wired.") from exc
+
+    @property
+    def notebooks(self) -> NotebookActivityPort:
+        """The drafting source, resolved per call: M07's NotebookActivityPort once provided, else NoNotebooks (no
+        notebook activity, so nothing to draft from)."""
+        try:
+            return ports.get(NotebookActivityPort)
+        except ports.PortNotProvided:
+            return NoNotebooks()
 
 
 def get_deps() -> NotesDeps:

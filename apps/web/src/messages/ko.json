@@ -1850,11 +1850,13 @@
       "DONE": "초안 완료"
     },
     "NoteSection": {
-      "DIRECTION": "방향·결정",
-      "STEPS": "수행 단계",
-      "RESULTS": "결과",
-      "NEXT": "다음 할 일",
-      "MEMO": "메모"
+      "OBJECTIVE": "연구 목표",
+      "METHOD": "연구 방법·재료",
+      "PROCEDURE": "수행 내용",
+      "RESULTS": "결과 및 관찰",
+      "DISCUSSION": "고찰·문제점",
+      "NEXT": "향후 계획",
+      "REFERENCES": "참고 자료"
     },
     "NoteBlockOrigin": {
       "HUMAN": "직접 작성",
@@ -1873,7 +1875,8 @@
       "OUTPUT_CREATED": "산출물 생성",
       "PUBLISH_REQUESTED": "허브 공개 요청",
       "DATASET_DOWNLOADED": "데이터 다운로드",
-      "ACCESS_DECIDED": "접근 요청 결정"
+      "ACCESS_DECIDED": "접근 요청 결정",
+      "NOTEBOOK": "노트북"
     }
   },
   "errorPage": {

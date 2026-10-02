@@ -169,15 +169,15 @@ def test_block_save_replaces_the_list_and_bumps_revision(api: NotesApi, world: W
     saved = api.save(
         note,
         [
-            {"section": "DIRECTION", "text": "고온 열화 원인 파악"},
-            {"section": "MEMO", "text": "메모", "accepted": False},
+            {"section": "OBJECTIVE", "text": "고온 열화 원인 파악"},
+            {"section": "RESULTS", "text": "메모", "accepted": False},
         ],
     )
     assert_matches_response("updateNoteBlocks", 200, saved)
     assert saved["revision"] == 2
     assert [(b["section"], b["origin"], b["accepted"], b["evidence"]) for b in saved["blocks"]] == [
-        ("DIRECTION", "HUMAN", True, []),
-        ("MEMO", "HUMAN", True, []),
+        ("OBJECTIVE", "HUMAN", True, []),
+        ("RESULTS", "HUMAN", True, []),
     ]
     first, second = saved["blocks"]
     again = api.save(saved, [{"block_id": second["block_id"], "section": "RESULTS", "text": "수정"}])
@@ -193,7 +193,7 @@ def test_block_save_replaces_the_list_and_bumps_revision(api: NotesApi, world: W
 def test_block_save_checks_if_match(api: NotesApi, world: World) -> None:
     note = api.today(world)
     path = f"/notes/{note['note_id']}/blocks"
-    body = {"blocks": [{"section": "MEMO", "text": "x"}]}
+    body = {"blocks": [{"section": "RESULTS", "text": "x"}]}
     stale = api.put("a.recorder", path, json=body, headers={"If-Match": '"7"'})
     assert stale.status_code == 409 and code(stale) == "CONFLICT"
     assert api.put("a.recorder", path, json=body).status_code == 422  # If-Match is required
@@ -204,14 +204,14 @@ def test_block_save_checks_if_match(api: NotesApi, world: World) -> None:
 @pytest.mark.parametrize(
     "block",
     [
-        {"section": "MEMO", "text": "x", "origin": "AI"},
-        {"section": "MEMO", "text": "x", "evidence": []},
-        {"section": "MEMO", "text": ""},
-        {"section": "MEMO", "text": "x" * 4001},
-        {"section": "MEMO", "text": "nul\x00"},
+        {"section": "RESULTS", "text": "x", "origin": "AI"},
+        {"section": "RESULTS", "text": "x", "evidence": []},
+        {"section": "RESULTS", "text": ""},
+        {"section": "RESULTS", "text": "x" * 4001},
+        {"section": "RESULTS", "text": "nul\x00"},
         {"section": "OTHER", "text": "x"},
-        {"section": "MEMO", "text": "x", "block_id": None},
-        {"section": "MEMO", "text": "x", "block_id": "00000000-0000-7000-8000-00000000dead"},
+        {"section": "RESULTS", "text": "x", "block_id": None},
+        {"section": "RESULTS", "text": "x", "block_id": "00000000-0000-7000-8000-00000000dead"},
     ],
     ids=["origin", "evidence", "empty", "too-long", "nul", "section", "null-id", "foreign-id"],
 )
@@ -229,10 +229,10 @@ def test_block_save_rejects_duplicates_and_other_notes_blocks(
     note = api.written(world)
     [block] = note["blocks"]
     path = f"/notes/{note['note_id']}/blocks"
-    dup = {"blocks": [{"block_id": block["block_id"], "section": "MEMO", "text": "a"}] * 2}
+    dup = {"blocks": [{"block_id": block["block_id"], "section": "RESULTS", "text": "a"}] * 2}
     assert api.put("a.recorder", path, json=dup, headers={"If-Match": "2"}).status_code == 422
     other = api.written(world, user="a.colleague")
-    steal = {"blocks": [{"block_id": other["blocks"][0]["block_id"], "section": "MEMO", "text": "a"}]}
+    steal = {"blocks": [{"block_id": other["blocks"][0]["block_id"], "section": "RESULTS", "text": "a"}]}
     assert api.put("a.recorder", path, json=steal, headers={"If-Match": "2"}).status_code == 422
     assert api.put("a.recorder", path, json={"blocks": []}, headers={"If-Match": "2"}).json()["blocks"] == []
     assert (
@@ -254,33 +254,33 @@ def test_ai_blocks_keep_origin_and_evidence_and_need_acceptance(
     kept = api.save(
         current,
         [
-            {"block_id": human["block_id"], "section": "MEMO", "text": human["text"]},
-            {"block_id": ai, "section": "STEPS", "text": ai_block["text"]},
+            {"block_id": human["block_id"], "section": "RESULTS", "text": human["text"]},
+            {"block_id": ai, "section": "DISCUSSION", "text": ai_block["text"]},
         ],
     )
     assert kept["blocks"][1]["accepted"] is False
     assert kept["blocks"][1]["evidence"] == ai_block["evidence"]
     # editing an AI sentence or accepting it explicitly resolves it; origin and evidence stay
-    edited = api.save(kept, [{"block_id": ai, "section": "STEPS", "text": "직접 고친 문장"}])
+    edited = api.save(kept, [{"block_id": ai, "section": "DISCUSSION", "text": "직접 고친 문장"}])
     assert (edited["blocks"][0]["origin"], edited["blocks"][0]["accepted"]) == ("AI", True)
     assert edited["blocks"][0]["evidence"] == ai_block["evidence"]
     unaccepted = api.save(
-        edited, [{"block_id": ai, "section": "STEPS", "text": "직접 고친 문장", "accepted": False}]
+        edited, [{"block_id": ai, "section": "DISCUSSION", "text": "직접 고친 문장", "accepted": False}]
     )
     assert unaccepted["blocks"][0]["accepted"] is False
     accepted = api.save(
-        unaccepted, [{"block_id": ai, "section": "STEPS", "text": "직접 고친 문장", "accepted": True}]
+        unaccepted, [{"block_id": ai, "section": "DISCUSSION", "text": "직접 고친 문장", "accepted": True}]
     )
     assert accepted["blocks"][0]["accepted"] is True
     # HUMAN blocks are always accepted
-    human_again = api.save(accepted, [{"section": "MEMO", "text": "h", "accepted": False}])
+    human_again = api.save(accepted, [{"section": "RESULTS", "text": "h", "accepted": False}])
     assert human_again["blocks"][0]["accepted"] is True
 
 
 def test_blocks_are_recorder_only(api: NotesApi, world: World) -> None:
     api.witnessed(world)
     draft = api.today(world)
-    body = {"blocks": [{"section": "MEMO", "text": "x"}]}
+    body = {"blocks": [{"section": "RESULTS", "text": "x"}]}
     for user in ("a.colleague", "b.witness", "c.outsider"):
         response = api.put(user, f"/notes/{draft['note_id']}/blocks", json=body, headers={"If-Match": "1"})
         assert response.status_code == 404, user
@@ -299,7 +299,7 @@ def test_submitted_and_signed_notes_are_locked(api: NotesApi, world: World) -> N
         response = api.put(
             user,
             f"/notes/{note['note_id']}/blocks",
-            json={"blocks": [{"section": "MEMO", "text": "변조"}]},
+            json={"blocks": [{"section": "RESULTS", "text": "변조"}]},
             headers={"If-Match": str(note["revision"])},
         )
         assert response.status_code == 409 and code(response) == "NOTE_LOCKED"
@@ -634,7 +634,7 @@ def test_database_refuses_changes_to_locked_notes(api: NotesApi, world: World, d
         _as_app(
             db,
             "INSERT INTO notes.blocks (block_id, note_id, position, section, text, origin, accepted, evidence)"
-            " VALUES (:b, :n, 9, 'MEMO', 'x', 'HUMAN', true, '[]')",
+            " VALUES (:b, :n, 9, 'RESULTS', 'x', 'HUMAN', true, '[]')",
             b=new_id(),
             n=n,
         )

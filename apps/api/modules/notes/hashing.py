@@ -5,8 +5,9 @@ normalized, timestamps as UTC `YYYY-MM-DDTHH:MM:SS.ffffffZ`, dates as `YYYY-MM-D
 form. Floats are refused (no float has a single canonical text form across JSON implementations) and so are naive
 datetimes (they name no instant).
 
-content_hash = sha256(canonical_json(note_document(note, blocks))): the note's identity metadata and its blocks in
-order (section, text, origin, evidence). Block ids and AI acceptance flags are not content: submit requires every AI
+content_hash = sha256(canonical_json(note_document(note, blocks))): the note's identity metadata and its blocks
+(section, text, origin, evidence) in template order (sections.SECTIONS: OBJECTIVE, METHOD, PROCEDURE, RESULTS,
+DISCUSSION, NEXT, REFERENCES), in the given (position) order within a section. Block ids and AI acceptance flags are not content: submit requires every AI
 block accepted, and a revision copies blocks under new ids.
 
 chain_hash(n) = sha256(chain_hash(n-1) + content_hash(n)) over the hex strings, starting from GENESIS_CHAIN_HASH.
@@ -21,6 +22,8 @@ from datetime import UTC, date, datetime
 from enum import Enum
 from typing import Any
 from uuid import UUID
+
+from api.modules.notes.sections import in_template_order
 
 GENESIS_CHAIN_HASH = "0" * 64
 _HEX64 = re.compile(r"^[a-f0-9]{64}$")
@@ -85,7 +88,8 @@ def _evidence(item: Mapping[Any, Any]) -> dict[str, Any]:
 
 
 def note_document(note: Mapping[Any, Any], blocks: Sequence[Mapping[Any, Any]]) -> dict[str, Any]:
-    """The hashed document: identity metadata + ordered blocks (callers pass blocks in position order)."""
+    """The hashed document: identity metadata + blocks in template order (callers pass blocks in position order;
+    the sort by section is stable)."""
     previous = note["previous_version_id"]
     note_date = note["note_date"]
     return {
@@ -105,7 +109,7 @@ def note_document(note: Mapping[Any, Any], blocks: Sequence[Mapping[Any, Any]]) 
                 "origin": str(block["origin"]),
                 "evidence": [_evidence(item) for item in block["evidence"]],
             }
-            for block in blocks
+            for block in in_template_order(blocks)
         ],
     }
 

@@ -92,7 +92,7 @@ def get_or_create_today(
             note = repo.latest_version(session, project_id, user.user_id, today)
             if note is None:
                 raise conflict("Today's note is being created; retry.")
-    return note_view(session, deps, note), created
+    return note_view(session, deps, note, user.user_id), created
 
 
 def get_note(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) -> ResearchNote:
@@ -100,7 +100,7 @@ def get_note(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID
     note, relation = readable(session, deps, user, note_id)
     if relation is not Relation.RECORDER:
         emit_viewed(session, user, note)
-    return note_view(session, deps, note)
+    return note_view(session, deps, note, user.user_id)
 
 
 def emit_viewed(session: Session, user: CurrentUser, note: RowMapping) -> None:
@@ -236,7 +236,7 @@ def update_blocks(
     repo.replace_blocks(session, note_id, rows)
     note = repo.update_note(session, note_id, revision=note["revision"] + 1, updated_at=clock.now())
     jobs.embed_after_commit(session, deps, note_id)
-    return note_view(session, deps, note)
+    return note_view(session, deps, note, user.user_id)
 
 
 # ---------------------------------------------------------------- submit / reject
@@ -292,7 +292,7 @@ def submit(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) 
         ),
         EventActor.for_user(user),
     )
-    return note_view(session, deps, note)
+    return note_view(session, deps, note, user.user_id)
 
 
 def reject(
@@ -328,7 +328,7 @@ def reject(
         ),
         EventActor.for_user(user),
     )
-    return note_view(session, deps, note)
+    return note_view(session, deps, note, user.user_id)
 
 
 # ---------------------------------------------------------------- revise / delete
@@ -379,7 +379,7 @@ def revise(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) 
         ],
     )
     jobs.embed_after_commit(session, deps, draft["note_id"])
-    return note_view(session, deps, draft)
+    return note_view(session, deps, draft, user.user_id)
 
 
 def delete(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) -> None:

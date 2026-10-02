@@ -14,11 +14,13 @@ from sqlalchemy import create_engine, text
 
 from api.modules.notes import MODULE, jobs
 from api.modules.notes.deps import NotesDeps
+from api.modules.notes.interfaces import NotebookActivityPort
 from api.modules.notes.settings import NotesSettings
 from api.modules.notes.tests.fakes import (
     USERS,
     FakeEmbedder,
     FakeLlm,
+    FakeNotebooks,
     FakePeople,
     FakeProjects,
     FakeReranker,
@@ -86,6 +88,7 @@ class World:
     people: FakePeople
     project_id: UUID
     llm: FakeLlm
+    notebooks: FakeNotebooks = field(default_factory=FakeNotebooks)
     llm_enabled: bool = True
     # Search (Task 11): None = the embedding / rerank service is off (the default, as NAIS_LLM_ENABLED=false).
     embedder: FakeEmbedder | None = None
@@ -100,6 +103,7 @@ class World:
 
     def install(self) -> None:
         """(Re)register NotesDeps with this world's fakes; llm_enabled=False makes the platform LLM client None."""
+        ports.provide(NotebookActivityPort, self.notebooks)
         install(
             NotesDeps(
                 settings=NotesSettings(),
@@ -194,8 +198,8 @@ class NotesApi:
     def written(
         self, world: World, text_: str = "40도 이상에서 용량 감소가 뚜렷하다.", user: str = "a.recorder"
     ) -> dict[str, Any]:
-        """Today's DRAFT with one HUMAN MEMO block."""
-        return self.save(self.today(world, user), [{"section": "MEMO", "text": text_}], user)
+        """Today's DRAFT with one HUMAN RESULTS block."""
+        return self.save(self.today(world, user), [{"section": "RESULTS", "text": text_}], user)
 
     def submitted(self, world: World, user: str = "a.recorder") -> dict[str, Any]:
         note = self.written(world, user=user)
@@ -264,7 +268,7 @@ def add_ai_block(
     note_id: str,
     text_: str,
     *,
-    section: str = "STEPS",
+    section: str = "DISCUSSION",
     evidence: list[dict[str, Any]] | None = None,
 ) -> str:
     """Append an AI block the way the drafting job (Task 10) will: accepted=false, with evidence."""

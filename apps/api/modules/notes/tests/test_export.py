@@ -40,7 +40,7 @@ def notes_in(zf: zipfile.ZipFile) -> dict[str, dict[str, Any]]:
 def test_recorder_exports_own_notes_of_every_status(api: NotesApi, world: World, db: PgUrls) -> None:
     signed = api.signed(world)
     revised = api.post("a.recorder", f"/notes/{signed['note_id']}/revise").json()
-    api.save(revised, [{"section": "MEMO", "text": "<script>alert(1)</script> & 정정"}])
+    api.save(revised, [{"section": "RESULTS", "text": "<script>alert(1)</script> & 정정"}])
     api.signed(world, user="a.colleague")
     response = export(api, "a.recorder", world)
     zf = archive(response)
@@ -186,3 +186,47 @@ def test_note_rejected_after_selection_is_not_exported(
     assert set(notes_in(zf)) == {kept["note_id"]}
     assert all(rejected["note_id"] not in name for name in zf.namelist())
     assert rejected["note_id"] not in zf.read("hashes.csv").decode()
+
+
+def test_html_is_the_standard_research_note_form(api: NotesApi, world: World) -> None:
+    api.witnessed(world)
+    note = api.today(world)
+    note = api.save(
+        note,
+        [
+            {"section": "REFERENCES", "text": "고온 구간 용량 분석 노트북"},
+            {"section": "RESULTS", "text": "40도 이상에서 용량 감소가 뚜렷하다."},
+            {"section": "OBJECTIVE", "text": "고온 열화 원인 파악"},
+        ],
+    )
+    assert api.post("a.recorder", f"/notes/{note['note_id']}/submit").status_code == 200
+    zf = archive(export(api, "a.recorder", world))
+    page = zf.read(next(n for n in zf.namelist() if n.endswith(".html"))).decode()
+
+    header = page[page.index('<table class="header">') : page.index('<table class="sections">')]
+    for label, value in (
+        ("과제명", "전극 소재 열화 분석"),
+        ("연구일자", note["note_date"]),
+        ("기록자", "김민준"),
+        ("소속", "한국소재연구원"),
+    ):
+        assert f'<th scope="row">{label}</th><td>{value}</td>' in header
+
+    sections = page[page.index('<table class="sections">') : page.index("<h2>서명</h2>")]
+    labels = [
+        "연구 목표",
+        "연구 방법·재료",
+        "수행 내용",
+        "결과 및 관찰",
+        "고찰·문제점",
+        "향후 계획",
+        "참고 자료",
+    ]
+    positions = [sections.index(f'<th scope="row">{label}</th>') for label in labels]
+    assert positions == sorted(positions)  # template order, whatever the save order
+    assert '<th scope="row">연구 방법·재료</th><td>-</td>' in sections  # empty sections keep their row
+    assert '<th scope="row">연구 목표</th><td><p>고온 열화 원인 파악</p></td>' in sections
+
+    signatures = page[page.index('<table class="signatures">') :]
+    assert '<th scope="row">기록자</th><td>김민준</td><td>서명 전</td>' in signatures
+    assert '<th scope="row">확인자</th><td>-</td><td>서명 전</td>' in signatures

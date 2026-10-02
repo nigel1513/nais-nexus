@@ -1686,8 +1686,10 @@ paths:
       tags: [notes]
       operationId: draftNote
       description: |
-        Recorder only, DRAFT only (409 NOTE_LOCKED). Queues a local-LLM draft from the day's activity; new AI blocks are appended with accepted=false.
-        Once per minute per note (429 RATE_LIMITED); 503 LLM_UNAVAILABLE when NAIS_LLM_ENABLED is false.
+        Recorder only, DRAFT only (409 NOTE_LOCKED). Queues a local-LLM draft of the standard template (NoteSection) from the Jupyter notebooks the recorder
+        saved in the note's project on note_date (cell sources and output kinds only, never output values); new AI blocks are appended with accepted=false and
+        NOTEBOOK evidence. No notebook saved that day -> 422 VALIDATION_FAILED with details.reason NO_NOTEBOOK_ACTIVITY ("오늘 저장한 노트북이 없습니다.").
+        Workspace activity evidence is not sent to the LLM. Once per minute per note (429 RATE_LIMITED); 503 LLM_UNAVAILABLE when NAIS_LLM_ENABLED is false.
         Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
         403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
       responses:
@@ -1701,6 +1703,7 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
         "429": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
   /notes/{note_id}/submit:
@@ -2035,16 +2038,17 @@ components:
         revision: 4
         blocks:
           - block_id: 00000000-0000-7000-8000-00000000f501
-            section: STEPS
-            text: 이차전지 충방전 측정 v1을 입력으로 추가하고 고온 구간 평균 용량 레시피를 실행했다.
+            section: PROCEDURE
+            text: 고온 구간 용량 분석 노트북에서 충방전 측정 데이터를 불러와 온도 구간별 평균 용량을 계산했다.
             origin: AI
             accepted: false
             evidence:
-              - { type: INPUT_ADDED, ref_id: 00000000-0000-7000-8000-00000000b001, label: 이차전지 충방전 측정@v1, at: "2026-10-01T01:00:00Z" }
-              - { type: RUN_SUCCEEDED, ref_id: 00000000-0000-7000-8000-00000000d001, label: "고온 구간 평균 용량@3 · 182,340행 → 24행", at: "2026-10-01T05:01:20Z" }
-          - { block_id: 00000000-0000-7000-8000-00000000f502, section: MEMO, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
+              - { type: NOTEBOOK, ref_id: 00000000-0000-7000-8000-00000000d101, label: "고온 구간 용량 분석 · 셀 2", at: "2026-10-01T05:01:20Z" }
+              - { type: NOTEBOOK, ref_id: 00000000-0000-7000-8000-00000000d101, label: "고온 구간 용량 분석 · 셀 3", at: "2026-10-01T05:01:20Z" }
+          - { block_id: 00000000-0000-7000-8000-00000000f502, section: RESULTS, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
         draft_status: DONE
         draft_error: null
+        draft_source_count: 1
         signatures: []
         witness_required: true
         witness_user_ids: [ 00000000-0000-7000-8000-000000000a02 ]
@@ -2069,16 +2073,17 @@ components:
         revision: 4
         blocks:
           - block_id: 00000000-0000-7000-8000-00000000f501
-            section: STEPS
-            text: 이차전지 충방전 측정 v1을 입력으로 추가하고 고온 구간 평균 용량 레시피를 실행했다.
+            section: PROCEDURE
+            text: 고온 구간 용량 분석 노트북에서 충방전 측정 데이터를 불러와 온도 구간별 평균 용량을 계산했다.
             origin: AI
             accepted: true
             evidence:
-              - { type: INPUT_ADDED, ref_id: 00000000-0000-7000-8000-00000000b001, label: 이차전지 충방전 측정@v1, at: "2026-10-01T01:00:00Z" }
-              - { type: RUN_SUCCEEDED, ref_id: 00000000-0000-7000-8000-00000000d001, label: "고온 구간 평균 용량@3 · 182,340행 → 24행", at: "2026-10-01T05:01:20Z" }
-          - { block_id: 00000000-0000-7000-8000-00000000f502, section: MEMO, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
+              - { type: NOTEBOOK, ref_id: 00000000-0000-7000-8000-00000000d101, label: "고온 구간 용량 분석 · 셀 2", at: "2026-10-01T05:01:20Z" }
+              - { type: NOTEBOOK, ref_id: 00000000-0000-7000-8000-00000000d101, label: "고온 구간 용량 분석 · 셀 3", at: "2026-10-01T05:01:20Z" }
+          - { block_id: 00000000-0000-7000-8000-00000000f502, section: RESULTS, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
         draft_status: DONE
         draft_error: null
+        draft_source_count: 1
         signatures: []
         witness_required: true
         witness_user_ids: [ 00000000-0000-7000-8000-000000000a02 ]
@@ -2102,9 +2107,10 @@ components:
         status: SUBMITTED
         revision: 5
         blocks:
-          - { block_id: 00000000-0000-7000-8000-00000000f502, section: MEMO, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
+          - { block_id: 00000000-0000-7000-8000-00000000f502, section: RESULTS, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
         draft_status: DONE
         draft_error: null
+        draft_source_count: 1
         signatures: []
         witness_required: false
         witness_user_ids: []
@@ -2128,9 +2134,10 @@ components:
         status: SIGNED
         revision: 5
         blocks:
-          - { block_id: 00000000-0000-7000-8000-00000000f502, section: MEMO, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
+          - { block_id: 00000000-0000-7000-8000-00000000f502, section: RESULTS, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
         draft_status: DONE
         draft_error: null
+        draft_source_count: 1
         signatures:
           - { signer_id: 00000000-0000-7000-8000-000000000a01, signer_display_name: 김민준, role: RECORDER, signed_at: "2026-10-01T10:06:00Z", content_hash: 3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7 }
         witness_required: false
@@ -3435,19 +3442,22 @@ components:
     # ---------- notes (1.6.0)
     NoteStatus: { type: string, enum: [DRAFT, SUBMITTED, SIGNED] }
     NoteDraftStatus: { type: string, enum: [NONE, QUEUED, RUNNING, FAILED, DONE] }
-    NoteSection: { type: string, enum: [DIRECTION, STEPS, RESULTS, NEXT, MEMO] }
+    NoteSection:
+      type: string
+      enum: [OBJECTIVE, METHOD, PROCEDURE, RESULTS, DISCUSSION, NEXT, REFERENCES]
+      description: "Standard research-note template, in display / hash / export order: 연구 목표, 연구 방법·재료, 수행 내용, 결과 및 관찰, 고찰·문제점, 향후 계획, 참고 자료"
     NoteBlockOrigin: { type: string, enum: [HUMAN, AI] }
     NoteSignerRole: { type: string, enum: [RECORDER, WITNESS] }
     NoteEvidenceType:
       type: string
-      enum: [INPUT_ADDED, INPUT_VERSION_CHANGED, RECIPE_SAVED, RUN_SUCCEEDED, RUN_FAILED, OUTPUT_CREATED, PUBLISH_REQUESTED, DATASET_DOWNLOADED, ACCESS_DECIDED]
+      enum: [INPUT_ADDED, INPUT_VERSION_CHANGED, RECIPE_SAVED, RUN_SUCCEEDED, RUN_FAILED, OUTPUT_CREATED, PUBLISH_REQUESTED, DATASET_DOWNLOADED, ACCESS_DECIDED, NOTEBOOK]
     NoteEvidence:
       type: object
       required: [type, ref_id, label, at]
       properties:
         type: { $ref: "#/components/schemas/NoteEvidenceType" }
-        ref_id: { $ref: "#/components/schemas/Id", description: "Input, recipe, run, output, publish request, dataset version or access request id" }
-        label: { type: string, description: "Entity label only (dataset title@version, recipe name, row counts); never data values" }
+        ref_id: { $ref: "#/components/schemas/Id", description: "Input, recipe, run, output, publish request, dataset version or access request id; for NOTEBOOK the notebook version id (the notebook id when unversioned)" }
+        label: { type: string, description: "Entity label only (dataset title@version, recipe name, row counts, notebook title · cell k); never data values" }
         at: { $ref: "#/components/schemas/Timestamp" }
     NoteBlock:
       type: object
@@ -3486,7 +3496,7 @@ components:
     ResearchNote:
       type: object
       required: [note_id, project_id, project_name, organization_id, recorder_id, recorder_display_name, note_date, version, previous_version_id, status, revision, blocks,
-                 draft_status, draft_error, signatures, witness_required, witness_user_ids, content_hash, chain_hash, submitted_at, rejected_reason,
+                 draft_status, draft_error, draft_source_count, signatures, witness_required, witness_user_ids, content_hash, chain_hash, submitted_at, rejected_reason,
                  created_at, updated_at]
       properties:
         note_id: { $ref: "#/components/schemas/Id" }
@@ -3503,6 +3513,7 @@ components:
         blocks: { type: array, items: { $ref: "#/components/schemas/NoteBlock" } }
         draft_status: { $ref: "#/components/schemas/NoteDraftStatus" }
         draft_error: { type: [string, "null"] }
+        draft_source_count: { type: integer, minimum: 0, description: "Notebooks the recorder saved in this project on note_date (the drafting source); shown to the recorder only, 0 for everyone else. 0 -> draftNote answers 422 NO_NOTEBOOK_ACTIVITY" }
         signatures: { type: array, items: { $ref: "#/components/schemas/NoteSignature" } }
         content_hash: { type: [string, "null"], pattern: "^[a-f0-9]{64}$", description: "sha256 of the canonical JSON of content + metadata; set on submit/sign, cleared when a witness rejects the note back to DRAFT" }
         chain_hash: { type: [string, "null"], pattern: "^[a-f0-9]{64}$", description: "sha256(previous chain_hash + content_hash) per project × organization; set when SIGNED" }

@@ -40,7 +40,7 @@ def _note(**overrides: Any) -> dict[str, Any]:
 def _block(text: str = "40도 이상에서 용량 감소가 뚜렷하다.", **overrides: Any) -> dict[str, Any]:
     block: dict[str, Any] = {
         "block_id": UUID("00000000-0000-7000-8000-00000000f502"),
-        "section": "MEMO",
+        "section": "RESULTS",
         "text": text,
         "origin": "HUMAN",
         "accepted": True,
@@ -99,7 +99,7 @@ def test_document_covers_identity_metadata_and_ordered_blocks() -> None:
         "previous_version_id": None,
         "blocks": [
             {
-                "section": "MEMO",
+                "section": "RESULTS",
                 "text": "40도 이상에서 용량 감소가 뚜렷하다.",
                 "origin": "AI",
                 "evidence": [
@@ -131,7 +131,7 @@ def test_content_hash_is_sha256_of_the_canonical_document() -> None:
         (_note(recorder_id=ORG_ID), [_block()]),
         (_note(previous_version_id=NOTE_ID), [_block()]),
         (_note(), [_block("40도 이상에서 용량 감소가 뚜렷하다!")]),
-        (_note(), [_block(section="RESULTS")]),
+        (_note(), [_block(section="PROCEDURE")]),
         (_note(), [_block(origin="AI")]),
         (_note(), [_block(), _block("둘째")]),
         (_note(), []),
@@ -158,3 +158,26 @@ def test_chain_hash_links_previous_chain_and_content() -> None:
     assert next_chain_hash(first, h2) == hashlib.sha256((first + h2).encode("ascii")).hexdigest()
     with pytest.raises(ValueError):
         next_chain_hash(first, "not-a-hash")
+
+
+def test_blocks_are_hashed_in_template_order() -> None:
+    """OBJECTIVE, METHOD, PROCEDURE, RESULTS, DISCUSSION, NEXT, REFERENCES; position order within a section."""
+    order = ("REFERENCES", "NEXT", "DISCUSSION", "RESULTS", "PROCEDURE", "METHOD", "OBJECTIVE")
+    shuffled = [_block(f"{section} 1", section=section) for section in order] + [
+        _block("RESULTS 2", section="RESULTS")
+    ]
+    document = note_document(_note(), shuffled)
+    assert [b["text"] for b in document["blocks"]] == [
+        "OBJECTIVE 1",
+        "METHOD 1",
+        "PROCEDURE 1",
+        "RESULTS 1",
+        "RESULTS 2",
+        "DISCUSSION 1",
+        "NEXT 1",
+        "REFERENCES 1",
+    ]
+    in_order = sorted(shuffled, key=lambda b: order[::-1].index(b["section"]))
+    assert content_hash(_note(), shuffled) == content_hash(_note(), in_order)
+    swapped = [_block("RESULTS 2", section="RESULTS"), _block("RESULTS 1", section="RESULTS")]
+    assert content_hash(_note(), swapped) != content_hash(_note(), swapped[::-1])

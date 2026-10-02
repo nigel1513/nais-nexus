@@ -99,7 +99,7 @@ def sign(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) ->
         ),
         EventActor.for_user(user),
     )
-    return note_view(session, deps, note)
+    return note_view(session, deps, note, user.user_id)
 
 
 def _append_to_chain(session: Session, note: RowMapping) -> RowMapping:

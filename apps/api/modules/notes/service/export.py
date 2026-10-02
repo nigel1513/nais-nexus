@@ -29,6 +29,7 @@ from api.modules.notes import repo
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.errors import invalid, not_found
 from api.modules.notes.hashing import canonical_json, note_document
+from api.modules.notes.sections import LABELS, SECTIONS
 from api.modules.notes.service.notes import KST, check_range, emit_viewed
 from api.modules.notes.views import evidence_view, project_name
 from api.platform import clock
@@ -39,13 +40,6 @@ ORG_ADMIN = "ORG_ADMIN"
 MAX_EXPORT_NOTES = 5000  # more -> 422: narrow the date range
 BATCH_SIZE = 100
 FORMAT = "nais.research-note.v1"
-SECTIONS = {
-    "DIRECTION": "연구 방향",
-    "STEPS": "수행 내용",
-    "RESULTS": "결과",
-    "NEXT": "다음 계획",
-    "MEMO": "메모",
-}
 STATUSES = {"DRAFT": "작성 중", "SUBMITTED": "제출됨", "SIGNED": "서명 완료"}
 ROLES = {"RECORDER": "기록자", "WITNESS": "확인자"}
 CSV_COLUMNS = (
@@ -68,6 +62,7 @@ class ExportedNote:
     note: RowMapping
     blocks: list[RowMapping]
     signatures: list[RowMapping]
+    organization_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -140,9 +135,14 @@ def _batches(
             s["signer_id"] for sig in signatures.values() for s in sig
         ]
         names = deps.people.get_display_names(list(dict.fromkeys(people)))
+        organizations = deps.people.get_organization_names(
+            list(dict.fromkeys(n["organization_id"] for n in notes.values()))
+        )
         for note_id in ids:
             if note_id in notes:
-                yield ExportedNote(notes[note_id], blocks[note_id], signatures[note_id]), names
+                note = notes[note_id]
+                organization = organizations.get(note["organization_id"], "")
+                yield ExportedNote(note, blocks[note_id], signatures[note_id], organization), names
 
 
 # ---------------------------------------------------------------- formatting
@@ -187,49 +187,68 @@ def _kst(value: datetime | None) -> str:
 
 
 def _html(archive: Archive, item: ExportedNote, names: dict[UUID, str]) -> str:
-    """Human-readable page. Every stored value is HTML-escaped and the page forbids scripts and remote loads."""
+    """Human-readable page in the standard research-note form: header (과제명, 연구일자, 기록자, 소속), one row per
+    template section in order, the signature block (기록자, 확인자) and the integrity data. Every stored value is
+    HTML-escaped and the page forbids scripts and remote loads."""
     note = item.note
 
     def e(value: object) -> str:
         return html.escape(str(value), quote=True)
 
-    blocks = []
-    for b in item.blocks:
-        origin = " <small>(AI 초안)</small>" if b["origin"] == "AI" else ""
-        evidence = "".join(
-            f"<li>{e(ev['type'])} · {e(ev['label'])} · {e(ev['at'])}</li>"
-            for ev in evidence_view(b["evidence"])
-        )
-        blocks.append(
-            f"<section><h2>{e(SECTIONS.get(b['section'], b['section']))}{origin}</h2>"
-            f"<p>{e(b['text'])}</p>{f'<ul>{evidence}</ul>' if evidence else ''}</section>"
-        )
-    signatures = "".join(
-        f"<tr><td>{e(ROLES.get(s['role'], s['role']))}</td><td>{e(names.get(s['signer_id'], s['signer_id']))}"
-        f"</td><td>{e(_kst(s['signed_at']))}</td><td><code>{e(s['content_hash'])}</code></td></tr>"
+    recorder = names.get(note["recorder_id"], str(note["recorder_id"]))
+    rows = []
+    for section in SECTIONS:
+        entries = []
+        for b in (b for b in item.blocks if b["section"] == section):
+            origin = " <small>(AI 초안)</small>" if b["origin"] == "AI" else ""
+            evidence = "".join(
+                f"<li>{e(ev['type'])} · {e(ev['label'])} · {e(ev['at'])}</li>"
+                for ev in evidence_view(b["evidence"])
+            )
+            entries.append(f"<p>{e(b['text'])}{origin}</p>{f'<ul>{evidence}</ul>' if evidence else ''}")
+        rows.append(f'<tr><th scope="row">{e(LABELS[section])}</th><td>{"".join(entries) or "-"}</td></tr>')
+    signed: list[tuple[str, str, RowMapping | None]] = [
+        (ROLES.get(s["role"], s["role"]), names.get(s["signer_id"], str(s["signer_id"])), s)
         for s in item.signatures
+    ]
+    if not any(s["role"] == "RECORDER" for s in item.signatures):
+        signed.insert(0, (ROLES["RECORDER"], recorder, None))
+    if note["witness_required"] and not any(s["role"] == "WITNESS" for s in item.signatures):
+        signed.append((ROLES["WITNESS"], "-", None))
+    signatures = "".join(
+        f'<tr><th scope="row">{e(role)}</th><td>{e(name)}</td>'
+        f"<td>{e(_kst(sig['signed_at']) if sig else '서명 전')}</td>"
+        f"<td><code>{e(sig['content_hash'] if sig else '-')}</code></td></tr>"
+        for role, name, sig in signed
     )
     return (
         '<!doctype html><html lang="ko"><head><meta charset="utf-8">'
         "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; style-src 'unsafe-inline'\">"
         f"<title>연구노트 {e(note['note_date'])} v{e(note['version'])}</title>"
-        "<style>body{font-family:sans-serif;max-width:48rem;margin:2rem auto;padding:0 1rem;line-height:1.6}"
-        "p{white-space:pre-wrap}code{word-break:break-all}table{border-collapse:collapse}"
-        "td,th{border:1px solid #999;padding:.25rem .5rem;text-align:left}</style></head><body>"
-        f"<h1>연구노트 {e(note['note_date'])} (v{e(note['version'])})</h1>"
-        "<dl>"
-        f"<dt>과제</dt><dd>{e(archive.project_name)}</dd>"
-        f"<dt>기록자</dt><dd>{e(names.get(note['recorder_id'], note['recorder_id']))}</dd>"
+        "<style>body{font-family:sans-serif;max-width:52rem;margin:2rem auto;padding:0 1rem;line-height:1.6}"
+        "p{white-space:pre-wrap;margin:0 0 .5rem}code{word-break:break-all}"
+        "table{border-collapse:collapse;width:100%;margin-bottom:1.5rem}"
+        "td,th{border:1px solid #999;padding:.4rem .6rem;text-align:left;vertical-align:top}"
+        "th{background:#f2f2f2;white-space:nowrap}</style></head><body>"
+        f"<h1>연구노트 (v{e(note['version'])})</h1>"
+        '<table class="header">'
+        f'<tr><th scope="row">과제명</th><td>{e(archive.project_name)}</td>'
+        f'<th scope="row">연구일자</th><td>{e(note["note_date"])}</td></tr>'
+        f'<tr><th scope="row">기록자</th><td>{e(recorder)}</td>'
+        f'<th scope="row">소속</th><td>{e(item.organization_name or "-")}</td></tr>'
+        "</table>"
+        f'<table class="sections">{"".join(rows)}</table>'
+        "<h2>서명</h2>"
+        '<table class="signatures"><tr><th>구분</th><th>성명</th><th>서명 일시</th><th>내용 해시</th></tr>'
+        f"{signatures}</table>"
+        "<h2>무결성 정보</h2><dl>"
         f"<dt>상태</dt><dd>{e(STATUSES.get(note['status'], note['status']))}</dd>"
         f"<dt>제출</dt><dd>{e(_kst(note['submitted_at']))}</dd>"
         f"<dt>서명 완료</dt><dd>{e(_kst(note['signed_at']))}</dd>"
         f"<dt>내용 해시 (SHA-256)</dt><dd><code>{e(note['content_hash'] or '-')}</code></dd>"
         f"<dt>체인 해시</dt><dd><code>{e(note['chain_hash'] or '-')}</code></dd>"
         f"<dt>노트 ID</dt><dd><code>{e(note['note_id'])}</code></dd>"
-        "</dl>"
-        f"{''.join(blocks)}"
-        f"<h2>서명</h2><table><tr><th>역할</th><th>서명자</th><th>일시</th><th>내용 해시</th></tr>{signatures}</table>"
-        "</body></html>"
+        "</dl></body></html>"
     )
 
 

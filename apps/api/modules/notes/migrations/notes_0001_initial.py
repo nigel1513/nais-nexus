@@ -204,7 +204,8 @@ def upgrade() -> None:
         sa.Column("accepted", sa.Boolean, nullable=False),
         sa.Column("evidence", JSONB, nullable=False, server_default=sa.text("'[]'::jsonb")),
         sa.CheckConstraint(
-            "section IN ('DIRECTION', 'STEPS', 'RESULTS', 'NEXT', 'MEMO')", name="ck_blocks_section"
+            "section IN ('OBJECTIVE', 'METHOD', 'PROCEDURE', 'RESULTS', 'DISCUSSION', 'NEXT', 'REFERENCES')",
+            name="ck_blocks_section",
         ),
         sa.CheckConstraint("origin IN ('HUMAN', 'AI')", name="ck_blocks_origin"),
         sa.CheckConstraint("origin = 'AI' OR accepted", name="ck_blocks_human_accepted"),

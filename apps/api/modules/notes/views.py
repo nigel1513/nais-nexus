@@ -23,9 +23,18 @@ def evidence_view(items: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{"type": e["type"], "ref_id": e["ref_id"], "label": e["label"], "at": e["at"]} for e in items]
 
 
-def note_view(session: Session, deps: NotesDeps, note: RowMapping) -> ResearchNote:
-    """The full note. While DRAFT the witness fields mirror what a submit would snapshot now (display only; DRAFT is
-    shown to its recorder only); otherwise they are the stored snapshot."""
+def draft_source_count(deps: NotesDeps, note: RowMapping, viewer_id: UUID) -> int:
+    """Notebooks the recorder saved in the note's project on its day (the drafting source); 0 for anyone else."""
+    if viewer_id != note["recorder_id"]:
+        return 0
+    return len(
+        deps.notebooks.list_notebook_activity(note["recorder_id"], note["project_id"], note["note_date"])
+    )
+
+
+def note_view(session: Session, deps: NotesDeps, note: RowMapping, viewer_id: UUID) -> ResearchNote:
+    """The full note as `viewer_id` sees it. While DRAFT the witness fields mirror what a submit would snapshot now
+    (display only; DRAFT is shown to its recorder only); otherwise they are the stored snapshot."""
     note_id = note["note_id"]
     blocks = repo.load_blocks(session, [note_id])[note_id]
     signatures = repo.load_signatures(session, [note_id])[note_id]
@@ -65,6 +74,7 @@ def note_view(session: Session, deps: NotesDeps, note: RowMapping) -> ResearchNo
             ],
             "draft_status": note["draft_status"],
             "draft_error": note["draft_error"],
+            "draft_source_count": draft_source_count(deps, note, viewer_id),
             "signatures": [
                 {
                     "signer_id": s["signer_id"],

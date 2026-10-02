@@ -212,7 +212,7 @@ def test_chain_links_signed_notes_per_project_and_organization(
     )
     assert chain == {"last_seq": 2, "last_chain_hash": second["chain_hash"]}
     revised = api.post("a.recorder", f"/notes/{first['note_id']}/revise").json()
-    api.save(revised, [{"section": "MEMO", "text": "정정"}])
+    api.save(revised, [{"section": "RESULTS", "text": "정정"}])
     third = sign(api, "a.recorder", revised).json()
     assert third["chain_hash"] == next_chain_hash(second["chain_hash"], third["content_hash"])
 

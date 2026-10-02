@@ -1482,8 +1482,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description Recorder only, DRAFT only (409 NOTE_LOCKED). Queues a local-LLM draft from the day's activity; new AI blocks are appended with accepted=false.
-         *     Once per minute per note (429 RATE_LIMITED); 503 LLM_UNAVAILABLE when NAIS_LLM_ENABLED is false.
+         * @description Recorder only, DRAFT only (409 NOTE_LOCKED). Queues a local-LLM draft of the standard template (NoteSection) from the Jupyter notebooks the recorder
+         *     saved in the note's project on note_date (cell sources and output kinds only, never output values); new AI blocks are appended with accepted=false and
+         *     NOTEBOOK evidence. No notebook saved that day -> 422 VALIDATION_FAILED with details.reason NO_NOTEBOOK_ACTIVITY ("오늘 저장한 노트북이 없습니다.").
+         *     Workspace activity evidence is not sent to the LLM. Once per minute per note (429 RATE_LIMITED); 503 LLM_UNAVAILABLE when NAIS_LLM_ENABLED is false.
          *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
          *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
          */
@@ -2772,19 +2774,22 @@ export interface components {
         NoteStatus: "DRAFT" | "SUBMITTED" | "SIGNED";
         /** @enum {string} */
         NoteDraftStatus: "NONE" | "QUEUED" | "RUNNING" | "FAILED" | "DONE";
-        /** @enum {string} */
-        NoteSection: "DIRECTION" | "STEPS" | "RESULTS" | "NEXT" | "MEMO";
+        /**
+         * @description Standard research-note template, in display / hash / export order: 연구 목표, 연구 방법·재료, 수행 내용, 결과 및 관찰, 고찰·문제점, 향후 계획, 참고 자료
+         * @enum {string}
+         */
+        NoteSection: "OBJECTIVE" | "METHOD" | "PROCEDURE" | "RESULTS" | "DISCUSSION" | "NEXT" | "REFERENCES";
         /** @enum {string} */
         NoteBlockOrigin: "HUMAN" | "AI";
         /** @enum {string} */
         NoteSignerRole: "RECORDER" | "WITNESS";
         /** @enum {string} */
-        NoteEvidenceType: "INPUT_ADDED" | "INPUT_VERSION_CHANGED" | "RECIPE_SAVED" | "RUN_SUCCEEDED" | "RUN_FAILED" | "OUTPUT_CREATED" | "PUBLISH_REQUESTED" | "DATASET_DOWNLOADED" | "ACCESS_DECIDED";
+        NoteEvidenceType: "INPUT_ADDED" | "INPUT_VERSION_CHANGED" | "RECIPE_SAVED" | "RUN_SUCCEEDED" | "RUN_FAILED" | "OUTPUT_CREATED" | "PUBLISH_REQUESTED" | "DATASET_DOWNLOADED" | "ACCESS_DECIDED" | "NOTEBOOK";
         NoteEvidence: {
             type: components["schemas"]["NoteEvidenceType"];
-            /** @description Input, recipe, run, output, publish request, dataset version or access request id */
+            /** @description Input, recipe, run, output, publish request, dataset version or access request id; for NOTEBOOK the notebook version id (the notebook id when unversioned) */
             ref_id: components["schemas"]["Id"];
-            /** @description Entity label only (dataset title@version, recipe name, row counts); never data values */
+            /** @description Entity label only (dataset title@version, recipe name, row counts, notebook title · cell k); never data values */
             label: string;
             at: components["schemas"]["Timestamp"];
         };
@@ -2837,6 +2842,8 @@ export interface components {
             blocks: components["schemas"]["NoteBlock"][];
             draft_status: components["schemas"]["NoteDraftStatus"];
             draft_error: string | null;
+            /** @description Notebooks the recorder saved in this project on note_date (the drafting source); shown to the recorder only, 0 for everyone else. 0 -> draftNote answers 422 NO_NOTEBOOK_ACTIVITY */
+            draft_source_count: number;
             signatures: components["schemas"]["NoteSignature"][];
             /** @description sha256 of the canonical JSON of content + metadata; set on submit/sign, cleared when a witness rejects the note back to DRAFT */
             content_hash: string | null;
@@ -5733,6 +5740,7 @@ export interface operations {
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
             429: components["responses"]["Error"];
             503: components["responses"]["Error"];
         };

@@ -52,7 +52,7 @@ def ids(items: list[dict[str, Any]]) -> list[str]:
 
 
 def note_on(api: NotesApi, world: World, day: int, text_: str, user: str = "a.recorder") -> dict[str, Any]:
-    """A DRAFT of the user on 2026-10-<day> with one HUMAN MEMO block."""
+    """A DRAFT of the user on 2026-10-<day> with one HUMAN RESULTS block."""
     with clock.frozen(datetime(2026, 10, day, 3, 0, tzinfo=UTC)):
         return api.written(world, text_, user=user)
 
@@ -138,7 +138,7 @@ def test_snippet_is_short_plain_text_around_the_match(api: NotesApi, world: Worl
     long_text = "가" * 300 + "\n\n용량 감소가 뚜렷하다 " + "나" * 300
     note = api.save(
         api.today(world),
-        [{"section": "DIRECTION", "text": "방향을 정했다."}, {"section": "RESULTS", "text": long_text}],
+        [{"section": "OBJECTIVE", "text": "방향을 정했다."}, {"section": "RESULTS", "text": long_text}],
     )
     [hit] = search(api, "a.recorder", "용량")
     assert hit["note_id"] == note["note_id"]
@@ -209,7 +209,7 @@ def bulk_notes(db: PgUrls, world: World, texts: list[str], *, embed: bool = True
         sql(
             db,
             "INSERT INTO notes.blocks (block_id, note_id, position, section, text, origin, accepted)"
-            " VALUES (:b, :id, 0, 'MEMO', :text, 'HUMAN', true)",
+            " VALUES (:b, :id, 0, 'RESULTS', :text, 'HUMAN', true)",
             b=new_id(),
             id=note_id,
             text=text_,
@@ -322,7 +322,7 @@ def test_embedding_uses_human_and_accepted_ai_text_once(api: NotesApi, semantic:
     # changed text: embedded again
     with clock.frozen(NOW + timedelta(minutes=5)):
         fresh = api.get("a.recorder", f"/notes/{note['note_id']}").json()
-        api.save(fresh, [{"section": "MEMO", "text": "전극 확인"}])
+        api.save(fresh, [{"section": "RESULTS", "text": "전극 확인"}])
     assert embed_all(note) == 1
     assert embedder.calls[-1] == ["전극 확인"]
 
@@ -368,7 +368,7 @@ def test_sweep_queues_missing_and_stale_embeddings(api: NotesApi, world: World, 
     # a change after the embedding makes it stale
     with clock.frozen(NOW + timedelta(minutes=2)):
         fresh = api.get("a.recorder", f"/notes/{note['note_id']}").json()
-        api.save(fresh, [{"section": "MEMO", "text": "전극 확인"}])
+        api.save(fresh, [{"section": "RESULTS", "text": "전극 확인"}])
     assert jobs.embed_sweep() == 1
 
 
@@ -442,3 +442,37 @@ def test_a_new_embedding_model_re_embeds(api: NotesApi, semantic: World, db: PgU
     assert embed_all(note) == 1
     after = stored_embedding(db, note["note_id"])
     assert before is not None and after is not None and before["text_hash"] != after["text_hash"]
+
+
+def test_a_note_deleted_while_the_gpu_answers_does_not_cost_the_others(
+    api: NotesApi, semantic: World, db: PgUrls
+) -> None:
+    doomed = note_on(api, semantic, 1, "용량 측정")
+    kept = note_on(api, semantic, 2, "전극 확인")
+    assert semantic.embedder is not None
+    real = semantic.embedder.embed
+
+    def delete_first(texts: list[str]) -> list[list[float]]:
+        assert api.delete("a.recorder", f"/notes/{doomed['note_id']}").status_code == 204
+        return real(texts)
+
+    semantic.embedder.embed = delete_first  # type: ignore[method-assign]
+    assert embed_all(doomed, kept) == 1
+    assert stored_embedding(db, doomed["note_id"]) is None
+    assert stored_embedding(db, kept["note_id"]) is not None
+
+
+def test_equal_cosine_scores_rank_by_date_then_id(monkeypatch: pytest.MonkeyPatch) -> None:
+    from api.modules.notes import search as search_module
+
+    first, second, third = sorted(new_id() for _ in range(3))
+    rows = [
+        {"note_id": second, "project_id": first, "note_date": date(2026, 10, 1), "vector": [1.0, 0.0]},
+        {"note_id": third, "project_id": first, "note_date": date(2026, 10, 2), "vector": [1.0, 0.0]},
+        {"note_id": first, "project_id": first, "note_date": date(2026, 10, 1), "vector": [1.0, 0.0]},
+        {"note_id": new_id(), "project_id": first, "note_date": date(2026, 10, 3), "vector": [0.0, 1.0]},
+    ]
+    for order in (rows, rows[::-1]):
+        monkeypatch.setattr(search_module.repo, "scope_vectors", lambda session, scope, o=order: iter(o))
+        top = search_module._cosine_top(None, None, [1.0, 0.0])  # type: ignore[arg-type]
+        assert [c.note_id for _, c in top[:3]] == [third, first, second]

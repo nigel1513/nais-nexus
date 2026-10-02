@@ -24,6 +24,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
+from api.modules.notes.sections import in_template_order
 from api.modules.notes.tables import (
     blocks,
     chains,
@@ -103,13 +104,14 @@ def delete_note(session: Session, note_id: UUID) -> None:
 
 
 def load_blocks(session: Session, note_ids: Sequence[UUID]) -> dict[UUID, list[RowMapping]]:
+    """Each note's blocks in template order (sections.SECTIONS), by position within a section."""
     out: dict[UUID, list[RowMapping]] = {note_id: [] for note_id in note_ids}
     if not note_ids:
         return out
     stmt = select(blocks).where(blocks.c.note_id.in_(note_ids)).order_by(blocks.c.note_id, blocks.c.position)
     for row in session.execute(stmt).mappings():
         out[row["note_id"]].append(row)
-    return out
+    return {note_id: in_template_order(rows) for note_id, rows in out.items()}
 
 
 def replace_blocks(session: Session, note_id: UUID, rows: Sequence[dict[str, Any]]) -> None:
@@ -338,19 +340,6 @@ def day_evidence(session: Session, project_id: UUID, actor_id: UUID, note_date: 
     return list(session.execute(stmt).mappings())
 
 
-def day_recorders(session: Session, note_date: date) -> list[RowMapping]:
-    """(project_id, actor_id, organization_id) for every researcher with evidence on the day; organization_id is the
-    actor's organization recorded with their own events (None when only others' decisions name them)."""
-    organization = func.max(evidence.c.payload["organization_id"].astext)
-    stmt = (
-        select(evidence.c.project_id, evidence.c.actor_id, organization.label("organization_id"))
-        .where(evidence.c.note_date == note_date)
-        .group_by(evidence.c.project_id, evidence.c.actor_id)
-        .order_by(evidence.c.project_id, evidence.c.actor_id)
-    )
-    return list(session.execute(stmt).mappings())
-
-
 def claim_daily_run(session: Session, run_date: date, at: datetime) -> bool:
     """False when the evening schedule already ran for that day."""
     stmt = (
@@ -473,6 +462,15 @@ def upsert_embedding(
         .values(note_id=note_id, **values)
         .on_conflict_do_update(index_elements=[embeddings.c.note_id], set_=values)
     )
+
+
+def lock_existing_notes(session: Session, note_ids: Sequence[UUID]) -> set[UUID]:
+    """The notes that still exist, locked FOR KEY SHARE (no delete until commit) so rows referencing them can be
+    written without a foreign-key failure."""
+    if not note_ids:
+        return set()
+    stmt = select(notes.c.note_id).where(notes.c.note_id.in_(note_ids)).with_for_update(key_share=True)
+    return {row[0] for row in session.execute(stmt)}
 
 
 def touch_embedding(session: Session, note_id: UUID, at: datetime) -> None:
