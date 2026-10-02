@@ -39,8 +39,19 @@ def publish(db: PgUrls, view: VersionView) -> None:
         outbox.write(session, "catalog.dataset.version_published.v1", payload, EventActor.system())
 
 
+def readiness_registry() -> HandlerRegistry:
+    """Only the readiness handlers (other modules' handlers may be registered in the same test session and their
+    schemas may not be migrated yet) - same pattern as catalog_registry / workspace_registry / audit_registry."""
+    local = HandlerRegistry()
+    for event_type in registry.table():
+        for subscription in registry.handlers_for(event_type):
+            if subscription.name.startswith("api.modules.readiness."):
+                local.subscribe(event_type)(subscription.handler)
+    return local
+
+
 def relay(db: PgUrls) -> None:
-    assert dispatch_batch(session_factory(db.app), registry).dead == 0
+    assert dispatch_batch(session_factory(db.app), readiness_registry()).dead == 0
 
 
 def results(db: PgUrls, view: VersionView) -> dict[str, dict[str, object]]:
@@ -144,8 +155,8 @@ def _claims(db: PgUrls) -> list[str]:
 def test_unknown_version_is_ignored(db: PgUrls, catalog: FixtureCatalog) -> None:
     ghost = FixtureCatalog().add_fixture("clean_tabular", owner_organization_id=ORG_B)
     publish(db, ghost)
-    assert dispatch_batch(session_factory(db.app), registry).dispatched == 1
-    result = dispatch_batch(session_factory(db.app), registry)
+    assert dispatch_batch(session_factory(db.app), readiness_registry()).dispatched == 1
+    result = dispatch_batch(session_factory(db.app), readiness_registry())
     assert (result.dispatched, result.retried) == (0, 0)  # settled, not retried
     with session_factory(db.app)() as session:
         assert session.execute(select(func.count()).select_from(validations)).scalar_one() == 0
@@ -156,7 +167,7 @@ def test_withdrawn_version_is_skipped(db: PgUrls, catalog: FixtureCatalog) -> No
     view = catalog.add_fixture("clean_tabular", owner_organization_id=ORG_B)
     catalog.replace_view(dataclasses.replace(view, status="WITHDRAWN"))
     publish(db, view)
-    result = dispatch_batch(session_factory(db.app), registry)
+    result = dispatch_batch(session_factory(db.app), readiness_registry())
     assert (result.dispatched, result.retried, result.dead) == (1, 0, 0)
     with session_factory(db.app)() as session:
         assert session.execute(select(func.count()).select_from(validations)).scalar_one() == 0
@@ -192,7 +203,7 @@ def test_missing_catalog_port_retries_the_event_instead_of_dropping_it(db: PgUrl
     """Review focus: worker started without M03 wired -> relay retries, the claim is rolled back."""
     view = FixtureCatalog().add_fixture("clean_tabular", owner_organization_id=ORG_B)
     publish(db, view)  # no `catalog` fixture: CatalogQueryPort is not provided
-    result = dispatch_batch(session_factory(db.app), registry)
+    result = dispatch_batch(session_factory(db.app), readiness_registry())
     assert (result.dispatched, result.retried) == (0, 1)
     with session_factory(db.app)() as session:
         assert session.execute(select(func.count()).select_from(processed_events)).scalar_one() == 0
