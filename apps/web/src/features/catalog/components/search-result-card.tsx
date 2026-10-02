@@ -1,13 +1,23 @@
 "use client";
-import { Tag } from "@nais/ui";
-import { Building2, CalendarRange, Clock, FlaskConical, Layers, UserRound, type LucideIcon } from "lucide-react";
+import { StatusBadge, Tag } from "@nais/ui";
+import { Building2, CalendarRange, CircleX, Clock, FlaskConical, Layers, UserRound, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
-import type { DatasetSearchHit } from "@/shared/api/types";
+import type { DatasetSearchHit, ReadinessOverall } from "@/shared/api/types";
 import { AccessLevelBadge, ReadinessBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { useVocabularyLabels } from "../api";
+
+/**
+ * AI-Ready in result lists: a failed check is not a blocking state for browsing, so it reads as neutral (icon + text)
+ * instead of red; pass and warning keep their tones. Red stays for blocking states.
+ */
+export function ListReadinessBadge({ value }: { value: ReadinessOverall | null | undefined }) {
+  const t = useTranslations();
+  if (value === "FAIL") return <StatusBadge tone="neutral" icon={CircleX} label={t("enums.ReadinessOverall.FAIL")} />;
+  return <ReadinessBadge value={value} />;
+}
 
 export function periodText(hit: DatasetSearchHit, ongoing: string): string | null {
   return hit.temporal_start ? `${hit.temporal_start} – ${hit.temporal_end ?? ongoing}` : null;
@@ -35,7 +45,7 @@ export function SearchResultCard({ hit, showSnippet = false }: { hit: DatasetSea
   const collecting = hit.collecting_organization_name && hit.collecting_organization_name !== hit.owner_organization_name ? hit.collecting_organization_name : null;
   const subjects = hit.subject_codes ?? [];
   return (
-    <article className="relative flex flex-col gap-1 px-3 py-4 hover:bg-bg-hover has-[a:focus-visible]:bg-bg-hover">
+    <article className="relative flex flex-col gap-1 px-3 py-4 hover:bg-bg-hover has-[a:focus-visible]:bg-bg-hover has-[a:focus-visible]:outline-2 has-[a:focus-visible]:-outline-offset-2 has-[a:focus-visible]:outline-focus">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
         <h2 className="min-w-0 text-heading text-fg">
           <Link
@@ -47,7 +57,7 @@ export function SearchResultCard({ hit, showSnippet = false }: { hit: DatasetSea
         </h2>
         <div className="flex shrink-0 flex-wrap gap-1.5 sm:pt-0.5">
           <AccessLevelBadge level={hit.access_level} />
-          <ReadinessBadge value={hit.readiness_overall} />
+          <ListReadinessBadge value={hit.readiness_overall} />
         </div>
       </div>
       {hit.subtitle ? <p className="max-w-[72ch] text-body text-fg">{hit.subtitle}</p> : null}

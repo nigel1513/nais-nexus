@@ -1,5 +1,5 @@
 "use client";
-import { Button, Input } from "@nais/ui";
+import { Button, cn, Input } from "@nais/ui";
 import { CircleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useId, useState } from "react";
@@ -50,7 +50,8 @@ export function PeriodFilter({
         aria-invalid={showError}
         aria-describedby={showError ? errorId : undefined}
         onChange={(e) => set(e.target.value)}
-        className="num text-small"
+        // An empty native date field shows its format mask; mute it like a placeholder.
+        className={cn("num text-small", !value && "[&::-webkit-datetime-edit]:text-fg-subtle")}
       />
     </div>
   );

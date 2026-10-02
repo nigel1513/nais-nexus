@@ -16,7 +16,7 @@ const SCHEME_OF: Partial<Record<FacetKey, VocabularyScheme>> = { subject: "SUBJE
 const VISIBLE = 5;
 
 /** Long, secondary groups start closed unless they hold a selection. */
-const CLOSED_BY_DEFAULT: FacetKey[] = ["purpose", "keyword", "collecting_organization_id"];
+const CLOSED_BY_DEFAULT: FacetKey[] = ["material", "method", "purpose", "keyword", "collecting_organization_id"];
 
 /** `(facet, value, bucket label?) => display label`, shared by facet rows and active-filter chips. */
 export function useFacetLabel() {
@@ -52,7 +52,7 @@ export function RailSection({ title, children, defaultOpen = true, className }: 
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((o) => !o)}
-          className="-mx-1.5 flex h-7 w-[calc(100%+12px)] cursor-pointer items-center justify-between rounded-sm px-1.5 text-caption text-fg-muted outline-none hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
+          className="flex h-7 w-full cursor-pointer items-center justify-between rounded-sm text-caption text-fg-muted outline-none hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
         >
           {title}
           <ChevronDown aria-hidden="true" strokeWidth={1.75} className={cn("size-3.5", !open && "-rotate-90")} />
@@ -70,7 +70,8 @@ type Node = { value: string; bucket: FacetBucket | null; children: Node[] };
 /** Vocabulary facets nest a narrower term under its broader one; a broader term without hits is a plain label. */
 function useTree(key: FacetKey, buckets: FacetBucket[]): Node[] {
   const scheme = SCHEME_OF[key];
-  const terms = useListVocabulary(scheme ?? "SUBJECT").data?.items ?? [];
+  // Non-vocabulary facets keep the hook order but never subscribe to a vocabulary.
+  const terms = useListVocabulary(scheme ?? "SUBJECT", !!scheme).data?.items ?? [];
   if (!scheme) return buckets.map((b) => ({ value: b.value, bucket: b, children: [] }));
   const parentOf = (code: string) => {
     const parent = terms.find((x) => x.code === code)?.parent_code ?? null;

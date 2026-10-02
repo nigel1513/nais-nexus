@@ -15,13 +15,12 @@ import { useUrlText } from "@/shared/hooks/use-url-text";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
 import { PageHeader } from "@/shared/ui/page-header";
 import { ErrorView, LoadMore } from "@/shared/ui/state-views";
-import { ReadinessBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { useSearchDatasets, type SearchQuery } from "./api";
 import { PeriodFilter } from "./components/period-filter";
 import { PrincipalInvestigatorFilter } from "./components/principal-investigator-filter";
 import { bucketsOf, FACETS, FacetGroup, useFacetLabel, type FacetKey } from "./components/facet-panel";
-import { periodText, SearchResultCard } from "./components/search-result-card";
+import { ListReadinessBadge, periodText, SearchResultCard } from "./components/search-result-card";
 
 type Sort = "relevance" | "updated_desc" | "title_asc";
 const SORTS: Sort[] = ["relevance", "updated_desc", "title_asc"];
@@ -44,6 +43,8 @@ export function DataSearchScreen() {
   const view: View = params.get("view") === "table" ? "table" : "list";
   const selected = Object.fromEntries(FACETS.map((k) => [k, params.getAll(k)])) as Record<FacetKey, string[]>;
   const [sheetOpen, setSheetOpen] = useState(false);
+  // The URL keeps only the PI's id; the name of the person picked in this session labels the chip.
+  const [piName, setPiName] = useState<string | null>(null);
 
   const temporalFrom = params.get("temporal_from") ?? "";
   const temporalTo = params.get("temporal_to") ?? "";
@@ -85,7 +86,13 @@ export function DataSearchScreen() {
         <FacetGroup key={key} facetKey={key} buckets={bucketsOf(first?.facets, key, selected[key])} selected={selected[key]} onToggle={toggle} />
       ))}
       <PeriodFilter from={temporalFrom} to={temporalTo} serverInvalid={temporalInvalid} onApply={(f, e) => setParams({ temporal_from: f || null, temporal_to: e || null })} />
-      <PrincipalInvestigatorFilter value={piId} onChange={(id) => setParams({ principal_investigator_id: id })} />
+      <PrincipalInvestigatorFilter
+        value={piId}
+        onPick={(id, name) => {
+          setPiName(name);
+          setParams({ principal_investigator_id: id });
+        }}
+      />
       {RAIL_AFTER_PI.map((key) => (
         <FacetGroup key={key} facetKey={key} buckets={bucketsOf(first?.facets, key, selected[key])} selected={selected[key]} onToggle={toggle} />
       ))}
@@ -184,6 +191,19 @@ export function DataSearchScreen() {
               ...(temporalFrom || temporalTo
                 ? [{ id: "period", label: t("data.search.periodChip", { from: temporalFrom || "…", to: temporalTo || "…" }), onRemove: () => setParams({ temporal_from: null, temporal_to: null }) }]
                 : []),
+              ...(piId
+                ? [
+                    {
+                      id: "pi",
+                      label: piName ? t("data.search.pi.selected", { name: piName }) : t("data.search.pi.selectedUnknown"),
+                      removeLabel: t("data.search.pi.clear"),
+                      onRemove: () => {
+                        setPiName(null);
+                        setParams({ principal_investigator_id: null });
+                      },
+                    },
+                  ]
+                : []),
             ]}
           />
 
@@ -222,18 +242,16 @@ export function DataSearchScreen() {
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent closeLabel={t("common.close")}>
-          <SheetHeader>
+          <SheetHeader className="flex-row items-center justify-between gap-2">
             <SheetTitle>{t("data.search.filters")}</SheetTitle>
+            {activeCount ? (
+              <Button size="sm" variant="ghost" onClick={clearFilters}>
+                {t("data.search.clearAll")}
+              </Button>
+            ) : null}
           </SheetHeader>
           <SheetBody>
             <aside aria-label={t("data.search.filters")} className="flex flex-col gap-3">
-              {activeCount ? (
-                <div className="flex justify-end">
-                  <Button size="sm" variant="ghost" onClick={clearFilters}>
-                    {t("data.search.clearAll")}
-                  </Button>
-                </div>
-              ) : null}
               {rail}
             </aside>
           </SheetBody>
@@ -243,14 +261,14 @@ export function DataSearchScreen() {
   );
 }
 
-function ActiveFilters({ chips }: { chips: { id: string; label: string; onRemove: () => void }[] }) {
+function ActiveFilters({ chips }: { chips: { id: string; label: string; removeLabel?: string; onRemove: () => void }[] }) {
   const t = useTranslations();
   if (!chips.length) return null;
   return (
     <ul aria-label={t("data.search.activeFilters")} className="mt-3 flex flex-wrap gap-1.5">
       {chips.map((c) => (
         <li key={c.id}>
-          <Tag onRemove={c.onRemove} removeLabel={t("data.search.removeFilter", { label: c.label })}>
+          <Tag onRemove={c.onRemove} removeLabel={c.removeLabel ?? t("data.search.removeFilter", { label: c.label })}>
             {c.label}
           </Tag>
         </li>
@@ -275,9 +293,15 @@ function ResultsTable({ hits }: { hits: DatasetSearchHit[] }) {
     { key: "org", header: t("data.search.column.organization"), className: "whitespace-nowrap", cell: (h) => h.owner_organization_name ?? h.owner_organization_id },
     { key: "period", header: t("data.search.column.period"), className: "num whitespace-nowrap", cell: (h) => periodText(h, t("data.search.meta.ongoing")) ?? "—" },
     { key: "updated", header: t("data.search.column.updated"), numeric: true, cell: (h) => <DateTime value={h.updated_at} dateOnly /> },
-    { key: "ready", header: t("data.search.column.aiReady"), className: "whitespace-nowrap", cell: (h) => <ReadinessBadge value={h.readiness_overall} /> },
+    { key: "ready", header: t("data.search.column.aiReady"), className: "whitespace-nowrap", cell: (h) => <ListReadinessBadge value={h.readiness_overall} /> },
   ];
-  return <DataTable caption={t("data.search.results")} columns={columns} rows={hits} rowKey={(h) => h.dataset_id} />;
+  // Same frame as the list: a top and bottom rule, no side borders or rounded box (the primitive's frame is
+  // overridden from here; packages/ui stays as is).
+  return (
+    <div className="[&>div>[role=region]]:rounded-none [&>div>[role=region]]:border-x-0 [&>div>[role=region]]:bg-transparent [&>ul]:rounded-none [&>ul]:border-x-0 [&>ul]:bg-transparent">
+      <DataTable caption={t("data.search.results")} columns={columns} rows={hits} rowKey={(h) => h.dataset_id} dense stickyHeader />
+    </div>
+  );
 }
 
 /** Row-shaped placeholders, shown only if loading takes ≥300ms (M10 §7 — no flicker). */

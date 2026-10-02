@@ -117,11 +117,11 @@ export function usePublishDatasetVersion(versionId: string) {
 
 const SCHEMES: VocabularyScheme[] = ["SUBJECT", "METHOD", "MATERIAL"];
 
-export function useListVocabulary(scheme: VocabularyScheme) {
+export function useListVocabulary(scheme: VocabularyScheme, enabled = true) {
   const ready = useAuthReady();
   return useQuery({
     queryKey: ["listVocabulary", { scheme }],
-    enabled: ready,
+    enabled: ready && enabled,
     staleTime: 10 * 60_000,
     queryFn: async () => (await unwrap(api.GET("/vocabulary/{scheme}", { params: { path: { scheme } } }))) as { items: VocabularyTerm[] },
   });

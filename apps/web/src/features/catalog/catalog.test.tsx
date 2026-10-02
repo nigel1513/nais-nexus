@@ -68,6 +68,9 @@ describe("DataSearchScreen", () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
     expect(await screen.findByRole("group", { name: "소재" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "수집·분석 방법" })).toBeInTheDocument();
+    // Secondary vocabularies start closed when nothing is selected in them.
+    expect(screen.getByRole("button", { name: "소재" })).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(screen.getByRole("button", { name: "소재" }));
     const box = within(screen.getByRole("group", { name: "소재" })).getAllByRole("checkbox")[0]!;
     await userEvent.click(box);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\?material=/), { scroll: false }));
@@ -95,6 +98,10 @@ describe("DataSearchScreen", () => {
     await userEvent.type(await screen.findByRole("combobox", { name: "사용자 검색" }), "Researcher");
     await userEvent.click(await screen.findByRole("option", { name: /B Researcher/ }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\?principal_investigator_id=/), { scroll: false }));
+    const chips = await screen.findByRole("list", { name: "적용된 필터" });
+    expect(within(chips).getByText("연구책임자 필터: B Researcher")).toBeInTheDocument();
+    await userEvent.click(within(chips).getByRole("button", { name: "연구책임자 해제" }));
+    expect(router.replace).toHaveBeenLastCalledWith("/commons/data", { scroll: false });
   });
 
   it("empty result offers a filter reset", async () => {
