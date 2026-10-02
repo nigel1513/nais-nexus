@@ -1,4 +1,3 @@
-import { Badge } from "@nais/ui";
 import { ArrowLeft, FlaskConical } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -6,24 +5,27 @@ import { getTranslations } from "next-intl/server";
 import { MockLoginForm } from "@/features/auth/components/mock-login-form";
 import { safeCallbackUrl } from "@/features/auth/redirects";
 import { PublicFooter, PublicHeader } from "@/features/landing/components/public-frame";
+import { operatorUrl } from "@/features/landing/version";
 import { SEED_USERS } from "@/mocks/fixtures";
 import { isMocking } from "@/shared/config";
+import "@/features/landing/landing.css";
 
 export default async function MockLoginPage({ searchParams }: { searchParams: Promise<{ callbackUrl?: string }> }) {
   if (!isMocking()) notFound();
   const { callbackUrl } = await searchParams;
   const t = await getTranslations();
+  const operator = operatorUrl();
   return (
-    <div className="flex min-h-screen flex-col">
-      <PublicHeader />
-      <main id="main" className="mx-auto w-full max-w-[420px] px-4 pb-16 pt-12 md:pt-20">
-        <Badge tone="warning">
-          <FlaskConical strokeWidth={1.75} aria-hidden />
+    <div className="lp flex min-h-screen flex-col">
+      <PublicHeader operator={operator} />
+      <main id="main" className="mx-auto w-full max-w-[420px] break-keep px-4 pb-16 pt-12 md:pt-20">
+        <span className="lp-demo gap-1.5">
+          <FlaskConical className="size-3.5" strokeWidth={1.75} aria-hidden />
           {t("auth.mockBadge")}
-        </Badge>
-        <h1 className="mt-3 text-display text-fg">{t("auth.mockTitle")}</h1>
-        <p className="mt-2 break-keep text-body text-fg-muted">{t("auth.mockDescription")}</p>
-        <div className="mt-8 rounded-md border border-border bg-bg-panel p-5">
+        </span>
+        <h1 className="mt-3 text-[28px] font-[750] leading-[1.25] tracking-[-0.035em] text-fg">{t("auth.mockTitle")}</h1>
+        <p className="mt-2 text-[15px] leading-[1.7] text-fg-muted">{t("auth.mockDescription")}</p>
+        <div className="lp-panel mt-8 p-5">
           <MockLoginForm callbackUrl={safeCallbackUrl(callbackUrl)} users={SEED_USERS} />
         </div>
         <Link
@@ -34,7 +36,7 @@ export default async function MockLoginPage({ searchParams }: { searchParams: Pr
           {t("auth.mockBack")}
         </Link>
       </main>
-      <PublicFooter />
+      <PublicFooter operator={operator} />
     </div>
   );
 }

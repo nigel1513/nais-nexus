@@ -11,9 +11,17 @@ async function seriousViolations(page: import("@playwright/test").Page) {
 test("public landing renders the portal (not the gateway 503)", async ({ page }) => {
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Research Commons");
-  await expect(page.getByRole("link", { name: "NST 통합 로그인 (SSO)" })).toHaveAttribute("href", "/commons");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("함께 연구합니다");
+  const sso = page.getByRole("link", { name: "NST 통합 로그인 (SSO)", exact: true }).first();
+  await expect(sso).toHaveAttribute("href", "/commons");
   await expect(page.getByText("접속 기록이 감사 로그에 남습니다.")).toBeVisible();
+  // Scroll like a reader so every once-only reveal fires, then let the 700ms transitions settle before axe.
+  for (let i = 0; i < 16; i += 1) {
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(80);
+  }
+  await expect(page.locator(".lp-reveal[data-pre]")).toHaveCount(0);
+  await page.waitForTimeout(1200);
   expect(await seriousViolations(page)).toEqual([]);
   for (const theme of ["dark", "light"] as const) {
     await page.emulateMedia({ colorScheme: theme });
@@ -23,7 +31,7 @@ test("public landing renders the portal (not the gateway 503)", async ({ page })
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 
-  await page.getByRole("link", { name: "NST 통합 로그인 (SSO)" }).click();
+  await sso.click();
   await expect(page).toHaveURL(/\/mock-login\?callbackUrl=%2Fcommons$/);
   await expect(page.getByText("데모 로그인", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);

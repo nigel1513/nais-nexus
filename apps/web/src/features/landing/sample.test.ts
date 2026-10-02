@@ -1,27 +1,24 @@
-import { describe, expect, it } from "vitest";
-import { sampleHistogram, sampleSeries } from "./sample";
+import { describe, expect, it, vi } from "vitest";
+import { binRange, SAMPLE_BINS, SAMPLE_COLUMNS } from "./sample";
 
-describe("landing sample figure data", () => {
-  it("is deterministic, so server and client renders and screenshots never differ", () => {
-    expect(sampleHistogram()).toEqual(sampleHistogram());
-    expect(sampleSeries("voltage")).toEqual(sampleSeries("voltage"));
+describe("landing sample columns", () => {
+  it("are generated the same way on every import (seeded)", async () => {
+    vi.resetModules();
+    const again = await import("./sample");
+    expect(again.SAMPLE_COLUMNS).toEqual(SAMPLE_COLUMNS);
   });
 
-  it("histogram bins are normalised to 0..1 with a full-height peak", () => {
-    const bins = sampleHistogram();
-    expect(bins).toHaveLength(32);
-    expect(Math.max(...bins)).toBe(1);
-    expect(bins.every((b) => b >= 0 && b <= 1)).toBe(true);
-  });
-
-  it("series are normalised to 0..1 and capacity fades over cycles", () => {
-    for (const kind of ["voltage", "temperature", "capacity"] as const) {
-      const s = sampleSeries(kind);
-      expect(s).toHaveLength(48);
-      expect(Math.min(...s)).toBeCloseTo(0);
-      expect(Math.max(...s)).toBeCloseTo(1);
+  it("have a full set of bins, all inside the column range, with a marked peak", () => {
+    expect(SAMPLE_COLUMNS.map((c) => c.name)).toEqual(["capacity_ah", "voltage_v", "temp_c", "cycle"]);
+    for (const c of SAMPLE_COLUMNS) {
+      expect(c.bins).toHaveLength(SAMPLE_BINS);
+      expect(c.bins[c.peak]).toBe(Math.max(...c.bins));
+      expect(c.bins.reduce((a, b) => a + b, 0)).toBeGreaterThan(2000);
     }
-    const cap = sampleSeries("capacity");
-    expect(cap[0]!).toBeGreaterThan(cap.at(-1)!);
+  });
+
+  it("formats bin edges with the column's digits", () => {
+    expect(binRange(SAMPLE_COLUMNS[0]!, 0)).toEqual(["2.20", "2.25"]);
+    expect(binRange(SAMPLE_COLUMNS[3]!, 21)[1]).toBe("1000");
   });
 });

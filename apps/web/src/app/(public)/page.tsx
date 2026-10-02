@@ -1,72 +1,291 @@
-import { Badge, buttonClass } from "@nais/ui";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
-import { PublicFooter, PublicHeader, publicColumn } from "@/features/landing/components/public-frame";
-import { SampleFigure } from "@/features/landing/components/sample-figure";
+import { AccessDemo } from "@/features/landing/components/access-demo";
+import { ColumnProfiles } from "@/features/landing/components/column-profiles";
+import { HeroWindows } from "@/features/landing/components/hero-windows";
+import { OperatorLink, PublicFooter, PublicHeader } from "@/features/landing/components/public-frame";
+import { ScrollReveal } from "@/features/landing/components/scroll-reveal";
+import { operatorUrl } from "@/features/landing/version";
 import { isMocking } from "@/shared/config";
+import "@/features/landing/landing.css";
 
-const CONTENTS = ["data", "projects", "access", "readiness"] as const;
+const rich = {
+  b: (chunks: React.ReactNode) => <b>{chunks}</b>,
+  code: (chunks: React.ReactNode) => <code>{chunks}</code>,
+};
+
+function SignIn({ className, label }: { className: string; label: string }) {
+  return (
+    // No prefetch: /commons redirects until sign-in, and a cached redirect would outlive the sign-in.
+    <Link href="/commons" prefetch={false} className={`lp-btn ${className}`}>
+      {label}
+      <ArrowRight className="lp-arrow" strokeWidth={1.75} aria-hidden />
+    </Link>
+  );
+}
+
+function Check({ pass, label }: { pass: boolean; label: string }) {
+  return pass ? (
+    <svg className="lp-pass" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} role="img" aria-label={label}>
+      <path d="M3 8.5l3 3 7-7" />
+    </svg>
+  ) : (
+    <svg className="lp-fail" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.8} role="img" aria-label={label}>
+      <path d="M4 4l8 8M12 4l-8 8" />
+    </svg>
+  );
+}
 
 /**
- * Public start page of an internal portal: who it is for, one way in (NST SSO), what is inside, and the audit notice.
- * /commons is behind the middleware, so the button lands on Keycloak in real mode and on /mock-login in mock mode.
+ * Public start page, after Observable's home: a dark hero with the product hanging over its edge, then one section per
+ * thing the portal does, each with a live product panel. Every panel is a labelled example; nothing here is a statistic.
+ * /commons is behind the middleware, so the sign-in links land on Keycloak in real mode and on /mock-login in mock mode.
  */
 export default async function LandingPage() {
-  const t = await getTranslations();
+  const t = await getTranslations("landing");
+  const tc = await getTranslations("common");
   const mocking = isMocking();
+  const operator = operatorUrl();
+  const members: Array<[string, "a" | "b", "lead" | "steward" | "coResearcher", string]> = [
+    ["이소재", "a", "lead", "07-01"],
+    ["정측정", "a", "steward", "07-01"],
+    ["김연구", "b", "coResearcher", "07-15"],
+    ["박분석", "b", "coResearcher", "08-03"],
+    ["최모델", "b", "coResearcher", "09-20"],
+  ];
+  const checks = [
+    ["metadata", true],
+    ["tabular", true],
+    ["units", false],
+    ["provenance", true],
+  ] as const;
+
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="lp flex min-h-screen flex-col">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-50 focus:rounded-sm focus:bg-bg focus:p-2">
-        {t("common.skipToContent")}
+        {tc("skipToContent")}
       </a>
-      <PublicHeader />
-      <main id="main" className={`${publicColumn} pb-16 pt-12 md:pb-24 md:pt-20`}>
-        <section aria-labelledby="landing-title" className="grid grid-cols-1 gap-12 break-keep lg:grid-cols-12 lg:gap-8">
-          <div className="lg:col-span-6">
-            <h1 id="landing-title" className="flex flex-col gap-2">
-              <span className="text-lead font-medium text-fg-muted md:text-hero-context">{t("landing.context")}</span>
-              <span className="text-hero-sm text-fg md:text-hero">{t("landing.title")}</span>
+      <PublicHeader operator={operator} />
+      <main id="main" className="break-keep">
+        <section className="lp-hero" aria-labelledby="lp-title">
+          <div className="lp-wrap">
+            <p className="lp-over">
+              {t.rich("over", { operator: (chunks) => (operator ? <OperatorLink href={operator}>{chunks}</OperatorLink> : chunks) })}
+            </p>
+            <h1 id="lp-title" className="lp-h1">
+              <span className="lp-line">
+                <span>{t("titleLine1")}</span>
+              </span>{" "}
+              <span className="lp-line">
+                <span>{t("titleLine2")}</span>
+              </span>
             </h1>
-            <p className="mt-6 max-w-[34em] text-lead text-fg-muted">{t("landing.lead")}</p>
-            <div className="mt-10 flex flex-wrap items-center gap-3">
-              <Link href="/commons" className={buttonClass("primary", "lg")}>
-                {t("landing.signIn")}
-                <ArrowRight strokeWidth={1.75} aria-hidden />
-              </Link>
-              {mocking ? <Badge tone="warning">{t("landing.demoMode")}</Badge> : null}
+            <p className="lp-prose">{t.rich("prose", rich)}</p>
+            <div className="lp-cta">
+              <SignIn className="lp-btn-hero" label={t("signIn")} />
+              {mocking ? <span className="lp-demo">{t("demoMode")}</span> : null}
+              <small>{mocking ? t("demoHint") : t("signInHint")}</small>
             </div>
-            <p className="mt-3 max-w-[34em] text-small text-fg-muted">{mocking ? t("landing.demoHint") : t("landing.signInHint")}</p>
           </div>
-          <div className="lg:col-span-5 lg:col-start-8 lg:pt-2">
-            <SampleFigure />
-          </div>
+          <HeroWindows />
         </section>
 
-        <section aria-labelledby="landing-contents" className="mt-16 grid grid-cols-1 break-keep border-t border-border pt-6 md:mt-24 lg:grid-cols-12 lg:gap-8">
-          <h2 id="landing-contents" className="text-small font-medium text-fg-muted lg:col-span-3">
-            {t("landing.contentsTitle")}
-          </h2>
-          <ol className="mt-4 lg:col-span-9 lg:mt-0">
-            {CONTENTS.map((key, i) => (
-              <li
-                key={key}
-                className="grid grid-cols-[2rem_minmax(0,1fr)] gap-x-3 gap-y-1 border-b border-border py-4 first:pt-0 md:grid-cols-[2rem_11rem_minmax(0,1fr)] md:gap-x-6"
-              >
-                <span className="num font-mono text-mono leading-6 text-fg-muted" aria-hidden>
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <div>
-                  <h3 className="text-heading text-fg">{t(`landing.contents.${key}.title`)}</h3>
-                  <span className="font-mono text-mono text-fg-muted">{t(`landing.contents.${key}.where`)}</span>
+        <ScrollReveal>
+          <section className="lp-sec" id="portal" aria-labelledby="lp-data">
+            <div className="lp-wrap">
+              <p className="lp-kicker lp-reveal">{t("data.kicker")}</p>
+              <h2 id="lp-data" className="lp-h2 lp-reveal" data-delay="40">
+                {t("data.title")}
+              </h2>
+              <p className="lp-intro lp-reveal" data-delay="100">
+                {t("data.intro")}
+              </p>
+              <div className="lp-grid">
+                <div className="lp-panel-wrap lp-reveal" data-delay="160">
+                  <div className="lp-panel lp-ui">
+                    <div className="lp-ui-head">
+                      <div className="lp-crumbs">{t("data.panelPath")}</div>
+                      <div className="lp-ui-title sm">{t("data.panelTitle")}</div>
+                      <div className="lp-ui-meta">{t("data.panelHint")}</div>
+                    </div>
+                    <ColumnProfiles grow="view" interactive label={t("data.profiles")} />
+                  </div>
+                  <p className="lp-cap">{t("data.caption")}</p>
                 </div>
-                <p className="col-start-2 text-body text-fg-muted md:col-start-auto md:pt-0.5">{t(`landing.contents.${key}.body`)}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
+                <div className="lp-notes">
+                  {(["profile", "versions", "search"] as const).map((k, i) => (
+                    <p key={k} className="lp-reveal" data-delay={240 + i * 60}>
+                      {t.rich(`data.notes.${k}`, rich)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="lp-sec" aria-labelledby="lp-access">
+            <div className="lp-wrap">
+              <p className="lp-kicker lp-reveal">{t("access.kicker")}</p>
+              <h2 id="lp-access" className="lp-h2 lp-reveal" data-delay="40">
+                {t("access.title")}
+              </h2>
+              <p className="lp-intro lp-reveal" data-delay="100">
+                {t("access.intro")}
+              </p>
+              <div className="lp-grid" data-flip="">
+                <div className="lp-panel-wrap lp-reveal" data-delay="160">
+                  <AccessDemo />
+                  <p className="lp-cap">{t("access.caption")}</p>
+                </div>
+                <div className="lp-notes">
+                  <ol className="lp-steps">
+                    {(["request", "review", "use", "end"] as const).map((k, i) => (
+                      <li key={k} className="lp-reveal" data-delay={200 + i * 60}>
+                        <span>{t.rich(`access.steps.${k}`, rich)}</span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="lp-sec" aria-labelledby="lp-project">
+            <div className="lp-wrap">
+              <p className="lp-kicker lp-reveal">{t("project.kicker")}</p>
+              <h2 id="lp-project" className="lp-h2 lp-reveal" data-delay="40">
+                {t("project.title")}
+              </h2>
+              <p className="lp-intro lp-reveal" data-delay="100">
+                {t("project.intro")}
+              </p>
+              <div className="lp-grid">
+                <div className="lp-panel-wrap lp-reveal" data-delay="160">
+                  <div className="lp-panel lp-ui">
+                    <div className="lp-ui-head">
+                      <div className="lp-crumbs">{t("sample.projectCrumb")}</div>
+                      <div className="lp-ui-title sm">{t("sample.project")}</div>
+                      <div className="lp-ui-meta">
+                        <span>{t("sample.projectStart")}</span>
+                        <span>{t("sample.projectOrgs")}</span>
+                        <span>{t("sample.projectData")}</span>
+                      </div>
+                    </div>
+                    <table className="lp-rows">
+                      <thead>
+                        <tr>
+                          <th scope="col">{t("ui.member")}</th>
+                          <th scope="col">{t("ui.org")}</th>
+                          <th scope="col">{t("ui.role")}</th>
+                          <th scope="col" className="lp-hide-sm">
+                            {t("ui.joined")}
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {members.map(([name, org, role, joined], i) => (
+                          <tr key={name} className="lp-reveal" data-delay={260 + i * 50}>
+                            <td>
+                              <span className="lp-who">
+                                <span className="lp-av" data-org={org} aria-hidden>
+                                  {name[0]}
+                                </span>
+                                {name}
+                              </span>
+                            </td>
+                            <td>{t(org === "a" ? "sample.orgA" : "sample.orgB")}</td>
+                            <td>
+                              <span className="lp-chip" data-tone={role === "lead" ? "accent" : "neutral"}>
+                                {t(`ui.${role}`)}
+                              </span>
+                            </td>
+                            <td className="lp-mono lp-hide-sm">{joined}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="lp-cap">{t("project.caption")}</p>
+                </div>
+                <div className="lp-notes">
+                  {(["manage", "rights"] as const).map((k, i) => (
+                    <p key={k} className="lp-reveal" data-delay={240 + i * 60}>
+                      {t.rich(`project.notes.${k}`, rich)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="lp-sec" aria-labelledby="lp-readiness">
+            <div className="lp-wrap">
+              <p className="lp-kicker lp-reveal">{t("readiness.kicker")}</p>
+              <h2 id="lp-readiness" className="lp-h2 lp-reveal" data-delay="40">
+                {t("readiness.title")}
+              </h2>
+              <p className="lp-intro lp-reveal" data-delay="100">
+                {t("readiness.intro")}
+              </p>
+              <div className="lp-grid" data-flip="">
+                <div className="lp-panel-wrap lp-reveal" data-delay="160">
+                  <div className="lp-panel lp-ui">
+                    <div className="lp-ui-head">
+                      <div className="lp-crumbs">{t("sample.readinessCrumb")}</div>
+                      <div className="lp-ui-title sm">{t("sample.dataset")}</div>
+                    </div>
+                    <div className="lp-score">
+                      <b>8/10</b>
+                      <div className="lp-meter" aria-hidden>
+                        <i />
+                      </div>
+                      <span className="lp-chip" data-tone="ok">
+                        {t("sample.trainable")}
+                      </span>
+                    </div>
+                    <ul className="lp-checks">
+                      {checks.map(([k, pass], i) => (
+                        <li key={k} className="lp-reveal" data-delay={300 + i * 60}>
+                          <Check pass={pass} label={t(pass ? "ui.passLabel" : "ui.fixLabel")} />
+                          <span>
+                            {t(`readiness.checks.${k}`)}
+                            <small>{t.rich(`readiness.checks.${k}Hint`, rich)}</small>
+                          </span>
+                          <span className="lp-chip" data-tone={pass ? "ok" : "bad"} aria-hidden>
+                            {t(pass ? "ui.pass" : "ui.fix")}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <p className="lp-cap">{t("readiness.caption")}</p>
+                </div>
+                <div className="lp-notes">
+                  {(["items", "versions"] as const).map((k, i) => (
+                    <p key={k} className="lp-reveal" data-delay={240 + i * 60}>
+                      {t.rich(`readiness.notes.${k}`, rich)}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="lp-close" aria-labelledby="lp-close">
+            <div className="lp-wrap lp-close-in">
+              <div className="lp-reveal">
+                <h2 id="lp-close">{t("close.title")}</h2>
+                <p>{t("close.body")}</p>
+              </div>
+              <div className="lp-reveal" data-delay="80">
+                <SignIn className="lp-btn-ink" label={t("signIn")} />
+              </div>
+            </div>
+          </section>
+        </ScrollReveal>
       </main>
-      <PublicFooter />
+      <PublicFooter operator={operator} />
     </div>
   );
 }

@@ -48,6 +48,14 @@ test.describe("screens", () => {
     const prefix = process.env.SHOT_PREFIX ?? "landing";
     await page.goto("/");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    // Scroll like a reader so every once-only reveal has fired before the full-page shots.
+    for (let i = 0; i < 16; i += 1) {
+      await page.mouse.wheel(0, 500);
+      await page.waitForTimeout(80);
+    }
+    await expect(page.locator(".lp-reveal[data-pre]")).toHaveCount(0);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(1200);
     await shoot(page, `${prefix}-home`);
     await page.goto("/mock-login");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();

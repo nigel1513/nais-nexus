@@ -1,18 +1,14 @@
-import { screen, within } from "@testing-library/react";
+import { act, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { lookup } from "@/i18n/messages";
 import ko from "@/messages/ko.json";
 import { renderWithProviders } from "../../../tests/render";
 import LandingPage from "./page";
 
-// Real ko messages, so a missing key fails here instead of rendering the key.
-vi.mock("next-intl/server", () => ({
-  getTranslations: async (ns?: string) => (key: string) => {
-    const value = lookup(ko, ns ? `${ns}.${key}` : key);
-    if (typeof value !== "string") throw new Error(`missing message ${ns}.${key}`);
-    return value;
-  },
-}));
+// Real ko messages through next-intl's own translator, so a missing key or broken rich tag fails here.
+vi.mock("next-intl/server", async () => {
+  const { createTranslator } = await import("next-intl");
+  return { getTranslations: async (namespace?: string) => createTranslator({ locale: "ko", messages: ko, namespace: namespace as never }) };
+});
 
 async function renderPage() {
   return renderWithProviders(await LandingPage());
@@ -24,10 +20,12 @@ describe("public landing", () => {
   it("has one way in: NST SSO through /commons (middleware picks Keycloak or the demo login)", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_MOCKING", "disabled");
     await renderPage();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("NAIS Research Commons");
-    expect(screen.getByRole("link", { name: "NST 통합 로그인 (SSO)" })).toHaveAttribute("href", "/commons");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("데이터를 찾고, 승인받고, 함께 연구합니다");
+    const signIns = screen.getAllByRole("link", { name: /NST 통합 로그인/ });
+    expect(signIns.length).toBeGreaterThanOrEqual(2);
+    for (const link of signIns) expect(link).toHaveAttribute("href", "/commons");
     expect(screen.queryByText("데모 모드")).not.toBeInTheDocument();
-    expect(screen.getByText(/소속 기관 계정으로 로그인합니다/)).toBeInTheDocument();
+    expect(screen.getByText("소속 기관 계정으로 로그인합니다")).toBeInTheDocument();
   });
 
   it("says so when the build is a demo", async () => {
@@ -37,16 +35,47 @@ describe("public landing", () => {
     expect(screen.getByText(/데모 사용자 선택 화면/)).toBeInTheDocument();
   });
 
-  it("lists what the portal holds as text, not cards with numbers", async () => {
+  it("walks through what the portal does, one section each", async () => {
     await renderPage();
-    const list = screen.getByRole("list");
-    expect(within(list).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual(["연구 데이터", "공동 프로젝트", "접근 승인", "AI-ready 검증"]);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
+      "열어 보기 전에 데이터를 압니다",
+      "승인된 범위 안에서만 열립니다",
+      "기관을 넘는 공동 프로젝트",
+      "AI 학습에 쓰기 전에 검증합니다",
+      "NST 통합 로그인으로 들어갑니다",
+    ]);
   });
 
-  it("labels the figure as generated sample data", async () => {
+  it("labels every product panel as an example", async () => {
     await renderPage();
-    expect(screen.getByRole("img", { name: /예시 열 분포/ })).toBeInTheDocument();
-    expect(screen.getByText(/실제 데이터가 아닙니다/)).toBeInTheDocument();
+    expect(screen.getAllByText(/^화면 예시입니다/)).toHaveLength(4);
+    expect(screen.getAllByRole("img", { name: /예시 열 분포/ }).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("the access demo shows what each decision leaves in the history", async () => {
+    await renderPage();
+    const panel = screen.getByText("접근 요청 #2026-0142").closest(".lp-panel") as HTMLElement;
+    act(() => within(panel).getByRole("button", { name: "승인" }).click());
+    expect(await within(panel).findByRole("status")).toHaveTextContent("승인됨 · 2027-03-31까지");
+    expect(within(panel).getByText("기간 종료 시 자동으로 닫힘")).toBeInTheDocument();
+    act(() => within(panel).getByRole("button", { name: "처음으로" }).click());
+    expect(await within(panel).findByRole("button", { name: "승인" })).toBeInTheDocument();
+  });
+
+  it("links the operator only when NAIS_OPERATOR_URL is a valid http(s) URL", async () => {
+    vi.stubEnv("NAIS_OPERATOR_URL", "javascript:alert(1)");
+    const { unmount } = await renderPage();
+    expect(screen.queryByRole("link", { name: /국가과학AI연구센터/ })).not.toBeInTheDocument();
+    unmount();
+    vi.stubEnv("NAIS_OPERATOR_URL", "https://operator.example.org/");
+    await renderPage();
+    const links = screen.getAllByRole("link", { name: /국가과학AI연구센터/ });
+    expect(links).toHaveLength(3); // header, hero line, footer
+    for (const link of links) {
+      expect(link).toHaveAttribute("href", "https://operator.example.org/");
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    }
   });
 
   it("shows the audit notice, the version and the support contact slot", async () => {
