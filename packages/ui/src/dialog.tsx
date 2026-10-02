@@ -11,7 +11,7 @@ export const DialogClose = Base.Close;
 
 /** Scrim shared by Dialog and Sheet: fades over 150ms. */
 export const scrimClass =
-  "fixed inset-0 z-50 bg-scrim transition-opacity duration-[var(--dur-fast)] ease-[var(--ease-out)] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0";
+  "fixed inset-0 z-[var(--z-dialog)] bg-scrim transition-opacity duration-[var(--dur-fast)] ease-[var(--ease-out)] data-[starting-style]:opacity-0 data-[ending-style]:opacity-0";
 
 export function DialogCloseButton({ label, className }: { label: string; className?: string }) {
   return (
@@ -42,7 +42,7 @@ export function DialogContent({
   return (
     <Base.Portal>
       <Base.Backdrop className={scrimClass} />
-      <Base.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <Base.Viewport className="fixed inset-0 z-[var(--z-dialog)] flex items-center justify-center p-4">
         <Base.Popup
           className={cn(
             "relative flex max-h-[calc(100dvh-2rem)] w-full flex-col overflow-y-auto rounded-lg border border-border bg-bg-panel p-6 text-fg shadow-dialog outline-none",

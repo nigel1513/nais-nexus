@@ -86,11 +86,15 @@ test("Data Card: a visitor without permission sees the gated notice", async ({ p
   await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
 });
 
-test("Settings: NTIS number saves, rejects a duplicate and can be cleared", async ({ page, context, baseURL }) => {
-  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000a01", url: baseURL! }]); // A Admin, no number yet
+test("Settings: NTIS number saves, rejects a duplicate and can be cleared", async ({ page, context, baseURL }, info) => {
+  // Both projects share one mock server: each uses its own user (A Admin / B Admin, no number yet) and number so a
+  // parallel run cannot clear the other's number mid-test.
+  const insecure = info.project.name === "chromium-insecure-origin";
+  const user = insecure ? "00000000-0000-7000-8000-000000000b01" : "00000000-0000-7000-8000-000000000a01";
+  await context.addCookies([{ name: "nais_mock_user", value: user, url: baseURL! }]);
   await page.goto("/settings");
   const input = page.getByLabel("국가연구자번호 (NTIS)");
-  await input.fill("12345678");
+  await input.fill(insecure ? "12345679" : "12345678");
   await page.getByRole("button", { name: "번호 저장" }).click();
   await expect(page.getByText("저장했습니다.")).toBeVisible();
   await input.fill("10000002"); // B Researcher's number in the seed
@@ -127,6 +131,26 @@ test("ui gallery: primitives pass axe in both themes, menus work by keyboard, co
 
   await page.locator('section[aria-labelledby="data-h"] .light').getByRole("button", { name: "경로 복사" }).click();
   await expect(page.locator('section[aria-labelledby="data-h"] .light').getByText("복사했습니다")).toBeAttached();
+
+  // PathText keeps the tail (file name / hash end) whole; only the head is ellipsized. 1440 and 390 wide.
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    const tails = page.locator('section[aria-labelledby="data-h"] .light [data-part="tail"]');
+    await expect(tails.first()).toBeVisible();
+    const clipped = await tails.evaluateAll((els) =>
+      // Compare fractional widths: text-overflow ellipsis triggers on a sub-pixel overflow that scrollWidth rounds away.
+      els
+        .filter((e) => (e as HTMLElement).offsetParent)
+        .map((e) => {
+          const range = document.createRange();
+          range.selectNodeContents(e);
+          return { text: e.textContent, need: range.getBoundingClientRect().width, box: e.getBoundingClientRect().width };
+        })
+        .filter((x) => x.need > x.box + 0.01)
+        .map((x) => `${x.text} ${x.need.toFixed(2)}>${x.box.toFixed(2)}`),
+    );
+    expect(clipped, `width ${width}`).toEqual([]);
+  }
 
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await seriousViolations(page)).toEqual([]);

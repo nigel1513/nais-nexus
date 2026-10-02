@@ -51,6 +51,7 @@
   --color-ring: var(--color-focus);
   --color-primary-foreground: var(--color-primary-fg);
 
+  --radius-xs: 4px; /* small glyph-like controls only: Kbd, 16px checkbox, nested segment, focus outline on inline text */
   --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px;
   --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(0 0 0 / 0.16);
   --shadow-dialog: 0 1px 2px rgb(0 0 0 / 0.06), 0 24px 48px -12px rgb(0 0 0 / 0.28);
@@ -63,6 +64,7 @@
   --text-small: 13px; --text-small--line-height: 20px;
   --text-caption: 12px; --text-caption--line-height: 16px; --text-caption--letter-spacing: 0.01em; --text-caption--font-weight: 500;
   --text-mono: 12.5px; --text-mono--line-height: 20px;
+  --text-micro: 11px; --text-micro--line-height: 14px; --text-micro--font-weight: 500; /* Kbd, 20/24px avatar initials */
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
@@ -70,6 +72,9 @@
   --dur-exit: 100ms; --dur-press: 120ms; --dur-fast: 150ms; --dur-base: 200ms; --dur-sheet: 280ms; /* exit: popovers leave faster than they enter (spec §2.6) */
 }
 
+
+/* Layers (spec §2.5). Popovers share the dialog layer so one opened inside a dialog (portalled later) paints above it. */
+:root { --z-sticky: 10; --z-sidebar: 20; --z-header: 30; --z-popover: 50; --z-dialog: 50; --z-toast: 60; --z-tooltip: 70; }
 
 /* Light values again under `.light`, so a subtree can be forced light inside a dark page (the /commons/_ui gallery
    shows both themes side by side). next-themes also puts `.light` on <html>, where this is a no-op.
@@ -113,7 +118,10 @@
 
 @layer base {
   html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; scroll-padding-top: 4rem; }
-  body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-feature-settings: "ss06"; } /* Pretendard ss06 "High legibility": tells l / I / 1 apart in IDs and paths */
+  body { background: var(--color-bg); color: var(--color-fg); font-family: var(--font-sans); font-size: 14px; line-height: 22px; font-feature-settings: "ss06"; text-rendering: geometricPrecision; }
+  /* ss06 = Pretendard "High legibility" (tells l / I / 1 apart in IDs and paths).
+     geometricPrecision: with hinted advances, Chromium on Linux rounds each glyph's width at 12–13px / 500, which
+     opened gaps like "flo at64" and "too ltip". Unhinted, fractional advances keep the spacing the font designed. */
   :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
   button, a, [role="button"] { touch-action: manipulation; }
   @media (max-width: 767px) { input, textarea, select { font-size: 16px; } }

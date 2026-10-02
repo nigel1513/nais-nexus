@@ -68,7 +68,7 @@ export function Combobox<T>({
         </Base.Trigger>
       </div>
       <Base.Portal>
-        <Base.Positioner sideOffset={4} collisionPadding={8} className="z-50">
+        <Base.Positioner sideOffset={4} collisionPadding={8} className="z-[var(--z-popover)]">
           <Base.Popup className={cn(floating, "max-h-[min(var(--available-height),20rem)] w-[var(--anchor-width)] overflow-y-auto p-1")}>
             <Base.Empty className="px-2 py-1.5 text-small text-fg-muted empty:hidden">{emptyText}</Base.Empty>
             <Base.List>

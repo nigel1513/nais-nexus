@@ -38,7 +38,7 @@ export function SegmentedControl({
           value={it.value}
           disabled={it.disabled}
           className={cn(
-            "inline-flex h-6 cursor-pointer select-none items-center gap-1.5 rounded-[4px] px-2.5 text-small font-medium text-fg-muted outline-none",
+            "inline-flex h-6 cursor-pointer select-none items-center gap-1.5 rounded-xs px-2.5 text-small font-medium text-fg-muted outline-none",
             "hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-focus",
             "data-[pressed]:bg-bg-raised data-[pressed]:text-fg data-[pressed]:shadow-raised",
             "data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 [&_svg]:size-3.5",

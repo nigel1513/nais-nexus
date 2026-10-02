@@ -57,7 +57,7 @@ export function SelectMenu({
         </Base.Icon>
       </Base.Trigger>
       <Base.Portal>
-        <Base.Positioner alignItemWithTrigger={false} sideOffset={4} collisionPadding={8} className="z-50">
+        <Base.Positioner alignItemWithTrigger={false} sideOffset={4} collisionPadding={8} className="z-[var(--z-popover)]">
           <Base.Popup className={cn(floating, "max-h-[min(var(--available-height),20rem)] min-w-[var(--anchor-width)] overflow-y-auto p-1")}>
             <Base.List>
               {options.map((o) => (

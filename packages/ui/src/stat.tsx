@@ -13,9 +13,10 @@ export function Stat({
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
-  /** Change text, e.g. "+3 이번 주". */
+  /** Change, e.g. "+3". */
   delta?: React.ReactNode;
   trend?: "up" | "down" | "flat";
+  /** Context read before the change, e.g. hint "어제보다" + delta "+2" → "어제보다 +2". */
   hint?: React.ReactNode;
   className?: string;
 }) {
@@ -26,13 +27,13 @@ export function Stat({
       <span className="num text-title text-fg">{value}</span>
       {delta || hint ? (
         <span className="flex items-center gap-1 text-small text-fg-muted">
+          {hint ? <span className="truncate">{hint}</span> : null}
           {delta ? (
             <span className={cn("num inline-flex items-center gap-0.5", trend === "up" && "text-success", trend === "down" && "text-danger")}>
               {Arrow ? <Arrow aria-hidden="true" className="size-3.5" strokeWidth={2} /> : null}
               {delta}
             </span>
           ) : null}
-          {hint ? <span className="truncate">{hint}</span> : null}
         </span>
       ) : null}
     </div>

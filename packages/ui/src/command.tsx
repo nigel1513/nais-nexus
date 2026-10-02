@@ -77,11 +77,11 @@ function DialogRoot({
   return (
     <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
       <BaseDialog.Portal>
-        <BaseDialog.Backdrop className="fixed inset-0 z-50 bg-scrim" />
+        <BaseDialog.Backdrop className="fixed inset-0 z-[var(--z-dialog)] bg-scrim" />
         <BaseDialog.Popup
           aria-label={label}
           className={cn(
-            "fixed left-1/2 top-[12dvh] z-50 w-[calc(100vw-2rem)] max-w-[640px] -translate-x-1/2 overflow-hidden rounded-lg border border-border bg-bg-panel shadow-dialog outline-none",
+            "fixed inset-x-0 top-[12dvh] z-[var(--z-dialog)] mx-auto w-[calc(100vw-2rem)] max-w-[640px] overflow-hidden rounded-lg border border-border bg-bg-panel shadow-dialog outline-none",
             className,
           )}
         >

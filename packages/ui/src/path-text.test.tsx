@@ -7,15 +7,16 @@ const PATH = "raw/2026/cycling/cell-0042/session-17/voltage_current_temperature.
 
 describe("PathText", () => {
   it("cuts in the middle: the head truncates, the file name always shows", () => {
-    expect(splitForMiddleEllipsis(PATH)).toEqual(["raw/2026/cycling/cell-0042/session-17", "/voltage_current_temperature.parquet"]);
+    expect(splitForMiddleEllipsis("raw/cell-0042/cycle_001-200.csv")).toEqual(["raw/cell-0042", "/cycle_001-200.csv"]);
+    // A long file name keeps its last 20 characters (extension included) so it fits a phone.
+    expect(splitForMiddleEllipsis(PATH)).toEqual(["raw/2026/cycling/cell-0042/session-17/voltage_current", "_temperature.parquet"]);
     expect(splitForMiddleEllipsis("0f3a9c2e7b1d44aa9e0c5d6f7a8b9c0d")).toEqual(["0f3a9c2e7b1d44aa9e0c", "5d6f7a8b9c0d"]);
     const { container } = render(<PathText value={PATH} />);
     const head = container.querySelector('[data-part="head"]')!;
     const tail = container.querySelector('[data-part="tail"]')!;
     expect(head).toHaveClass("truncate");
-    expect(tail).toHaveClass("truncate");
-    expect(head).toHaveClass("shrink-[1000]");
-    expect(head).toHaveClass("min-w-8");
+    expect(tail).toHaveClass("shrink-0", "max-w-[calc(100%-2rem)]", "truncate");
+    expect(head).toHaveClass("min-w-0", "truncate");
     expect(head.textContent! + tail.textContent!).toBe(PATH);
   });
 

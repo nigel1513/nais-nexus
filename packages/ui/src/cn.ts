@@ -8,7 +8,7 @@ import { extendTailwindMerge } from "tailwind-merge";
 const twMerge = extendTailwindMerge({
   extend: {
     theme: {
-      text: ["display", "title", "heading", "body", "small", "caption", "mono"],
+      text: ["display", "title", "heading", "body", "small", "caption", "mono", "micro"],
       shadow: ["popover", "dialog", "raised"],
     },
   },

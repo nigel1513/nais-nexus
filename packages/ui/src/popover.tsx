@@ -15,13 +15,13 @@ export type PopoverContentProps = React.ComponentProps<typeof Base.Popup> & {
 };
 
 /**
- * Floating panel anchored to its trigger. Layer z-50 (same as dialogs) so a popover opened from inside a dialog,
+ * Floating panel anchored to its trigger. Layer --z-popover (same as dialogs) so a popover opened from inside a dialog,
  * portalled later in the DOM, paints above it.
  */
 export function PopoverContent({ className, side = "bottom", align = "start", sideOffset = 6, ...props }: PopoverContentProps) {
   return (
     <Base.Portal>
-      <Base.Positioner side={side} align={align} sideOffset={sideOffset} collisionPadding={8} className="z-50">
+      <Base.Positioner side={side} align={align} sideOffset={sideOffset} collisionPadding={8} className="z-[var(--z-popover)]">
         <Base.Popup className={cn(floating, "max-w-[calc(100vw-1rem)] p-4", className)} {...props} />
       </Base.Positioner>
     </Base.Portal>

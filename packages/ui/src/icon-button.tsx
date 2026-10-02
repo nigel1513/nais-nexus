@@ -30,5 +30,13 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(f
       {children}
     </button>
   );
-  return tooltip ? <Tooltip content={label}>{button}</Tooltip> : button;
+  if (!tooltip) return button;
+  // A disabled button gets no pointer events, so its tooltip hangs on a wrapping span instead.
+  if (props.disabled)
+    return (
+      <Tooltip content={label}>
+        <span className="inline-flex">{button}</span>
+      </Tooltip>
+    );
+  return <Tooltip content={label}>{button}</Tooltip>;
 });

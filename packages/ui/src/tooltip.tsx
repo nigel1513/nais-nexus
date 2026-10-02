@@ -31,7 +31,7 @@ export function Tooltip({ content, children, side = "top", align = "center", dis
     <Base.Root disabled={disabled}>
       <Base.Trigger render={children} />
       <Base.Portal>
-        <Base.Positioner side={side} align={align} sideOffset={6} className="z-70">
+        <Base.Positioner side={side} align={align} sideOffset={6} className="z-[var(--z-tooltip)]">
           <Base.Popup
             className={cn(
               "max-w-xs rounded-sm bg-primary px-2 py-1 text-caption text-primary-fg",

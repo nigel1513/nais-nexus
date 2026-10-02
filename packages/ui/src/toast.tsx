@@ -2,13 +2,13 @@
 import { CircleAlert, CircleCheck, Info, Loader2, X } from "lucide-react";
 import * as React from "react";
 import { Toaster as Sonner, toast } from "sonner";
-import { cn } from "./cn";
 import { iconStroke } from "./styles";
 
 type Kind = "success" | "error" | "info" | "loading";
 export type NotifyOptions = { description?: React.ReactNode; id?: string | number; duration?: number };
 
-const labels = { close: "닫기" };
+/** The close label comes from <Toaster>; toast.custom content renders inside it, so context reaches it. */
+const CloseLabel = React.createContext("Close");
 
 const ICON: Record<Kind, React.ReactNode> = {
   success: <CircleCheck aria-hidden="true" className="size-4 text-success" strokeWidth={iconStroke} />,
@@ -19,9 +19,10 @@ const ICON: Record<Kind, React.ReactNode> = {
 
 /** Our toast markup inside Sonner's headless shell: icon, title, optional description, close. */
 export function ToastCard({ kind, title, description, onClose }: { kind: Kind; title: React.ReactNode; description?: React.ReactNode; onClose?: () => void }) {
+  const closeLabel = React.useContext(CloseLabel);
   return (
+    // No role here: Sonner's list is already a live region, and a nested alert would be announced twice.
     <div
-      role={kind === "error" ? "alert" : undefined}
       className="flex w-[var(--width,356px)] max-w-full items-start gap-3 rounded-md border border-border bg-bg-panel p-3 text-fg shadow-popover"
     >
       <span className="mt-0.5 shrink-0">{ICON[kind]}</span>
@@ -32,7 +33,7 @@ export function ToastCard({ kind, title, description, onClose }: { kind: Kind; t
       {onClose ? (
         <button
           type="button"
-          aria-label={labels.close}
+          aria-label={closeLabel}
           onClick={onClose}
           className="-m-1 flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm text-fg-muted outline-none hover:bg-bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
         >
@@ -76,6 +77,9 @@ export const notify = {
  * follow the OS on its own. `closeLabel` names every toast's close button.
  */
 export function Toaster({ theme, closeLabel, className }: { theme?: "light" | "dark"; closeLabel: string; className?: string }) {
-  labels.close = closeLabel;
-  return <Sonner position="bottom-right" theme={theme} className={cn("z-60", className)} toastOptions={{ unstyled: true }} gap={8} />;
+  return (
+    <CloseLabel.Provider value={closeLabel}>
+      <Sonner position="bottom-right" theme={theme} className={className} style={{ zIndex: "var(--z-toast)" }} toastOptions={{ unstyled: true }} gap={8} />
+    </CloseLabel.Provider>
+  );
 }

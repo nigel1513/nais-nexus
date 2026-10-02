@@ -25,4 +25,15 @@ describe("IconButton", () => {
     expect(onClick).toHaveBeenCalledOnce();
     expect(b.className).toContain("w-8");
   });
+  it("still shows its tooltip when disabled (hover lands on a wrapping span)", () => {
+    render(
+      <IconButton label="삭제 권한 없음" disabled>
+        <Trash />
+      </IconButton>,
+    );
+    const b = screen.getByRole("button", { name: "삭제 권한 없음" });
+    expect(b).toBeDisabled();
+    expect(b.parentElement!.tagName).toBe("SPAN");
+    expect(b.parentElement).toHaveAttribute("data-base-ui-tooltip-trigger");
+  });
 });

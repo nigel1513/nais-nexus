@@ -13,7 +13,7 @@ type ContentProps = React.ComponentProps<typeof Base.Popup> & {
 function Content({ className, side = "bottom", align = "start", sideOffset = 6, ...props }: ContentProps) {
   return (
     <Base.Portal>
-      <Base.Positioner side={side} align={align} sideOffset={sideOffset} collisionPadding={8} className="z-50">
+      <Base.Positioner side={side} align={align} sideOffset={sideOffset} collisionPadding={8} className="z-[var(--z-popover)]">
         <Base.Popup className={cn(floating, "min-w-48 p-1", className)} {...props} />
       </Base.Positioner>
     </Base.Portal>

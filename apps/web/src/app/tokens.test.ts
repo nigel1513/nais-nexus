@@ -39,7 +39,9 @@ describe("design tokens", () => {
     expect(css).toMatch(/--radius-sm:\s*6px/);
     expect(css).toMatch(/--radius-md:\s*10px/);
     expect(css).toMatch(/--radius-lg:\s*14px/);
-    expect([...css.matchAll(/--radius-([a-z0-9]+):/g)].map((m) => m[1]).sort()).toEqual(["lg", "md", "sm"]);
+    // xs (4px) is reserved for glyph-sized controls (Kbd, checkbox box, nested segment); see spec §2.5.
+    expect(css).toMatch(/--radius-xs:\s*4px/);
+    expect([...css.matchAll(/--radius-([a-z0-9]+):/g)].map((m) => m[1]).sort()).toEqual(["lg", "md", "sm", "xs"]);
   });
   it.each(["light", "dark"] as const)("%s: text tokens meet WCAG AA (4.5:1) on page, panel and their soft fill", (mode) => {
     const darkStart = css.search(/^\.dark\s*\{/m);

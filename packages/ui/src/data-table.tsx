@@ -127,7 +127,7 @@ export function DataTable<T>({
           caption={caption}
           frameClassName={stickyHeader ? "overflow-y-auto" : undefined}
           frameStyle={stickyHeader ? { maxHeight: height } : undefined}
-          className={stickyHeader ? "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-10" : undefined}
+          className={stickyHeader ? "[&_thead]:sticky [&_thead]:top-0 [&_thead]:z-[var(--z-sticky)]" : undefined}
         >
           <THead>{header}</THead>
           <TBody>

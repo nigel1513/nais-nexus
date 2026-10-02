@@ -8,7 +8,7 @@ const PALETTE = [
   "bg-warning-soft text-warning",
 ] as const;
 
-const SIZE = { 20: "size-5 text-[10px]", 24: "size-6 text-[11px]", 32: "size-8 text-caption" } as const;
+const SIZE = { 20: "size-5 text-micro", 24: "size-6 text-micro", 32: "size-8 text-caption" } as const;
 
 /** Korean names: the family name (first syllable). Latin names: first letters of the first two words. */
 export function initials(name: string): string {

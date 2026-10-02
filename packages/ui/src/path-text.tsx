@@ -7,18 +7,27 @@ import { IconButton } from "./icon-button";
 import { iconStroke } from "./styles";
 import { Tooltip } from "./tooltip";
 
-/** Where to cut: keep the file name (after the last "/"), or the last 12 characters for IDs and hashes. */
+/**
+ * Where to cut. Paths keep their file name when it is short (≤ 24 chars, about 180px of mono — fits a phone);
+ * a longer name keeps its last 20 characters, which carry the extension and the distinguishing end. IDs and hashes
+ * keep their last 12 characters.
+ */
 export function splitForMiddleEllipsis(value: string, tailChars = 12): [string, string] {
   const slash = value.lastIndexOf("/");
-  const cut = slash > 0 && value.length - slash <= 48 ? slash : Math.max(0, value.length - tailChars);
+  let cut: number;
+  if (slash > 0) cut = value.length - slash <= 24 ? slash : value.length - 20;
+  else cut = Math.max(0, value.length - tailChars);
   return [value.slice(0, cut), value.slice(cut)];
 }
 
 /**
  * Monospace path / ID that is shortened in the middle, so both the root and the file name stay visible
- * (spec §4 Code / PathText). The head gives way first (down to a few characters and its ellipsis); only on very
- * narrow screens does the tail truncate too. Head and tail together read as the full value for screen readers; the tooltip shows it
- * whole. The copy button works on plain http (copyText falls back to execCommand).
+ * (spec §4 Code / PathText). The tail does not shrink (flex weights
+ * would still shave a fractional pixel off it and trigger its ellipsis); it is capped at the width minus 2rem, so the
+ * head always keeps room for a few characters and its ellipsis. Short heads (≤ 4 chars) skip the cap and let the
+ * tail shrink instead, because a percentage cap in a shrink-to-fit cell would clip a value that fits.
+ * Head and tail together read as the full value for screen readers; the tooltip shows it whole. The copy button works
+ * on plain http (copyText falls back to execCommand).
  */
 export function PathText({
   value,
@@ -34,6 +43,8 @@ export function PathText({
   className?: string;
 }) {
   const [head, tail] = splitForMiddleEllipsis(value);
+  // A head of 4 characters or fewer is narrower than the 2rem reserve, so the cap would clip a value that fits.
+  const longHead = head.length > 4;
   const [copied, setCopied] = React.useState(false);
   React.useEffect(() => {
     if (!copied) return;
@@ -44,11 +55,11 @@ export function PathText({
     <span className={cn("inline-flex min-w-0 max-w-full items-center gap-1 font-mono text-mono text-fg", className)}>
       <Tooltip content={<span className="break-all font-mono">{value}</span>}>
         {/* Focusable so keyboard users can reach the full value in the tooltip. */}
-        <span tabIndex={0} className="flex min-w-0 rounded-[4px] outline-none focus-visible:outline-2 focus-visible:outline-focus">
-          <span data-part="head" className="min-w-8 shrink-[1000] truncate">
+        <span tabIndex={0} className="flex min-w-0 rounded-xs outline-none focus-visible:outline-2 focus-visible:outline-focus">
+          <span data-part="head" className="min-w-0 truncate">
             {head}
           </span>
-          <span data-part="tail" className="min-w-0 truncate whitespace-pre">
+          <span data-part="tail" className={cn("truncate whitespace-pre", longHead ? "max-w-[calc(100%-2rem)] shrink-0" : "min-w-0")}>
             {tail}
           </span>
         </span>

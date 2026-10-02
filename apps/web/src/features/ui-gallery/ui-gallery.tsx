@@ -96,7 +96,7 @@ const STATUS = {
   fail: { tone: "danger", label: "실패" },
 } as const;
 const COLUMNS: DataColumn<FileRow>[] = [
-  { key: "path", header: "경로", cell: (r) => <span className="block max-w-60 truncate font-mono text-mono">{r.path}</span> },
+  { key: "path", header: "경로", cell: (r) => <PathText value={r.path} className="max-w-60" /> },
   { key: "role", header: "역할", cell: (r) => <Badge tone={r.role === "RAW" ? "neutral" : r.role === "DOCS" ? "info" : "accent"}>{r.role}</Badge> },
   { key: "rows", header: "행", numeric: true, cell: (r) => (r.rows ? r.rows.toLocaleString("ko-KR") : "—") },
   { key: "size", header: "크기", numeric: true, cell: (r) => r.size },
@@ -189,6 +189,9 @@ function Buttons() {
         <IconButton label="알림" size="sm" variant="secondary">
           <Bell aria-hidden="true" />
         </IconButton>
+        <IconButton label="삭제 권한 없음" disabled>
+          <Trash2 aria-hidden="true" />
+        </IconButton>
         <a href="#buttons-h" className={buttonClass("link", "sm", "px-0")}>
           링크형(legacy)
         </a>
@@ -227,11 +230,12 @@ function Labels() {
         </Tag>
       </Row>
       <Row label="avatar">
-        <Avatar name="김연구" size={20} />
-        <Avatar name="이데이터" size={24} />
-        <Avatar name="박관리" size={32} />
-        <Avatar name="Bora Steward" size={32} />
-        <Avatar name="Chen Wei" size={32} />
+        {([[20, "김연구"], [24, "이데이터"], [32, "박관리"], [32, "Bora Steward"]] as const).map(([size, name]) => (
+          <span key={name} className="inline-flex items-center gap-1.5">
+            <Avatar name={name} size={size} />
+            <span className="num text-caption text-fg-muted">{size}</span>
+          </span>
+        ))}
       </Row>
       <Row label="kbd">
         <span className="inline-flex items-center gap-1 text-small text-fg-muted">
@@ -537,7 +541,7 @@ function DataDisplay() {
         <div className="rounded-md border border-border p-3">
           <div className="mb-2 flex items-baseline justify-between">
             <span className="font-mono text-mono text-fg">voltage_v</span>
-            <span className="text-caption text-fg-muted">float64</span>
+            <span className="font-mono text-caption text-fg-muted">float64</span>
           </div>
           <MiniHistogram label="voltage_v 분포" bins={VOLTAGE} labels={VOLTAGE.map((_, i) => `${(2.5 + i * 0.1).toFixed(1)} V`)} highlight={[6, 7]} />
           <div className="num mt-2 flex justify-between font-mono text-caption text-fg-muted">
@@ -548,7 +552,7 @@ function DataDisplay() {
         <div className="rounded-md border border-border p-3">
           <div className="mb-2 flex items-baseline justify-between">
             <span className="font-mono text-mono text-fg">temp_c</span>
-            <span className="text-caption text-fg-muted">float32</span>
+            <span className="font-mono text-caption text-fg-muted">float32</span>
           </div>
           <MiniHistogram label="temp_c 분포" bins={TEMP} />
           <div className="num mt-2 flex justify-between font-mono text-caption text-fg-muted">
@@ -557,9 +561,19 @@ function DataDisplay() {
           </div>
         </div>
       </div>
-      <div className="flex flex-col gap-3">
-        <Progress label="업로드 진행률" value={62} valueText="62%" />
-        <Progress label="검증 진행률" value={100} tone="success" />
+      <div className="grid gap-4 sm:grid-cols-2">
+        {[
+          { label: "업로드", value: 62, text: "62% · 3 / 5 파일", tone: "accent" as const },
+          { label: "검증", value: 100, text: "완료 · 5 / 5", tone: "success" as const },
+        ].map((p) => (
+          <div key={p.label} className="flex flex-col gap-1.5">
+            <div className="flex items-baseline justify-between text-small">
+              <span className="text-fg">{p.label}</span>
+              <span className="num text-fg-muted">{p.text}</span>
+            </div>
+            <Progress label={`${p.label} 진행률`} value={p.value} valueText={p.text} tone={p.tone} />
+          </div>
+        ))}
       </div>
       <div className="flex min-w-0 flex-col gap-1">
         <PathText value="raw/2026/cycling/cell-0042/session-17/voltage_current_temperature.parquet" copyLabel="경로 복사" copiedLabel="복사했습니다" />

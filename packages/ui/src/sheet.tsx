@@ -24,7 +24,7 @@ export function SheetContent({
       <Base.Backdrop className={scrimClass} />
       <Base.Popup
         className={cn(
-          "fixed inset-y-0 z-50 flex w-full flex-col overflow-y-auto border-border bg-bg-panel text-fg shadow-dialog outline-none",
+          "fixed inset-y-0 z-[var(--z-dialog)] flex w-full flex-col overflow-y-auto border-border bg-bg-panel text-fg shadow-dialog outline-none",
           "transition-transform duration-[var(--dur-sheet)] ease-[var(--ease-drawer)]",
           side === "right"
             ? "right-0 max-w-[480px] border-l data-[starting-style]:translate-x-full data-[ending-style]:translate-x-full"

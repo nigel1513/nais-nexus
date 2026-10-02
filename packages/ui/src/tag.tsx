@@ -30,7 +30,7 @@ export function Tag({
           type="button"
           aria-label={removeLabel}
           onClick={onRemove}
-          className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-[4px] text-fg-muted outline-none hover:bg-bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
+          className="flex size-4 shrink-0 cursor-pointer items-center justify-center rounded-xs text-fg-muted outline-none hover:bg-bg-hover hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
         >
           <X aria-hidden="true" className="size-3" strokeWidth={2} />
         </button>

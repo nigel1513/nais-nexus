@@ -77,7 +77,7 @@ export function MiniHistogram({
       {hover !== null ? (
         <div
           role="presentation"
-          className="pointer-events-none absolute bottom-full z-10 mb-1 -translate-x-1/2 whitespace-nowrap rounded-sm bg-primary px-1.5 py-0.5 font-mono text-caption text-primary-fg"
+          className="pointer-events-none absolute bottom-full z-[var(--z-tooltip)] mb-1 -translate-x-1/2 whitespace-nowrap rounded-sm bg-primary px-1.5 py-0.5 font-mono text-caption text-primary-fg"
           style={{ left: `${((hover + 0.5) / bins.length) * 100}%` }}
         >
           {labels?.[hover] ? `${labels[hover]} · ` : ""}

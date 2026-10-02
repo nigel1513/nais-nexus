@@ -45,7 +45,7 @@ export const Checkbox = React.forwardRef<HTMLInputElement, Omit<React.InputHTMLA
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none flex size-4 items-center justify-center rounded-[4px] border border-border-strong bg-bg-panel text-primary-fg",
+          "pointer-events-none flex size-4 items-center justify-center rounded-xs border border-border-strong bg-bg-panel text-primary-fg",
           "peer-checked:border-primary peer-checked:bg-primary peer-disabled:opacity-50",
           "peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-focus",
           "peer-aria-[invalid=true]:border-danger [&>svg]:invisible peer-checked:[&>svg]:visible",
