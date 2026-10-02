@@ -75,6 +75,9 @@ dataset_versions = Table(
     _ts("published_at"),
     _uuid("published_by"),
     _uuid("created_by"),
+    _uuid("base_version_id"),
+    _uuid("source_version_id"),
+    _uuid("previous_version_id"),
     _ts("created_at"),
     _ts("updated_at"),
 )
@@ -97,6 +100,7 @@ dataset_files = Table(
     _uuid("file_id", primary_key=True),
     _uuid("dataset_version_id"),
     _uuid("upload_session_id"),
+    _uuid("inherited_from_file_id"),
     Column("path", Text),
     Column("size_bytes", BigInteger),
     Column("sha256", Text),

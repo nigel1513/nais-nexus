@@ -22,7 +22,7 @@ from api.platform.testing.fixtures import PgUrls
 
 
 def test_catalog_schema_is_migrated_with_its_own_version_table(db: PgUrls) -> None:
-    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0003"}]
+    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0004"}]
     tables = {
         r["table_name"]
         for r in rows(db, "SELECT table_name FROM information_schema.tables WHERE table_schema = 'catalog'")
@@ -211,7 +211,7 @@ def test_catalog_0002_downgrade_and_upgrade_round_trip(db: PgUrls) -> None:
     assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0001"}]
     assert rows(db, "SELECT 1 FROM information_schema.tables WHERE table_name = 'vocabulary_terms'") == []
     command.upgrade(config, "head")
-    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0003"}]
+    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0004"}]
     assert rows(db, "SELECT count(*) AS n FROM catalog.vocabulary_terms")[0]["n"] > 50
 
 
@@ -221,7 +221,7 @@ def test_catalog_0003_downgrade_and_upgrade_round_trip(db: PgUrls) -> None:
     command.downgrade(config, "catalog_0002")
     assert rows(db, "SELECT 1 FROM information_schema.tables WHERE table_name = 'file_previews'") == []
     command.upgrade(config, "head")
-    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0003"}]
+    assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0004"}]
     dataset_id = insert_dataset(db)
     version_id = insert_version(db, dataset_id, published=True, files=[("data/a.csv", 10, SHA_A)])
     [file_row] = rows(
