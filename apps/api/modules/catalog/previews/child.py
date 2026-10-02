@@ -9,6 +9,7 @@ import io
 import json
 import os
 import resource
+import signal
 import struct
 import sys
 import threading
@@ -134,10 +135,35 @@ def _run(pipe: _Pipe, job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def main() -> None:
-    limit = int(sys.argv[1])
-    resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+FSIZE_LIMIT = 64 << 10  # the child writes no files; stderr is a pipe the parent caps
+PR_SET_PDEATHSIG = 1
+
+
+def _die_with_parent(parent_pid: int) -> None:
+    """PR_SET_PDEATHSIG(SIGKILL), best effort (Linux): the child cannot outlive the worker thread that started
+    it. If the parent is already gone (re-parented before the call), exit now."""
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
+    except (OSError, AttributeError):  # pragma: no cover - non-Linux
+        pass
+    if os.getppid() != parent_pid:
+        raise SystemExit(3)
+
+
+def apply_limits(memory_limit: int, cpu_seconds: int, parent_pid: int) -> None:
+    """Before anything heavy is imported: die with the parent, then cap address space, CPU, file size, core."""
+    _die_with_parent(parent_pid)
+    resource.setrlimit(resource.RLIMIT_AS, (memory_limit, memory_limit))
+    resource.setrlimit(resource.RLIMIT_CPU, (cpu_seconds, cpu_seconds))
+    resource.setrlimit(resource.RLIMIT_FSIZE, (FSIZE_LIMIT, FSIZE_LIMIT))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+
+
+def main() -> None:
+    apply_limits(int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3]))
     # private copies of the protocol fds; fd 0/1 are pointed away so stray C-level prints cannot corrupt frames
     pipe = _Pipe(os.dup(0), os.dup(1))
     devnull = os.open(os.devnull, os.O_RDWR)

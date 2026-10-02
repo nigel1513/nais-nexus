@@ -50,3 +50,4 @@ def test_internal_client_sets_socket_timeouts() -> None:
     config = internal_client(load_storage_config("inst-b", ENV)).meta.config
     assert (config.connect_timeout, config.read_timeout) == (S3_CONNECT_TIMEOUT_S, S3_READ_TIMEOUT_S)
     assert config.read_timeout < 60  # tighter than botocore's 60 s default
+    assert config.retries["total_max_attempts"] == 2

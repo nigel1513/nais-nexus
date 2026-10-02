@@ -12,6 +12,7 @@ from sqlalchemy import select, update
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.objects import StorageUnavailable
 from api.modules.catalog.previews.jobs import DISPATCH_INTERVAL_S, dispatch_previews
+from api.modules.catalog.previews.sandbox import protect_worker_environ
 from api.modules.catalog.search.drain import drain_index_queue
 from api.modules.catalog.service.uploads import abort_quietly
 from api.modules.catalog.tables import dataset_files, dataset_versions, upload_sessions
@@ -245,6 +246,8 @@ def _dispatch_previews() -> None:
 
 
 def register_worker(broker: dramatiq.Broker, scheduler: Scheduler) -> None:
+    if not protect_worker_environ():  # profiling children must not read this process's secrets
+        logger.warning("could not mark the worker non-dumpable; preview children may read its environment")
     scheduler.every(DRAIN_INTERVAL_S, "catalog.index_drain", _drain)
     scheduler.every(SWEEP_INTERVAL_S, "catalog.expire_upload_sessions", _sweep)
     scheduler.every(DISPATCH_INTERVAL_S, "catalog.preview_dispatch", _dispatch_previews)

@@ -204,3 +204,45 @@ def test_hostile_parquet_over_the_memory_limit_fails_without_affecting_the_worke
     assert_matches_response("getFileProfile", 200, body)
     # the same worker process goes on profiling other files
     assert generate_preview_job(UUID(files["data/m.csv"]), deps=api.deps) == "READY"
+
+
+def test_dispatch_keeps_at_most_two_leases_in_flight(api: CatalogApi, db: PgUrls) -> None:
+    from api.modules.catalog.previews.jobs import MAX_IN_FLIGHT
+
+    files = published_with_preview(api, db, files={f"data/{n}.csv": DATA for n in "abcd"})
+    assert len(files) == 4 and MAX_IN_FLIGHT == 2
+    sent: list[str] = []
+    assert dispatch_previews(api.deps, send=sent.append) == 2
+    assert dispatch_previews(api.deps, send=sent.append) == 0  # both leases live: no new messages
+    assert generate_preview_job(UUID(sent[0]), deps=api.deps) == "READY"  # one finishes: one slot frees
+    assert dispatch_previews(api.deps, send=sent.append) == 1
+    assert len(set(sent)) == 3
+    attempts = rows(db, "SELECT attempts FROM catalog.file_previews ORDER BY attempts")
+    assert [r["attempts"] for r in attempts] == [0, 1, 1, 1]
+
+
+def test_actor_start_renews_the_lease(api: CatalogApi, db: PgUrls) -> None:
+    files = published_with_preview(api, db)
+    sent: list[str] = []
+    assert dispatch_previews(api.deps, send=sent.append) == 1
+    # the message waited in the queue until just before its lease ran out
+    execute(db, "UPDATE catalog.file_previews SET next_attempt_at = now() + interval '1 second'")
+    [key] = rows(
+        db,
+        "SELECT storage_bucket, storage_key FROM catalog.dataset_files WHERE file_id = :f",
+        f=files["data/m.csv"],
+    )
+    api.deps.storage.for_bucket(key["storage_bucket"]).delete(key["storage_key"])  # keep the row PENDING
+    assert generate_preview_job(UUID(files["data/m.csv"]), deps=api.deps) == "PENDING"
+    [row] = rows(
+        db, "SELECT next_attempt_at > now() + interval '500 seconds' AS renewed FROM catalog.file_previews"
+    )
+    assert row["renewed"] is True
+
+
+def test_preview_actor_runs_on_its_dedicated_queue() -> None:
+    from api.modules.catalog import MODULE
+    from api.modules.catalog.previews.jobs import QUEUE, generate_preview_actor
+
+    assert generate_preview_actor.queue_name == QUEUE == "catalog_previews"
+    assert MODULE.dedicated_queues == {"catalog_previews": 1}

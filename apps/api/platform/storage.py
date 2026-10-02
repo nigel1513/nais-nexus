@@ -15,10 +15,11 @@ _ORG_CODE = re.compile(r"^[a-z0-9-]{2,32}$")
 # checks of hashing / Data Explorer reads (read_timeout bounds each socket read, not the whole transfer).
 S3_CONNECT_TIMEOUT_S = 5
 S3_READ_TIMEOUT_S = 30
+S3_MAX_ATTEMPTS = 2  # initial try + 1 retry: one call is bounded by about 2 x (connect + read timeout)
 _S3_CONFIG = Config(
     signature_version="s3v4",
     s3={"addressing_style": "path"},
-    retries={"max_attempts": 3},
+    retries={"total_max_attempts": S3_MAX_ATTEMPTS},
     connect_timeout=S3_CONNECT_TIMEOUT_S,
     read_timeout=S3_READ_TIMEOUT_S,
 )
