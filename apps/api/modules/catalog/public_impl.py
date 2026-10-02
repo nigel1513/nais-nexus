@@ -9,6 +9,8 @@ from uuid import UUID
 
 from botocore.exceptions import BotoCoreError
 from sqlalchemy import select
+from sqlalchemy.engine import RowMapping
+from sqlalchemy.orm import Session
 from urllib3.exceptions import HTTPError as Urllib3Error
 
 from api.modules.catalog.access import can_see_dataset
@@ -25,7 +27,13 @@ from api.modules.catalog.public import (
     StorageUnavailable,
     VersionView,
 )
-from api.modules.catalog.repo import files_of_versions, load_dataset, load_version, must
+from api.modules.catalog.repo import (
+    files_of_versions,
+    latest_published_version,
+    load_dataset,
+    load_version,
+    must,
+)
 from api.modules.catalog.tables import dataset_files, dataset_versions
 from api.platform import clock
 from api.platform.auth import CurrentUser
@@ -68,25 +76,33 @@ class CatalogQueryService:
     def get_version(self, dataset_version_id: UUID) -> VersionView | None:
         with self._deps.session_factory() as session:
             version = load_version(session, dataset_version_id)
-            if version is None:
-                return None
-            ds = must(load_dataset(session, version["dataset_id"]), "dataset")
-            files = files_of_versions(session, [dataset_version_id])[dataset_version_id]
-        return VersionView(
-            dataset_version_id=version["dataset_version_id"],
-            dataset_id=version["dataset_id"],
-            owner_organization_id=ds["owner_organization_id"],
-            version_label=version["version_label"],
-            status=version["status"],
-            manifest_sha256=version["manifest_sha256"].strip() if version["manifest_sha256"] else None,
-            metadata_snapshot=version["metadata_snapshot"],
-            files=tuple(_file_ref(f) for f in files),
-        )
+            return None if version is None else _version_view(session, version)
+
+    def get_latest_published_version(self, dataset_id: UUID) -> VersionView | None:
+        with self._deps.session_factory() as session:
+            version = latest_published_version(session, dataset_id)
+            return None if version is None else _version_view(session, version)
 
     def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool:
         with self._deps.session_factory() as session:
             ds = load_dataset(session, dataset_id)
         return ds is not None and can_see_dataset(ctx, ds)
+
+
+def _version_view(session: Session, version: RowMapping) -> VersionView:
+    ds = must(load_dataset(session, version["dataset_id"]), "dataset")
+    version_id = version["dataset_version_id"]
+    files = files_of_versions(session, [version_id])[version_id]
+    return VersionView(
+        dataset_version_id=version["dataset_version_id"],
+        dataset_id=version["dataset_id"],
+        owner_organization_id=ds["owner_organization_id"],
+        version_label=version["version_label"],
+        status=version["status"],
+        manifest_sha256=version["manifest_sha256"].strip() if version["manifest_sha256"] else None,
+        metadata_snapshot=version["metadata_snapshot"],
+        files=tuple(_file_ref(f) for f in files),
+    )
 
 
 class CatalogStorageService:

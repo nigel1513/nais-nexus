@@ -97,6 +97,25 @@ def test_is_visible_matches_d012(api: CatalogApi, db: PgUrls) -> None:
     assert port.is_visible(USERS["a.researcher"], uuid4()) is False
 
 
+def test_get_latest_published_version(api: CatalogApi, db: PgUrls) -> None:
+    dataset_id = UUID(create_dataset(api)["dataset_id"])
+    port = ports.get(CatalogQueryPort)
+    assert port.get_latest_published_version(dataset_id) is None
+    insert_version(db, dataset_id, label="draft")
+    assert port.get_latest_published_version(dataset_id) is None
+    v1 = insert_version(
+        db, dataset_id, label="v1", published=True, published_at=datetime(2026, 9, 1, tzinfo=UTC)
+    )
+    v2 = insert_version(
+        db, dataset_id, label="v2", published=True, published_at=datetime(2026, 9, 2, tzinfo=UTC)
+    )
+    latest = port.get_latest_published_version(dataset_id)
+    assert latest is not None
+    assert (latest.dataset_version_id, latest.version_label, latest.status) == (v2, "v2", "PUBLISHED")
+    assert latest == port.get_version(v2) and v1 != v2
+    assert port.get_latest_published_version(uuid4()) is None
+
+
 def test_presign_get_signs_verified_files_as_attachments(api: CatalogApi, db: PgUrls) -> None:
     _, version_id = published_version(api, db)
     now = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)

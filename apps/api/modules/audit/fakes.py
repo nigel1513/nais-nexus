@@ -186,6 +186,9 @@ class FakeCatalog:
     def get_version(self, dataset_version_id: UUID) -> VersionView | None:
         return None  # M09 never reads versions
 
+    def get_latest_published_version(self, dataset_id: UUID) -> VersionView | None:
+        return None  # M09 never reads versions
+
     def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool:
         raise NotImplementedError  # M09 never calls is_visible; visibility is the catalog's decision (D-012)
 

@@ -165,6 +165,15 @@ class FixtureCatalog:
         entry = self._versions.get(dataset_version_id)
         return entry.view if entry else None
 
+    def get_latest_published_version(self, dataset_id: UUID) -> VersionView | None:
+        """Last PUBLISHED version added (insertion order stands in for published_at)."""
+        published = [
+            e.view
+            for e in self._versions.values()
+            if e.view.dataset_id == dataset_id and e.view.status == "PUBLISHED"
+        ]
+        return published[-1] if published else None
+
     def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool:
         """Same rule as M03 access.can_see_dataset (D-012 + R3)."""
         dataset = self._datasets.get(dataset_id)
