@@ -257,6 +257,8 @@ def fix_content(
         session,
         note["note_id"],
         status=SUBMITTED,
+        draft_status="NONE",  # a pending LLM draft no longer applies (jobs._finish discards it)
+        draft_error=None,
         content_hash=content_hash(note, blocks),
         witness_required=witness_required,
         witness_user_ids=witness_user_ids,
@@ -311,6 +313,8 @@ def reject(
         content_hash=None,
         witness_required=None,
         witness_user_ids=None,
+        draft_status="NONE",
+        draft_error=None,
         rejected_reason=body.reason,
         updated_at=now,
     )

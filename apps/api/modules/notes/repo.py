@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
-from api.modules.notes.tables import blocks, chains, evidence, notes, settings, signatures
+from api.modules.notes.tables import blocks, chains, daily_runs, evidence, notes, settings, signatures
 
 ListKey = tuple[date, UUID]  # (note_date, note_id), newest first
 
@@ -327,6 +327,17 @@ def day_recorders(session: Session, note_date: date) -> list[RowMapping]:
         .order_by(evidence.c.project_id, evidence.c.actor_id)
     )
     return list(session.execute(stmt).mappings())
+
+
+def claim_daily_run(session: Session, run_date: date, at: datetime) -> bool:
+    """False when the evening schedule already ran for that day."""
+    stmt = (
+        pg_insert(daily_runs)
+        .values(run_date=run_date, ran_at=at)
+        .on_conflict_do_nothing(index_elements=[daily_runs.c.run_date])
+        .returning(daily_runs.c.run_date)
+    )
+    return session.execute(stmt).first() is not None
 
 
 def append_blocks(session: Session, note_id: UUID, rows: Sequence[dict[str, Any]]) -> None:

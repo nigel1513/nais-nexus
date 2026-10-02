@@ -1,7 +1,9 @@
 """draftNote: queue a local-LLM draft of the recorder's DRAFT note (the work is jobs.draft_note).
 
 Recorder only (others get the getNote answer), DRAFT only (409 NOTE_LOCKED), LLM switched off -> 503
-LLM_UNAVAILABLE, once per minute per note (429 RATE_LIMITED). A request clears a previous FAILED error.
+LLM_UNAVAILABLE, once per minute per note (429 RATE_LIMITED). A request clears a previous FAILED error. While a
+draft is still QUEUED/RUNNING (younger than jobs.STALE_AFTER) a request is accepted without sending a second message;
+a stuck one is reclaimed.
 """
 
 from datetime import timedelta
@@ -33,6 +35,8 @@ def request_draft(session: Session, deps: NotesDeps, user: CurrentUser, note_id:
     last = note["draft_requested_at"]
     if last is not None and now - last < MIN_INTERVAL:
         raise ApiError(ErrorCode.RATE_LIMITED, "A draft of this note was requested less than a minute ago.")
+    if jobs.in_progress(note, now):
+        return note_view(session, deps, note)
     note = repo.update_note(
         session, note_id, draft_status=jobs.QUEUED, draft_error=None, draft_requested_at=now
     )

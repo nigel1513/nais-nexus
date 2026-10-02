@@ -36,7 +36,7 @@ if jobs.draft_note_actor.broker is not STUB_BROKER:
     STUB_BROKER.declare_actor(jobs.draft_note_actor)
 TABLES = (
     "notes.signatures, notes.blocks, notes.notes, notes.chains, notes.settings, notes.evidence,"
-    " notes.processed_events"
+    " notes.processed_events, notes.daily_runs"
 )
 
 

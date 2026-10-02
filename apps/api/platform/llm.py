@@ -17,6 +17,10 @@ class LlmUnavailable(Exception):
     """Timeout, connection failure or 5xx from the LLM platform."""
 
 
+class LlmTruncated(ValueError):  # noqa: N818
+    """The answer stopped at max_tokens (finish_reason "length"): incomplete, not to be parsed."""
+
+
 @dataclass(frozen=True)
 class ChatMessage:
     role: Literal["system", "user", "assistant"]
@@ -88,9 +92,12 @@ class OpenAiChatClient:
         with _CHAT_SEMAPHORE:
             body = _post(self._base_url, "/v1/chat/completions", payload, self._timeout, self._transport)
         try:
-            content = body["choices"][0]["message"]["content"]
+            choice = body["choices"][0]
+            content = choice["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ValueError("unexpected chat completion shape") from exc
+        if isinstance(choice, dict) and choice.get("finish_reason") == "length":
+            raise LlmTruncated(f"answer cut off at max_tokens={max_tokens}")
         if not isinstance(content, str):
             raise ValueError("chat completion content is not text")
         return _first_json_object(content)

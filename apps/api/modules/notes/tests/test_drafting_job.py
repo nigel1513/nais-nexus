@@ -1,6 +1,6 @@
 """Local-LLM drafting: draftNote (recorder, DRAFT, rate limit, LLM switch), the `notes.draft_note` job (retry once on
 an unusable answer, FAILED on an unreachable LLM, human blocks never touched, results for a note that left DRAFT
-discarded) and the `notes.daily_drafts` schedule (KST 19:00-19:14 only)."""
+discarded) and the `notes.daily_drafts` schedule (once per KST day, from 19:00)."""
 
 import json
 from datetime import UTC, date, datetime, timedelta
@@ -219,7 +219,7 @@ def test_result_for_a_note_signed_meanwhile_is_discarded(api: NotesApi, world: W
     assert jobs.draft_note(UUID(note["note_id"])) == "DISCARDED"
     after = stored_note(db, note["note_id"])
     assert after["status"] == "SIGNED"
-    assert after["draft_status"] == "RUNNING"  # a SIGNED note is never written again
+    assert (after["draft_status"], after["draft_error"]) == ("NONE", None)  # reset as it left DRAFT
     blocks = api.get("a.recorder", f"/notes/{note['note_id']}").json()["blocks"]
     assert [b["origin"] for b in blocks] == ["HUMAN"]
 
@@ -237,10 +237,78 @@ def test_result_for_a_submitted_note_is_discarded(api: NotesApi, world: World, d
     assert draft(api, note).status_code == 202
     assert jobs.draft_note(UUID(note["note_id"])) == "DISCARDED"
     after = stored_note(db, note["note_id"])
-    assert (after["status"], after["draft_status"]) == ("SUBMITTED", "RUNNING")
+    assert (after["status"], after["draft_status"]) == ("SUBMITTED", "NONE")
     assert sql(db, "SELECT count(*) AS n FROM notes.blocks WHERE note_id = :id", id=note["note_id"]) == [
         {"n": 1}
     ]
+
+
+def test_result_after_submit_and_reject_round_trip_is_discarded(
+    api: NotesApi, world: World, db: PgUrls
+) -> None:
+    """claim -> submit -> witness rejects back to DRAFT -> the old answer arrives: it belongs to no request."""
+    api.witnessed(world)
+    note = api.written(world)
+    add_evidence(db, world)
+
+    def round_trip(messages: Any) -> dict[str, Any]:
+        assert api.post("a.recorder", f"/notes/{note['note_id']}/submit").status_code == 200
+        rejected = api.post("b.witness", f"/notes/{note['note_id']}/reject", json={"reason": "근거 보완"})
+        assert rejected.status_code == 200, rejected.text
+        assert rejected.json()["draft_status"] == "NONE"
+        return good_answer(STEPS=[{"text": "실행했다.", "evidence": [1]}])
+
+    world.llm.script(round_trip)
+    assert draft(api, note).status_code == 202
+    assert jobs.draft_note(UUID(note["note_id"])) == "DISCARDED"
+    after = stored_note(db, note["note_id"])
+    assert (after["status"], after["draft_status"], after["draft_error"]) == ("DRAFT", "NONE", None)
+    assert sql(db, "SELECT count(*) AS n FROM notes.blocks WHERE note_id = :id", id=note["note_id"]) == [
+        {"n": 1}
+    ]
+
+
+def test_result_for_a_superseded_request_is_discarded(api: NotesApi, world: World, db: PgUrls) -> None:
+    """A stale RUNNING draft re-requested by the recorder: the old run's late answer is not applied."""
+    note = api.written(world)
+    add_evidence(db, world)
+
+    def re_requested(messages: Any) -> dict[str, Any]:
+        with clock.frozen(NOW + jobs.STALE_AFTER + timedelta(seconds=1)):
+            assert draft(api, note).status_code == 202
+        return good_answer(STEPS=[{"text": "실행했다.", "evidence": [1]}])
+
+    world.llm.script(re_requested)
+    assert draft(api, note).status_code == 202
+    assert jobs.draft_note(UUID(note["note_id"])) == "DISCARDED"
+    assert stored_note(db, note["note_id"])["draft_status"] == "QUEUED"  # the new request runs next
+    assert len(queued()) == 2
+
+
+def test_time_limit_fails_the_draft(api: NotesApi, world: World, db: PgUrls) -> None:
+    from dramatiq.middleware import TimeLimitExceeded
+
+    note = api.written(world)
+    add_evidence(db, world)
+    world.llm.script(TimeLimitExceeded())
+    assert draft(api, note).status_code == 202
+    jobs.draft_note_actor(note["note_id"])  # the actor body, as the worker runs it
+    body = api.get("a.recorder", f"/notes/{note['note_id']}").json()
+    assert (body["draft_status"], body["draft_error"]) == ("FAILED", FAILED_MESSAGE)
+    assert body["blocks"] == note["blocks"]
+
+
+def test_truncated_answer_fails_without_retry(api: NotesApi, world: World, db: PgUrls) -> None:
+    from api.platform.llm import LlmTruncated
+
+    note = api.written(world)
+    add_evidence(db, world)
+    world.llm.script(LlmTruncated("cut"))
+    assert draft(api, note).status_code == 202
+    assert jobs.draft_note(UUID(note["note_id"])) == "FAILED"
+    assert len(world.llm.calls) == 1
+    assert world.llm.max_tokens == [jobs.MAX_TOKENS]
+    assert jobs.MAX_TOKENS >= 2048
 
 
 # ---------------------------------------------------------------- draftNote rules
@@ -263,7 +331,11 @@ def test_once_per_minute_per_note(api: NotesApi, world: World) -> None:
     with clock.frozen(NOW + timedelta(seconds=59)):
         response = draft(api, note)
     assert response.status_code == 429 and code(response) == "RATE_LIMITED"
-    with clock.frozen(NOW + timedelta(seconds=61)):
+    with clock.frozen(NOW + timedelta(seconds=61)):  # still QUEUED: accepted, nothing sent twice
+        again = draft(api, note)
+    assert again.status_code == 202 and again.json()["draft_status"] == "QUEUED"
+    assert len(queued()) == 1
+    with clock.frozen(NOW + jobs.STALE_AFTER + timedelta(seconds=1)):  # stuck past the time limit: reclaimed
         assert draft(api, note).status_code == 202
     assert len(queued()) == 2
 
@@ -286,13 +358,62 @@ def kst(hour: int, minute: int) -> datetime:
     return datetime(2026, 10, 1, hour - 9, minute, tzinfo=UTC)
 
 
-def test_daily_drafts_only_inside_the_evening_window(api: NotesApi, world: World, db: PgUrls) -> None:
+def test_daily_drafts_never_before_19_kst(api: NotesApi, world: World, db: PgUrls) -> None:
     add_evidence(db, world)
-    for at in (kst(18, 59), kst(19, 15), kst(20, 0), kst(10, 0)):
+    for at in (kst(18, 59), kst(10, 0), kst(9, 0)):
         with clock.frozen(at):
             assert jobs.daily_drafts() == 0
     assert sql(db, "SELECT count(*) AS n FROM notes.notes") == [{"n": 0}]
+    assert sql(db, "SELECT count(*) AS n FROM notes.daily_runs") == [{"n": 0}]
     assert queued() == []
+
+
+def test_daily_drafts_run_once_per_day_with_catch_up(api: NotesApi, world: World, db: PgUrls) -> None:
+    """A worker down at 19:00 catches up at its first tick that evening; later ticks that day do nothing."""
+    add_evidence(db, world)
+    with clock.frozen(kst(21, 40)):
+        assert jobs.daily_drafts() == 1
+    sql(db, "UPDATE notes.notes SET draft_status = 'DONE'")
+    with clock.frozen(kst(22, 0)):
+        assert jobs.daily_drafts() == 0
+    assert [r["run_date"] for r in sql(db, "SELECT run_date FROM notes.daily_runs")] == [TODAY]
+    next_day = datetime(2026, 10, 2, 10, 5, tzinfo=UTC)  # 19:05 KST the next day
+    add_evidence(db, world, day=TODAY + timedelta(days=1), at=next_day - timedelta(hours=1))
+    with clock.frozen(next_day):
+        assert jobs.daily_drafts() == 1
+
+
+def test_daily_drafts_one_failing_recorder_does_not_block_others(
+    api: NotesApi, world: World, db: PgUrls, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    add_evidence(db, world)
+    add_evidence(db, world, user="a.colleague")
+    real = jobs._queue_daily
+
+    def flaky(session: Any, project_id: UUID, recorder_id: UUID, *args: Any) -> bool:
+        if recorder_id == USERS["a.recorder"].user_id:
+            raise RuntimeError("boom")
+        return real(session, project_id, recorder_id, *args)
+
+    monkeypatch.setattr(jobs, "_queue_daily", flaky)
+    with clock.frozen(kst(19, 1)):
+        assert jobs.daily_drafts() == 1
+    [note] = sql(db, "SELECT recorder_id, draft_status FROM notes.notes")
+    assert (note["recorder_id"], note["draft_status"]) == (USERS["a.colleague"].user_id, "QUEUED")
+
+
+def test_daily_drafts_reclaim_a_stuck_draft(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = api.written(world)
+    add_evidence(db, world)
+    sql(
+        db,
+        "UPDATE notes.notes SET draft_status = 'RUNNING', draft_requested_at = :at WHERE note_id = :id",
+        at=kst(19, 0) - jobs.STALE_AFTER - timedelta(minutes=1),
+        id=note["note_id"],
+    )
+    with clock.frozen(kst(19, 0)):
+        assert jobs.daily_drafts() == 1
+    assert stored_note(db, note["note_id"])["draft_status"] == "QUEUED"
 
 
 def test_daily_drafts_queue_the_days_recorders(api: NotesApi, world: World, db: PgUrls) -> None:
@@ -305,7 +426,7 @@ def test_daily_drafts_queue_the_days_recorders(api: NotesApi, world: World, db: 
     add_evidence(db, world, user="a.member", day=TODAY - timedelta(days=1))  # yesterday: ignored
     with clock.frozen(kst(19, 7)):
         assert jobs.daily_drafts() == 2
-        assert jobs.daily_drafts() == 0  # a second run inside the window queues nothing new
+        assert jobs.daily_drafts() == 0  # one run per day
     notes = sql(
         db,
         "SELECT note_id, recorder_id, status, draft_status, version FROM notes.notes ORDER BY recorder_id",
@@ -335,6 +456,7 @@ def test_worker_registration() -> None:
     scheduler = Scheduler()
     jobs.register_worker(jobs.draft_note_actor.broker, scheduler)
     assert scheduler.job_names == ["notes.daily_drafts"]
+    assert scheduler._jobs[0].next_run <= scheduler._clock()  # runs at worker start (evening catch-up)
     assert jobs.draft_note_actor.actor_name == "notes.draft_note"
     assert jobs.draft_note_actor.queue_name == "notes"
     assert MODULE.register_worker is jobs.register_worker

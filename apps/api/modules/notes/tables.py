@@ -120,6 +120,14 @@ evidence = Table(
     Column("source_event_id", PG_UUID(as_uuid=True), unique=True),
 )
 
+# Evening draft schedule: one row per Asia/Seoul day it ran (jobs.daily_drafts claims the day by inserting it).
+daily_runs = Table(
+    "daily_runs",
+    metadata,
+    Column("run_date", Date, primary_key=True),
+    Column("ran_at", DateTime(timezone=True), nullable=False),
+)
+
 processed_events = Table(
     "processed_events",
     metadata,

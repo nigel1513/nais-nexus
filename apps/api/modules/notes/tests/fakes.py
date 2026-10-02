@@ -96,6 +96,7 @@ class FakeLlm:
     def __init__(self, *answers: Any) -> None:
         self.answers: list[Any] = list(answers)
         self.calls: list[list[ChatMessage]] = []
+        self.max_tokens: list[int] = []
 
     def script(self, *answers: Any) -> None:
         self.answers = list(answers)
@@ -104,6 +105,7 @@ class FakeLlm:
         self, messages: list[ChatMessage], *, max_tokens: int = 800, temperature: float = 0.2
     ) -> dict[str, Any]:
         self.calls.append(list(messages))
+        self.max_tokens.append(max_tokens)
         if not self.answers:
             raise AssertionError("FakeLlm called more often than scripted")
         answer = self.answers.pop(0)

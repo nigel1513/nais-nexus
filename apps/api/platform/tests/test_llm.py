@@ -196,3 +196,13 @@ def test_chat_calls_are_serialized() -> None:
 def test_workspace_and_notes_registered_between_project_and_audit() -> None:
     order = list(DEFAULT_MODULE_ORDER)
     assert order.index("catalog") < order.index("workspace") < order.index("notes") < order.index("audit")
+
+
+def test_chat_cut_at_max_tokens_raises_llm_truncated() -> None:
+    """finish_reason "length": the answer was cut off (LlmTruncated, a ValueError, so older callers still see it)."""
+    body = {"choices": [{"message": {"role": "assistant", "content": '{"a": 1}'}, "finish_reason": "length"}]}
+    with pytest.raises(llm.LlmTruncated):
+        _client(lambda r: httpx.Response(200, json=body)).chat_json(MSGS)
+    assert issubclass(llm.LlmTruncated, ValueError)
+    done = {"choices": [{"message": {"role": "assistant", "content": '{"a": 1}'}, "finish_reason": "stop"}]}
+    assert _client(lambda r: httpx.Response(200, json=done)).chat_json(MSGS) == {"a": 1}
