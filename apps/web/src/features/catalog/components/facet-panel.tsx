@@ -52,10 +52,10 @@ export function RailSection({ title, children, defaultOpen = true, className }: 
           aria-expanded={open}
           aria-controls={bodyId}
           onClick={() => setOpen((o) => !o)}
-          className="flex h-7 w-full cursor-pointer items-center justify-between rounded-sm text-caption text-fg-muted outline-none hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
+          className="flex h-7 w-full cursor-pointer items-center justify-between rounded-sm text-small font-semibold text-fg outline-none hover:text-accent-fg focus-visible:outline-2 focus-visible:outline-focus"
         >
           {title}
-          <ChevronDown aria-hidden="true" strokeWidth={1.75} className={cn("size-3.5", !open && "-rotate-90")} />
+          <ChevronDown aria-hidden="true" strokeWidth={1.75} className={cn("size-3.5 text-fg-muted transition-transform duration-150 ease-[var(--ease-out)]", !open && "-rotate-90")} />
         </button>
       </legend>
       <div id={bodyId} hidden={!open} className="clear-left flex flex-col pb-1 pt-1">

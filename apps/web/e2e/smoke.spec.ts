@@ -56,7 +56,7 @@ test("mock login → dashboard → data search show mock data", async ({ page })
 
   await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "데이터" }).click();
   await expect(page).toHaveURL(/\/commons\/data$/);
-  await expect(page.getByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
   await expect(page.getByText("총 4건")).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 });

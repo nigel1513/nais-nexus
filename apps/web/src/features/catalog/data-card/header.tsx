@@ -3,7 +3,7 @@ import { Badge, Button, buttonClass, SelectMenu, Skeleton } from "@nais/ui";
 import { MessageSquare, NotebookPen, Pencil } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
-import { Fragment, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useListAccessGrants, useListAccessRequests } from "@/features/governance/api";
 import { AccessRequestDialog } from "@/features/governance/components/access-request-dialog";
 import { flattenPages } from "@/shared/api/pagination";
@@ -13,7 +13,8 @@ import { formatBytes } from "@/shared/lib/format";
 import { AccessLevelBadge } from "@/shared/ui/badges";
 import { DateTime, ExpiryText } from "@/shared/ui/date-text";
 import { decideAccessCta, type AccessCta as AccessCtaT } from "../access-cta";
-import { AiReadyBadge } from "../components/ai-ready-badge";
+import { AiReadyMeter } from "../components/ai-ready-badge";
+import { HeroBand, TwoStepTitle } from "../components/v2";
 import { useVocabularyLabels } from "../api";
 
 /** The page's one primary action: download, view my request, or request access (decided by access-cta.ts). */
@@ -113,30 +114,21 @@ export function VersionPicker({
   );
 }
 
-function MetaLine({ items }: { items: ReactNode[] }) {
-  const t = useTranslations();
-  const shown = items.filter(Boolean);
-  if (!shown.length) return null;
+/** One cell of the header's fact strip: caption label over its value. */
+function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <ul aria-label={t("data.card.metaLabel")} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-fg-muted">
-      {shown.map((item, i) => (
-        <Fragment key={i}>
-          {i > 0 ? (
-            <li aria-hidden="true" className="h-3 w-px bg-border">
-              {""}
-            </li>
-          ) : null}
-          <li className="flex items-baseline gap-1.5">{item}</li>
-        </Fragment>
-      ))}
-    </ul>
+    <li className="flex min-w-0 flex-col gap-1.5 bg-hero px-4 py-3.5">
+      <span className="text-caption font-normal text-fg-muted">{label}</span>
+      <span className="flex min-w-0 flex-col gap-0.5 text-small text-fg">{children}</span>
+    </li>
   );
 }
 
 /**
- * Data Card header (reference A): title (display), subtitle, a meta line (PI · NTIS · organization | period |
- * version · published), a badge row, and the actions — 문의 · 새 노트북 (예정) · the access CTA as the one primary.
- * Owner stewards get 편집 as a quiet ghost action before them.
+ * Data Card header (UI v2): the dark band of the start page. Crumb (연구 데이터 · owner), a two-step title (subjects
+ * over the bold dataset name), the subtitle, the actions — 문의 · 새 노트북 (예정) · the access CTA as the one primary,
+ * with 편집 as a quiet ghost for the owner steward — then a fact strip (PI · NTIS, period, version, AI-ready meter)
+ * and the access level with outlined tags.
  */
 export function DataCardHeader({
   dataset: d,
@@ -156,69 +148,83 @@ export function DataCardHeader({
   const pi = d.people?.principal_investigator;
   const period = d.temporal_start ? `${d.temporal_start} – ${d.temporal_end ?? t("data.meta.ongoing")}` : null;
   const latest = d.latest_published_version;
-  const tags = [...(d.subject_codes ?? []).map((c) => vocab("SUBJECT", c)), ...(d.keywords ?? [])];
+  const subjects = (d.subject_codes ?? []).map((c) => vocab("SUBJECT", c));
+  const tags = d.keywords ?? []; // subjects already lead the title
+  const crumb = [t("data.card.hero.crumb"), d.owner_organization_name].filter(Boolean).join(" · ");
   return (
-    <header className="mb-6 flex flex-col gap-4">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="flex min-w-0 flex-col gap-2">
-          <h1 className="break-words text-display text-fg">{d.title}</h1>
-          {d.subtitle ? <p className="max-w-[72ch] text-long text-fg-muted">{d.subtitle}</p> : null}
-          <MetaLine
-            items={[
-              pi ? (
+    <header>
+      <HeroBand className="mb-6">
+        <div className="flex flex-col gap-6 px-5 py-6 sm:px-8 sm:py-7">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex min-w-0 flex-col gap-3">
+              <TwoStepTitle crumb={crumb} context={subjects.length ? subjects.join(" · ") : undefined} title={d.title} />
+              {d.subtitle ? <p className="max-w-[72ch] break-keep text-long text-fg-muted">{d.subtitle}</p> : null}
+            </div>
+            <div className="flex shrink-0 flex-wrap items-start gap-2">
+              {steward ? (
+                <Button variant="ghost" onClick={onEdit}>
+                  <Pencil aria-hidden="true" strokeWidth={1.75} />
+                  {t("common.edit")}
+                </Button>
+              ) : null}
+              <Button onClick={onInquiry}>
+                <MessageSquare aria-hidden="true" strokeWidth={1.75} />
+                {t("data.card.inquiry")}
+              </Button>
+              <Button disabled>
+                <NotebookPen aria-hidden="true" strokeWidth={1.75} />
+                {t("data.card.newNotebook")}
+                <Badge tone="neutral" className="-mr-1">
+                  {t("data.card.soon")}
+                </Badge>
+              </Button>
+              <AccessCta dataset={d} />
+            </div>
+          </div>
+          <ul aria-label={t("data.card.metaLabel")} className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border xl:grid-cols-4">
+            <Fact label={t("data.card.hero.pi")}>
+              {pi ? (
                 <>
-                  <span className="font-medium text-fg">{pi.display_name}</span>
-                  {pi.national_researcher_number ? <span className="num">NTIS {pi.national_researcher_number}</span> : null}
-                  <span>{pi.affiliation.name}</span>
+                  <span className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="font-medium">{pi.display_name}</span>
+                    {pi.national_researcher_number ? <span className="num font-mono text-mono text-fg-muted">NTIS {pi.national_researcher_number}</span> : null}
+                  </span>
+                  <span className="truncate text-caption font-normal text-fg-muted">{pi.affiliation.name}</span>
                 </>
-              ) : d.owner_organization_name ? (
-                <span>{d.owner_organization_name}</span>
-              ) : null,
-              period ? <span className="num">{period}</span> : null,
-              latest ? (
+              ) : (
+                <span>{d.owner_organization_name ?? "—"}</span>
+              )}
+            </Fact>
+            <Fact label={t("data.card.hero.period")}>{period ? <span className="num font-mono text-mono">{period}</span> : <span className="text-fg-muted">—</span>}</Fact>
+            <Fact label={t("data.card.hero.version")}>
+              {latest ? (
                 <>
-                  <span className="font-mono text-mono text-fg">{latest.version_label}</span>
+                  <span className="font-mono text-mono font-medium text-fg">{latest.version_label}</span>
                   {latest.published_at ? (
-                    <span className="num">
+                    <span className="num text-caption font-normal text-fg-muted">
                       <DateTime value={latest.published_at} dateOnly /> {t("data.card.published")}
                     </span>
                   ) : null}
                 </>
-              ) : null,
-            ]}
-          />
+              ) : (
+                <span className="text-fg-muted">—</span>
+              )}
+            </Fact>
+            <Fact label={t("data.card.hero.aiReady")}>
+              {selected?.status === "PUBLISHED" ? <AiReadyMeter versionId={selected.dataset_version_id} /> : <span className="text-fg-muted">{t("data.card.aiReadyUnverified")}</span>}
+            </Fact>
+          </ul>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <AccessLevelBadge level={d.access_level} />
+            {tags.length ? <span aria-hidden="true" className="mx-1 h-4 w-px bg-border" /> : null}
+            {tags.map((tag) => (
+              <span key={tag} className="inline-flex h-6 items-center rounded-sm border border-border px-2 text-caption text-fg-muted">
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
-        <div className="flex shrink-0 flex-wrap items-start gap-2">
-          {steward ? (
-            <Button variant="ghost" onClick={onEdit}>
-              <Pencil aria-hidden="true" strokeWidth={1.75} />
-              {t("common.edit")}
-            </Button>
-          ) : null}
-          <Button onClick={onInquiry}>
-            <MessageSquare aria-hidden="true" strokeWidth={1.75} />
-            {t("data.card.inquiry")}
-          </Button>
-          <Button disabled>
-            <NotebookPen aria-hidden="true" strokeWidth={1.75} />
-            {t("data.card.newNotebook")}
-            <Badge tone="neutral" className="-mr-1">
-              {t("data.card.soon")}
-            </Badge>
-          </Button>
-          <AccessCta dataset={d} />
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <AccessLevelBadge level={d.access_level} />
-        {selected?.status === "PUBLISHED" ? <AiReadyBadge versionId={selected.dataset_version_id} /> : null}
-        {tags.length ? <span aria-hidden="true" className="mx-1 h-4 w-px bg-border" /> : null}
-        {tags.map((tag) => (
-          <span key={tag} className="inline-flex h-6 items-center rounded-sm border border-border px-2 text-caption text-fg">
-            {tag}
-          </span>
-        ))}
-      </div>
+      </HeroBand>
     </header>
   );
 }

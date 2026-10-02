@@ -7,6 +7,7 @@ import { notify } from "@/shared/ui/toast";
 import { downloadJsonLd } from "../api";
 import { PersonLine } from "../components/person-line";
 import { VocabularyTags } from "../components/vocabulary-tags";
+import { SectionHead } from "../components/v2";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -42,9 +43,9 @@ export function MetadataBlock({ dataset: d }: { dataset: Dataset }) {
   const papers = d.related_publications ?? [];
   const period = d.temporal_start ? `${d.temporal_start} – ${d.temporal_end ?? t("data.meta.ongoing")}` : null;
   return (
-    <section aria-label={t("data.meta.title")} className="flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2 border-b border-border pb-2">
-        <h2 className="text-heading text-fg">{t("data.meta.title")}</h2>
+    <section aria-label={t("data.meta.title")} className="flex flex-col gap-4">
+      <div className="flex items-end justify-between gap-2 border-b border-border pb-3">
+        <SectionHead eyebrow={t("data.card.hero.metaCrumb")} title={t("data.meta.title")} />
         <JsonLdButton dataset={d} />
       </div>
       {/* Spec §6: 140px label column. */}

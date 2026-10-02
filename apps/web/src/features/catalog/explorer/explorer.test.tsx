@@ -24,7 +24,7 @@ describe("isTabular", () => {
 });
 
 describe("Data Explorer", () => {
-  it("is a panel with a file tree grouped under 파일, a view switch and a MiniHistogram per numeric column", async () => {
+  it("is a panel with a file tree grouped under 파일, a view switch and a coloured histogram per numeric column", async () => {
     open(USER.bResearcher);
     const ex = await explorer();
     expect(ex.getByText("파일", { selector: "p" })).toBeInTheDocument();
@@ -32,7 +32,7 @@ describe("Data Explorer", () => {
     expect(ex.getByRole("button", { name: "Detail" })).toHaveAttribute("aria-pressed", "true");
     const hists = await ex.findAllByRole("img", { name: /분포/ });
     expect(hists.length).toBe(4); // cycle, capacity_ah, voltage_v, temp_c
-    expect(hists[0]!.querySelector("rect")).toHaveClass("fill-chart-muted");
+    expect(hists[0]!.querySelector("[data-bin]")).toHaveClass("bg-chart-1"); // one hue (chart-1), not grey
   });
 
   it("lists files, defaults to the first tabular file and shows the column view", async () => {

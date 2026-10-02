@@ -13,7 +13,6 @@ import type { DatasetSearchHit, SearchPage } from "@/shared/api/types";
 import { hasOrgRole, useMeData } from "@/shared/hooks/use-me";
 import { useUrlText } from "@/shared/hooks/use-url-text";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
-import { PageHeader } from "@/shared/ui/page-header";
 import { ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { DateTime } from "@/shared/ui/date-text";
 import { useSearchDatasets, type SearchQuery } from "./api";
@@ -21,6 +20,7 @@ import { PeriodFilter } from "./components/period-filter";
 import { PrincipalInvestigatorFilter } from "./components/principal-investigator-filter";
 import { bucketsOf, FACETS, FacetGroup, useFacetLabel, type FacetKey } from "./components/facet-panel";
 import { ListReadinessBadge, periodText, SearchResultCard } from "./components/search-result-card";
+import { crumbClass, HeroBand, SectionHead, TwoStepTitle } from "./components/v2";
 
 type Sort = "relevance" | "updated_desc" | "title_asc";
 const SORTS: Sort[] = ["relevance", "updated_desc", "title_asc"];
@@ -99,8 +99,11 @@ export function DataSearchScreen() {
     </div>
   );
   const railHeader = (
-    <div className="flex h-8 items-center justify-between">
-      <h2 className="text-body font-semibold text-fg">{t("data.search.filters")}</h2>
+    <div className="flex items-end justify-between">
+      <div>
+        <p className={crumbClass}>{t("data.search.hero.railCrumb")}</p>
+        <h2 className="mt-0.5 text-[17px] leading-6 font-[700] tracking-[-0.025em] text-fg">{t("data.search.filters")}</h2>
+      </div>
       {activeCount ? (
         <Button size="sm" variant="ghost" onClick={clearFilters} className="-mr-2.5">
           {t("data.search.clearAll")}
@@ -111,17 +114,51 @@ export function DataSearchScreen() {
 
   return (
     <>
-      <PageHeader
-        title={t("data.search.title")}
-        description={t("data.search.description")}
-        actions={
-          hasOrgRole(me, "DATA_STEWARD") ? (
-            <Link href="/commons/data/new" className={buttonClass("primary")}>
-              {t("data.new.title")}
-            </Link>
-          ) : null
-        }
-      />
+      <HeroBand>
+        <div className="flex flex-col gap-6 px-5 py-6 sm:px-8 sm:py-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-3">
+              <TwoStepTitle crumb={t("data.search.hero.crumb")} context={t("data.search.hero.context")} title={t("data.search.title")} />
+              <p className="max-w-[60ch] break-keep text-body text-fg-muted">{t("data.search.description")}</p>
+            </div>
+            {hasOrgRole(me, "DATA_STEWARD") ? (
+              <Link href="/commons/data/new" className={buttonClass("primary")}>
+                {t("data.new.title")}
+              </Link>
+            ) : null}
+          </div>
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-10">
+            <div className="flex min-w-0 flex-col">
+              <div className="relative w-full max-w-xl">
+                <label htmlFor="data-search" className="sr-only">
+                  {t("shell.searchLabel")}
+                </label>
+                <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-[18px] -translate-y-1/2 text-fg-muted" strokeWidth={1.75} />
+                <Input
+                  id="data-search"
+                  type="search"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder={t("shell.searchPlaceholder")}
+                  className="h-11 rounded-md border-border-strong bg-bg pl-10 text-[15px]"
+                />
+              </div>
+            </div>
+            <ul aria-label={t("data.search.hero.summary")} className="grid grid-cols-3 border-t border-border pt-4 lg:border-t-0 lg:pt-0">
+              {[
+                [t("data.search.hero.results"), first?.total],
+                [t("data.search.hero.institutes"), first ? (first.facets?.owner_organization_id ?? []).filter((b) => b.count > 0).length : undefined],
+                [t("data.search.hero.aiReady"), first ? (first.facets?.readiness_status?.find((b) => b.value === "PASS")?.count ?? 0) : undefined],
+              ].map(([label, value], i) => (
+                <li key={String(label)} className={i ? "border-l border-border pl-4 lg:pl-6" : "pr-4 lg:pr-6"}>
+                  <span className="block whitespace-nowrap text-caption font-normal text-fg-muted">{label}</span>
+                  <span className="num mt-1 block font-mono text-[26px] leading-8 font-medium tracking-[-0.02em] text-fg">{value ?? "—"}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </HeroBand>
       <div className="grid gap-8 md:grid-cols-[240px_minmax(0,1fr)]">
         <aside aria-label={t("data.search.filters")} className="hidden min-w-0 flex-col gap-4 md:flex">
           {railHeader}
@@ -129,56 +166,52 @@ export function DataSearchScreen() {
         </aside>
 
         <section aria-label={t("data.search.results")} className="flex min-w-0 flex-col">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative w-full sm:w-80">
-              <label htmlFor="data-search" className="sr-only">
-                {t("shell.searchLabel")}
-              </label>
-              <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-fg-muted" strokeWidth={1.75} />
-              <Input id="data-search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("shell.searchPlaceholder")} className="pl-8" />
-            </div>
-            <Button className="md:hidden" onClick={() => setSheetOpen(true)}>
-              <SlidersHorizontal aria-hidden="true" strokeWidth={1.75} />
-              {t("data.search.openFilters")}
-              {activeCount ? (
-                <Badge tone="accent" className="num">
-                  {activeCount}
-                </Badge>
-              ) : null}
-            </Button>
-            <div className="ml-auto flex items-center gap-2">
-              <p aria-live="polite" className="num mr-1 whitespace-nowrap text-small text-fg-muted">
-                {first ? t("data.search.total", { count: first.total }) : ""}
-              </p>
-              <label htmlFor="data-sort" className="sr-only">
-                {t("data.search.sort")}
-              </label>
-              <Select
-                id="data-sort"
-                value={sort}
-                className="w-32"
-                onChange={(e) => {
-                  const v = e.target.value as Sort;
-                  setParams({ sort: v === "relevance" ? null : v });
-                }}
-              >
-                {SORTS.map((s) => (
-                  <option key={s} value={s}>
-                    {t(`data.search.sortOptions.${s}`)}
-                  </option>
-                ))}
-              </Select>
-              <SegmentedControl
-                aria-label={t("data.search.view")}
-                value={view}
-                onValueChange={(v) => setParams({ view: v === "table" ? "table" : null })}
-                items={[
-                  { value: "list", label: <span className="max-sm:sr-only">{t("data.search.viewList")}</span>, icon: <List aria-hidden="true" strokeWidth={1.75} /> },
-                  { value: "table", label: <span className="max-sm:sr-only">{t("data.search.viewTable")}</span>, icon: <Table2 aria-hidden="true" strokeWidth={1.75} /> },
-                ]}
-              />
-            </div>
-          </div>
+          <SectionHead
+            id="results-title"
+            eyebrow={t("data.search.hero.resultsCrumb")}
+            title={t("data.search.results")}
+            count={<span aria-live="polite">{first ? t("data.search.total", { count: first.total }) : ""}</span>}
+            right={
+              <>
+                <Button className="md:hidden" onClick={() => setSheetOpen(true)}>
+                  <SlidersHorizontal aria-hidden="true" strokeWidth={1.75} />
+                  {t("data.search.openFilters")}
+                  {activeCount ? (
+                    <Badge tone="accent" className="num">
+                      {activeCount}
+                    </Badge>
+                  ) : null}
+                </Button>
+                <label htmlFor="data-sort" className="sr-only">
+                  {t("data.search.sort")}
+                </label>
+                <Select
+                  id="data-sort"
+                  value={sort}
+                  className="w-32"
+                  onChange={(e) => {
+                    const v = e.target.value as Sort;
+                    setParams({ sort: v === "relevance" ? null : v });
+                  }}
+                >
+                  {SORTS.map((s) => (
+                    <option key={s} value={s}>
+                      {t(`data.search.sortOptions.${s}`)}
+                    </option>
+                  ))}
+                </Select>
+                <SegmentedControl
+                  aria-label={t("data.search.view")}
+                  value={view}
+                  onValueChange={(v) => setParams({ view: v === "table" ? "table" : null })}
+                  items={[
+                    { value: "list", label: <span className="max-sm:sr-only">{t("data.search.viewList")}</span>, icon: <List aria-hidden="true" strokeWidth={1.75} /> },
+                    { value: "table", label: <span className="max-sm:sr-only">{t("data.search.viewTable")}</span>, icon: <Table2 aria-hidden="true" strokeWidth={1.75} /> },
+                  ]}
+                />
+              </>
+            }
+          />
 
           <ActiveFilters
             chips={[
@@ -228,9 +261,9 @@ export function DataSearchScreen() {
               <ResultsTable hits={hits} />
             ) : (
               <ul className="divide-y divide-border border-y border-border">
-                {hits.map((hit) => (
+                {hits.map((hit, i) => (
                   <li key={hit.dataset_id}>
-                    <SearchResultCard hit={hit} showSnippet={!!debounced} />
+                    <SearchResultCard hit={hit} index={i + 1} showSnippet={!!debounced} />
                   </li>
                 ))}
               </ul>

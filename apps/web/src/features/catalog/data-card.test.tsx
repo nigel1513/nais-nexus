@@ -22,7 +22,8 @@ describe("Data Card", () => {
     expect(within(summary).getByText("NTIS 10000002")).toBeInTheDocument();
     expect(within(summary).getByText("2026-01-12 – 2026-06-30")).toBeInTheDocument();
     expect(within(summary).getByText("v2.0")).toHaveClass("font-mono");
-    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("text-display");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("font-[760]", "tracking-[-0.04em]"); // v2 page title
+    expect(screen.getByRole("heading", { level: 1 }).closest(".dark")).not.toBeNull(); // inside the dark header band
     const meta = screen.getByRole("region", { name: "메타데이터" });
     expect(within(meta).getByText("2026-01-12 – 2026-06-30")).toBeInTheDocument();
     expect(within(meta).getByText("에너지")).toBeInTheDocument();

@@ -77,7 +77,7 @@ test.describe("screens", () => {
     await shoot(page, "task3-shell-dashboard");
 
     await page.goto("/commons/data");
-    await expect(page.getByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
     await shoot(page, "task3-shell-data-search");
 
     await page.goto(`/commons/data/${DATASET_BATTERY}`);
@@ -89,7 +89,7 @@ test.describe("screens", () => {
   test("task4 data search (steward) and empty result", async ({ page, baseURL }) => {
     await as(page, "steward", baseURL!);
     await page.goto("/commons/data");
-    await expect(page.getByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
     await shoot(page, "task4-data-search");
 
     await setup(page, [1440, 900], "light");
@@ -126,6 +126,34 @@ test.describe("screens", () => {
     await page.goto(`/commons/data/${DATASET_BATTERY}`);
     await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
     await shoot(page, "task5-data-card-researcher-gated");
+  });
+
+  test("v2 data search and data card", async ({ page, baseURL }) => {
+    const tag = process.env.V2_TAG ?? "after";
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/data");
+    await expect(page.getByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+    await shoot(page, `v2-data-search-${tag}`);
+    await setup(page, [1440, 900], "light");
+    await page.goto("/commons/data?view=table");
+    await expect(page.getByRole("table", { name: /검색 결과/ })).toBeVisible();
+    await shoot(page, `v2-data-search-table-${tag}`, [[1440, 900]]);
+
+    await page.goto(`/commons/data/${DATASET_BATTERY}`);
+    await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+    await expect(page.getByRole("img", { name: /분포/ }).first()).toBeVisible();
+    await shoot(page, `v2-data-card-${tag}`);
+    await setup(page, [1440, 900], "light");
+    await page.getByText("Column", { exact: true }).click();
+    await expect(page.getByRole("table", { name: /열 요약/ })).toBeVisible();
+    await shoot(page, `v2-data-card-column-${tag}`, [[1440, 900]]);
+
+    await page.context().clearCookies();
+    await as(page, "gated", baseURL!);
+    await setup(page, [1440, 900], "light");
+    await page.goto(`/commons/data/${DATASET_BATTERY}`);
+    await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
+    await shoot(page, `v2-data-card-gated-${tag}`, [[1440, 900]]);
   });
 
   test("shell overlays: ⌘K, notifications, user menu, collapsed rail, phone sheet", async ({ page, baseURL }) => {

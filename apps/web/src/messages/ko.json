@@ -487,6 +487,16 @@
         "period": "기간",
         "updated": "수정일",
         "aiReady": "AI-Ready"
+      },
+      "hero": {
+        "crumb": "연구 데이터",
+        "context": "출연연이 함께 쓰는 연구 데이터",
+        "summary": "검색 요약",
+        "results": "검색 결과",
+        "institutes": "보유 기관",
+        "aiReady": "AI-ready 통과",
+        "resultsCrumb": "데이터셋",
+        "railCrumb": "검색 조건"
       }
     },
     "new": {
@@ -621,7 +631,21 @@
       "versionPicker": "버전",
       "draftSuffix": "(초안)",
       "aiReadyChecks": "AI-Ready 검사 결과",
-      "published": "발행"
+      "published": "발행",
+      "hero": {
+        "crumb": "연구 데이터",
+        "pi": "연구책임자",
+        "period": "데이터 기간",
+        "version": "버전",
+        "aiReady": "AI-ready",
+        "outOf": "/ 10",
+        "checks": "검사 결과",
+        "ongoing": "진행 중",
+        "aboutCrumb": "개요",
+        "explorerCrumb": "파일·분포",
+        "columnsCrumb": "스키마",
+        "metaCrumb": "출처·이용"
+      }
     },
     "people": {
       "atTheTime": " (당시 소속)",

@@ -211,7 +211,21 @@
       "versionPicker": "Version",
       "draftSuffix": "draft",
       "aiReadyChecks": "AI-Ready checks",
-      "published": "published"
+      "published": "published",
+      "hero": {
+        "crumb": "Research data",
+        "pi": "Principal investigator",
+        "period": "Data period",
+        "version": "Version",
+        "aiReady": "AI-ready",
+        "outOf": "/ 10",
+        "checks": "Check results",
+        "ongoing": "ongoing",
+        "aboutCrumb": "Overview",
+        "explorerCrumb": "Files & distributions",
+        "columnsCrumb": "Schema",
+        "metaCrumb": "Provenance & use"
+      }
     },
     "people": {
       "atTheTime": " (at the time)",
@@ -289,6 +303,16 @@
         "period": "Period",
         "updated": "Updated",
         "aiReady": "AI-Ready"
+      },
+      "hero": {
+        "crumb": "Research data",
+        "context": "Research data shared across the institutes",
+        "summary": "Search summary",
+        "results": "Results",
+        "institutes": "Institutes",
+        "aiReady": "AI-ready pass",
+        "resultsCrumb": "Datasets",
+        "railCrumb": "Refine"
       }
     },
     "form": {

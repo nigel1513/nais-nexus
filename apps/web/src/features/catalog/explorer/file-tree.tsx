@@ -1,6 +1,6 @@
 "use client";
 import { cn } from "@nais/ui";
-import { FileText, Folder, Sheet } from "lucide-react";
+import { BookOpen, BookText, Braces, Database, FileCode2, FileText, Files, FolderOpen, Sheet, Workflow, type LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 import type { DatasetFile } from "@/shared/api/types";
@@ -9,6 +9,17 @@ import { isTabular } from "../lib/tabular";
 
 /** Role groups in display order (Stage 3 file roles); files without a role fall into one "파일" group. */
 const ROLE_ORDER = ["RAW", "PROCESSED", "DOCS"];
+const ROLE_ICON: Record<string, LucideIcon> = { RAW: Database, PROCESSED: Workflow, DOCS: BookOpen };
+
+/** What a file is for, read from its name: a data table, a codebook, a schema, a readme, or other. */
+export function fileKind(path: string): { icon: LucideIcon; tone: string } {
+  const name = path.split("/").at(-1)!.toLowerCase();
+  if (/codebook/.test(name)) return { icon: BookText, tone: "text-fg-muted" };
+  if (/schema/.test(name) || name.endsWith(".json")) return { icon: Braces, tone: "text-fg-muted" };
+  if (/^readme/.test(name) || name.endsWith(".md")) return { icon: FileCode2, tone: "text-fg-muted" };
+  if (isTabular(path)) return { icon: Sheet, tone: "text-chart-2" };
+  return { icon: FileText, tone: "text-fg-muted" };
+}
 
 type Dir = { dirs: Map<string, Dir>; files: DatasetFile[] };
 const newDir = (): Dir => ({ dirs: new Map(), files: [] });
@@ -40,7 +51,7 @@ export function FileTree({ files, currentId, onSelect }: { files: DatasetFile[];
   const fileRow = (f: DatasetFile) => {
     const selected = f.file_id === currentId;
     const name = f.path.split("/").at(-1)!;
-    const Icon = isTabular(f.path) ? Sheet : FileText;
+    const { icon: Icon, tone } = fileKind(f.path);
     return (
       <li key={f.file_id}>
         <button
@@ -50,12 +61,18 @@ export function FileTree({ files, currentId, onSelect }: { files: DatasetFile[];
           title={f.path}
           onClick={() => onSelect(f.file_id)}
           className={cn(
-            "flex h-7 w-full cursor-pointer items-center gap-2 rounded-sm px-2 text-left outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus",
+            "flex h-7 w-full cursor-pointer items-center gap-2 rounded-sm px-2 text-left outline-none transition-colors duration-150 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus",
             selected ? "bg-accent-soft text-accent-fg" : "text-fg hover:bg-bg-hover",
           )}
         >
-          <Icon aria-hidden="true" strokeWidth={1.75} className={cn("size-3.5 shrink-0", !selected && "text-fg-muted")} />
+          <Icon aria-hidden="true" strokeWidth={1.75} className={cn("size-3.5 shrink-0", selected ? "text-accent-fg" : tone)} />
           <span className="min-w-0 flex-1 truncate font-mono text-mono">{name}</span>
+          {/* The open file's size is in the path bar above the view, which leaves its name the room. */}
+          {selected ? null : (
+            <span aria-hidden="true" className="num shrink-0 font-mono text-micro text-fg-muted">
+              {formatBytes(f.size_bytes)}
+            </span>
+          )}
         </button>
       </li>
     );
@@ -65,7 +82,7 @@ export function FileTree({ files, currentId, onSelect }: { files: DatasetFile[];
       {[...node.dirs].map(([name, child]) => (
         <li key={`d:${name}`}>
           <span className="flex h-7 items-center gap-2 px-2 text-small text-fg-muted">
-            <Folder aria-hidden="true" strokeWidth={1.75} className="size-3.5 shrink-0" />
+            <FolderOpen aria-hidden="true" strokeWidth={1.75} className="size-3.5 shrink-0" />
             <span className="truncate font-mono text-mono">{name}/</span>
           </span>
           {dir(child, true)}
@@ -79,7 +96,13 @@ export function FileTree({ files, currentId, onSelect }: { files: DatasetFile[];
     <div role="list" aria-label={t("data.explorer.files")} className="flex flex-col gap-3">
         {roles.map((role) => (
           <div role="listitem" key={role ?? "none"} className="flex flex-col gap-1">
-            <p className="px-2 text-caption text-fg-muted">{role ?? t("data.explorer.otherGroup")}</p>
+            <p className="flex items-center gap-1.5 px-2 pb-0.5 text-caption font-semibold text-fg-muted">
+              {(() => {
+                const RoleIcon = (role && ROLE_ICON[role]) || Files;
+                return <RoleIcon aria-hidden="true" strokeWidth={1.75} className="size-3.5" />;
+              })()}
+              {role ?? t("data.explorer.otherGroup")}
+            </p>
             {dir(build(files.filter((f) => roleOf(f) === role)), false)}
           </div>
         ))}

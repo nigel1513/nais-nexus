@@ -12,6 +12,7 @@ import { ColumnView } from "./column-view";
 import { CompactView } from "./compact-view";
 import { DetailView } from "./detail-view";
 import { FileTree } from "./file-tree";
+import { SectionHead } from "../components/v2";
 
 type View = "detail" | "compact" | "column";
 
@@ -33,15 +34,15 @@ export function DataExplorer({ dataset, versionId, fileCount }: { dataset: Datas
   else if (files.length === 0) body = <EmptyState icon={FolderOpen} title={t("data.explorer.noFiles")} />;
   else
     body = (
-      <div className="grid md:grid-cols-[220px_minmax(0,1fr)]">
+      <div className="grid md:grid-cols-[256px_minmax(0,1fr)]">
         <div className="border-b border-border bg-bg-subtle p-2 md:border-b-0 md:border-r">
           <FileTree files={files} currentId={current?.file_id} onSelect={setFileId} />
         </div>
         <div className="flex min-w-0 flex-col gap-4 p-4">
           {current ? (
-            <p className="flex min-w-0 items-center justify-between gap-3 text-small">
+            <p className="-mx-4 -mt-4 flex min-w-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5 text-small">
               <PathText value={current.path} className="min-w-0" />
-              <span className="num shrink-0 text-fg-muted">{formatBytes(current.size_bytes)}</span>
+              <span className="num shrink-0 font-mono text-mono text-fg-muted">{formatBytes(current.size_bytes)}</span>
             </p>
           ) : null}
           {current ? (
@@ -59,13 +60,8 @@ export function DataExplorer({ dataset, versionId, fileCount }: { dataset: Datas
 
   return (
     <section aria-labelledby="explorer-title" className="overflow-hidden rounded-md border border-border bg-bg-panel">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-        <div className="flex items-baseline gap-2">
-          <h2 id="explorer-title" className="text-heading text-fg">
-            {t("data.card.explorerTitle")}
-          </h2>
-          <span className="num text-small text-fg-muted">{t("data.card.explorerFiles", { count: fileCount })}</span>
-        </div>
+      <div className="flex flex-wrap items-end justify-between gap-2 border-b border-border px-4 py-3">
+        <SectionHead id="explorer-title" eyebrow={t("data.card.hero.explorerCrumb")} title={t("data.card.explorerTitle")} count={t("data.card.explorerFiles", { count: fileCount })} />
         <SegmentedControl
           aria-label={t("data.explorer.view")}
           value={view}

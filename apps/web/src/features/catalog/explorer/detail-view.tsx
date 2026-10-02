@@ -8,6 +8,7 @@ import { formatStat } from "./format-stat";
 import { GatedNotice, isGated } from "./gated-notice";
 import { Histogram } from "./histogram";
 import { PreviewTable } from "./preview-table";
+import "../components/v2.css";
 
 const PREVIEW_ROWS = 5;
 
@@ -16,7 +17,7 @@ function Dist({ col }: { col: ColumnDistribution }) {
   if (col.kind === "numeric" && col.histogram?.length && col.min != null && col.max != null) {
     return (
       <>
-        <Histogram name={col.name} min={col.min} max={col.max} bins={col.histogram} />
+        <Histogram name={col.name} min={col.min} max={col.max} mean={col.mean} bins={col.histogram} />
         <dl className="grid grid-cols-3 gap-2">
           {(
             [
@@ -26,7 +27,10 @@ function Dist({ col }: { col: ColumnDistribution }) {
             ] as const
           ).map(([k, v]) => (
             <div key={k} className="min-w-0">
-              <dt className="text-caption text-fg-muted">{t(`data.explorer.stat.${k}`)}</dt>
+              <dt className="flex items-center gap-1 text-caption font-normal text-fg-muted">
+                {k === "mean" ? <span aria-hidden="true" className="h-2.5 w-px bg-fg" /> : null}
+                {t(`data.explorer.stat.${k}`)}
+              </dt>
               <dd className="num truncate font-mono text-mono text-fg">{formatStat(v)}</dd>
             </div>
           ))}
@@ -43,8 +47,8 @@ function Dist({ col }: { col: ColumnDistribution }) {
             <span className="truncate font-mono text-mono text-fg" title={v.value}>
               {v.value}
             </span>
-            <span aria-hidden="true" className="h-2 overflow-hidden rounded-xs bg-bg-hover">
-              <span className="block h-full bg-chart-muted" style={{ width: `${(v.count / top) * 100}%` }} />
+            <span aria-hidden="true" className="h-2 overflow-hidden rounded-full bg-bg-hover">
+              <span className="nx-meter-fill block h-full rounded-full bg-chart-2" style={{ width: `${(v.count / top) * 100}%` }} />
             </span>
             <span className="num text-caption text-fg-muted">{v.count.toLocaleString("ko-KR")}</span>
           </li>
@@ -68,12 +72,12 @@ export function DetailView({ fileId, path, dataset }: { fileId: string; path: st
       {p.columns.length === 0 ? (
         <p className="text-small text-fg-muted">{t("data.explorer.distributionOmitted")}</p>
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-2">
+        <ul className="grid gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-2 [&>li:last-child:nth-child(odd)]:sm:col-span-2">
           {p.columns.map((c) => (
-            <li key={c.name} className="flex min-w-0 flex-col gap-2.5 rounded-md border border-border p-3">
+            <li key={c.name} className="flex min-w-0 flex-col gap-3 bg-bg-panel px-3.5 pb-3 pt-3">
               <p className="flex items-baseline justify-between gap-2">
-                <span className="truncate font-mono text-mono font-medium text-fg">{c.name}</span>
-                <span className="shrink-0 text-caption text-fg-muted">{c.kind}</span>
+                <span className="truncate font-mono text-mono font-semibold text-fg">{c.name}</span>
+                <span className="shrink-0 rounded-xs bg-bg-hover px-1.5 font-mono text-micro text-fg-muted">{c.kind}</span>
               </p>
               <Dist col={c} />
             </li>

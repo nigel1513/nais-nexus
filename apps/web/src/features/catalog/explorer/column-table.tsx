@@ -1,5 +1,6 @@
 "use client";
-import { Button, Table, TBody, Td, Th, THead, Tr } from "@nais/ui";
+import { Button, cn, Table, TBody, Td, Th, THead, Tr } from "@nais/ui";
+import { Sheet } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
@@ -21,7 +22,10 @@ export function ColumnTable({ versionId }: { versionId: string }) {
   if (tabular.length === 0) return <p className="text-small text-fg-muted">{t("data.explorer.empty")}</p>;
   const fileCell = (path: string) => (
     <Td className="max-w-56 truncate font-mono text-mono text-fg-muted" title={path}>
-      {path}
+      <span className="flex items-center gap-1.5">
+        <Sheet aria-hidden="true" strokeWidth={1.75} className="size-3.5 shrink-0 text-chart-2" />
+        <span className="truncate">{path}</span>
+      </span>
     </Td>
   );
   return (
@@ -39,13 +43,16 @@ export function ColumnTable({ versionId }: { versionId: string }) {
             const q = profiles[i];
             const p = q?.data;
             if (p?.status === "READY") {
-              return p.columns.map((c) => (
-                <Tr key={`${f.file_id}:${c.name}`} className="align-top hover:bg-bg-hover">
-                  {fileCell(f.path)}
-                  <Td className="font-mono text-mono font-medium">{c.name}</Td>
-                  <Td className="text-small text-fg-muted">{c.type}</Td>
-                  <Td className="font-mono text-mono">{c.unit ?? "—"}</Td>
-                  <Td className="min-w-48 text-small">{c.description ?? "—"}</Td>
+              // The file path shows once, on its first column; the rows below it belong to the same file.
+              return p.columns.map((c, j) => (
+                <Tr key={`${f.file_id}:${c.name}`} className={cn("align-top hover:bg-bg-hover", j === 0 && i > 0 && "border-t border-border-strong")}>
+                  {j === 0 ? fileCell(f.path) : <Td aria-label={f.path} />}
+                  <Td className="font-mono text-mono font-semibold">{c.name}</Td>
+                  <Td>
+                    <span className="rounded-xs bg-bg-hover px-1.5 py-0.5 font-mono text-micro text-fg-muted">{c.type}</span>
+                  </Td>
+                  <Td className="font-mono text-mono">{c.unit ?? <span className="text-fg-muted">—</span>}</Td>
+                  <Td className="min-w-48 text-small">{c.description ?? <span className="text-fg-muted">—</span>}</Td>
                 </Tr>
               ));
             }

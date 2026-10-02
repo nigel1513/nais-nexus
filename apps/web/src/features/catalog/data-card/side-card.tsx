@@ -8,8 +8,9 @@ import { AccessLevelBadge } from "@/shared/ui/badges";
 import { PersonLine } from "../components/person-line";
 import { ActivitySummary } from "./activity-summary";
 import { DefList } from "./def-list";
+import { crumbClass } from "../components/v2";
 
-/** One rail panel (spec §5): caption title, then its content; 1px border, no shadow. */
+/** One rail section: accent crumb title, then its content; sections share one bordered panel, split by 1px rules. */
 function RailPanel({ title, children, panelRef, focusable }: { title: string; children: ReactNode; panelRef?: Ref<HTMLElement>; focusable?: boolean }) {
   const id = useId();
   return (
@@ -17,9 +18,9 @@ function RailPanel({ title, children, panelRef, focusable }: { title: string; ch
       aria-labelledby={id}
       ref={panelRef}
       tabIndex={focusable ? -1 : undefined}
-      className={cn("flex flex-col gap-3 rounded-md border border-border bg-bg-panel p-4", focusable && "outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus")}
+      className={cn("flex flex-col gap-3 px-4 py-4", focusable && "outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus")}
     >
-      <h2 id={id} className="text-caption text-fg-muted">
+      <h2 id={id} className={crumbClass}>
         {title}
       </h2>
       {children}
@@ -36,7 +37,7 @@ export function SideCard({ dataset: d, versions, ref }: { dataset: Dataset; vers
   const steward = d.people?.steward_contact;
   const pi = d.people?.principal_investigator;
   return (
-    <aside aria-label={t("data.card.railLabel")} className="flex flex-col gap-4">
+    <aside aria-label={t("data.card.railLabel")} className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border bg-bg-panel">
       <RailPanel title={t("data.card.contactTitle")} panelRef={ref} focusable>
         {steward ? <PersonLine person={steward} stacked /> : null}
         {d.people?.steward_contact_absent ? (

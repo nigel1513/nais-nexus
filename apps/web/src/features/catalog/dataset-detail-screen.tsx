@@ -22,6 +22,7 @@ import { ColumnTable } from "./explorer/column-table";
 import { DataExplorer } from "./explorer/data-explorer";
 import { contributorsChanged, fromDataset, toDatasetUpdate } from "./schemas";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
+import { SectionHead } from "./components/v2";
 
 export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const t = useTranslations();
@@ -98,15 +99,13 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
           </div>
           <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
             <div className="min-w-0">
-              <TabsContent value="card" className="flex flex-col gap-8">
+              <TabsContent value="card" className="flex flex-col gap-10">
                 <About description={d.description} />
                 {selected ? (
                   <DataExplorer key={selected.dataset_version_id} dataset={d} versionId={selected.dataset_version_id} fileCount={selected.file_count ?? d.stats?.file_count ?? 0} />
                 ) : null}
-                <section aria-labelledby="columns-title" data-testid="column-table-slot" id="column-table-slot" className="flex flex-col gap-3">
-                  <h2 id="columns-title" className="border-b border-border pb-2 text-heading text-fg">
-                    {t("data.card.columnsTitle")}
-                  </h2>
+                <section aria-labelledby="columns-title" data-testid="column-table-slot" id="column-table-slot" className="flex flex-col gap-4">
+                  <SectionHead id="columns-title" eyebrow={t("data.card.hero.columnsCrumb")} title={t("data.card.columnsTitle")} />
                   {selected ? <ColumnTable versionId={selected.dataset_version_id} /> : null}
                 </section>
                 <MetadataBlock dataset={d} />
@@ -135,7 +134,7 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
                 )}
               </TabsContent>
             </div>
-            <div className="lg:pt-6">
+            <div className="lg:pt-10">
               <SideCard ref={contactRef} dataset={d} versions={versionItems} />
             </div>
           </div>

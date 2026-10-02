@@ -16,7 +16,7 @@ configure({ asyncUtilTimeout: 5000 }); // the full suite loads the machine; the 
 describe("DataSearchScreen", () => {
   it("lists visible datasets with badges and filters via facets synced to the URL", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
-    expect(await screen.findByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "소결 공정 배치별 품질관리 로그" })).not.toBeInTheDocument();
     expect(screen.getByText("총 4건")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: "통제 (2)" }));
@@ -27,7 +27,7 @@ describe("DataSearchScreen", () => {
 
   it("filters by subject facet and shows a row with subtitle, meta line and badges", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
-    const row = (await screen.findByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).closest("article")! as HTMLElement;
+    const row = (await screen.findByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).closest("article")! as HTMLElement;
     expect(within(row).getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
     const meta = within(row).getByRole("list", { name: "데이터 정보" });
     expect(within(meta).getByText("한국재료연구원")).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe("DataSearchScreen", () => {
 
   it("switches between list and table views and keeps the choice in the URL", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
-    await screen.findByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" });
+    await screen.findByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" });
     expect(screen.getByRole("button", { name: "목록" })).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(screen.getByRole("button", { name: "표" }));
     expect(router.replace).toHaveBeenLastCalledWith("/commons/data?view=table", { scroll: false });
@@ -136,10 +136,10 @@ describe("DataSearchScreen", () => {
       }),
     );
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
-    expect(await screen.findByRole("heading", { level: 2, name: "Hit 1" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "Hit 1" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
-    expect(await screen.findByRole("heading", { level: 2, name: "Hit 2" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Hit 1" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "Hit 2" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Hit 1" })).toBeInTheDocument();
   });
 
   it("keeps a selected facet value visible and toggleable with 0 hits", async () => {
