@@ -1,5 +1,6 @@
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import jwt
@@ -142,3 +143,50 @@ def test_current_user_helpers_and_event_actor() -> None:
     assert not user.has_org_role(uuid.uuid4(), "DATA_STEWARD")
     assert not user.is_platform_admin
     assert EventActor.for_user(user) == EventActor(type="USER", user_id=USER_ID, organization_id=ORG_ID)
+
+
+def _auth_time_client() -> TestClient:
+    router = APIRouter()
+
+    @router.get("/auth-time")
+    def auth_time(user: CurrentUserDep) -> dict[str, str | None]:
+        return {"auth_time": user.auth_time.isoformat() if user.auth_time else None}
+
+    app = create_test_app(modules=[ModuleSpec(name="probe", router=router)])
+    app.dependency_overrides[get_token_verifier] = lambda: TokenVerifier(
+        issuer=ISSUER.issuer, audience=ISSUER.audience, jwk_client=ISSUER.jwk_client()
+    )
+    ports.provide(PrincipalResolver, DEFAULT_RESOLVER)
+    return TestClient(app)
+
+
+def _auth_time_of(token: str) -> str | None:
+    response = _auth_time_client().get("/api/v1/auth-time", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    value: str | None = response.json()["auth_time"]
+    return value
+
+
+def test_auth_time_comes_from_the_verified_token() -> None:
+    assert _auth_time_of(ISSUER.token(auth_time=1_790_000_000)) == "2026-09-21T14:13:20+00:00"
+
+
+@pytest.mark.parametrize("value", [None, "1790000000", True, -5, 10**20, float("nan")])
+def test_missing_or_malformed_auth_time_is_none(value: Any) -> None:
+    claims = {} if value is None else {"auth_time": value}
+    assert _auth_time_of(ISSUER.token(**claims)) is None
+
+
+def test_auth_time_claim_overrides_whatever_the_resolver_returned() -> None:
+    class Stamping(FakeResolver):
+        def resolve(self, claims: dict[str, Any], correlation_id: uuid.UUID) -> CurrentUser:
+            return (
+                super()
+                .resolve(claims, correlation_id)
+                .model_copy(update={"auth_time": datetime(2030, 1, 1, tzinfo=UTC)})
+            )
+
+    client = _auth_time_client()
+    ports.provide(PrincipalResolver, Stamping())
+    response = client.get("/api/v1/auth-time", headers={"Authorization": f"Bearer {ISSUER.token()}"})
+    assert response.json() == {"auth_time": None}

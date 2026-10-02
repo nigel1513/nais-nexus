@@ -1,0 +1,130 @@
+"""exportNotes: streamed ZIP of canonical JSON, escaped HTML and hashes.csv; ORG_ADMIN scope and view logging."""
+
+import csv
+import hashlib
+import io
+import json
+import zipfile
+from typing import Any
+
+from api.modules.notes.hashing import canonical_json
+from api.modules.notes.tests.conftest import NotesApi, World, outbox, sql
+from api.modules.notes.tests.fakes import USERS
+from api.platform.testing.contracts import assert_valid_event
+from api.platform.testing.fixtures import PgUrls
+
+
+def uid(name: str) -> str:
+    return str(USERS[name].user_id)
+
+
+def export(api: NotesApi, user: str, world: World, **params: Any) -> Any:
+    return api.get(user, "/notes/export", params={"project_id": str(world.project_id), **params})
+
+
+def archive(response: Any) -> zipfile.ZipFile:
+    assert response.status_code == 200, response.text
+    assert response.headers["content-type"] == "application/zip"
+    return zipfile.ZipFile(io.BytesIO(response.content))
+
+
+def notes_in(zf: zipfile.ZipFile) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for name in zf.namelist():
+        if name.startswith("notes/") and name.endswith(".json"):
+            record = json.loads(zf.read(name))
+            out[record["content"]["note_id"]] = record
+    return out
+
+
+def test_recorder_exports_own_notes_of_every_status(api: NotesApi, world: World, db: PgUrls) -> None:
+    signed = api.signed(world)
+    revised = api.post("a.recorder", f"/notes/{signed['note_id']}/revise").json()
+    api.save(revised, [{"section": "MEMO", "text": "<script>alert(1)</script> & 정정"}])
+    api.signed(world, user="a.colleague")
+    response = export(api, "a.recorder", world)
+    zf = archive(response)
+    today = signed["note_date"]
+    assert response.headers["content-disposition"] == (
+        f'attachment; filename="research-notes-{world.project_id}-all-all.zip"'
+    )
+    records = notes_in(zf)
+    assert set(records) == {signed["note_id"], revised["note_id"]}
+
+    record = records[signed["note_id"]]
+    # the JSON is canonical and its content re-hashes to the stored content_hash
+    name = next(n for n in zf.namelist() if signed["note_id"] in n and n.endswith(".json"))
+    raw = zf.read(name)
+    assert raw == canonical_json(record)
+    assert hashlib.sha256(canonical_json(record["content"])).hexdigest() == signed["content_hash"]
+    assert (record["status"], record["content_hash"], record["chain_hash"]) == (
+        "SIGNED",
+        signed["content_hash"],
+        signed["chain_hash"],
+    )
+    assert [s["role"] for s in record["signatures"]] == ["RECORDER"]
+    assert record["content"]["note_date"] == today
+
+    html_name = next(n for n in zf.namelist() if revised["note_id"] in n and n.endswith(".html"))
+    page = zf.read(html_name).decode()
+    assert "<script>" not in page and "&lt;script&gt;alert(1)&lt;/script&gt; &amp; 정정" in page
+    assert "Content-Security-Policy" in page and "김민준" in page
+
+    rows = list(csv.DictReader(io.StringIO(zf.read("hashes.csv").decode())))
+    assert {r["note_id"] for r in rows} == {signed["note_id"], revised["note_id"]}
+    signed_row = next(r for r in rows if r["note_id"] == signed["note_id"])
+    assert (signed_row["status"], signed_row["content_hash"], signed_row["chain_hash"]) == (
+        "SIGNED",
+        signed["content_hash"],
+        signed["chain_hash"],
+    )
+    draft_row = next(r for r in rows if r["note_id"] == revised["note_id"])
+    assert (draft_row["status"], draft_row["content_hash"]) == ("DRAFT", "")
+    assert outbox(db, "notes.note.viewed.v1") == []  # own notes are not "viewed"
+
+
+def test_org_admin_gets_submitted_and_signed_notes_of_their_organization(
+    api: NotesApi, world: World, db: PgUrls
+) -> None:
+    mine = api.signed(world)
+    colleague_draft = api.written(world, user="a.colleague")
+    api.witnessed(world)
+    owner_submitted = api.submitted(world, user="a.owner")
+    other_org = api.submitted(world, user="b.recorder")
+    zf = archive(export(api, "a.admin", world))  # ORG_A admin, not a project member
+    assert set(notes_in(zf)) == {mine["note_id"], owner_submitted["note_id"]}
+    assert colleague_draft["note_id"] not in zf.read("hashes.csv").decode()
+    assert other_org["note_id"] not in zf.read("hashes.csv").decode()
+    viewed = outbox(db, "notes.note.viewed.v1")
+    for event in viewed:
+        assert_valid_event(event)
+    assert sorted(e["payload"]["note_id"] for e in viewed) == sorted(
+        [mine["note_id"], owner_submitted["note_id"]]
+    )
+    assert {e["payload"]["actor_id"] for e in viewed} == {uid("a.admin")}
+
+    b_zip = archive(export(api, "b.admin", world))
+    assert set(notes_in(b_zip)) == {other_org["note_id"]}
+
+
+def test_export_access_and_parameters(api: NotesApi, world: World, db: PgUrls) -> None:
+    api.signed(world)
+    assert export(api, "c.outsider", world).status_code == 404
+    # a member with no notes gets an empty archive
+    zf = archive(export(api, "a.member", world))
+    assert notes_in(zf) == {} and zf.read("hashes.csv").decode().splitlines()[0].startswith("note_id,")
+    assert api.get("a.recorder", "/notes/export").status_code == 422
+    assert export(api, "a.recorder", world, **{"from": "2026-10-05", "to": "2026-10-01"}).status_code == 422
+    # a recorder who left the project keeps access to their own notes
+    world.projects.remove(world.project_id, USERS["a.recorder"])
+    assert len(notes_in(archive(export(api, "a.recorder", world)))) == 1
+
+
+def test_export_date_range_is_inclusive(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = api.signed(world)
+    day = note["note_date"]
+    response = export(api, "a.recorder", world, **{"from": day, "to": day})
+    assert set(notes_in(archive(response))) == {note["note_id"]}
+    assert response.headers["content-disposition"].endswith(f'-{day}-{day}.zip"')
+    sql(db, "SELECT 1")
+    assert notes_in(archive(export(api, "a.recorder", world, **{"to": "2000-01-01"}))) == {}
