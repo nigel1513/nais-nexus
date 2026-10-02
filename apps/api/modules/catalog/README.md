@@ -102,6 +102,12 @@ without `temporal_start` never match a period filter.
 - **M01 Identity:** the catalog calls `IdentityQueryPort.get_organization_summary` imported from
   `api.modules.identity.public`; installed but unwired → 503 `DEPENDENCY_UNAVAILABLE`; without the identity package it
   uses `FakeIdentityPort` (seed organizations).
+- `CatalogPublishPort` (M13 hub publication, `service/from_output.py`): `create_dataset_from_output` creates the dataset
+  (provenance = lineage note) and DRAFT v1, copies the output objects server-side (`ObjectStore.copy`, same bucket)
+  into the normal upload layout under a COMPLETED server-side session, verifies like `completeUploadSession` and
+  publishes v1 with `finalize_publish` once every file is VERIFIED. Idempotent on `dataset_id` (resume by calling
+  again); `CatalogPublishRejected` is permanent, `StorageUnavailable` retryable. `output_file_problems` applies the
+  upload path/type/size rules.
 - The ports registry cannot restrict which module reads `StoragePort`/`CatalogReadPort`; only M04/M05 (and M13 workspace,
   `CatalogReadPort` only, after its own dataset-access check) may use them.
 

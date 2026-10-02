@@ -31,6 +31,9 @@ EXPECTED = {
     "startRun",
     "listRuns",
     "getRun",
+    "requestOutputPublish",
+    "listPublishRequests",
+    "decidePublishRequest",
 }
 TAGS = {"workspace", "hub"}
 

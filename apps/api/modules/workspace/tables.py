@@ -216,3 +216,51 @@ run_inputs = Table(
     Column("version_label", Text, nullable=False),
     PrimaryKeyConstraint("run_id", "position"),
 )
+
+# Hub publication requests (spec §5.4; openapi requestOutputPublish/listPublishRequests/decidePublishRequest). status is
+# the contract PublishRequestStatus; publication_* track the catalog side after approval (internal): planned dataset id
+# (idempotency key of CatalogPublishPort), PENDING -> PUBLISHED | FAILED, a worker lease and the last attempt.
+publish_requests = Table(
+    "publish_requests",
+    metadata,
+    Column("request_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("output_id", PG_UUID(as_uuid=True), ForeignKey("workspace.outputs.output_id"), nullable=False),
+    Column("project_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("status", Text, nullable=False),
+    Column("title", Text, nullable=False),
+    Column("description", Text, nullable=False),
+    Column("created_by", PG_UUID(as_uuid=True), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("decided_at", DateTime(timezone=True)),
+    Column("approved_by", PG_UUID(as_uuid=True)),
+    Column("approved_by_organization_id", PG_UUID(as_uuid=True)),
+    Column("planned_dataset_id", PG_UUID(as_uuid=True)),
+    Column("published_dataset_id", PG_UUID(as_uuid=True)),
+    Column("publication_status", Text),
+    Column("publication_error", Text),
+    Column("publication_claimed_until", DateTime(timezone=True)),
+    Column("publication_attempted_at", DateTime(timezone=True)),
+    Column("publication_attempts", Integer, nullable=False, server_default=text("0")),
+)
+
+# One approval slot per organization: the owner organizations of the lineage inputs (kind INPUT_OWNER, decided by a
+# DATA_STEWARD), or the project lead organization for an output without inputs (kind LEAD_ORGANIZATION, decided by a
+# DATA_STEWARD or ORG_ADMIN). position keeps the lineage order.
+publish_approvals = Table(
+    "publish_approvals",
+    metadata,
+    Column(
+        "request_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("workspace.publish_requests.request_id"),
+        nullable=False,
+    ),
+    Column("organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("position", Integer, nullable=False),
+    Column("kind", Text, nullable=False),
+    Column("decided_by", PG_UUID(as_uuid=True)),
+    Column("decision", Text),
+    Column("comment", Text),
+    Column("decided_at", DateTime(timezone=True)),
+    PrimaryKeyConstraint("request_id", "organization_id"),
+)

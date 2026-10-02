@@ -542,8 +542,80 @@ def _sweep_job() -> None:
         logger.info("waiting recipe runs re-sent", extra={"count": resent})
 
 
+# ---------------------------------------------------------------- hub publication (service/publish.py)
+
+PUBLISH_QUEUE = "workspace_publish"  # general worker pool: never waits behind the single-slot recipe queue
+PUBLISH_TIME_LIMIT_MS = 20 * 60 * 1000  # below service.publish.LEASE, so a lease never outlives its delivery
+PUBLISH_RESEND_AFTER_S = 60  # a pending publication not attempted for this long is sent again
+PUBLISH_SWEEP_INTERVAL_S = 60.0
+_PENDING_PUBLISH = "workspace.pending_publications"
+_LISTENING_PUBLISH = "workspace.listening_publications"
+
+
+def job_session() -> Session:
+    """A session on the job database (tests point RUNTIME at theirs)."""
+    return _session()
+
+
+@dramatiq.actor(
+    actor_name="workspace.publish_output",
+    queue_name=PUBLISH_QUEUE,
+    max_retries=0,  # the sweeper re-sends pending publications; the lease makes duplicates harmless
+    time_limit=PUBLISH_TIME_LIMIT_MS,
+)
+def publish_output_actor(request_id: str) -> None:
+    from api.modules.workspace.service.publish import publish_approved  # noqa: PLC0415 (service imports jobs)
+
+    publish_approved(UUID(request_id))
+
+
+def _send_publications(session: Session) -> None:
+    for request_id in session.info.pop(_PENDING_PUBLISH, []):
+        try:
+            publish_output_actor.send(str(request_id))
+        except Exception:  # the request stays pending; the sweeper sends it within a minute
+            logger.exception("could not enqueue publication", extra={"request_id": str(request_id)})
+
+
+def _drop_publications(session: Session) -> None:
+    session.info.pop(_PENDING_PUBLISH, None)
+
+
+def enqueue_publication_after_commit(session: Session, request_id: UUID) -> None:
+    session.info.setdefault(_PENDING_PUBLISH, []).append(request_id)
+    if not session.info.get(_LISTENING_PUBLISH):
+        event.listen(session, "after_commit", _send_publications)
+        event.listen(session, "after_rollback", _drop_publications)
+        session.info[_LISTENING_PUBLISH] = True
+
+
+def resend_publications() -> int:
+    """Send every pending, unleased publication not attempted for a minute: a lost message, a catalog still
+    verifying files (DRAFT), a storage outage or an expired lease (worker died)."""
+    now = clock.now()
+    with _session() as session:
+        ids = repo.publications_due(
+            session, now=now, attempted_before=now - timedelta(seconds=PUBLISH_RESEND_AFTER_S)
+        )
+    sent = 0
+    for request_id in ids:
+        try:
+            publish_output_actor.send(str(request_id))
+            sent += 1
+        except Exception:
+            logger.error("could not re-send publication", extra={"request_id": str(request_id)})
+    return sent
+
+
+def _publish_sweep_job() -> None:
+    sent = resend_publications()
+    if sent:
+        logger.info("pending publications sent", extra={"count": sent})
+
+
 def register_worker(broker: dramatiq.Broker, scheduler: Scheduler) -> None:
-    """ModuleSpec.register_worker: the actor was declared on the broker at import; add the sweeper."""
-    if run_recipe_actor.broker is not broker:
+    """ModuleSpec.register_worker: the actors were declared on the broker at import; add the sweepers."""
+    if run_recipe_actor.broker is not broker or publish_output_actor.broker is not broker:
         raise RuntimeError("configure the Dramatiq broker before importing api.modules.workspace (D-036)")
     scheduler.every(SWEEP_INTERVAL_S, "workspace.sweep_stale_runs", _sweep_job)
+    scheduler.every(PUBLISH_SWEEP_INTERVAL_S, "workspace.resend_publications", _publish_sweep_job)

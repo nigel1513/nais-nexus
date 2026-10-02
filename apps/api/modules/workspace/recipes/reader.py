@@ -17,6 +17,7 @@ Errors never quote file content (pyarrow's messages do, so they are replaced).
 
 import csv
 import io
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -205,7 +206,10 @@ def _csv_problem(exc: BaseException) -> str:
 _INTEGER = r"^(0|-?[1-9][0-9]*)$"
 _DECIMAL = r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$|^-?\.[0-9]+$"
 _BOOLEAN = r"^(?i:true|false)$"
-SAFE_SIGNIFICANT_DIGITS = 15  # any decimal with at most 15 significant digits survives float64 exactly
+SAFE_SIGNIFICANT_DIGITS = (
+    15  # a normal-range decimal with at most 15 significant digits survives float64 exactly
+)
+SMALLEST_NORMAL = sys.float_info.min  # below it float64 underflows (subnormal or 0.0) and loses digits
 
 
 def _all_match(values: pa.ChunkedArray, pattern: str) -> bool:
@@ -214,8 +218,9 @@ def _all_match(values: pa.ChunkedArray, pattern: str) -> bool:
 
 def _floats_exact(values: pa.ChunkedArray) -> bool:
     """Every value converts to a finite float64 that is the same number as its text, and integer-looking values fit
-    int64. Values with at most 15 significant digits are exact by construction; only the longer ones are checked one
-    by one (Decimal(text) == Decimal(repr(float)))."""
+    int64. Normal-range values with at most 15 significant digits are exact by construction; the longer ones and every
+    value below the normal range (underflow to 0.0 / subnormals, e.g. "1e-400") are checked one by one
+    (Decimal(text) == Decimal(repr(float)))."""
     integers = values.filter(pc.match_substring_regex(values, _INTEGER))
     if len(integers):
         try:
@@ -227,8 +232,10 @@ def _floats_exact(values: pa.ChunkedArray) -> bool:
         return False
     mantissa = pc.replace_substring_regex(values, r"[eE].*$", "")
     digits = pc.replace_substring_regex(pc.replace_substring_regex(mantissa, r"[^0-9]", ""), r"^0+|0+$", "")
-    long = values.filter(pc.greater(pc.utf8_length(digits), SAFE_SIGNIFICANT_DIGITS))
-    return all(Decimal(text) == Decimal(repr(float(text))) for text in pc.unique(long).to_pylist())
+    long = pc.greater(pc.utf8_length(digits), SAFE_SIGNIFICANT_DIGITS)
+    tiny = pc.less(pc.abs(floats), SMALLEST_NORMAL)  # 0.0 included: "0.0" passes, "1e-400" does not
+    checked = values.filter(pc.or_(long, tiny))
+    return all(Decimal(text) == Decimal(repr(float(text))) for text in pc.unique(checked).to_pylist())
 
 
 def _typed(table: pa.Table) -> pa.Table:

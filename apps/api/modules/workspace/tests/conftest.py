@@ -12,7 +12,7 @@ from dramatiq.brokers.stub import StubBroker
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from api.modules.catalog.public import CatalogQueryPort, CatalogReadPort
+from api.modules.catalog.public import CatalogPublishPort, CatalogQueryPort, CatalogReadPort
 from api.modules.project.public import ProjectQueryPort
 from api.modules.workspace import MODULE, jobs
 from api.modules.workspace.deps import WorkspaceDeps
@@ -24,6 +24,7 @@ from api.modules.workspace.tests.fakes import (
     FakeOutputStorage,
     FakePeople,
     FakeProjects,
+    FakePublisher,
     FakeReader,
 )
 from api.modules.workspace.wiring import install
@@ -38,9 +39,10 @@ from api.platform.testing.tokens import FakeIssuer
 
 ISSUER = FakeIssuer()
 STUB_BROKER = configure_broker(Settings(), StubBroker())
-if jobs.run_recipe_actor.broker is not STUB_BROKER:
-    jobs.run_recipe_actor.broker = STUB_BROKER
-    STUB_BROKER.declare_actor(jobs.run_recipe_actor)
+for _actor in (jobs.run_recipe_actor, jobs.publish_output_actor):
+    if _actor.broker is not STUB_BROKER:
+        _actor.broker = STUB_BROKER
+        STUB_BROKER.declare_actor(_actor)
 
 
 @pytest.fixture(scope="session")
@@ -60,7 +62,8 @@ def db(workspace_db: PgUrls) -> Iterator[PgUrls]:
                 "TRUNCATE workspace.inputs, workspace.processed_events, workspace.threads, workspace.comments,"
                 " workspace.dataset_activity, workspace.hub_access_requests, workspace.outputs,"
                 " workspace.output_files, workspace.output_lineage_inputs, workspace.recipes,"
-                " workspace.recipe_versions, workspace.runs, workspace.run_inputs"
+                " workspace.recipe_versions, workspace.runs, workspace.run_inputs, workspace.publish_requests,"
+                " workspace.publish_approvals"
             )
         )
         conn.execute(text("DELETE FROM platform.outbox_events"))
@@ -89,14 +92,24 @@ class World:
     people: FakePeople
     storage: FakeOutputStorage
     reader: FakeReader
+    publisher: FakePublisher
 
 
 @pytest.fixture
 def world() -> World:
-    w = World(FakeProjects(), FakeCatalog(), FakeGrants(), FakePeople(), FakeOutputStorage(), FakeReader())
+    w = World(
+        FakeProjects(),
+        FakeCatalog(),
+        FakeGrants(),
+        FakePeople(),
+        FakeOutputStorage(),
+        FakeReader(),
+        FakePublisher(),
+    )
     ports.provide(ProjectQueryPort, w.projects)
     ports.provide(CatalogQueryPort, w.catalog)
     ports.provide(CatalogReadPort, w.reader)
+    ports.provide(CatalogPublishPort, w.publisher)
     return w
 
 

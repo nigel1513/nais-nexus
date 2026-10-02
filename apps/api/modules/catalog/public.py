@@ -87,6 +87,35 @@ class StorageUnavailable(RuntimeError):  # noqa: N818
     """CatalogReadPort.open_stream: connection refused, timeout or 5xx. Retryable (M05 retries the run)."""
 
 
+class CatalogPublishRejected(ValueError):  # noqa: N818
+    """CatalogPublishPort: the request can never succeed as given (files break the upload rules, the owner organization
+    has no storage, the source objects are outside the owner's storage, or dataset_id is already used otherwise)."""
+
+
+@dataclass(frozen=True)
+class OutputFileSource:
+    """A stored M13 output object to copy into a new dataset version. storage_* are internal only (never in API
+    responses, events or logs)."""
+
+    path: str  # manifest path in the new version
+    size_bytes: int
+    sha256: str  # hex
+    media_type: str
+    storage_org_code: str  # organization whose bucket holds the object (must be the new dataset's owner)
+    storage_key: str
+
+
+@dataclass(frozen=True)
+class OutputDatasetState:
+    """Where a dataset created from an output stands. DRAFT: files are still being verified (call again later);
+    PUBLISHED: version v1 is published through the normal publish path; FAILED: a file failed verification, so the
+    version can never be published as given."""
+
+    dataset_id: UUID
+    dataset_version_id: UUID
+    status: Literal["DRAFT", "PUBLISHED", "FAILED"]
+
+
 class CatalogQueryPort(Protocol):
     """For Governance (M04) and Readiness (M05). Makes no access decision except is_visible (D-012)."""
 
@@ -120,15 +149,52 @@ class CatalogReadPort(Protocol):
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
 
 
+class CatalogPublishPort(Protocol):
+    """M13 workspace: an output approved by the owner organizations of its inputs becomes a catalog dataset.
+    The workspace has decided the approval; the catalog applies its own rules (upload allow list, verification,
+    publish requires every file VERIFIED). Makes no other access decision."""
+
+    def output_file_problems(self, files: Sequence[OutputFileSource]) -> list[dict[str, str]]:
+        """The catalog upload rules each file breaks, as [{"path", "reason"}] (reason: a path problem code,
+        FILE_TYPE_NOT_ALLOWED, FILE_TOO_LARGE, DUPLICATE_PATH or TOO_MANY_FILES); [] when all are acceptable."""
+        ...
+
+    def create_dataset_from_output(
+        self,
+        *,
+        dataset_id: UUID,
+        owner_organization_id: UUID,
+        title: str,
+        description: str,
+        access_level: AccessLevel,
+        allowed_purposes: Sequence[str],
+        files: Sequence[OutputFileSource],
+        lineage_note: str,
+        created_by: UUID,
+        published_by: UUID,
+        publisher_organization_id: UUID | None,
+    ) -> OutputDatasetState:
+        """Idempotent on dataset_id (call again with the same arguments to resume): creates the dataset (provenance =
+        lineage_note) and DRAFT version v1, copies the objects server-side into the catalog's upload layout, runs the
+        normal verification (synchronous for small files, the verify queue otherwise) and publishes v1 through the
+        normal publish path once every file is VERIFIED. Raises CatalogPublishRejected (permanent) or
+        StorageUnavailable (retry later)."""
+        ...
+
+
 __all__ = [
     "AccessLevel",
     "CatalogNotFound",
+    "CatalogPublishPort",
+    "CatalogPublishRejected",
     "CatalogQueryPort",
     "CatalogReadPort",
     "DatasetPolicyView",
     "DatasetSummary",
     "FileRef",
     "ObjectMissing",
+    "OutputDatasetState",
+    "OutputFileSource",
     "PresignedGet",
     "StoragePort",
     "StorageUnavailable",

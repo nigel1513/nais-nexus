@@ -10,9 +10,10 @@ from api.modules.catalog.adapters.queue import DramatiqVerificationQueue
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.interfaces import OrganizationLookup
 from api.modules.catalog.objects import StorageRegistry
-from api.modules.catalog.public import CatalogQueryPort, CatalogReadPort, StoragePort
+from api.modules.catalog.public import CatalogPublishPort, CatalogQueryPort, CatalogReadPort, StoragePort
 from api.modules.catalog.public_impl import CatalogQueryService, CatalogReader, CatalogStorageService
 from api.modules.catalog.search.opensearch import OpenSearchIndex
+from api.modules.catalog.service.from_output import CatalogOutputPublisher
 from api.modules.catalog.settings import CatalogSettings, get_catalog_settings
 from api.platform import ports
 from api.platform.db import session_factory
@@ -57,6 +58,7 @@ def install(deps: CatalogDeps) -> None:
     ports.provide(CatalogQueryPort, CatalogQueryService(deps))
     ports.provide(StoragePort, CatalogStorageService(deps))
     ports.provide(CatalogReadPort, CatalogReader(deps))
+    ports.provide(CatalogPublishPort, CatalogOutputPublisher(deps))  # M13 output publication
 
 
 def wire() -> None:

@@ -86,6 +86,22 @@ Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4
     frames only (messages may quote data).
   - The `workspace` queue has its own worker (`WORKSPACE_WORKER_CONCURRENCY`, default 1): a run holds its inputs
     and result in memory, so size the worker container for `WORKSPACE_MAX_ROWS`.
+- Hub publication (`service/publish.py`, `routes/publish.py`): `POST /projects/{p}/outputs/{o}/publish-requests`,
+  `GET /publish-requests` (`role=requester|reviewer`), `POST /publish-requests/{id}/decision`.
+  - Request (writer; output READY with `publish_status` NONE/REJECTED, else 409 `OUTPUT_PUBLISH_PENDING`): lapsed input
+    access → 409 `INPUT_ACCESS_LAPSED`; output looser than its inputs' current levels → 422; files the catalog upload
+    rules refuse (e.g. PDF) → 422 `details.files` (`CatalogPublishPort.output_file_problems`). One approval slot per
+    owner organization of the lineage inputs (DATA_STEWARD); an output without inputs needs the lead organization
+    (DATA_STEWARD or ORG_ADMIN). `workspace.publish.requested.v1`.
+  - Decision: once per slot; REJECT needs a comment (422). Any REJECT → REJECTED; all APPROVE → APPROVED (output
+    APPROVED) and the `workspace.publish_output` message (queue `workspace_publish`, general worker) is sent after
+    commit. `workspace.publish.decided.v1` (published_dataset_id null: the dataset is created afterwards).
+  - Publication job: 30-min lease, `CatalogPublishPort.create_dataset_from_output` with the dataset id planned at
+    approval (idempotency key). Owner = lead organization, level = stricter of output/current input levels, purposes
+    every input allows, provenance = lineage note (dataset@version, recipe@version, run; no values). The catalog copies,
+    verifies and publishes v1 by its own rules; only when it reports PUBLISHED does the output become PUBLISHED (plus a
+    `dataset_activity` OUTPUT_PUBLISHED row). DRAFT (verifying) or outages are retried by a one-minute re-send sweep;
+    a catalog refusal or failed file verification ends `publication_status` FAILED (output stays APPROVED).
 - Data-Hub (`service/hub.py`, tag `hub`): `GET /hub/overview`, `GET /datasets/{d}/projects`,
   `GET /datasets/{d}/activity`.
   - Visibility is the catalog's: one batched `CatalogQueryPort.list_visible_dataset_summaries` for the overview
@@ -108,7 +124,7 @@ contract models; request bodies mirror them with the null/minProperties rules.
 ## Ports
 - Consumed (`deps.WorkspaceDeps`, registered by `wiring.install`): `ProjectQueryPort` and `CatalogQueryPort` are
   resolved per call (503 `DEPENDENCY_UNAVAILABLE` when unwired); `grants: GrantQueryPort` and
-  `people: DisplayNameLookup` are consumer-side Protocols; `CatalogReadPort` (recipe inputs) is resolved per call too in `interfaces.py`; `storage: OutputStorage` defaults to
+  `people: DisplayNameLookup` are consumer-side Protocols; `CatalogReadPort` (recipe inputs) and `CatalogPublishPort` (hub publication) are resolved per call too; `storage: OutputStorage` defaults to
   `storage.S3OutputStorage` (platform storage clients, `NAIS_PUBLIC_BASE_URL` for presigned URLs).
 - **No governance backend yet:** `grants` defaults to `adapters.grants.NoGrants` (always False, fail closed).
   When M04 ships, replace it in `wiring.build_default_deps()` with an adapter over M04's public port.

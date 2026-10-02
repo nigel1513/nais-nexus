@@ -18,6 +18,8 @@ from api.modules.workspace.tables import (
     output_files,
     output_lineage_inputs,
     outputs,
+    publish_approvals,
+    publish_requests,
     recipe_versions,
     recipes,
     run_inputs,
@@ -469,3 +471,145 @@ def mark_resent(session: Session, run_id: UUID, *, sent_before: datetime, at: da
         .returning(runs.c.run_id)
     )
     return session.execute(stmt).first() is not None
+
+
+# ---------------------------------------------------------------- hub publication
+
+
+def insert_publish_request(
+    session: Session, request: dict[str, Any], approvals: list[dict[str, Any]]
+) -> RowMapping:
+    row = (
+        session.execute(insert(publish_requests).values(**request).returning(publish_requests))
+        .mappings()
+        .one()
+    )
+    session.execute(
+        insert(publish_approvals),
+        [a | {"request_id": row["request_id"], "position": i} for i, a in enumerate(approvals)],
+    )
+    return row
+
+
+def load_publish_request(
+    session: Session, request_id: UUID, *, for_update: bool = False
+) -> RowMapping | None:
+    stmt = select(publish_requests).where(publish_requests.c.request_id == request_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return session.execute(stmt).mappings().first()
+
+
+def update_publish_request(session: Session, request_id: UUID, **values: Any) -> RowMapping:
+    stmt = (
+        update(publish_requests)
+        .where(publish_requests.c.request_id == request_id)
+        .values(**values)
+        .returning(publish_requests)
+    )
+    return session.execute(stmt).mappings().one()
+
+
+def approvals_of(session: Session, request_ids: list[UUID]) -> dict[UUID, list[RowMapping]]:
+    found: dict[UUID, list[RowMapping]] = {i: [] for i in request_ids}
+    if request_ids:
+        stmt = (
+            select(publish_approvals)
+            .where(publish_approvals.c.request_id.in_(request_ids))
+            .order_by(publish_approvals.c.request_id, publish_approvals.c.position)
+        )
+        for row in session.execute(stmt).mappings():
+            found[row["request_id"]].append(row)
+    return found
+
+
+def decide_slot(
+    session: Session, request_id: UUID, organization_id: UUID, **values: Any
+) -> RowMapping | None:
+    """Guarded: only an undecided slot changes (None when it was decided already)."""
+    stmt = (
+        update(publish_approvals)
+        .where(
+            publish_approvals.c.request_id == request_id,
+            publish_approvals.c.organization_id == organization_id,
+            publish_approvals.c.decision.is_(None),
+        )
+        .values(**values)
+        .returning(publish_approvals)
+    )
+    return session.execute(stmt).mappings().first()
+
+
+def list_publish_requests(
+    session: Session,
+    *,
+    project_ids: Sequence[UUID] | None,
+    reviewer: tuple[UUID, Sequence[str]] | None,
+    statuses: Sequence[str] | None,
+    project_id: UUID | None,
+    after: SortKey | None,
+    limit: int,
+) -> list[RowMapping]:
+    """Newest first. project_ids: requests of these projects; reviewer: (organization, slot kinds) with a slot."""
+    stmt = select(publish_requests)
+    if project_ids is not None:
+        stmt = stmt.where(publish_requests.c.project_id.in_(list(project_ids)))
+    if reviewer is not None:
+        organization_id, kinds = reviewer
+        slot = select(publish_approvals.c.request_id).where(
+            publish_approvals.c.organization_id == organization_id, publish_approvals.c.kind.in_(list(kinds))
+        )
+        stmt = stmt.where(publish_requests.c.request_id.in_(slot))
+    if statuses:
+        stmt = stmt.where(publish_requests.c.status.in_(list(statuses)))
+    if project_id is not None:
+        stmt = stmt.where(publish_requests.c.project_id == project_id)
+    if after is not None:
+        stmt = stmt.where(
+            tuple_(publish_requests.c.created_at, publish_requests.c.request_id) < tuple_(*after)
+        )
+    stmt = stmt.order_by(publish_requests.c.created_at.desc(), publish_requests.c.request_id.desc()).limit(
+        limit
+    )
+    return list(session.execute(stmt).mappings())
+
+
+def output_titles(session: Session, output_ids: Sequence[UUID]) -> dict[UUID, str]:
+    if not output_ids:
+        return {}
+    stmt = select(outputs.c.output_id, outputs.c.title).where(outputs.c.output_id.in_(list(output_ids)))
+    return {output_id: title for output_id, title in session.execute(stmt)}
+
+
+def _publication_due(now: datetime) -> Any:
+    return (publish_requests.c.publication_status == "PENDING") & (
+        publish_requests.c.publication_claimed_until.is_(None)
+        | (publish_requests.c.publication_claimed_until < now)
+    )
+
+
+def claim_publication(
+    session: Session, request_id: UUID, *, now: datetime, until: datetime
+) -> RowMapping | None:
+    """Guarded lease: an APPROVED request whose publication is pending and not leased (or whose lease expired)."""
+    stmt = (
+        update(publish_requests)
+        .where(publish_requests.c.request_id == request_id, _publication_due(now))
+        .values(
+            publication_claimed_until=until,
+            publication_attempted_at=now,
+            publication_attempts=publish_requests.c.publication_attempts + 1,
+        )
+        .returning(publish_requests)
+    )
+    return session.execute(stmt).mappings().first()
+
+
+def publications_due(session: Session, *, now: datetime, attempted_before: datetime) -> list[UUID]:
+    """Pending publications neither leased nor attempted since attempted_before (lost message, catalog verifying)."""
+    stmt = select(publish_requests.c.request_id).where(
+        _publication_due(now),
+        publish_requests.c.publication_attempted_at.is_(None)
+        | (publish_requests.c.publication_attempted_at < attempted_before),
+    )
+    return list(session.execute(stmt).scalars())

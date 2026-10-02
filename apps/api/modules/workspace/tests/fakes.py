@@ -5,17 +5,20 @@ import io
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import BinaryIO, Literal
+from typing import Any, BinaryIO, Literal
 from uuid import UUID
 
 from nais_contracts.api_models import ProjectSummary
 
 from api.modules.catalog.public import (
     AccessLevel,
+    CatalogPublishRejected,
     DatasetPolicyView,
     DatasetSummary,
     FileRef,
     ObjectMissing,
+    OutputDatasetState,
+    OutputFileSource,
     VersionView,
 )
 from api.platform.auth import CurrentUser
@@ -46,6 +49,8 @@ USERS: dict[str, CurrentUser] = {
     "b.researcher": _user("0b02", ORG_B, "B Researcher"),
     "b.steward": _user("0b03", ORG_B, "B Steward", frozenset({"DATA_STEWARD"})),
     "a.steward": _user("0a03", ORG_A, "A Steward", frozenset({"DATA_STEWARD"})),
+    "a.admin": _user("0a04", ORG_A, "A Admin", frozenset({"ORG_ADMIN"})),
+    "b.admin": _user("0b04", ORG_B, "B Admin", frozenset({"ORG_ADMIN"})),
 }
 
 
@@ -303,3 +308,32 @@ class FakeOutputStorage:
     def presign_get(self, org_code: str, key: str, filename: str, ttl: int) -> str:
         self.presigned.append(("GET", org_code, key, ttl))
         return f"http://storage.test/{org_code}/{key}?sig=get"
+
+
+@dataclass
+class FakePublisher:
+    """CatalogPublishPort: records calls; `status` is what create_dataset_from_output reports, `fail_with` raises.
+    output_file_problems mirrors the catalog allow list for the media types the tests use."""
+
+    calls: list[dict[str, Any]] = field(default_factory=list)
+    status: Literal["DRAFT", "PUBLISHED", "FAILED"] = "PUBLISHED"
+    fail_with: Exception | None = None
+    allowed: frozenset[str] = frozenset({"text/csv", "application/vnd.apache.parquet"})
+
+    def output_file_problems(self, files: Sequence[OutputFileSource]) -> list[dict[str, str]]:
+        return [
+            {"path": f.path, "reason": "FILE_TYPE_NOT_ALLOWED"}
+            for f in files
+            if f.media_type not in self.allowed
+        ]
+
+    def create_dataset_from_output(self, **kwargs: Any) -> OutputDatasetState:
+        self.calls.append(kwargs)
+        if self.fail_with is not None:
+            raise self.fail_with
+        if self.output_file_problems(kwargs["files"]):
+            raise CatalogPublishRejected("files")
+        return OutputDatasetState(kwargs["dataset_id"], VERSION_ID, self.status)
+
+
+VERSION_ID = UUID("00000000-0000-7000-8000-0000000c0001")

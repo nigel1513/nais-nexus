@@ -5,7 +5,7 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from api.modules.catalog.public import CatalogQueryPort, CatalogReadPort
+from api.modules.catalog.public import CatalogPublishPort, CatalogQueryPort, CatalogReadPort
 from api.modules.project.public import ProjectQueryPort
 from api.modules.workspace.interfaces import DisplayNameLookup, GrantQueryPort, OutputStorage
 from api.modules.workspace.settings import WorkspaceSettings
@@ -42,6 +42,11 @@ class WorkspaceDeps:
     def reader(self) -> CatalogReadPort:
         """M03 byte reader (service credentials) for recipe previews and runs; unwired -> 503."""
         return _provider(CatalogReadPort, "Catalog")
+
+    @property
+    def publisher(self) -> CatalogPublishPort:
+        """M03 dataset creation from an approved output (hub publication); unwired -> 503."""
+        return _provider(CatalogPublishPort, "Catalog")
 
 
 def get_deps() -> WorkspaceDeps:

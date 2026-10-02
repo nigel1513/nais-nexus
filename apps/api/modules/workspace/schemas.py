@@ -17,6 +17,9 @@ from nais_contracts.api_models import (
     OutputKind,
     OutputUploadSession,
     ProjectInput,
+    PublishDecision,
+    PublishRequest,
+    PublishRequestStatus,
     Recipe,
     RecipePreview,
     Run,
@@ -158,6 +161,25 @@ class OutputUploadIn(StrictIn):
         return self
 
 
+DatasetTitle = Annotated[
+    str, StringConstraints(min_length=3, max_length=300), AfterValidator(_no_nul), AfterValidator(_not_blank)
+]
+
+
+class PublishRequestIn(StrictIn):
+    """openapi PublishRequestCreate (title: the new dataset's title, default = the output title)."""
+
+    title: DatasetTitle | None = None
+    description: Annotated[str, StringConstraints(max_length=20000), AfterValidator(_no_nul)] | None = None
+
+
+class PublishDecisionIn(StrictIn):
+    """openapi PublishDecisionCreate. The comment a REJECT requires is enforced by the service (422)."""
+
+    decision: PublishDecision
+    comment: Annotated[str, StringConstraints(max_length=2000), AfterValidator(_no_nul)] | None = None
+
+
 def _unique_ids(values: list[UUID]) -> list[UUID]:
     if len(set(values)) != len(values):
         raise ValueError("input ids must be unique")
@@ -205,6 +227,11 @@ __all__ = [
     "OutputUploadSession",
     "ProjectInput",
     "ProjectInputList",
+    "PublishDecision",
+    "PublishDecisionIn",
+    "PublishRequest",
+    "PublishRequestIn",
+    "PublishRequestStatus",
     "Recipe",
     "RecipeList",
     "RecipePreview",

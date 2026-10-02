@@ -59,6 +59,9 @@ class MemoryObjectStore:
         self.objects[key] = bytes(data)
         self.content_types[key] = content_type
 
+    def copy(self, source_key: str, key: str) -> None:
+        self.put(key, self._get(source_key), self.content_types.get(source_key, "application/octet-stream"))
+
     def delete(self, key: str) -> None:
         self.objects.pop(key, None)
 
