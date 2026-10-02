@@ -11,7 +11,9 @@ value that is excluded from min/max/mean/histogram and from top values. Parquet 
 decoded: they are profiled as kind "other" with no values.
 
 Parquet dictionary pages are sized from the page header at the offset the decoder starts the chunk at (never from
-footer sizes); a column whose footer and page headers disagree is profiled as "other". Decompression bombs in
+footer sizes). The whole PageHeader is parsed strictly (no long-form or repeated top-level fields, bounded nesting,
+only the peeked bytes); a column whose footer and page headers disagree, whose first page is an INDEX_PAGE or of an
+unknown type, or whose header does not parse is profiled as "other" (never decoded). Decompression bombs in
 PLAIN data pages (a small compressed page declaring a huge uncompressed size) are not header-checked here: they are
 bounded by the child-process RLIMIT_AS planned in Task 11 (controller ruling P24)."""
 
@@ -517,47 +519,156 @@ def _parquet_value(value: Any) -> tuple[str | None, bool]:
     return str(value), False
 
 
-_DICTIONARY_PAGE = 2  # parquet PageType.DICTIONARY_PAGE
-PAGE_HEADER_PEEK = 64  # the first fields of a thrift-compact PageHeader fit easily
+_DATA_PAGE, _DICTIONARY_PAGE, _DATA_PAGE_V2 = (
+    0,
+    2,
+    3,
+)  # parquet PageType (1 = INDEX_PAGE, skipped by the decoder)
+PAGE_HEADER_PEEK = 256  # a dictionary or numeric data page header fits; larger ones get one second peek
+PAGE_HEADER_MAX = (
+    64 << 10
+)  # writers cap page statistics (parquet-cpp: 4 KiB per value); larger headers are "other"
+_THRIFT_MAX_DEPTH = 8  # PageHeader nests at most 3 deep (PageHeader > DataPageHeader > Statistics)
+_I32 = 5
 
 
-def _varint(buf: bytes, pos: int) -> tuple[int, int]:
-    shift = result = 0
-    while True:
-        if pos >= len(buf) or shift > 63:
-            raise ValueError("truncated varint")
-        b = buf[pos]
-        pos += 1
-        result |= (b & 0x7F) << shift
-        if not b & 0x80:
-            return result, pos
-        shift += 7
+class _ShortHeader(Exception):
+    """The peeked bytes end before the PageHeader does."""
+
+
+class _ThriftCompact:
+    """A strict reader for one thrift-compact struct held entirely in `buf` (never reads past it)."""
+
+    def __init__(self, buf: bytes) -> None:
+        self.buf, self.pos = buf, 0
+
+    def byte(self) -> int:
+        if self.pos >= len(self.buf):
+            raise _ShortHeader
+        self.pos += 1
+        return self.buf[self.pos - 1]
+
+    def skip(self, n: int) -> None:
+        if n < 0:
+            raise ValueError("negative length")
+        if self.pos + n > len(self.buf):
+            raise _ShortHeader
+        self.pos += n
+
+    def varint(self) -> int:
+        result = 0
+        for shift in range(0, 70, 7):
+            b = self.byte()
+            result |= (b & 0x7F) << shift
+            if not b & 0x80:
+                return result
+        raise ValueError("varint too long")
+
+    def zigzag(self) -> int:
+        raw = self.varint()
+        return (raw >> 1) ^ -(raw & 1)
+
+    def value(self, wire: int, depth: int) -> None:
+        """Skip one value of compact wire type `wire` (in a struct field: bools carry no payload)."""
+        if wire in (1, 2):
+            return
+        if wire == 3:
+            self.skip(1)
+        elif wire in (4, 5, 6):
+            self.varint()
+        elif wire == 7:
+            self.skip(8)
+        elif wire == 8:
+            self.skip(self.varint())
+        elif wire in (9, 10):
+            head = self.byte()
+            count = head >> 4 if head >> 4 != 15 else self.varint()
+            for _ in range(count):  # every element is at least one byte, so this is bounded by the buffer
+                self.element(head & 0x0F, depth)
+        elif wire == 11:
+            count = self.varint()
+            if count:
+                kv = self.byte()
+                for _ in range(count):
+                    self.element(kv >> 4, depth)
+                    self.element(kv & 0x0F, depth)
+        elif wire == 12:
+            self.struct(depth + 1)
+        else:
+            raise ValueError(f"unknown thrift wire type {wire}")
+
+    def element(self, wire: int, depth: int) -> None:
+        if wire in (1, 2):  # a bool inside a collection is one byte
+            self.skip(1)
+        else:
+            self.value(wire, depth)
+
+    def struct(self, depth: int) -> None:
+        if depth > _THRIFT_MAX_DEPTH:
+            raise ValueError("thrift struct nested too deep")
+        field_id = 0
+        while True:
+            head = self.byte()
+            if head == 0:
+                return
+            if head >> 4:
+                field_id += head >> 4
+            else:
+                field_id = self.zigzag()  # long form (legal in nested structs, which are only skipped)
+            self.value(head & 0x0F, depth)
+
+    def page_header(self) -> tuple[int, int]:
+        """(type, uncompressed_page_size) of a whole top-level PageHeader. Stricter than the thrift decoder:
+        every long-form field header or repeated field id is rejected, because the decoder keeps the LAST value
+        of a repeated field (a first-match parser could be shown a tiny size while pyarrow allocates a huge one)."""
+        fields: dict[int, int] = {}
+        field_id = 0
+        while True:
+            head = self.byte()
+            if head == 0:
+                break
+            if not head >> 4:
+                raise ValueError("long-form field header in PageHeader")
+            field_id += head >> 4
+            if field_id in fields:
+                raise ValueError("repeated PageHeader field")
+            wire = head & 0x0F
+            if field_id in (1, 2, 3):
+                if wire != _I32:
+                    raise ValueError("PageHeader type/sizes must be i32")
+                value = self.zigzag()
+                if not -(1 << 31) <= value < 1 << 31:
+                    raise ValueError("i32 out of range")
+                fields[field_id] = value
+            else:
+                fields[field_id] = 0
+                self.value(wire, 1)
+        if not {1, 2, 3} <= fields.keys() or fields[2] < 0 or fields[3] < 0:
+            raise ValueError("PageHeader without type and sizes")
+        return fields[1], fields[2]
 
 
 def page_header_sizes(buf: bytes) -> tuple[int, int] | None:
-    """(page type, uncompressed page size) from the start of a thrift-compact PageHeader, or None if the bytes
-    do not look like one. Only fields 1 (type, i32) and 2 (uncompressed_page_size, i32) are needed."""
+    """(page type, uncompressed page size) of the thrift-compact PageHeader that `buf` starts with, or None if
+    the bytes are not one complete, unambiguous PageHeader (see _ThriftCompact.page_header)."""
     try:
-        pos, field_id = 0, 0
-        found: dict[int, int] = {}
-        while len(found) < 2:
-            head = buf[pos]
-            pos += 1
-            if head == 0 or head & 0x0F != 5:  # stop, or not an i32 before both fields were seen
-                return None
-            delta = head >> 4
-            if delta == 0:
-                raw, pos = _varint(buf, pos)
-                field_id = (raw >> 1) ^ -(raw & 1)
-            else:
-                field_id += delta
-            raw, pos = _varint(buf, pos)
-            found[field_id] = (raw >> 1) ^ -(raw & 1)
-        if set(found) != {1, 2} or found[2] < 0:
-            return None
-        return found[1], found[2]
-    except (IndexError, ValueError):
+        return _ThriftCompact(buf).page_header()
+    except (_ShortHeader, ValueError):
         return None
+
+
+def _peek_page_header(peek: Callable[[int, int], bytes], offset: int) -> tuple[int, int] | None:
+    buf = peek(offset, PAGE_HEADER_PEEK)
+    for attempt in range(2):
+        try:
+            return _ThriftCompact(buf).page_header()
+        except ValueError:
+            return None
+        except _ShortHeader:
+            if attempt or len(buf) < PAGE_HEADER_PEEK:
+                return None  # larger than PAGE_HEADER_MAX, or the file ends inside the header
+            buf = peek(offset, PAGE_HEADER_MAX)
+    return None
 
 
 def _footer_uncompressed(group: Any, leaves: list[int]) -> int:
@@ -582,12 +693,16 @@ def _dictionary_page_size(chunk: Any, peek: Callable[[int, int], bytes]) -> int 
     start = int(data_offset)
     if dict_offset is not None and 0 < dict_offset < start:
         start = int(dict_offset)
-    header = page_header_sizes(peek(start, PAGE_HEADER_PEEK))
+    header = _peek_page_header(peek, start)
     if header is None:
         return None
     page_type, size = header
     if page_type == _DICTIONARY_PAGE:
         return size
+    if page_type not in (_DATA_PAGE, _DATA_PAGE_V2):
+        return (
+            None  # INDEX_PAGE or unknown: the decoder skips it, so the page it really starts with is unseen
+        )
     # a declared dictionary page that is not where the decoder starts: footer and pages disagree
     return None if declared else 0
 
@@ -801,8 +916,13 @@ def profile_table(
         source = open_parquet_range(counted, size, deadline=fetch_deadline)
         raw = getattr(source, "raw", None)
 
-        def peek(offset: int, n: int) -> bytes:  # page headers: tiny reads outside the data-page budget
+        peeked = [0]
+
+        def peek(offset: int, n: int) -> bytes:  # page headers: small reads outside the data-page budget
             deadline()
+            if peeked[0] + n > limits.max_bytes:
+                return b""  # header budget spent: the column is "other" (or the sample is truncated)
+            peeked[0] += n
             end = min(size, offset + n) - 1
             if offset >= size or end < offset:
                 return b""

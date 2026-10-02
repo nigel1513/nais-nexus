@@ -671,7 +671,7 @@ def test_page_header_parser() -> None:
     from api.modules.catalog.previews.profile import page_header_sizes
 
     # compact protocol: field 1 i32 (0x15) zigzag(2)=4, field 2 i32 (0x15) zigzag(300)=600 -> varint 0xd8 0x04
-    assert page_header_sizes(bytes([0x15, 0x04, 0x15, 0xD8, 0x04, 0x15, 0x02])) == (2, 300)
+    assert page_header_sizes(bytes([0x15, 0x04, 0x15, 0xD8, 0x04, 0x15, 0x02, 0x00])) == (2, 300)
     assert page_header_sizes(b"") is None and page_header_sizes(b"\x00") is None
     assert page_header_sizes(bytes([0x18, 0x01])) is None  # not an i32 field
 
@@ -692,14 +692,16 @@ def test_swapped_page_offsets_cannot_hide_the_real_dictionary(duplicate: bool, e
     assert grown_mb < 512
 
 
-def _page(page_type: int, size: int) -> bytes:
-    def zz(n: int) -> bytes:
-        n, out = n << 1, b""
-        while n >= 0x80:
-            out, n = out + bytes([n & 0x7F | 0x80]), n >> 7
-        return out + bytes([n])
+def _zz(n: int) -> bytes:
+    n, out = (n << 1) ^ (n >> 63), b""
+    while n >= 0x80:
+        out, n = out + bytes([n & 0x7F | 0x80]), n >> 7
+    return out + bytes([n])
 
-    return bytes([0x15]) + zz(page_type) + bytes([0x15]) + zz(size)
+
+def _page(page_type: int, size: int, compressed: int = 10) -> bytes:
+    """A minimal complete thrift-compact PageHeader: fields 1-3 (i32) and the stop byte."""
+    return b"\x15" + _zz(page_type) + b"\x15" + _zz(size) + b"\x15" + _zz(compressed) + b"\x00"
 
 
 def test_dictionary_page_is_sized_at_the_decoder_start_offset() -> None:
@@ -743,3 +745,197 @@ def test_densified_strings_without_a_leading_dictionary_page_are_other() -> None
         result = run(sink.getvalue(), path="p.parquet")
         kinds = [c["kind"] for c in result.preview["columns"]]
         assert kinds[:2] == [kind, kind] and result.rows_sampled == 2
+
+
+# ---------------------------------------------------------------- fix round 5: the whole PageHeader is parsed
+
+_DICT_HEADER = b"\x5c\x15\x02\x15\x00\x11\x00"  # field 7 struct: num_values=1, encoding=PLAIN, is_sorted=true
+
+
+def test_page_header_parser_reads_the_whole_struct() -> None:
+    from api.modules.catalog.previews.profile import page_header_sizes
+
+    head = b"\x15\x04\x15" + _zz(300) + b"\x15" + _zz(20)
+    assert page_header_sizes(head + b"\x00") == (2, 300)
+    # crc (field 4, delta 1), then the dictionary page header (field 7, struct, delta 3)
+    assert page_header_sizes(head + b"\x15\x07" + b"\x3c" + _DICT_HEADER[1:] + b"\x00") == (2, 300)
+    # a data page header (field 5) whose statistics (its field 5) hold long binary min/max values
+    nested = (
+        b"\x15\x00\x15"
+        + _zz(5000)
+        + b"\x15"
+        + _zz(4000)
+        + b"\x2c"  # field 5: DataPageHeader (struct, delta 2)
+        + b"\x15\x02\x15\x00\x15\x06\x15\x06"  # num_values, encoding, def/rep level encodings
+        + b"\x1c"  # field 5: statistics (struct, delta 1)
+        + b"\x18"
+        + bytes([0xE8, 0x07])
+        + b"m" * 1000  # field 1: max (binary, 1000 bytes)
+        + b"\x18"
+        + bytes([0xE8, 0x07])
+        + b"n" * 1000  # field 2: min
+        + b"\x19\x23"
+        + b"\x01\x02"  # field 3: a list of 2 bytes (exercises list skipping)
+        + b"\x00"  # end statistics
+        + b"\x00"  # end DataPageHeader
+        + b"\x00"  # end PageHeader
+    )
+    assert page_header_sizes(nested) == (0, 5000)
+    assert page_header_sizes(nested[:-1]) is None  # truncated: no stop byte
+    assert page_header_sizes(nested[:600]) is None
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        # p9: a long-form field header jumps back to field 2; the thrift decoder keeps the LAST value
+        b"\x15\x04\x15\x04\x15\x04\x05\x04" + _zz(20_000_004) + b"\x00",
+        # long-form header even for a new field id
+        b"\x15\x04\x15\x04\x05\x06\x04\x00",
+        # field 1 repeated through a long-form header
+        b"\x15\x04\x15\x04\x15\x04\x05\x02\x04\x00",
+        b"\x15\x04\x15\x04\x00",  # field 3 (compressed_page_size) missing
+        b"\x15\x04\x16\x04\x15\x04\x00",  # field 2 is not an i32
+        b"\x15\x04\x15\x04\x15\x04\x1d\x00",  # unknown wire type 13
+        b"\x15\x04\x15\x03\x15\x04\x00",  # negative uncompressed size
+        b"\x15\x04\x15\x04\x15\x04",  # truncated: no stop
+        b"\x15\x04\x15\x04\x15\x04" + b"\x1c" * 40 + b"\x00" * 41,  # nesting deeper than the bound
+    ],
+)
+def test_hostile_page_headers_are_rejected(header: bytes) -> None:
+    from api.modules.catalog.previews.profile import page_header_sizes
+
+    assert page_header_sizes(header) is None
+
+
+def test_index_and_unknown_first_pages_are_never_decoded() -> None:
+    from types import SimpleNamespace
+
+    from api.modules.catalog.previews.profile import _dictionary_page_size
+
+    for page_type in (1, 7):  # INDEX_PAGE (skipped by the decoder), unknown type
+        for has in (False, True):
+            chunk = SimpleNamespace(
+                data_page_offset=100, dictionary_page_offset=None, has_dictionary_page=has
+            )
+            assert _dictionary_page_size(chunk, lambda o, n, t=page_type: _page(t, 10)[:n]) is None
+    chunk = SimpleNamespace(data_page_offset=100, dictionary_page_offset=None, has_dictionary_page=False)
+    assert _dictionary_page_size(chunk, lambda o, n: _page(3, 10)[:n]) == 0  # DATA_PAGE_V2
+
+
+def test_large_page_header_is_read_with_a_second_peek() -> None:
+    from types import SimpleNamespace
+
+    from api.modules.catalog.previews.profile import _dictionary_page_size
+
+    header = (
+        b"\x15\x00\x15"
+        + _zz(5000)
+        + b"\x15"
+        + _zz(4000)
+        + b"\x2c\x15\x02\x15\x00\x15\x06\x15\x06\x1c"
+        + b"\x18"
+        + bytes([0xDC, 0x0B])
+        + b"m" * 1500
+        + b"\x18"
+        + bytes([0xDC, 0x0B])
+        + b"n" * 1500
+        + b"\x00\x00\x00"
+    )
+    seen: list[int] = []
+
+    def peek(offset: int, n: int) -> bytes:
+        seen.append(n)
+        return header[:n]
+
+    chunk = SimpleNamespace(data_page_offset=4, dictionary_page_offset=None, has_dictionary_page=False)
+    assert _dictionary_page_size(chunk, peek) == 0 and len(seen) == 2
+
+
+_FIELD_BOMB_SCRIPT = """
+import io, resource, struct, sys
+import pyarrow as pa, pyarrow.parquet as pq
+from api.modules.catalog.previews import profile as P
+
+entry, duplicate = int(sys.argv[1]), sys.argv[2] == "dup"
+small = pa.DictionaryArray.from_arrays(pa.array([0] * 200_000, pa.int32()), pa.array(["a"]))
+big = pa.DictionaryArray.from_arrays(pa.array([0] * 200_000, pa.int32()), pa.array(["x" * entry]))
+arrays, names = ([small, big], ["s", "s"]) if duplicate else ([big], ["s"])
+sink = io.BytesIO()
+pq.write_table(pa.Table.from_arrays(arrays, names=names), sink, store_schema=False,
+               dictionary_pagesize_limit=256 << 20, compression="zstd")
+data = sink.getvalue()
+del arrays, small, big
+
+
+def zz(n):
+    n, out = (n << 1) ^ (n >> 63), b""
+    while n >= 0x80:
+        out, n = out + bytes([n & 0x7F | 0x80]), n >> 7
+    return out + bytes([n])
+
+
+# p9: in the last column's dictionary PageHeader, insert "type=2, size=2" and a long-form header that jumps back
+# to field 2; the thrift decoder keeps the last value (the real size), a first-match parser sees 2
+cm = pq.ParquetFile(io.BytesIO(data)).metadata.row_group(0).column(len(names) - 1)
+dic, dat, total = cm.dictionary_page_offset, cm.data_page_offset, cm.total_compressed_size
+assert data[dic : dic + 2] == b"\x15\x04"
+ins = b"\x15\x04\x15\x04\x05\x02"
+shift = len(ins) - 1
+body = data[:dic] + ins + data[dic + 1 :]
+start = len(data) - 8 - struct.unpack("<i", data[-8:-4])[0]
+footer = data[start : len(data) - 8]
+old = b"\x16" + zz(total) + b"\x26" + zz(dat) + b"\x26" + zz(dic)
+assert footer.count(old) == 1
+footer = footer.replace(old, b"\x16" + zz(total + shift) + b"\x26" + zz(dat + shift) + b"\x26" + zz(dic))
+data = body[: start + shift] + footer + struct.pack("<i", len(footer)) + b"PAR1"
+before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+r = P.profile_table(lambda s, e: io.BytesIO(data[s : e + 1]), len(data), path="m.parquet", hints={},
+                    limits=P.PreviewLimits(), deadline=P.make_deadline(60))
+grown = (resource.getrusage(resource.RUSAGE_SELF).ru_maxrss - before) // 1024
+print(r.rows_sampled, int(r.truncated), ",".join(c["kind"] for c in r.preview["columns"]), grown)
+"""
+
+
+@pytest.mark.parametrize("duplicate", [False, True])
+def test_repeated_size_field_cannot_hide_the_real_dictionary(duplicate: bool) -> None:
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in sys.path if p))
+    out = subprocess.run(
+        [
+            "prlimit",
+            "--as=8589934592",
+            sys.executable,
+            "-c",
+            _FIELD_BOMB_SCRIPT,
+            "20000000",
+            "dup" if duplicate else "one",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=True,
+    ).stdout.split()
+    rows, truncated, kinds, grown_mb = int(out[0]), out[1] == "1", out[2].split(","), int(out[3])
+    assert rows > 0 and truncated
+    assert kinds == (["categorical", "other"] if duplicate else ["other"])
+    assert grown_mb < 512
+
+
+def test_real_plain_page_with_large_statistics_is_still_decoded() -> None:
+    # pyarrow writes min/max statistics into each data page header: a 3,000-char PLAIN string column has a
+    # header far over the first 256-byte peek, read by the second peek
+    values = ["a" * 3000, "b" * 3000]
+    sink = io.BytesIO()
+    pq.write_table(pa.table({"s": values, "n": [1, 2]}), sink, use_dictionary=False, compression="zstd")
+    data = sink.getvalue()
+    cm = pq.ParquetFile(io.BytesIO(data)).metadata.row_group(0).column(0)
+    assert cm.statistics is not None and not cm.has_dictionary_page
+    result = run(data, path="p.parquet")
+    assert result.rows_sampled == 2
+    assert [c["kind"] for c in result.preview["columns"]][1] == "numeric"
+    assert result.preview["rows"][0][0] is not None
