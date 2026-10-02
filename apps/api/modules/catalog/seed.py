@@ -3,17 +3,25 @@
 import hashlib
 import logging
 
-from sqlalchemy import insert
+from sqlalchemy import RowMapping, insert, update
 from sqlalchemy.orm import Session
 
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.domain import ALLOWED_MEDIA_TYPES, build_policy, extension, storage_key
-from api.modules.catalog.repo import load_dataset, load_version, must
-from api.modules.catalog.seed_data import ORG_CODES, SEED_DATASETS, SeedDataset, file_id, metadata_for
+from api.modules.catalog.previews.store import backfill_previews
+from api.modules.catalog.repo import enqueue_index, load_dataset, load_version, must
+from api.modules.catalog.seed_data import (
+    ORG_CODES,
+    SEED_DATASETS,
+    SeedDataset,
+    file_id,
+    metadata_for,
+    research_for,
+)
 from api.modules.catalog.seed_files import fixture_files
 from api.modules.catalog.service.datasets import insert_dataset
 from api.modules.catalog.service.publish import finalize_publish
-from api.modules.catalog.tables import dataset_files, dataset_versions, upload_sessions
+from api.modules.catalog.tables import dataset_files, dataset_versions, datasets, upload_sessions
 from api.platform import clock, ports
 from api.platform.events import EventActor
 
@@ -32,7 +40,7 @@ def _deps() -> CatalogDeps:
 def _seed_one(session: Session, deps: CatalogDeps, item: SeedDataset) -> None:
     actor = EventActor(type="USER", user_id=item.steward, organization_id=item.owner)
     policy = build_policy(item.access_level, item.allowed_purposes, item.max_grant_days)
-    fields = {"title": item.title, **metadata_for(item.fixture)}
+    fields = {"title": item.title, **metadata_for(item.fixture), **research_for(item)}
     insert_dataset(
         session,
         dataset_id=item.dataset_id,
@@ -102,10 +110,27 @@ def _seed_one(session: Session, deps: CatalogDeps, item: SeedDataset) -> None:
         )
 
 
+def _backfill_research(session: Session, item: SeedDataset, existing: RowMapping) -> None:
+    """Seed datasets that predate catalog_0002 get the research block; only rows still without a PI are touched."""
+    if existing["principal_investigator_id"] is not None:
+        return
+    session.execute(
+        update(datasets)
+        .where(datasets.c.dataset_id == item.dataset_id, datasets.c.principal_investigator_id.is_(None))
+        .values(**research_for(item), updated_at=clock.now(), row_version=existing["row_version"] + 1)
+    )
+    enqueue_index(session, item.dataset_id)
+
+
 def seed(session: Session) -> None:
     deps = _deps()
     for item in SEED_DATASETS:
-        if load_dataset(session, item.dataset_id) is not None:
+        existing = load_dataset(session, item.dataset_id)
+        if existing is not None:
+            _backfill_research(session, item, existing)
             continue
         _seed_one(session, deps, item)
         logger.info("seeded dataset", extra={"dataset_id": str(item.dataset_id), "title": item.title})
+    queued = backfill_previews(session)  # versions published before catalog_0003 have no preview rows
+    if queued:
+        logger.info("queued previews for published versions", extra={"files": queued})

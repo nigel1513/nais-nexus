@@ -3,11 +3,13 @@ from dataclasses import replace
 from uuid import UUID
 
 from api.modules.catalog.previews.jobs import dispatch_previews, generate_preview_job
+from api.modules.catalog.previews.store import backfill_previews
 from api.modules.catalog.settings import CatalogSettings
 from api.modules.catalog.tests.support import execute, rows
 from api.modules.catalog.tests.support_api import CatalogApi, assert_error, new_draft
 from api.modules.catalog.tests.support_upload import upload_files
 from api.modules.catalog.tests.test_preview_sandbox import plain_page_bomb
+from api.platform.db import session_factory
 from api.platform.testing.contracts import assert_matches_response
 from api.platform.testing.fixtures import PgUrls
 
@@ -246,3 +248,18 @@ def test_preview_actor_runs_on_its_dedicated_queue() -> None:
 
     assert generate_preview_actor.queue_name == QUEUE == "catalog_previews"
     assert MODULE.dedicated_queues == {"catalog_previews": 1}
+
+
+def test_backfill_queues_published_tabular_files_without_rows_idempotently(
+    api: CatalogApi, db: PgUrls
+) -> None:
+    ids = published_with_preview(api, db)
+    _, draft_version = new_draft(api)
+    upload_files(api, db, draft_version, {"data/d.csv": DATA})  # DRAFT: must not be queued
+    execute(db, "DELETE FROM catalog.file_previews")
+    with session_factory(db.app)() as session, session.begin():
+        assert backfill_previews(session) == 1
+    with session_factory(db.app)() as session, session.begin():
+        assert backfill_previews(session) == 0
+    [row] = rows(db, "SELECT file_id, status FROM catalog.file_previews")
+    assert (str(row["file_id"]), row["status"]) == (ids["data/m.csv"], "PENDING")

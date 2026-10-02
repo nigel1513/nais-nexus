@@ -54,5 +54,5 @@ class IdentityQueryPort(Protocol):
         ...
 
     def get_email(self, user_id: UUID) -> str | None:
-        """M09 mail delivery and M03 steward contact (shown only when the dataset's contact_email_public is true, and as the snapshot contact_email fallback). Other modules must not use it."""
+        """M09 mail delivery. M03 may use it only for the public steward contact, i.e. when the dataset's contact_email_public is true (and for the snapshot contact_email fallback of that same contact). Other modules, and any other catalog use, must not."""
         ...

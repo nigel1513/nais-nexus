@@ -349,3 +349,21 @@ def test_register_worker_protects_the_worker(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setattr(jobs, "protect_worker_environ", lambda: calls.append(True) or True)
     jobs.register_worker(StubBroker(), Scheduler())
     assert calls == [True]
+
+
+def test_nul_characters_are_replaced_before_storage() -> None:
+    import json
+
+    result = _valid_result()
+    result["preview"]["header"][0] = "a\x00b"
+    result["preview"]["rows"][0][1] = "x\x00y"
+    result["column_profile"][0]["name"] = "n\x00m"
+    result["preview"]["columns"][0]["name"] = "n\x00m"
+    result["preview"]["columns"][0]["top_values"] = [{"value": "t\x00v", "count": 1}]
+    command = _hostile(f"send(b'F', {json.dumps({'result': result}).encode()!r})")
+    out = _run(CSV, command=command)
+    assert "result" in out
+    assert "\x00" not in json.dumps(out["result"], ensure_ascii=False)
+    assert out["result"]["preview"]["header"][0] == "a�b"
+    assert out["result"]["preview"]["rows"][0][1] == "x�y"
+    assert out["result"]["column_profile"][0]["name"] == "n�m"

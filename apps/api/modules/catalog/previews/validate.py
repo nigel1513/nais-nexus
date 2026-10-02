@@ -83,6 +83,17 @@ def _models(limits: PreviewLimits) -> type[BaseModel]:
     return Result
 
 
+def _scrub(value: Any) -> Any:
+    """JSONB cannot store U+0000: every string (cells, header and column names, top values) gets U+FFFD instead."""
+    if isinstance(value, str):
+        return value.replace("\x00", "\ufffd")
+    if isinstance(value, list):
+        return [_scrub(v) for v in value]
+    if isinstance(value, dict):
+        return {k: _scrub(v) for k, v in value.items()}
+    return value
+
+
 def validate_result(result: Any, limits: PreviewLimits) -> dict[str, Any]:
     """The child's "result" object, checked; raises InvalidOutcome."""
     try:
@@ -97,5 +108,5 @@ def validate_result(result: Any, limits: PreviewLimits) -> dict[str, Any]:
     preview_size = len(json.dumps(result["preview"]))
     if preview_size > limits.preview_bytes:
         raise InvalidOutcome(f"preview of {preview_size} bytes")
-    checked: dict[str, Any] = result
-    return checked
+    scrubbed: dict[str, Any] = _scrub(result)
+    return scrubbed

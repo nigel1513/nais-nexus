@@ -48,6 +48,28 @@ Dramatiq actor `catalog.verify_file` (queue `catalog`). Full rebuild: `python -m
   close it. In compose the api runs in its own container (separate PID namespace), so only worker processes are
   visible to the child.
 
+## Research metadata (Wave 1.5 stage 1)
+- Dataset fields (catalog_0002): `subtitle`, subject/material/method vocabulary codes, `method_detail`, `temporal_start`/
+  `temporal_end`, collecting organization (registered id or free text), project title/code, funding agency,
+  `update_frequency`, `related_publications`, `contact_email_public`.
+- People block: principal investigator and data steward contact are registered users stored with the organization they
+  belonged to at the time (at-the-time affiliation); later moves of the user do not rewrite the dataset.
+  `steward_contact_absent` is reported when the steward contact is not set or no longer resolvable.
+- Vocabulary is seeded by the migration; IRIs stay NULL until curated. Published snapshots fall back to `contact_email`
+  and `domain` for datasets published before Wave 1.5.
+- JSON-LD: `GET /datasets/{id}/metadata.jsonld` (`application/ld+json`). Search v2 adds subject/material/method/PI/period
+  filters and facets; the period filter uses overlap semantics (a dataset matches when its range intersects the query).
+- **Deploy order:** run `python -m api.modules.catalog.reindex` once, so the index `nais-datasets-v2` is built BEFORE the
+  new api/worker drain the index queue (the v1 index has a strict mapping without the new fields).
+- Seeding: `seed_data.RESEARCH` fills the five seed datasets; `seed` also backfills seed rows that have no principal
+  investigator (only those) and calls `backfill_previews`, which queues `file_previews` rows for tabular files of
+  PUBLISHED versions that have none (versions published before catalog_0003). Both are idempotent.
+- Accepted races/limits: a steward transfer racing a dataset update is last-writer-wins (not serialized); the free-text
+  collecting organization is not a facet (only the registered organization is).
+- Preview sandbox residual risks (see above): the child shares the worker's uid, so it can read any file that uid can
+  read, and the network is not isolated. NUL characters in cells and names are replaced by U+FFFD before storage
+  (JSONB cannot hold them).
+
 ## Search
 Index `nais-datasets-v2` behind alias `nais-datasets` (`infra/opensearch`). Without the `analysis-nori`
 plugin the catalog creates the index with the fallback analyzer (`standard` + `cjk_bigram`). The compose
