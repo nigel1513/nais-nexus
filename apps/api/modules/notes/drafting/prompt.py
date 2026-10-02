@@ -9,8 +9,9 @@ before anything else sees them, so no other attribute an implementation might ca
 can reach the prompt. Every value is flattened to one line and capped. Lines:
 - one header per notebook: `[n] 노트북 '제목' (저장 HH:MM)` (Asia/Seoul time),
 - one line per cell: `[n.k] 코드|설명: source head` and, for code cells, ` / 출력: kinds N개, 오류 있음|없음`.
-At most MAX_NOTEBOOKS notebooks (the latest saved ones, shown in save order) and MAX_CELLS cells in all; when cells
-must be cut every notebook keeps its leading cells (the budget is shared out evenly) and the cut count is written.
+At most MAX_NOTEBOOKS notebooks (the latest saved ones, shown in save order), MAX_CELLS cells and MAX_LISTING_CHARS
+characters of listing in all; when cells must be cut every notebook keeps its leading cells (both budgets are shared
+out one cell per notebook per round) and the cut count is written.
 """
 
 import re
@@ -26,6 +27,8 @@ KST = timezone(timedelta(hours=9), "Asia/Seoul")
 MAX_NOTEBOOKS = 10
 MAX_CELLS = 120
 MAX_SOURCE_CHARS = 400
+MAX_LISTING_CHARS = 20_000  # every notebook line in all (headers, cells, cut notices)
+NOTICE_RESERVE = 40  # characters kept back per possible cut notice
 MAX_TITLE_CHARS = 200
 MAX_LABEL_CHARS = 200  # workspace evidence labels (handlers.py), shown on screen only
 MAX_KIND_CHARS = 40
@@ -133,16 +136,26 @@ def _clock(at: datetime) -> str:
     return at.astimezone(KST).strftime("%H:%M")
 
 
-def _shares(sizes: Sequence[int], budget: int) -> list[int]:
-    """Cells kept per notebook: the budget shared out one cell per notebook per round, leading cells first."""
-    kept = [0] * len(sizes)
-    while budget > 0:
-        growing = [i for i, size in enumerate(sizes) if kept[i] < size]
-        if not growing:
-            break
-        for i in growing[:budget]:
+def _shares(costs: Sequence[Sequence[int]], max_cells: int, max_chars: int) -> list[int]:
+    """Cells kept per notebook: one cell per notebook per round (leading cells first) while both the cell budget and
+    the character budget allow; a notebook whose next cell does not fit stops growing."""
+    kept = [0] * len(costs)
+    stopped = [False] * len(costs)
+    while max_cells > 0:
+        grew = False
+        for i, cells in enumerate(costs):
+            if stopped[i] or kept[i] >= len(cells) or max_cells == 0:
+                continue
+            cost = cells[kept[i]]
+            if cost > max_chars:
+                stopped[i] = True
+                continue
             kept[i] += 1
-        budget -= min(budget, len(growing))
+            max_cells -= 1
+            max_chars -= cost
+            grew = True
+        if not grew:
+            break
     return kept
 
 
@@ -158,14 +171,22 @@ def plan(source: Sequence[Notebook]) -> PromptPlan:
     ordered = sorted(source, key=lambda n: (n.saved_at, str(n.notebook_id)))
     dropped = max(0, len(ordered) - MAX_NOTEBOOKS)
     shown = ordered[dropped:]  # the latest saved ones
-    shares = _shares([len(n.cells) for n in shown], MAX_CELLS)
+    headers = [
+        f"[{n}] 노트북 '{nb.title}' (저장 {_clock(nb.saved_at)})" for n, nb in enumerate(shown, start=1)
+    ]
+    costs = [
+        [len(f"[{n}.{k}] {_cell_line(cell)}") + 1 for k, cell in enumerate(nb.cells, start=1)]
+        for n, nb in enumerate(shown, start=1)
+    ]
+    fixed = sum(len(h) + 1 for h in headers) + NOTICE_RESERVE * (len(shown) + 1)
+    shares = _shares(costs, MAX_CELLS, MAX_LISTING_CHARS - fixed)
     items: list[PromptItem] = []
     lines: list[str] = []
     for n, (notebook, share) in enumerate(zip(shown, shares, strict=True), start=1):
         ref = notebook.version_id or notebook.notebook_id
         header = PromptItem(
             str(n),
-            f"[{n}] 노트북 '{notebook.title}' (저장 {_clock(notebook.saved_at)})",
+            headers[n - 1],
             EvidenceRow(NOTEBOOK, ref, notebook.title, notebook.saved_at),
         )
         items.append(header)

@@ -1,5 +1,6 @@
 """Contract views of stored notes (ResearchNote, ResearchNoteSummary) and the shared event payload."""
 
+import logging
 from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
@@ -13,6 +14,8 @@ from api.modules.notes.access import DRAFT, witness_snapshot
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.schemas import ResearchNote, ResearchNoteSummary
 
+logger = logging.getLogger("nais.notes")
+
 
 def project_name(deps: NotesDeps, project_id: UUID) -> str:
     summary = deps.projects.get_summary(project_id)
@@ -24,12 +27,18 @@ def evidence_view(items: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def draft_source_count(deps: NotesDeps, note: RowMapping, viewer_id: UUID) -> int:
-    """Notebooks the recorder saved in the note's project on its day (the drafting source); 0 for anyone else."""
+    """Notebooks the recorder saved in the note's project on its day (the drafting source); 0 for anyone else, and
+    0 (logged) when the notebook source fails."""
     if viewer_id != note["recorder_id"]:
         return 0
-    return len(
-        deps.notebooks.list_notebook_activity(note["recorder_id"], note["project_id"], note["note_date"])
-    )
+    try:
+        activity = deps.notebooks.list_notebook_activity(
+            note["recorder_id"], note["project_id"], note["note_date"]
+        )
+    except Exception as exc:  # display only: a failing notebook source must not break reading the note
+        logger.warning("draft source count unavailable", extra={"error_type": type(exc).__name__})
+        return 0
+    return len(activity)
 
 
 def note_view(session: Session, deps: NotesDeps, note: RowMapping, viewer_id: UUID) -> ResearchNote:

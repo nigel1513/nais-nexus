@@ -229,4 +229,4 @@ def test_html_is_the_standard_research_note_form(api: NotesApi, world: World) ->
 
     signatures = page[page.index('<table class="signatures">') :]
     assert '<th scope="row">기록자</th><td>김민준</td><td>서명 전</td>' in signatures
-    assert '<th scope="row">확인자</th><td>-</td><td>서명 전</td>' in signatures
+    assert '<th scope="row">확인자</th><td>박지훈</td><td>서명 전</td>' in signatures  # the unsigned witness

@@ -25,7 +25,8 @@ def test_wire_registers_deps() -> None:
     assert isinstance(deps.people, IdentityDisplayNames)
     assert deps.llm is get_llm_client  # None unless NAIS_LLM_ENABLED and NAIS_LLM_BASE_URL are set
     assert deps.llm() is None
-    assert isinstance(ports.get(NotebookActivityPort), NoNotebooks)  # until M07 provides the real one
+    with pytest.raises(ports.PortNotProvided):  # wire() registers no notebook port: the single default is
+        ports.get(NotebookActivityPort)  # NotesDeps.notebooks falling back to NoNotebooks
     assert isinstance(deps.notebooks, NoNotebooks)
 
 
@@ -44,7 +45,7 @@ def test_notebook_port_defaults_to_nothing_and_m07_can_replace_it() -> None:
             return []
 
     ports.provide(NotebookActivityPort, Jupyter())  # type: ignore[arg-type]
-    wire()  # notes wired after M07 keeps M07's port
+    wire()  # notes wired after M07 leaves M07's port in place
     assert ports.get(NotesDeps).notebooks.list_notebook_activity(new_id(), None, today) == ["m07"]
     replacement = Jupyter()
     ports.provide(NotebookActivityPort, replacement)  # type: ignore[arg-type]

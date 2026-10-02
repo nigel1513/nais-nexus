@@ -383,15 +383,16 @@ def daily_drafts() -> int:
         logger.warning("daily drafts skipped: the project module is not wired")
         return 0
     today = local.date()
+    # Read the sources before claiming the day: if either fails, the day stays unclaimed and the next tick retries.
+    try:
+        authors = list(dict.fromkeys(deps.notebooks.list_notebook_authors(today)))
+        organizations = deps.people.get_organization_ids(list(dict.fromkeys(u for u, _ in authors)))
+    except Exception as exc:
+        logger.warning("daily drafts postponed: a source failed", extra={"error_type": type(exc).__name__})
+        return 0
     with _session() as session, session.begin():
         if not repo.claim_daily_run(session, today, now):
             return 0
-    authors = list(dict.fromkeys(deps.notebooks.list_notebook_authors(today)))
-    try:
-        organizations = deps.people.get_organization_ids(list(dict.fromkeys(u for u, _ in authors)))
-    except ApiError:  # identity unwired: existing notes are still drafted, none can be created
-        logger.warning("daily drafts: organizations unknown, no new notes")
-        organizations = {}
     queued = 0
     for user_id, project_id in authors:
         try:

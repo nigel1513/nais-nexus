@@ -617,3 +617,70 @@ def test_worker_registration() -> None:
     assert MODULE.dedicated_queues == {"notes": 1}
     with pytest.raises(RuntimeError, match="broker"):
         jobs.register_worker(StubBroker(), Scheduler())
+
+
+def test_draft_source_count_fails_soft(api: NotesApi, world: World, caplog: pytest.LogCaptureFixture) -> None:
+    note = api.today(world)
+
+    class Broken:
+        def list_notebook_activity(self, *args: Any) -> list[NotebookActivity]:
+            raise RuntimeError("SECRET notebook store detail")
+
+        def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
+            return []
+
+    ports.provide(NotebookActivityPort, Broken())
+    response = api.get("a.recorder", f"/notes/{note['note_id']}")
+    assert response.status_code == 200, response.text
+    assert response.json()["draft_source_count"] == 0
+    [record] = [r for r in caplog.records if r.getMessage() == "draft source count unavailable"]
+    assert record.levelname == "WARNING" and record.error_type == "RuntimeError"
+    assert "SECRET" not in record.getMessage()
+
+
+def test_after_a_422_the_draft_works_once_notebooks_appear(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = api.written(world)
+    assert draft(api, note).status_code == 422
+    assert stored_note(db, note["note_id"])["draft_requested_at"] is None  # no rate-limit slot used
+    add_notebook(world)
+    response = draft(api, note)
+    assert response.status_code == 202, response.text
+    assert response.json()["draft_source_count"] == 1
+
+
+def test_notebook_source_failure_on_request_is_503(api: NotesApi, world: World, db: PgUrls) -> None:
+    note = api.written(world)
+
+    class Broken:
+        def list_notebook_activity(self, *args: Any) -> list[NotebookActivity]:
+            raise RuntimeError("down")
+
+        def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
+            return []
+
+    ports.provide(NotebookActivityPort, Broken())
+    response = draft(api, note)
+    assert response.status_code == 503 and code(response) == "DEPENDENCY_UNAVAILABLE"
+    assert stored_note(db, note["note_id"])["draft_status"] == "NONE"
+    assert queued() == []
+
+
+def test_daily_drafts_retry_when_the_author_list_fails(api: NotesApi, world: World, db: PgUrls) -> None:
+    add_notebook(world)
+    real = world.notebooks.list_notebook_authors
+    calls: list[date] = []
+
+    def flaky(day: date) -> list[tuple[UUID, UUID]]:
+        calls.append(day)
+        if len(calls) == 1:
+            raise RuntimeError("notebook store down")
+        return real(day)
+
+    world.notebooks.list_notebook_authors = flaky  # type: ignore[method-assign]
+    with clock.frozen(kst(19, 0)):
+        assert jobs.daily_drafts() == 0
+    assert sql(db, "SELECT count(*) AS n FROM notes.daily_runs") == [{"n": 0}]  # the day is not claimed
+    with clock.frozen(kst(19, 15)):
+        assert jobs.daily_drafts() == 1
+    assert [r["run_date"] for r in sql(db, "SELECT run_date FROM notes.daily_runs")] == [TODAY]
+    assert len(queued()) == 1

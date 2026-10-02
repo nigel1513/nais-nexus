@@ -10,6 +10,7 @@ sections are ignored. Sentences come out in template order.
 """
 
 import json
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ from typing import Any
 
 from api.modules.notes.drafting.prompt import PromptItem
 from api.modules.notes.sections import SECTIONS
+
+logger = logging.getLogger("nais.notes")
 
 NEEDS_EVIDENCE = frozenset({"PROCEDURE", "RESULTS"})
 NEEDS_MARKDOWN = frozenset({"OBJECTIVE", "DISCUSSION", "NEXT"})
@@ -52,6 +55,8 @@ def _json_object(text: str) -> dict[str, Any]:
 
 
 def _key(value: Any) -> str | None:
+    """A prompt key: a string as written ("1.2", "1"; surrounding blanks ignored), or an integer n meaning the
+    notebook header "n". Anything else (bools, floats, objects) is invalid."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
@@ -78,6 +83,7 @@ def parse_draft(raw: Mapping[str, Any] | str, items: Sequence[PromptItem]) -> li
     order = {item.key: index for index, item in enumerate(items)}
     markdown = {item.key for item in items if item.markdown}
     out: list[DraftSentence] = []
+    dropped = 0
     for section in SECTIONS:
         elements = sections.get(section, [])
         if not isinstance(elements, list):
@@ -90,7 +96,9 @@ def parse_draft(raw: Mapping[str, Any] | str, items: Sequence[PromptItem]) -> li
             if not isinstance(evidence, list):
                 raise ValueError(f"{section} evidence must be an array")
             text = " ".join(element["text"].split())
-            keys = sorted({k for k in map(_key, evidence) if k in order}, key=order.__getitem__)
+            valid = [k for k in map(_key, evidence) if k in order]
+            dropped += len(evidence) - len(valid)
+            keys = sorted(set(valid), key=order.__getitem__)
             if not text or len(text) > MAX_SENTENCE_CHARS:
                 continue
             if section in NEEDS_EVIDENCE and not keys:
@@ -100,4 +108,6 @@ def parse_draft(raw: Mapping[str, Any] | str, items: Sequence[PromptItem]) -> li
             if len(kept) < SECTION_LIMIT:
                 kept.append(DraftSentence(section, text, tuple(keys)))
         out.extend(kept)
+    if dropped:  # the count only: the answer may quote the prompt
+        logger.info("draft evidence keys dropped", extra={"dropped_evidence": dropped})
     return out

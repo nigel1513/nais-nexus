@@ -2,6 +2,7 @@
 PROCEDURE/RESULTS need evidence, OBJECTIVE/DISCUSSION/NEXT need a cited markdown cell, sentence and section limits."""
 
 import json
+import logging
 from datetime import UTC, datetime
 
 import pytest
@@ -128,3 +129,20 @@ def test_missing_and_unknown_sections_are_tolerated() -> None:
         ITEMS,
     )
     assert parsed == [DraftSentence("PROCEDURE", "단계.", ("1.2",))]
+
+
+def test_dropped_evidence_keys_are_logged_as_a_count(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.INFO, logger="nais.notes"):
+        parse_draft(
+            answer(PROCEDURE=[{"text": "실행했다.", "evidence": ["1.2", "9.9", True, "SECRET"]}]), ITEMS
+        )
+    [record] = [r for r in caplog.records if r.getMessage() == "draft evidence keys dropped"]
+    assert record.dropped_evidence == 3
+    assert "SECRET" not in record.getMessage() and "9.9" not in record.getMessage()
+
+
+def test_integer_keys_mean_notebook_headers_and_strings_stay_exact() -> None:
+    parsed = parse_draft(
+        answer(REFERENCES=[{"text": "분석 노트북.", "evidence": [1, "01", "1.20", "1.2"]}]), ITEMS
+    )
+    assert parsed == [DraftSentence("REFERENCES", "분석 노트북.", ("1", "1.2"))]

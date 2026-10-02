@@ -7,6 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from api.modules.notes.drafting.prompt import (
     MAX_CELLS,
+    MAX_LISTING_CHARS,
     MAX_NOTEBOOKS,
     SYSTEM_PROMPT,
     build_messages,
@@ -164,3 +165,19 @@ def test_at_most_120_cells_shared_with_leading_cells_first() -> None:
 def test_no_notebooks() -> None:
     assert plan(notebooks([])).items == []
     assert "(없음)" in user_message()
+
+
+def test_listing_is_capped_at_20000_characters_round_robin() -> None:
+    long_cell = code("x" * 390)  # ~430 characters per line: 120 cells would be ~52,000
+    source = [
+        activity(f"nb{i}", *[long_cell for _ in range(40)], at=T + timedelta(minutes=i)) for i in range(3)
+    ]
+    prompt = plan(notebooks(source))
+    assert sum(len(line) + 1 for line in prompt.lines) <= MAX_LISTING_CHARS
+    kept = [len([i for i in prompt.items if i.key.startswith(f"{n}.")]) for n in (1, 2, 3)]
+    assert max(kept) - min(kept) <= 1 and sum(kept) < MAX_CELLS  # shared out evenly, leading cells first
+    assert [i.key for i in prompt.items if i.key.startswith("1.")] == [
+        f"1.{k}" for k in range(1, kept[0] + 1)
+    ]
+    for n, count in zip((1, 2, 3), kept, strict=True):
+        assert f"(노트북 {n}: 셀 40개 중 {40 - count}개 생략)" in prompt.lines

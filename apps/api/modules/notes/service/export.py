@@ -131,9 +131,11 @@ def _batches(
         ids = [i for i in ids if i in notes]
         blocks = repo.load_blocks(session, ids)
         signatures = repo.load_signatures(session, ids)
-        people = [n["recorder_id"] for n in notes.values()] + [
-            s["signer_id"] for sig in signatures.values() for s in sig
-        ]
+        people = (
+            [n["recorder_id"] for n in notes.values()]
+            + [w for n in notes.values() for w in (n["witness_user_ids"] or [])]
+            + [s["signer_id"] for sig in signatures.values() for s in sig]
+        )
         names = deps.people.get_display_names(list(dict.fromkeys(people)))
         organizations = deps.people.get_organization_names(
             list(dict.fromkeys(n["organization_id"] for n in notes.values()))
@@ -214,7 +216,11 @@ def _html(archive: Archive, item: ExportedNote, names: dict[UUID, str]) -> str:
     if not any(s["role"] == "RECORDER" for s in item.signatures):
         signed.insert(0, (ROLES["RECORDER"], recorder, None))
     if note["witness_required"] and not any(s["role"] == "WITNESS" for s in item.signatures):
-        signed.append((ROLES["WITNESS"], "-", None))
+        # unsigned: the snapshot's witnesses (fixed at submit; none yet while DRAFT)
+        witnesses = list(note["witness_user_ids"] or []) if note["status"] != "DRAFT" else []
+        signed += [(ROLES["WITNESS"], names.get(w, str(w)), None) for w in witnesses] or [
+            (ROLES["WITNESS"], "-", None)
+        ]
     signatures = "".join(
         f'<tr><th scope="row">{e(role)}</th><td>{e(name)}</td>'
         f"<td>{e(_kst(sig['signed_at']) if sig else '서명 전')}</td>"
