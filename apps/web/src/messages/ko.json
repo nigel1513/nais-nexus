@@ -243,7 +243,7 @@
   "data": {
     "search": {
       "title": "데이터 검색",
-      "filters": "검색 필터",
+      "filters": "필터",
       "results": "검색 결과",
       "total": "총 {count}건",
       "sort": "정렬",
@@ -275,7 +275,9 @@
         "from": "기간 시작",
         "to": "기간 끝",
         "apply": "기간 적용",
-        "clear": "초기화"
+        "clear": "초기화",
+        "fromShort": "시작",
+        "toShort": "끝"
       },
       "pi": {
         "label": "연구책임자",
@@ -287,7 +289,31 @@
         "pi": "연구책임자",
         "period": "기간",
         "collecting": "수집",
-        "ongoing": "진행 중"
+        "ongoing": "진행 중",
+        "owner": "소유 기관",
+        "version": "최신 버전",
+        "updated": "수정"
+      },
+      "description": "연구회 기관이 공유한 데이터셋을 분야·기간·기관으로 찾습니다.",
+      "facetOption": "{label} ({count})",
+      "showMore": "{count}개 더 보기",
+      "showLess": "접기",
+      "clearAll": "모두 지우기",
+      "activeFilters": "적용된 필터",
+      "removeFilter": "{label} 필터 해제",
+      "periodChip": "기간 {from} – {to}",
+      "emptyHint": "검색어를 바꾸거나 필터를 줄여 보세요.",
+      "view": "보기",
+      "viewList": "목록",
+      "viewTable": "표",
+      "metaLabel": "데이터 정보",
+      "openFilters": "필터",
+      "column": {
+        "title": "제목",
+        "organization": "기관",
+        "period": "기간",
+        "updated": "수정일",
+        "aiReady": "AI-Ready"
       }
     },
     "new": {

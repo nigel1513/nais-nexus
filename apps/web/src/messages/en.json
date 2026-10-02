@@ -181,7 +181,9 @@
         "from": "Period start",
         "to": "Period end",
         "apply": "Apply period",
-        "clear": "Clear"
+        "clear": "Clear",
+        "fromShort": "From",
+        "toShort": "To"
       },
       "pi": {
         "label": "Principal investigator",
@@ -193,7 +195,32 @@
         "pi": "PI",
         "period": "Period",
         "collecting": "Collected by",
-        "ongoing": "ongoing"
+        "ongoing": "ongoing",
+        "owner": "Owner",
+        "version": "Latest version",
+        "updated": "Updated"
+      },
+      "filters": "Filters",
+      "description": "Find datasets shared across the institutes by field, period and organization.",
+      "facetOption": "{label} ({count})",
+      "showMore": "Show {count} more",
+      "showLess": "Show less",
+      "clearAll": "Clear all",
+      "activeFilters": "Active filters",
+      "removeFilter": "Remove filter {label}",
+      "periodChip": "Period {from} – {to}",
+      "emptyHint": "Try another keyword or fewer filters.",
+      "view": "View",
+      "viewList": "List",
+      "viewTable": "Table",
+      "metaLabel": "Dataset details",
+      "openFilters": "Filters",
+      "column": {
+        "title": "Title",
+        "organization": "Organization",
+        "period": "Period",
+        "updated": "Updated",
+        "aiReady": "AI-Ready"
       }
     },
     "form": {

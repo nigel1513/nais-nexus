@@ -195,3 +195,34 @@ test("shell: ⌘K, notifications, user menu and the phone sheet pass axe in both
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });
+
+test("data search: rail, table view, empty result and the phone filter sheet pass axe in both themes", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons/data");
+    const rail = page.getByRole("complementary", { name: "필터" });
+    await expect(rail.getByRole("checkbox", { name: /^이차전지 \(/ })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.getByRole("button", { name: "표" }).click();
+    await expect(page).toHaveURL(/view=table/);
+    await expect(page.getByRole("table", { name: "검색 결과" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.goto("/commons/data?q=zzzz");
+    await expect(page.getByRole("button", { name: "필터 초기화" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/commons/data");
+    await page.getByRole("button", { name: "필터", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "필터" });
+    await expect(sheet.getByRole("checkbox", { name: /^이차전지 \(/ })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await sheet.getByRole("checkbox", { name: /^이차전지 \(/ }).click();
+    await expect(page).toHaveURL(/subject=BATTERY/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});

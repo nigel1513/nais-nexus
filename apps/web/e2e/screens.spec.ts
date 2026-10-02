@@ -68,6 +68,28 @@ test.describe("screens", () => {
     await shoot(page, "task3-shell-data-card");
   });
 
+  test("task4 data search (steward) and empty result", async ({ page, baseURL }) => {
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/data");
+    await expect(page.getByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).toBeVisible();
+    await shoot(page, "task4-data-search");
+
+    await setup(page, [1440, 900], "light");
+    await page.goto("/commons/data?view=table");
+    await expect(page.getByRole("table", { name: /검색 결과/ })).toBeVisible();
+    await shoot(page, "task4-data-search-table", [[1440, 900]]);
+
+    await page.goto("/commons/data?q=zzzz");
+    await expect(page.getByText("조건에 맞는 데이터가 없습니다.")).toBeVisible();
+    await shoot(page, "task4-data-search-empty");
+
+    await setup(page, [390, 844], "light");
+    await page.goto("/commons/data?access_level=CONTROLLED");
+    await page.getByRole("button", { name: /^필터/ }).click();
+    await expect(page.getByRole("dialog", { name: "필터" })).toBeVisible();
+    await shootOne(page, "task4-data-search-filters", 390, "light");
+  });
+
   test("shell overlays: ⌘K, notifications, user menu, collapsed rail, phone sheet", async ({ page, baseURL }) => {
     await as(page, "researcher", baseURL!);
     for (const theme of ["light", "dark"] as Theme[]) {

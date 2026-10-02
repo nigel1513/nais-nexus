@@ -23,14 +23,45 @@ describe("DataSearchScreen", () => {
     expect(screen.queryByRole("link", { name: /Dataset 등록|데이터셋 등록/ })).not.toBeInTheDocument();
   });
 
-  it("filters by subject facet and shows PI, period and subtitle on cards", async () => {
+  it("filters by subject facet and shows a row with subtitle, meta line and badges", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
-    const card = (await screen.findByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).closest("article")!;
-    expect(within(card as HTMLElement).getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
-    expect(within(card as HTMLElement).getByText(/B Researcher/)).toBeInTheDocument();
-    expect(within(card as HTMLElement).getByText(/2026-01-12 – 2026-06-30/)).toBeInTheDocument();
+    const row = (await screen.findByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).closest("article")! as HTMLElement;
+    expect(within(row).getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
+    const meta = within(row).getByRole("list", { name: "데이터 정보" });
+    expect(within(meta).getByText("Institute B")).toBeInTheDocument();
+    expect(within(meta).getByText(/B Researcher/)).toBeInTheDocument();
+    expect(within(meta).getByText(/2026-01-12 – 2026-06-30/)).toBeInTheDocument();
+    expect(within(meta).getByText("v2.0")).toHaveClass("font-mono");
+    expect(within(row).getByText("통제")).toBeInTheDocument();
+    expect(within(row).getByText("통과")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: /^재료 \(/ }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/commons/data?subject=MATERIALS", { scroll: false }));
+  });
+
+  it("puts the filters in a complementary landmark with vocabulary trees and tabular counts", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    const rail = await screen.findByRole("complementary", { name: "필터" });
+    const subject = await within(rail).findByRole("group", { name: "연구 분야" });
+    const parent = (await within(subject).findByRole("checkbox", { name: /^에너지 \(/ })).closest("li")!;
+    // A narrower term sits under its broader term.
+    expect(within(parent).getByRole("checkbox", { name: /^이차전지 \(/ })).toBeInTheDocument();
+    expect(within(parent).getAllByText("1")[0]).toHaveClass("num");
+  });
+
+  it("switches between list and table views and keeps the choice in the URL", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    await screen.findByRole("heading", { level: 2, name: "Battery Cycling Measurements" });
+    expect(screen.getByRole("button", { name: "목록" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "표" }));
+    expect(router.replace).toHaveBeenLastCalledWith("/commons/data?view=table", { scroll: false });
+  });
+
+  it("table view lists title, organization, period, updated and AI-ready columns", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?view=table" });
+    const table = await screen.findByRole("table", { name: "검색 결과" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["제목", "기관", "기간", "수정일", "AI-Ready"]);
+    expect(within(table).getByRole("link", { name: "Battery Cycling Measurements" })).toHaveAttribute("href", expect.stringMatching(/^\/commons\/data\//));
+    expect(screen.getByRole("button", { name: "표" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("offers material and method facets with vocabulary labels", async () => {
@@ -69,6 +100,7 @@ describe("DataSearchScreen", () => {
   it("empty result offers a filter reset", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?q=zzzz" });
     expect(await screen.findByText("조건에 맞는 데이터가 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("검색어를 바꾸거나 필터를 줄여 보세요.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "필터 초기화" }));
     expect(router.replace).toHaveBeenLastCalledWith("/commons/data", { scroll: false });
     expect(await screen.findByText("총 4건")).toBeInTheDocument();
