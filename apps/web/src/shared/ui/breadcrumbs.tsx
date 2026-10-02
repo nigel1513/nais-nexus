@@ -23,7 +23,7 @@ export function BreadcrumbsProvider({ children }: { children: ReactNode }) {
 
 /**
  * A screen adds its own trail after the section crumb the top bar derives from the path, e.g.
- * `useBreadcrumbs([{ label: dataset.title }])` on a data card gives "데이터 / Battery Cycling Measurements".
+ * `useBreadcrumbs([{ label: dataset.title }])` on a data card gives "데이터 / 리튬이온 배터리 셀 사이클 시험 데이터".
  * Cleared when the screen unmounts. Outside the shell (screen tests) it does nothing.
  */
 export function useBreadcrumbs(items: Crumb[]): void {

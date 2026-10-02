@@ -1,3 +1,4 @@
+from datetime import date
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -23,6 +24,13 @@ def search_datasets(
     purpose: Annotated[list[PurposeIn] | None, Query()] = None,
     keyword: Annotated[list[str] | None, Query()] = None,
     readiness_status: Annotated[list[ReadinessIn] | None, Query()] = None,
+    subject: Annotated[list[str] | None, Query()] = None,
+    material: Annotated[list[str] | None, Query()] = None,
+    method: Annotated[list[str] | None, Query()] = None,
+    collecting_organization_id: Annotated[list[UUID] | None, Query()] = None,
+    principal_investigator_id: UUID | None = None,
+    temporal_from: date | None = None,
+    temporal_to: date | None = None,
     sort: SortIn = "relevance",
     cursor: Annotated[str | None, Query(max_length=MAX_CURSOR_LENGTH)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -34,6 +42,13 @@ def search_datasets(
         purpose=tuple(purpose or ()),
         keyword=tuple(keyword or ()),
         readiness_status=tuple(readiness_status or ()),
+        subject=tuple(subject or ()),
+        material=tuple(material or ()),
+        method=tuple(method or ()),
+        collecting_organization_id=tuple(collecting_organization_id or ()),
+        principal_investigator_id=principal_investigator_id,
+        temporal_from=temporal_from,
+        temporal_to=temporal_to,
         sort=sort,
         cursor=cursor,
         limit=limit,

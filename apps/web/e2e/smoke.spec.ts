@@ -3,16 +3,43 @@ import { expect, test } from "@playwright/test";
 
 const A_RESEARCHER = "00000000-0000-7000-8000-000000000a02";
 
-async function seriousViolations(page: import("@playwright/test").Page) {
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
+/** `within`: check only an open overlay; the page behind it is covered, which axe reads as obscured targets. */
+async function seriousViolations(page: import("@playwright/test").Page, within?: string) {
+  // Entrance animations fade content in; checking contrast mid-fade reports text that is about to be fully opaque.
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity));
+  const builder = new AxeBuilder({ page });
+  if (within) builder.include(within);
+  const results = await builder.withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
   return results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.help}`);
 }
 
 test("public landing renders the portal (not the gateway 503)", async ({ page }) => {
   const response = await page.goto("/");
   expect(response?.status()).toBe(200);
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Research Commons");
-  await expect(page.getByRole("link", { name: "Research Commons 시작하기" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("함께 연구합니다");
+  const sso = page.getByRole("link", { name: "NST 통합 로그인 (SSO)", exact: true }).first();
+  await expect(sso).toHaveAttribute("href", "/commons");
+  await expect(page.getByText("접속 기록이 감사 로그에 남습니다.")).toBeVisible();
+  // Scroll like a reader so every once-only reveal fires, then let the 700ms transitions settle before axe.
+  for (let i = 0; i < 16; i += 1) {
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(80);
+  }
+  await expect(page.locator(".lp-reveal[data-pre]")).toHaveCount(0);
+  await page.waitForTimeout(1200);
+  expect(await seriousViolations(page)).toEqual([]);
+  for (const theme of ["dark", "light"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await expect(page.locator("html")).toHaveClass(new RegExp(`\\b${theme}\\b`));
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+  await sso.click();
+  await expect(page).toHaveURL(/\/mock-login\?callbackUrl=%2Fcommons$/);
+  await expect(page.getByRole("heading", { level: 1, name: "계정 선택" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   expect(await seriousViolations(page)).toEqual([]);
 });
 
@@ -23,13 +50,13 @@ test("mock login → dashboard → data search show mock data", async ({ page })
   await page.getByRole("button", { name: "로그인" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Seed: Battery Materials Joint Study" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "알림 1개 읽지 않음" })).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 
   await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "데이터" }).click();
   await expect(page).toHaveURL(/\/commons\/data$/);
-  await expect(page.getByRole("heading", { level: 2, name: "Battery Cycling Measurements" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
   await expect(page.getByText("총 4건")).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 });
@@ -51,7 +78,7 @@ test("no secure-context-only APIs needed: dashboard renders without a service-un
   await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
   await page.goto("/commons");
   await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Seed: Battery Materials Joint Study" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
   await expect(page.getByText(/서비스를 사용할 수 없|service unavailable/i)).toHaveCount(0);
   await expect(page.getByText("DEPENDENCY_UNAVAILABLE")).toHaveCount(0);
 });
@@ -66,9 +93,9 @@ test("protected routes redirect with a relative Location and never reflect a for
 const BATTERY = "00000000-0000-7000-8000-000000002001";
 
 test("Data Card: explorer, gated preview and JSON-LD download work on any origin", async ({ page, context, baseURL }) => {
-  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b02", url: baseURL! }]); // B Researcher (owner organization)
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b02", url: baseURL! }]); // 최유진 (owner organization)
   await page.goto(`/commons/data/${BATTERY}`);
-  await expect(page.getByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
   await expect(page.getByRole("button", { name: /AI-ready/ })).toBeVisible();
   await page.getByRole("radio", { name: "Compact" }).check();
   await expect(page.getByRole("table", { name: /미리보기/ })).toBeVisible();
@@ -80,14 +107,14 @@ test("Data Card: explorer, gated preview and JSON-LD download work on any origin
 });
 
 test("Data Card: a visitor without permission sees the gated notice", async ({ page, context, baseURL }) => {
-  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000a01", url: baseURL! }]); // A Admin, no grant
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000a01", url: baseURL! }]); // 박지훈, no grant
   await page.goto(`/commons/data/${BATTERY}`);
   await page.getByRole("radio", { name: "Detail" }).check();
   await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
 });
 
 test("Settings: NTIS number saves, rejects a duplicate and can be cleared", async ({ page, context, baseURL }, info) => {
-  // Both projects share one mock server: each uses its own user (A Admin / B Admin, no number yet) and number so a
+  // Both projects share one mock server: each uses its own user (박지훈 / 한유나, no number yet) and number so a
   // parallel run cannot clear the other's number mid-test.
   const insecure = info.project.name === "chromium-insecure-origin";
   const user = insecure ? "00000000-0000-7000-8000-000000000b01" : "00000000-0000-7000-8000-000000000a01";
@@ -97,7 +124,7 @@ test("Settings: NTIS number saves, rejects a duplicate and can be cleared", asyn
   await input.fill(insecure ? "12345679" : "12345678");
   await page.getByRole("button", { name: "번호 저장" }).click();
   await expect(page.getByText("저장했습니다.")).toBeVisible();
-  await input.fill("10000002"); // B Researcher's number in the seed
+  await input.fill("10000002"); // 최유진's number in the seed
   await page.getByRole("button", { name: "번호 저장" }).click();
   await expect(page.getByText("이미 다른 사용자가 등록한 번호입니다.")).toBeVisible();
   await page.getByRole("button", { name: "번호 삭제" }).click();
@@ -176,10 +203,10 @@ test("shell: ⌘K, notifications, user menu and the phone sheet pass axe in both
 
     await page.getByRole("button", { name: "알림 1개 읽지 않음" }).click();
     await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
-    expect(await seriousViolations(page)).toEqual([]);
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
     await page.keyboard.press("Escape");
 
-    await page.getByRole("button", { name: /A Researcher/ }).click();
+    await page.getByRole("button", { name: /김민준/ }).click();
     await expect(page.getByRole("menu")).toBeVisible();
     expect(await seriousViolations(page)).toEqual([]);
     await page.keyboard.press("Escape");
@@ -238,7 +265,7 @@ test("access: review queue and request detail pass axe in both themes, rows open
   }
 
   await page.goto("/commons/access");
-  const row = page.getByRole("table", { name: "검토할 요청" }).getByRole("row").filter({ hasText: "A Steward" }).first();
+  const row = page.getByRole("table", { name: "검토할 요청" }).getByRole("row").filter({ hasText: "이서연" }).first();
   await row.focus();
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/commons\/access\/[0-9a-f-]+$/);
@@ -272,4 +299,33 @@ test("activity: the timeline and its action filter pass axe in both themes; no s
   await page.goto("/commons/activity");
   await expect(page.getByRole("region", { name: "활동 목록" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
+test("Settings and organization: axe clean in both themes, the theme choice persists, no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b01", url: baseURL! }]); // 한유나 (ORG_ADMIN)
+  await page.goto("/settings");
+  const theme = page.getByRole("radiogroup", { name: "화면 테마" });
+  await expect(theme.getByRole("radio", { name: "시스템" })).toBeChecked();
+  expect(await seriousViolations(page)).toEqual([]);
+  await theme.getByRole("radio", { name: "다크" }).click();
+  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+  await expect(page.getByRole("radiogroup", { name: "화면 테마" }).getByRole("radio", { name: "다크" })).toBeChecked();
+  expect(await seriousViolations(page)).toEqual([]);
+
+  await page.getByRole("navigation", { name: "설정 메뉴" }).getByRole("link", { name: "기관 관리" }).click();
+  await expect(page.getByRole("table", { name: "기관 멤버" })).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+  await page.getByRole("button", { name: "정현우 관리" }).first().click();
+  await expect(page.getByRole("menuitem", { name: "역할 변경" })).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+  await page.keyboard.press("Escape");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const path of ["/settings", "/settings/organization"]) {
+    await page.goto(path);
+    await expect(page.getByRole("navigation", { name: "설정 메뉴" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
 });

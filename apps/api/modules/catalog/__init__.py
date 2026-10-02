@@ -7,6 +7,7 @@ from api.modules.catalog import (  # noqa: F401  (register @subscribe handlers a
     jobs,
 )
 from api.modules.catalog.jobs import register_worker
+from api.modules.catalog.previews.jobs import QUEUE as PREVIEW_QUEUE
 from api.modules.catalog.router import router
 from api.modules.catalog.seed import seed
 from api.modules.catalog.wiring import wire
@@ -20,4 +21,5 @@ MODULE = ModuleSpec(
     wire=wire,
     register_worker=register_worker,
     seed=seed,
+    dedicated_queues={PREVIEW_QUEUE: 1},  # ruling P25: one profiling child at a time per worker
 )

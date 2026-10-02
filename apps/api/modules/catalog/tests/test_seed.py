@@ -6,10 +6,10 @@ from uuid import UUID
 
 from api.modules.catalog.public import CatalogQueryPort
 from api.modules.catalog.seed import seed
-from api.modules.catalog.seed_data import SEED_DATASETS
+from api.modules.catalog.seed_data import ORG_B, SEED_DATASETS, sid
 from api.modules.catalog.seed_files import FIXTURES, fixture_files, measurements_csv
 from api.modules.catalog.testing import memory_store
-from api.modules.catalog.tests.support import outbox_events, rows
+from api.modules.catalog.tests.support import execute, outbox_events, rows, seed_user_id
 from api.modules.catalog.tests.support_api import USERS, CatalogApi
 from api.platform import ports
 from api.platform.db import session_factory
@@ -96,6 +96,50 @@ def test_seed_check_visibility(api: CatalogApi, db: PgUrls) -> None:  # 10_SEED_
     view = port.get_version(UUID("00000000-0000-7000-8000-000000002101"))
     assert view is not None and view.metadata_snapshot is not None
     assert view.metadata_snapshot["title"] == "Battery Cycling Measurements"
+
+
+def test_seed_fills_research_metadata_idempotently(api: CatalogApi, db: PgUrls) -> None:
+    run_seed(db)
+    run_seed(db)
+    [battery] = rows(db, "SELECT * FROM catalog.datasets WHERE dataset_id = :d", d=sid("2001"))
+    assert battery["principal_investigator_id"] == seed_user_id("0b02")
+    assert battery["principal_investigator_org_id"] == ORG_B
+    assert battery["subject_codes"] == ["ENERGY", "MATERIALS"]
+    assert str(battery["temporal_start"]) == "2026-01-01"
+    assert battery["contact_email_public"] is True
+    assert battery["row_version"] == 1
+    [electrolyte] = rows(db, "SELECT * FROM catalog.datasets WHERE dataset_id = :d", d=sid("2005"))
+    assert electrolyte["collecting_organization_name"] == "외부 위탁분석기관 K-Lab"
+    assert (
+        rows(db, "SELECT count(*) AS n FROM catalog.file_previews")[0]["n"] == 4
+    )  # one measurements.csv each
+
+
+def test_backfill_fills_only_rows_without_pi(api: CatalogApi, db: PgUrls) -> None:
+    run_seed(db)
+    execute(
+        db,
+        "UPDATE catalog.datasets SET principal_investigator_id = NULL, principal_investigator_org_id = NULL,"
+        " project_title = 'kept' WHERE dataset_id = :d",
+        d=sid("2002"),
+    )
+    execute(
+        db, "UPDATE catalog.datasets SET project_title = 'untouched' WHERE dataset_id = :d", d=sid("2001")
+    )
+    execute(db, "DELETE FROM catalog.file_previews")  # as if published before catalog_0003
+    run_seed(db)
+    [row] = rows(
+        db,
+        "SELECT principal_investigator_id, project_title, row_version FROM catalog.datasets WHERE dataset_id = :d",
+        d=sid("2002"),
+    )
+    assert row["principal_investigator_id"] == seed_user_id("0b02")
+    assert row["row_version"] == 2
+    [other] = rows(
+        db, "SELECT project_title, row_version FROM catalog.datasets WHERE dataset_id = :d", d=sid("2001")
+    )
+    assert (other["project_title"], other["row_version"]) == ("untouched", 1)
+    assert rows(db, "SELECT count(*) AS n FROM catalog.file_previews")[0]["n"] == 4
 
 
 # W1-D5 golden: M05 imports fixture_files(); any byte change here silently breaks its readiness fixtures.

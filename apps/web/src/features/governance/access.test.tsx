@@ -15,7 +15,7 @@ const request = (id: string) => getDb().requests.find((r) => r.access_request_id
 const apiError = (status: number, code: string, details: Record<string, unknown> = {}) =>
   HttpResponse.json({ error: { code, message: code, details } }, { status });
 
-/** The real seed has no pending request: B Researcher files one against A's sensor dataset through the mock API. */
+/** The real seed has no pending request: 최유진 files one against A's sensor dataset through the mock API. */
 async function seedPending(days = 14): Promise<string> {
   const send = async (path: string, body: unknown) => {
     const res = await fetch(`${API}${path}`, { method: "POST", headers: { "content-type": "application/json", "x-mock-user": USER.bResearcher }, body: JSON.stringify(body) });
@@ -37,7 +37,7 @@ async function seedPending(days = 14): Promise<string> {
 describe("AccessScreen", () => {
   it("researcher: my requests and my grants, no reviewer tabs", async () => {
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access" });
-    expect((await screen.findAllByRole("link", { name: "Battery Cycling Measurements" })).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" })).length).toBeGreaterThan(0);
     expect(screen.queryByRole("tab", { name: /검토할 요청/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "기관 권한" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("tab", { name: "내 권한" }));
@@ -73,7 +73,7 @@ describe("AccessScreen", () => {
     await seedPending();
     renderScreen(<AccessScreen />, { user: USER.aSteward, path: "/commons/access?tab=review" });
     expect(await screen.findByRole("tab", { name: "검토할 요청 (1건)" })).toHaveAttribute("aria-selected", "true");
-    expect((await screen.findAllByText("Facility Sensor Streams")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("시험동 공조 설비 센서 스트림")).length).toBeGreaterThan(0);
   });
 
   it("steward: the review queue is the first and default tab; rows show requester and organization and open the detail", async () => {
@@ -86,8 +86,8 @@ describe("AccessScreen", () => {
     const table = await screen.findByRole("table", { name: "검토할 요청" });
     const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);
     expect(headers).toEqual(["데이터셋", "요청자", "목적", "기간", "상태", "제출일"]);
-    const row = within(table).getByText("B Researcher").closest("tr")!;
-    expect(row).toHaveTextContent("Institute B");
+    const row = within(table).getByText("최유진").closest("tr")!;
+    expect(row).toHaveTextContent("한국재료연구원");
     expect(row).toHaveTextContent("14일");
     await userEvent.click(within(row).getByText("학술 연구"));
     expect(router.push).toHaveBeenCalledWith(`/commons/access/${id}`);
@@ -319,9 +319,9 @@ describe("AccessRequestDetailScreen", () => {
     expect(within(panel).getByRole("button", { name: "거절" })).toBeInTheDocument();
     expect(panel).toHaveTextContent("14일");
     const history = screen.getByRole("region", { name: "진행 이력" });
-    expect(await within(history).findByText("B Researcher")).toBeInTheDocument();
+    expect(await within(history).findByText("최유진")).toBeInTheDocument();
     expect(await within(history).findByText("검토자")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Facility Sensor Streams");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("시험동 공조 설비 센서 스트림");
   });
 
   it("requester: withdrawing lives in the rail panel, not next to reviewer actions", async () => {

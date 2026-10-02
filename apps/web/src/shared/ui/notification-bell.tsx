@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useListNotifications, useMarkAllNotificationsRead, useMarkNotificationRead } from "@/features/notifications/api";
+import { localizeUtcTimes } from "@/shared/lib/format";
 import { safeInternalPath } from "@/shared/lib/links";
 import type { AppNotification } from "@/shared/api/types";
 
@@ -88,7 +89,7 @@ export function NotificationBell() {
                   >
                     <NotificationIcon type={n.type} />
                     <span className="min-w-0 flex-1">
-                      <span className={cn("line-clamp-2 text-body", n.read ? "text-fg-muted" : "font-medium text-fg")}>{n.title}</span>
+                      <span className={cn("line-clamp-2 text-body", n.read ? "text-fg-muted" : "font-medium text-fg")}>{localizeUtcTimes(n.title)}</span>
                       <span className="mt-0.5 block text-caption font-normal text-fg-muted">
                         {t(`enums.NotificationType.${n.type}`)} ·{" "}
                         <time dateTime={n.created_at} title={new Date(n.created_at).toISOString()} className="num">

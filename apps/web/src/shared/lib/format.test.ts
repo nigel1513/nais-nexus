@@ -44,3 +44,12 @@ describe("format", () => {
     expect(formatDate("")).toBe("-");
   });
 });
+
+describe("localizeUtcTimes", () => {
+  it("rewrites UTC times in server text to Asia/Seoul and leaves the rest", async () => {
+    const { localizeUtcTimes } = await import("./format");
+    expect(localizeUtcTimes('"Battery" 접근 권한이 2026-10-04 02:29 UTC에 만료됩니다')).toBe('"Battery" 접근 권한이 2026-10-04 11:29에 만료됩니다');
+    expect(localizeUtcTimes("2026-12-31 20:00 UTC")).toBe("2027-01-01 05:00");
+    expect(localizeUtcTimes("no time here")).toBe("no time here");
+  });
+});

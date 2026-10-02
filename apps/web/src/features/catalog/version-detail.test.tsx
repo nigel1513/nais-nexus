@@ -143,7 +143,7 @@ describe("VersionDetailScreen", () => {
     const request = within(panel).getByRole("button", { name: "다운로드 링크 받기" });
     expect(request).toBeDisabled();
     expect(within(choose).getAllByRole("option")).toHaveLength(3);
-    await userEvent.selectOptions(choose, within(choose).getByRole("option", { name: /Seed/ }));
+    await userEvent.selectOptions(choose, within(choose).getByRole("option", { name: /차세대 이차전지/ }));
     expect(request).toBeEnabled();
   });
 

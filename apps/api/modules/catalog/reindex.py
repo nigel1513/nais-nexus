@@ -40,11 +40,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     from api.modules.catalog.wiring import build_default_deps
     from api.platform.broker import configure_broker
     from api.platform.logs import configure_logging
+    from api.platform.modules import discover_modules
     from api.platform.settings import get_settings
 
     settings = get_settings()
     configure_logging(settings.log_level)
     configure_broker(settings)
+    # Search documents carry people and organization names, so the identity port must be provided.
+    for spec in discover_modules():
+        if spec.wire is not None:
+            spec.wire()
     deps = build_default_deps()
     print(f"alias {deps.search.alias} -> {reindex_all(deps)}")
     return 0

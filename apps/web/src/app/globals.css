@@ -38,6 +38,8 @@
   --color-bg-raised: #ffffff;   /* selected segment of a SegmentedControl */
   --color-switch-thumb: #ffffff; /* thumb of an off Switch (an on Switch uses primary-fg) */
   --color-scrim: rgb(0 0 0 / 0.4); /* behind dialogs and sheets */
+  /* Public landing hero: the dark app surface in both themes, so the start page and the signed-in app share one palette. */
+  --color-hero: #111113; --color-hero-fg: #edeef0; --color-hero-fg-muted: #b0b4ba; --color-hero-accent: #9eb1ff;
 
   /* Legacy aliases so unmigrated screens keep rendering. Task 13 removes them once grep finds no uses. */
   --color-background: var(--color-bg);
@@ -91,6 +93,7 @@
   --color-danger-fill-fg: #ffffff; --color-info-soft: #e0f8f3; --color-info-line: #a1ded2; --color-info-solid: #12a594;
   --color-info: #007c6b; --color-chart-1: #3e63dd; --color-chart-2: #12a594; --color-chart-muted: #b9bbc6;
   --color-bg-raised: #ffffff; --color-switch-thumb: #ffffff; --color-scrim: rgb(0 0 0 / 0.4);
+  --color-hero: #111113; --color-hero-fg: #edeef0; --color-hero-fg-muted: #b0b4ba; --color-hero-accent: #9eb1ff;
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
   --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(0 0 0 / 0.16);
   --shadow-dialog: 0 1px 2px rgb(0 0 0 / 0.06), 0 24px 48px -12px rgb(0 0 0 / 0.28);
@@ -108,6 +111,7 @@
   --color-danger-soft: #3b1219;  --color-danger-line: #72232d;  --color-danger-solid: #e5484d;  --color-danger: #ff9592;
   --color-info-soft: #0d2d2a;    --color-info-line: #145750;    --color-info-solid: #12a594;    --color-info: #0bd8b6;
   --color-chart-1: #5472e4; --color-chart-2: #0eb39e; --color-chart-muted: #5a6169;
+  --color-hero: #18191b; --color-hero-fg: #edeef0; --color-hero-fg-muted: #b0b4ba; --color-hero-accent: #9eb1ff;
   --color-bg-raised: #2e3135; --color-switch-thumb: #b0b4ba; --color-scrim: rgb(0 0 0 / 0.6); /* slate-5: lighter than the slate-3 track */
   --shadow-raised: 0 0 0 1px #43484e;
   --color-danger-fill: #c62a2f; --color-danger-fill-hover: #ce2c31; --color-danger-fill-fg: #ffffff; /* white 5.6:1 / 5.2:1 */

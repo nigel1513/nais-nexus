@@ -81,15 +81,69 @@
     "hintClose": "close"
   },
   "landing": {
-    "title": "NAIS AI-OS Research Commons",
-    "subtitle": "Collaborate across institutions, find AI-ready data and use it safely within approved limits.",
-    "cta": "Start with Research Commons",
-    "signIn": "Sign in"
+    "nav": {
+      "guide": "About the portal",
+      "support": "Support",
+      "label": "Shortcuts"
+    },
+    "operator": "National AI for Science Research Center",
+    "operatorFull": "NAIS, National AI for Science Research Center",
+    "operatedBy": "Operated by",
+    "newTab": "opens in a new tab",
+    "signInPrefix": "NST ",
+    "signInShort": "Sign in",
+    "over": "The research data portal run by the <operator>National AI for Science Research Center</operator>",
+    "titleLine1": "Find data, get approval,",
+    "titleLine2": "research together",
+    "prose": "<b>NAIS Research Commons</b> is an internal portal where NST member institutes share research data and run joint research across institutes. Data opens only within the scope its owning institute approves, and every access is recorded in the audit log.",
+    "signIn": "NST single sign-on (SSO)",
+    "signInHint": "Sign in with your institute account",
+    "windows": {
+      "pick": "Choose a screen example",
+      "access": "Access approval",
+      "data": "Data card",
+      "project": "Joint project"
+    },
+    "data": {
+      "kicker": "Data card",
+      "title": "Know the data before you open it",
+      "intro": "Every dataset has a data card: who made it, how each column is distributed and what changed in each version, before you download anything.",
+      "caption": "Screen example. Values are generated samples, not real data."
+    },
+    "access": {
+      "kicker": "Access approval",
+      "title": "Opens only within the approved scope",
+      "intro": "To use data you state a purpose and period, and the owning institute approves. Approvals close when the period ends, and the owner can revoke at any time.",
+      "caption": "Screen example. The buttons only work on this page."
+    },
+    "project": {
+      "kicker": "Joint projects",
+      "title": "Projects across institutes",
+      "intro": "Researchers from several institutes manage members and data in one project. Linked data still follows each owner's approval.",
+      "caption": "Screen example. Names and institutes are examples."
+    },
+    "readiness": {
+      "kicker": "AI-ready checks",
+      "title": "Checked before AI training",
+      "intro": "Uploads are checked for metadata, units, provenance and format, item by item, so data can be brought to a trainable state.",
+      "caption": "Screen example. Score and items are examples."
+    },
+    "close": {
+      "title": "Sign in with NST single sign-on",
+      "body": "Use your institute account. For account problems, contact your institute administrator."
+    },
+    "notice": "This system is for researchers at NST member institutes only. Access is recorded in the audit log.",
+    "support": "Support",
+    "supportPending": "Contact to be announced",
+    "version": "Version"
   },
   "auth": {
     "mockUser": "User",
     "signIn": "Sign in",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "mockTitle": "Choose an account",
+    "mockDescription": "Choose the account to sign in with through NST single sign-on.",
+    "mockBack": "Back to start"
   },
   "enums": {
     "VocabularyScheme": {
@@ -309,5 +363,154 @@
       "UNKNOWN_ORGANIZATION": "Unknown organization",
       "MUTUALLY_EXCLUSIVE": "A council institute and a free-text name cannot be combined"
     }
+  },
+  "settings": {
+    "title": "Settings",
+    "description": "Your account details and display preferences.",
+    "profile": "Profile",
+    "profileDescription": "Taken from your institute account.",
+    "organization": "Institute",
+    "roles": "Roles",
+    "noRoles": "No roles assigned",
+    "profileHint": "Ask your institute admin to change these details.",
+    "language": "Language",
+    "languageDescription": "The language the interface is shown in.",
+    "theme": "Theme",
+    "themeDescription": "Applies to this browser only.",
+    "notifications": "Notifications",
+    "notificationsDescription": "Project invitations, access request decisions, expiring access and dataset releases.",
+    "notificationList": "Notification list",
+    "notificationSummary": "{total} total · {unread} unread",
+    "unread": "Unread",
+    "open": "Open",
+    "markRead": "Mark as read",
+    "nav": {
+      "label": "Settings menu",
+      "profile": "Profile",
+      "researcherNumber": "Researcher number",
+      "theme": "Theme",
+      "language": "Language",
+      "notifications": "Notifications"
+    },
+    "ntis": {
+      "title": "Researcher number",
+      "description": "Register your national researcher number (NTIS).",
+      "label": "National researcher number (NTIS)",
+      "hint": "The 8-digit number registered in NTIS",
+      "save": "Save number",
+      "remove": "Remove number",
+      "format": "Enter 8 digits.",
+      "duplicate": "Another user has already registered this number.",
+      "saved": "Saved.",
+      "registered": "Registered",
+      "notRegistered": "Not registered"
+    }
+  },
+  "org": {
+    "title": "{name} administration",
+    "description": "Manage the roles and status of your institute's members.",
+    "code": "Code",
+    "type": "Type",
+    "members": "Members",
+    "rolesFor": "Roles of {name}",
+    "saveChanges": "Save changes",
+    "disableWarning": "All of this user's data access grants will be revoked. Continue?",
+    "saved": "Changes saved.",
+    "selfDemotionTitle": "Remove your own admin role",
+    "selfDemotionWarning": "If you remove your own institute admin role you can no longer open this page. Remove it?",
+    "selfDemotionConfirm": "Remove",
+    "selfLocked": "You cannot change your own institute admin role or status.",
+    "selfStatusLocked": "You cannot change your own status.",
+    "lastAdminError": "Only a platform admin can remove the institute's last institute admin.",
+    "actionsFor": "Manage {name}",
+    "changeRoles": "Change roles",
+    "disable": "Disable",
+    "enable": "Re-enable",
+    "rolesTitle": "Change roles of {name}",
+    "rolesDescription": "Choose the institute roles for this member.",
+    "disableTitle": "Disable {name}",
+    "enableTitle": "Re-enable {name}",
+    "enableDescription": "This member can use their institute roles again.",
+    "you": "You",
+    "noRoles": "No roles",
+    "memberTotal": "{count, plural, one {# member} other {# members}}",
+    "memberTable": "Institute members",
+    "noMembers": "No members.",
+    "memberCountValue": "{count, plural, one {# member} other {# members}}",
+    "datasetCountValue": "{count, plural, one {# dataset} other {# datasets}}",
+    "columns": {
+      "member": "Member",
+      "email": "Email",
+      "roles": "Roles",
+      "status": "Status",
+      "updated": "Updated",
+      "actions": "Manage"
+    },
+    "transfer": {
+      "title": "Institute transfer",
+      "description": "Move a user to another institute.",
+      "platformOnly": "Platform admin only",
+      "user": "User to move",
+      "target": "Target institute",
+      "choose": "Choose an institute",
+      "submit": "Move",
+      "confirmTitle": "Move {name} to {org}",
+      "warning": "Roles and access at the previous institute end and the user must sign in again. Past records keep the affiliation at the time.",
+      "confirm": "Confirm move",
+      "done": "Moved {name} to {org}."
+    },
+    "memberCountUnknown": "Members —",
+    "datasetCountUnknown": "Datasets —"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "myProjects": "My projects",
+    "openRequests": "My open requests",
+    "myGrants": "My access",
+    "reviewQueue": "Requests to review",
+    "noProjects": "You are not in any project yet.",
+    "createFirstProject": "Create your first joint project",
+    "noRequests": "No open requests.",
+    "noGrants": "No active access.",
+    "noReview": "Nothing to review.",
+    "viewAll": "View all",
+    "requestedBy": "{name}",
+    "recentActivity": "Recent activity",
+    "activityList": "Recent activity list",
+    "orgDatasets": "Latest versions at {org}",
+    "noDatasets": "No datasets yet.",
+    "newDataset": "Register a dataset",
+    "findData": "Find data",
+    "openAccess": "Open access management",
+    "openActivity": "Open activity",
+    "days": "{count, plural, one {# day} other {# days}}",
+    "columns": {
+      "dataset": "Dataset",
+      "requester": "Requester",
+      "project": "Project",
+      "purpose": "Purpose",
+      "days": "Period",
+      "status": "Status",
+      "submitted": "Submitted",
+      "version": "Version",
+      "access": "Access",
+      "readiness": "AI-Ready",
+      "updated": "Updated",
+      "myRole": "My role",
+      "members": "Members",
+      "expires": "Expires"
+    },
+    "summary": "Summary",
+    "repeat": "×{count}",
+    "s": {}
+  },
+  "notFound": {
+    "title": "Page not found",
+    "home": "Go to dashboard",
+    "help": "Check the address or start again from the dashboard.",
+    "search": "Search data"
+  },
+  "errorPage": {
+    "message": "Something went wrong while showing this page. Try again, or tell an admin with the trace ID."
   }
 }

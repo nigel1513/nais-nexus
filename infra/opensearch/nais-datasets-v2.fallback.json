@@ -5,18 +5,11 @@
       "analyzer": {
         "ko_en": {
           "type": "custom",
-          "tokenizer": "nori_mixed",
+          "tokenizer": "standard",
           "filter": [
             "lowercase",
-            "nori_part_of_speech",
-            "nori_readingform"
+            "cjk_bigram"
           ]
-        }
-      },
-      "tokenizer": {
-        "nori_mixed": {
-          "type": "nori_tokenizer",
-          "decompound_mode": "mixed"
         }
       },
       "normalizer": {
@@ -107,6 +100,55 @@
       },
       "updated_at": {
         "type": "date"
+      },
+      "subtitle": {
+        "type": "text",
+        "analyzer": "ko_en"
+      },
+      "subject_codes": {
+        "type": "keyword"
+      },
+      "material_codes": {
+        "type": "keyword"
+      },
+      "method_codes": {
+        "type": "keyword"
+      },
+      "subject_labels": {
+        "type": "text",
+        "analyzer": "ko_en"
+      },
+      "temporal_start": {
+        "type": "date",
+        "format": "strict_date"
+      },
+      "temporal_end": {
+        "type": "date",
+        "format": "strict_date"
+      },
+      "collecting_organization_id": {
+        "type": "keyword"
+      },
+      "collecting_organization_name": {
+        "type": "keyword",
+        "fields": {
+          "text": {
+            "type": "text",
+            "analyzer": "ko_en"
+          }
+        }
+      },
+      "principal_investigator_id": {
+        "type": "keyword"
+      },
+      "principal_investigator_name": {
+        "type": "keyword",
+        "fields": {
+          "text": {
+            "type": "text",
+            "analyzer": "ko_en"
+          }
+        }
       }
     }
   }

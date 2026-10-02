@@ -45,10 +45,10 @@ describe("ActivityScreen", () => {
     const time = entry.querySelector("time")!;
     expect(time).toHaveClass("font-mono", "num");
     expect(time.textContent).toMatch(/^\d{2}:\d{2}$/);
-    expect(entry).toHaveTextContent("A Researcher");
-    expect(await within(entry).findByText("Institute A")).toBeInTheDocument();
+    expect(entry).toHaveTextContent("김민준");
+    expect(await within(entry).findByText("한국에너지기술연구원")).toBeInTheDocument();
     expect(within(entry).getByRole("link")).toHaveAttribute("href", `/commons/projects/${PROJECT.seed}`);
-    expect(await within(entry).findByText("Seed: Battery Materials Joint Study")).toBeInTheDocument();
+    expect(await within(entry).findByText("차세대 이차전지 소재 공동연구")).toBeInTheDocument();
   });
 
   it("filters by action kind (URL-synced) and reveals trace details on demand", async () => {
@@ -99,9 +99,9 @@ describe("ActivityScreen", () => {
   });
 
   it("the target search narrows the loaded rows and keeps the term in the URL", async () => {
-    open(USER.aResearcher, "/commons/activity?q=seed");
+    open(USER.aResearcher, "/commons/activity?q=이차전지");
     await screen.findByRole("region", { name: "활동 목록" });
-    expect(screen.getByRole("searchbox", { name: "행위자·대상 검색" })).toHaveValue("seed");
+    expect(screen.getByRole("searchbox", { name: "행위자·대상 검색" })).toHaveValue("이차전지");
     await waitFor(() => expect(within(timeline()).queryAllByText("접근을 요청했습니다")).toHaveLength(0));
     expect(within(timeline()).getAllByText("프로젝트를 만들었습니다").length).toBeGreaterThan(0);
     expect(screen.getByText(/건 표시 중 · 불러온 \d+건에서 검색/)).toBeInTheDocument();
