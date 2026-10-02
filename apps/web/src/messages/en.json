@@ -181,7 +181,7 @@
       "tabCard": "Data card",
       "tabVersions": "Versions",
       "aiReadyLoading": "Checking AI-ready…",
-      "about": "About Dataset",
+      "about": "About",
       "noDescription": "No description.",
       "inquiry": "Contact",
       "inquirySoon": "In-platform inquiries are coming soon.",
@@ -197,7 +197,35 @@
       "explorerFiles": "{count} files",
       "explorerTitle": "Data Explorer",
       "columnsTitle": "Column descriptions",
-      "aiReadyError": "AI-ready check failed"
+      "aiReadyError": "AI-ready check failed",
+      "railLabel": "Dataset details",
+      "piTitle": "Principal investigator",
+      "activityTitle": "Activity",
+      "actVersions": "Published versions",
+      "actLastPublished": "Last published",
+      "actFiles": "Files",
+      "actSize": "Size",
+      "newNotebook": "New notebook",
+      "soon": "Soon",
+      "metaLabel": "Dataset summary",
+      "versionPicker": "Version",
+      "draftSuffix": "draft",
+      "aiReadyChecks": "AI-Ready checks",
+      "published": "published",
+      "hero": {
+        "crumb": "Research data",
+        "pi": "Principal investigator",
+        "period": "Data period",
+        "version": "Version",
+        "aiReady": "AI-ready",
+        "outOf": "/ 10",
+        "checks": "Check results",
+        "ongoing": "ongoing",
+        "aboutCrumb": "Overview",
+        "explorerCrumb": "Files & distributions",
+        "columnsCrumb": "Schema",
+        "metaCrumb": "Provenance & use"
+      }
     },
     "people": {
       "atTheTime": " (at the time)",
@@ -235,7 +263,9 @@
         "from": "Period start",
         "to": "Period end",
         "apply": "Apply period",
-        "clear": "Clear"
+        "clear": "Clear",
+        "fromShort": "From",
+        "toShort": "To"
       },
       "pi": {
         "label": "Principal investigator",
@@ -247,7 +277,42 @@
         "pi": "PI",
         "period": "Period",
         "collecting": "Collected by",
-        "ongoing": "ongoing"
+        "ongoing": "ongoing",
+        "owner": "Owner",
+        "version": "Latest version",
+        "updated": "Updated"
+      },
+      "filters": "Filters",
+      "description": "Find datasets shared across the institutes by field, period and organization.",
+      "facetOption": "{label} ({count})",
+      "showMore": "Show {count} more",
+      "showLess": "Show less",
+      "clearAll": "Clear all",
+      "activeFilters": "Active filters",
+      "removeFilter": "Remove filter {label}",
+      "periodChip": "Period {from} – {to}",
+      "emptyHint": "Try another keyword or fewer filters.",
+      "view": "View",
+      "viewList": "List",
+      "viewTable": "Table",
+      "metaLabel": "Dataset details",
+      "openFilters": "Filters",
+      "column": {
+        "title": "Title",
+        "organization": "Organization",
+        "period": "Period",
+        "updated": "Updated",
+        "aiReady": "AI-Ready"
+      },
+      "hero": {
+        "crumb": "Research data",
+        "context": "Research data shared across the institutes",
+        "summary": "Search summary",
+        "results": "Results",
+        "institutes": "Institutes",
+        "aiReady": "AI-ready pass",
+        "resultsCrumb": "Datasets",
+        "railCrumb": "Refine"
       }
     },
     "form": {
@@ -397,7 +462,17 @@
       },
       "columnsTruncated": "Only some columns are shown",
       "showMore": "Show more",
-      "empty": "No tabular files"
+      "empty": "No tabular files",
+      "otherGroup": "Files",
+      "missing": "missing {pct}%",
+      "topValues": "Top values",
+      "gatedHint": "Column names, types and units are in the Column view. Values and distributions open after access is approved.",
+      "previewHead": "First {count} rows",
+      "stat": {
+        "min": "Min",
+        "max": "Max",
+        "mean": "Mean"
+      }
     },
     "new": {
       "stepsLabel": "Registration steps",

@@ -11,7 +11,7 @@ import { isTabular } from "../lib/tabular";
 
 configure({ asyncUtilTimeout: 5000 }); // the full suite loads the machine; the 1 s default flakes
 const open = (user: string) => renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user, path: `/commons/data/${DATASET.battery}` });
-const explorer = async () => within(await screen.findByRole("list", { name: "파일" }, { timeout: 5000 }).then((l) => l.closest("div.grid") as HTMLElement));
+const explorer = async () => within(await screen.findByRole("list", { name: "파일" }, { timeout: 5000 }).then((l) => l.closest("section") as HTMLElement));
 
 describe("isTabular", () => {
   it("accepts csv/tsv/parquet and ignores _-prefixed metadata files", () => {
@@ -24,12 +24,23 @@ describe("isTabular", () => {
 });
 
 describe("Data Explorer", () => {
+  it("is a panel with a file tree grouped under 파일, a view switch and a coloured histogram per numeric column", async () => {
+    open(USER.bResearcher);
+    const ex = await explorer();
+    expect(ex.getByText("파일", { selector: "p" })).toBeInTheDocument();
+    expect(ex.getByRole("group", { name: "보기 방식" })).toBeInTheDocument();
+    expect(ex.getByRole("button", { name: "Detail" })).toHaveAttribute("aria-pressed", "true");
+    const hists = await ex.findAllByRole("img", { name: /분포/ });
+    expect(hists.length).toBe(4); // cycle, capacity_ah, voltage_v, temp_c
+    expect(hists[0]!.querySelector("[data-bin]")).toHaveClass("bg-chart-1"); // one hue (chart-1), not grey
+  });
+
   it("lists files, defaults to the first tabular file and shows the column view", async () => {
     open(USER.bResearcher);
     const tree = await screen.findByRole("list", { name: "파일" }, { timeout: 5000 });
     expect(within(tree).getByRole("button", { name: /data\/measurements\.csv/ })).toHaveAttribute("aria-current", "true");
     const ex = await explorer();
-    await userEvent.click(ex.getByRole("radio", { name: "Column" }));
+    await userEvent.click(ex.getByRole("button", { name: "Column" }));
     const table = await ex.findByRole("table", { name: /열 요약/ });
     expect(within(table).getByRole("cell", { name: "temp_c" })).toBeInTheDocument();
     expect(within(table).getByRole("cell", { name: "Cel" })).toBeInTheDocument();
@@ -38,9 +49,9 @@ describe("Data Explorer", () => {
   it("shows distributions and a 100-row preview to users with download permission", async () => {
     open(USER.bResearcher);
     const ex = await explorer();
-    await userEvent.click(await ex.findByRole("radio", { name: "Detail" }));
+    await userEvent.click(await ex.findByRole("button", { name: "Detail" }));
     expect(await ex.findByRole("img", { name: /temp_c 분포/ })).toBeInTheDocument();
-    await userEvent.click(ex.getByRole("radio", { name: "Compact" }));
+    await userEvent.click(ex.getByRole("button", { name: "Compact" }));
     const rows = within(await ex.findByRole("table", { name: /미리보기/ })).getAllByRole("row");
     expect(rows).toHaveLength(101);
   });
@@ -48,12 +59,12 @@ describe("Data Explorer", () => {
   it("gates raw values behind download permission", async () => {
     open(USER.aAdmin);
     const ex = await explorer();
-    await userEvent.click(await ex.findByRole("radio", { name: "Detail" }));
+    await userEvent.click(await ex.findByRole("button", { name: "Detail" }));
     expect(await ex.findByText("접근 승인 후 미리보기 가능")).toBeInTheDocument();
     expect(ex.getByRole("button", { name: "접근 요청" })).toBeInTheDocument();
     expect(ex.queryByRole("img", { name: /분포/ })).not.toBeInTheDocument();
     expect(ex.queryByText("3.0500")).not.toBeInTheDocument();
-    await userEvent.click(ex.getByRole("radio", { name: "Column" }));
+    await userEvent.click(ex.getByRole("button", { name: "Column" }));
     expect(await ex.findByRole("cell", { name: "temp_c" })).toBeInTheDocument();
   });
 
@@ -61,7 +72,7 @@ describe("Data Explorer", () => {
     server.use(http.get("*/mock-api/v1/dataset-files/:id/profile", ({ params }) => HttpResponse.json({ file_id: params.id, path: "data/measurements.csv", status: "PENDING", columns: [] })));
     open(USER.bResearcher);
     const ex = await explorer();
-    await userEvent.click(await ex.findByRole("radio", { name: "Column" }));
+    await userEvent.click(await ex.findByRole("button", { name: "Column" }));
     expect(await ex.findByText("미리보기를 준비하고 있습니다…")).toBeInTheDocument();
   });
 
@@ -74,7 +85,7 @@ describe("Data Explorer", () => {
     open(USER.bResearcher);
     const ex = await explorer();
     expect(await ex.findByText("분포 정보 생략")).toBeInTheDocument();
-    await userEvent.click(ex.getByRole("radio", { name: "Compact" }));
+    await userEvent.click(ex.getByRole("button", { name: "Compact" }));
     expect(await ex.findByRole("cell", { name: "x" })).toBeInTheDocument();
   });
 
@@ -104,7 +115,7 @@ describe("Data Explorer", () => {
     );
     open(USER.bResearcher);
     const ex = await explorer();
-    await userEvent.click(await ex.findByRole("radio", { name: "Compact" }));
+    await userEvent.click(await ex.findByRole("button", { name: "Compact" }));
     expect(await ex.findByText("미리보기를 준비하고 있습니다…")).toBeInTheDocument();
     expect(await ex.findByRole("cell", { name: "zz" }, { timeout: 9000 })).toBeInTheDocument();
   }, 20000);
@@ -113,7 +124,7 @@ describe("Data Explorer", () => {
     server.use(http.get("*/mock-api/v1/dataset-files/:id/profile", ({ params }) => HttpResponse.json({ file_id: params.id, path: "x.csv", status: "FAILED", failure_code: "NEW_CODE", columns: [] })));
     open(USER.bResearcher);
     const ex = await explorer();
-    await userEvent.click(await ex.findByRole("radio", { name: "Column" }));
+    await userEvent.click(await ex.findByRole("button", { name: "Column" }));
     expect(await ex.findByText("미리보기를 만들지 못했습니다")).toBeInTheDocument();
   });
 });

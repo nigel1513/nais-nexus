@@ -66,6 +66,7 @@
   --text-small: 13px; --text-small--line-height: 20px;
   --text-caption: 12px; --text-caption--line-height: 16px; --text-caption--letter-spacing: 0.01em; --text-caption--font-weight: 500;
   --text-mono: 12.5px; --text-mono--line-height: 20px;
+  --text-long: 15px; --text-long--line-height: 26px; /* long-form description (About), max 72ch */
   --text-micro: 11px; --text-micro--line-height: 14px; --text-micro--font-weight: 500; /* Kbd, 20/24px avatar initials */
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);

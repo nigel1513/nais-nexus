@@ -468,7 +468,7 @@
   "data": {
     "search": {
       "title": "데이터 검색",
-      "filters": "검색 필터",
+      "filters": "필터",
       "results": "검색 결과",
       "total": "총 {count}건",
       "sort": "정렬",
@@ -500,7 +500,9 @@
         "from": "기간 시작",
         "to": "기간 끝",
         "apply": "기간 적용",
-        "clear": "초기화"
+        "clear": "초기화",
+        "fromShort": "시작",
+        "toShort": "끝"
       },
       "pi": {
         "label": "연구책임자",
@@ -512,7 +514,41 @@
         "pi": "연구책임자",
         "period": "기간",
         "collecting": "수집",
-        "ongoing": "진행 중"
+        "ongoing": "진행 중",
+        "owner": "소유 기관",
+        "version": "최신 버전",
+        "updated": "수정"
+      },
+      "description": "연구회 기관이 공유한 데이터셋을 분야·기간·기관으로 찾습니다.",
+      "facetOption": "{label} ({count})",
+      "showMore": "{count}개 더 보기",
+      "showLess": "접기",
+      "clearAll": "모두 지우기",
+      "activeFilters": "적용된 필터",
+      "removeFilter": "{label} 필터 해제",
+      "periodChip": "기간 {from} – {to}",
+      "emptyHint": "검색어를 바꾸거나 필터를 줄여 보세요.",
+      "view": "보기",
+      "viewList": "목록",
+      "viewTable": "표",
+      "metaLabel": "데이터 정보",
+      "openFilters": "필터",
+      "column": {
+        "title": "제목",
+        "organization": "기관",
+        "period": "기간",
+        "updated": "수정일",
+        "aiReady": "AI-Ready"
+      },
+      "hero": {
+        "crumb": "연구 데이터",
+        "context": "출연연이 함께 쓰는 연구 데이터",
+        "summary": "검색 요약",
+        "results": "검색 결과",
+        "institutes": "보유 기관",
+        "aiReady": "AI-ready 통과",
+        "resultsCrumb": "데이터셋",
+        "railCrumb": "검색 조건"
       }
     },
     "new": {
@@ -685,7 +721,7 @@
       "tabCard": "데이터 카드",
       "tabVersions": "버전",
       "aiReadyLoading": "AI-ready 확인 중",
-      "about": "About Dataset",
+      "about": "About",
       "noDescription": "설명이 없습니다.",
       "inquiry": "문의",
       "inquirySoon": "플랫폼 내 문의 기능은 곧 제공됩니다.",
@@ -701,7 +737,35 @@
       "explorerFiles": "파일 {count}개",
       "explorerTitle": "Data Explorer",
       "columnsTitle": "컬럼 설명",
-      "aiReadyError": "AI-ready 확인 실패"
+      "aiReadyError": "AI-ready 확인 실패",
+      "railLabel": "데이터셋 정보",
+      "piTitle": "연구책임자",
+      "activityTitle": "활동",
+      "actVersions": "발행 버전",
+      "actLastPublished": "최근 발행",
+      "actFiles": "파일",
+      "actSize": "용량",
+      "newNotebook": "새 노트북",
+      "soon": "예정",
+      "metaLabel": "데이터셋 요약",
+      "versionPicker": "버전",
+      "draftSuffix": "(초안)",
+      "aiReadyChecks": "AI-Ready 검사 결과",
+      "published": "발행",
+      "hero": {
+        "crumb": "연구 데이터",
+        "pi": "연구책임자",
+        "period": "데이터 기간",
+        "version": "버전",
+        "aiReady": "AI-ready",
+        "outOf": "/ 10",
+        "checks": "검사 결과",
+        "ongoing": "진행 중",
+        "aboutCrumb": "개요",
+        "explorerCrumb": "파일·분포",
+        "columnsCrumb": "스키마",
+        "metaCrumb": "출처·이용"
+      }
     },
     "people": {
       "atTheTime": " (당시 소속)",
@@ -772,7 +836,17 @@
       },
       "columnsTruncated": "일부 열만 표시",
       "showMore": "더 보기",
-      "empty": "표 형식 파일이 없습니다"
+      "empty": "표 형식 파일이 없습니다",
+      "otherGroup": "파일",
+      "missing": "결측 {pct}%",
+      "topValues": "상위 값",
+      "gatedHint": "열 이름·타입·단위는 Column 보기에서 볼 수 있습니다. 값과 분포는 접근 승인 후 열립니다.",
+      "previewHead": "앞 {count}행",
+      "stat": {
+        "min": "최소",
+        "max": "최대",
+        "mean": "평균"
+      }
     },
     "edit": {
       "title": "데이터셋 편집",

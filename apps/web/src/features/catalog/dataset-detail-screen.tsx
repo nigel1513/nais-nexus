@@ -1,5 +1,6 @@
 "use client";
 import { Button, EmptyState, Tabs, TabsContent, TabsList, TabsTrigger } from "@nais/ui";
+import { Info, Plus } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useRef, useState } from "react";
@@ -12,14 +13,14 @@ import { useGetDataset, useListDatasetVersions } from "./api";
 import { DatasetEditSheet } from "./components/dataset-edit-sheet";
 import { NewVersionDialog } from "./components/new-version-dialog";
 import { About } from "./data-card/about";
-import { ActivitySummary } from "./data-card/activity-summary";
-import { DataCardHeader } from "./data-card/header";
+import { DataCardHeader, VersionPicker } from "./data-card/header";
 import { MetadataBlock } from "./data-card/metadata-block";
 import { pickVersion } from "./data-card/pick-version";
 import { SideCard } from "./data-card/side-card";
 import { ColumnTable } from "./explorer/column-table";
 import { DataExplorer } from "./explorer/data-explorer";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
+import { SectionHead } from "./components/section-head";
 
 export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const t = useTranslations();
@@ -45,72 +46,76 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
 
   return (
     <>
-      <DataCardHeader
-        dataset={d}
-        versions={versionItems}
-        selected={selected}
-        onSelectVersion={(id) => setParams({ v: id })}
-        onInquiry={() => contactRef.current?.focus()}
-        steward={steward}
-        onEdit={() => setEditing(true)}
-        onNewVersion={() => setNewVersion(true)}
-      />
+      <DataCardHeader dataset={d} selected={selected} steward={steward} onEdit={() => setEditing(true)} onInquiry={() => contactRef.current?.focus()} />
       {steward && versions.isSuccess && versionItems.length === 0 ? (
-        <p role="status" className="mb-4 rounded-md border border-info p-3 text-sm">
-          {t("data.detail.firstVersionHint")}{" "}
-          <Button size="sm" variant="link" onClick={() => setNewVersion(true)}>
+        <div role="status" className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-md bg-info-soft px-4 py-3 text-small text-fg">
+          <span className="flex items-center gap-2">
+            <Info aria-hidden="true" strokeWidth={1.75} className="size-4 shrink-0 text-info" />
+            {t("data.detail.firstVersionHint")}
+          </span>
+          <Button size="sm" onClick={() => setNewVersion(true)}>
             {t("data.version.newTitle")}
           </Button>
-        </p>
+        </div>
       ) : null}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <Tabs value={tab} onValueChange={(v) => setParams({ tab: v === "versions" ? "versions" : null })}>
-          <TabsList aria-label={t("data.card.tabsLabel")}>
+      <Tabs value={tab} onValueChange={(v) => setParams({ tab: v === "versions" ? "versions" : null })}>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border">
+          <TabsList aria-label={t("data.card.tabsLabel")} className="border-0">
             <TabsTrigger value="card">{t("data.card.tabCard")}</TabsTrigger>
             <TabsTrigger value="versions">{t("data.card.tabVersions")}</TabsTrigger>
           </TabsList>
-          <TabsContent value="card" className="flex flex-col gap-8">
-            <About description={d.description} />
-            <section aria-labelledby="explorer-title">
-              <h2 id="explorer-title" className="mb-2 text-lg font-semibold">
-                {t("data.card.explorerTitle")}
-              </h2>
-              <p className="mb-3 text-sm text-muted-foreground">{t("data.card.explorerFiles", { count: selected?.file_count ?? d.stats?.file_count ?? 0 })}</p>
-              {selected ? <DataExplorer dataset={d} versionId={selected.dataset_version_id} /> : null}
-            </section>
-            <section aria-labelledby="columns-title" data-testid="column-table-slot" id="column-table-slot">
-              <h2 id="columns-title" className="mb-2 text-lg font-semibold">
-                {t("data.card.columnsTitle")}
-              </h2>
-              {selected ? <ColumnTable versionId={selected.dataset_version_id} /> : null}
-            </section>
-            <MetadataBlock dataset={d} />
-            <ActivitySummary versions={versionItems} />
-          </TabsContent>
-          <TabsContent value="versions">
-            {versions.isPending ? (
-              <DelayedSkeleton lines={2} />
-            ) : versionItems.length === 0 ? (
-              <EmptyState title={t("data.detail.noVersions")} />
-            ) : (
-              <ul className="flex flex-col gap-2 text-sm">
-                {versionItems.map((v) => (
-                  <li key={v.dataset_version_id} className="flex flex-wrap items-center justify-between gap-2">
-                    <Link href={`/commons/data/${d.dataset_id}/versions/${v.dataset_version_id}`} className="font-medium underline-offset-4 hover:underline">
-                      {v.version_label}
-                    </Link>
-                    <span className="flex items-center gap-2">
-                      <VersionStatusBadge status={v.status} />
-                      <DateTime value={v.published_at ?? v.created_at} dateOnly />
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </TabsContent>
-        </Tabs>
-        <SideCard ref={contactRef} dataset={d} />
-      </div>
+          <div className="flex items-center gap-2 pb-2 sm:pb-0">
+            <VersionPicker dataset={d} versions={versionItems} selected={selected} onSelect={(id) => setParams({ v: id })} />
+            {steward ? (
+              <Button variant="ghost" onClick={() => setNewVersion(true)}>
+                <Plus aria-hidden="true" strokeWidth={1.75} />
+                {t("data.version.newTitle")}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+          <div className="min-w-0">
+            <TabsContent value="card" className="flex flex-col gap-10">
+              <About description={d.description} />
+              {selected ? (
+                <DataExplorer key={selected.dataset_version_id} dataset={d} versionId={selected.dataset_version_id} fileCount={selected.file_count ?? d.stats?.file_count ?? 0} />
+              ) : null}
+              <section aria-labelledby="columns-title" data-testid="column-table-slot" id="column-table-slot" className="flex flex-col gap-4">
+                <SectionHead id="columns-title" eyebrow={t("data.card.hero.columnsCrumb")} title={t("data.card.columnsTitle")} />
+                {selected ? <ColumnTable versionId={selected.dataset_version_id} /> : null}
+              </section>
+              <MetadataBlock dataset={d} />
+            </TabsContent>
+            <TabsContent value="versions">
+              {versions.isPending ? (
+                <DelayedSkeleton lines={2} />
+              ) : versionItems.length === 0 ? (
+                <EmptyState title={t("data.detail.noVersions")} />
+              ) : (
+                <ul className="flex flex-col divide-y divide-border border-y border-border text-small">
+                  {versionItems.map((v) => (
+                    <li key={v.dataset_version_id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
+                      <Link href={`/commons/data/${d.dataset_id}/versions/${v.dataset_version_id}`} className="font-mono text-mono font-medium text-fg underline-offset-4 hover:underline">
+                        {v.version_label}
+                      </Link>
+                      <span className="flex items-center gap-3 text-fg-muted">
+                        <VersionStatusBadge status={v.status} />
+                        <span className="num">
+                          <DateTime value={v.published_at ?? v.created_at} dateOnly />
+                        </span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </TabsContent>
+          </div>
+          <div className="lg:pt-10">
+            <SideCard ref={contactRef} dataset={d} versions={versionItems} />
+          </div>
+        </div>
+      </Tabs>
       {steward ? <DatasetEditSheet dataset={d} open={editing} onOpenChange={setEditing} /> : null}
       {steward ? <NewVersionDialog datasetId={d.dataset_id} open={newVersion} onOpenChange={setNewVersion} /> : null}
     </>

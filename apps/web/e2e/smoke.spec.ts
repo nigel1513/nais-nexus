@@ -56,7 +56,7 @@ test("mock login → dashboard → data search show mock data", async ({ page })
 
   await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "데이터" }).click();
   await expect(page).toHaveURL(/\/commons\/data$/);
-  await expect(page.getByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
   await expect(page.getByText("총 4건")).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 });
@@ -97,7 +97,7 @@ test("Data Card: explorer, gated preview and JSON-LD download work on any origin
   await page.goto(`/commons/data/${BATTERY}`);
   await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
   await expect(page.getByRole("button", { name: /AI-ready/ })).toBeVisible();
-  await page.getByRole("radio", { name: "Compact" }).check();
+  await page.getByRole("button", { name: "Compact" }).click();
   await expect(page.getByRole("table", { name: /미리보기/ })).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("region", { name: "메타데이터" }).getByRole("button", { name: "JSON-LD" }).click();
@@ -109,7 +109,7 @@ test("Data Card: explorer, gated preview and JSON-LD download work on any origin
 test("Data Card: a visitor without permission sees the gated notice", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000a01", url: baseURL! }]); // 박지훈, no grant
   await page.goto(`/commons/data/${BATTERY}`);
-  await page.getByRole("radio", { name: "Detail" }).check();
+  await page.getByRole("button", { name: "Detail" }).click();
   await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
 });
 
@@ -289,6 +289,39 @@ test("projects: list, detail members and the actions menu pass axe in both theme
     await page.keyboard.press("Escape");
 
     await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("data search: rail, table view, empty result and the phone filter sheet pass axe in both themes", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons/data");
+    const rail = page.getByRole("complementary", { name: "필터" });
+    await expect(rail.getByRole("checkbox", { name: /^이차전지 \(/ })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.getByRole("button", { name: "표" }).click();
+    await expect(page).toHaveURL(/view=table/);
+    await expect(page.getByRole("table", { name: "검색 결과" })).toBeVisible();
+    // A client-side URL update can momentarily drop <title> while Next re-applies metadata; axe would flag that.
+    await expect(page).toHaveTitle(/\S/);
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.goto("/commons/data?q=zzzz");
+    await expect(page.getByRole("button", { name: "필터 초기화" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/commons/data");
+    await page.getByRole("button", { name: "필터", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "필터" });
+    await expect(sheet.getByRole("checkbox", { name: /^이차전지 \(/ })).toBeVisible();
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
+    await sheet.getByRole("checkbox", { name: /^이차전지 \(/ }).click();
+    await expect(page).toHaveURL(/subject=BATTERY/);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });
