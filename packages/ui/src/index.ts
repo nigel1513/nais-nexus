@@ -28,6 +28,7 @@ export { Sheet, SheetBody, SheetClose, SheetContent, SheetDescription, SheetHead
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
 export { Table, TBody, Td, Th, THead, Tr } from "./table";
 export { DataTable, VIRTUALIZE_AFTER, type DataColumn } from "./data-table";
+export { GroupedList, type ListGroup } from "./grouped-list";
 export { Skeleton } from "./skeleton";
 export { EmptyState } from "./empty-state";
 export { ErrorState } from "./error-state";

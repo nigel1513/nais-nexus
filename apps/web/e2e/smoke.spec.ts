@@ -326,6 +326,84 @@ test("data search: rail, table view, empty result and the phone filter sheet pas
   }
 });
 
+test("access: review queue and request detail pass axe in both themes, rows open by keyboard, no sideways scroll on a phone", async ({ page, context, baseURL }) => {
+  const B_STEWARD = "00000000-0000-7000-8000-000000000b03";
+  const A_STEWARD = "00000000-0000-7000-8000-000000000a03";
+  // Seed from inside the page: the request context does not see the insecure project's host mapping.
+  await page.goto("/");
+  const id = await page.evaluate(async (user) => {
+    const post = (path: string, body: unknown) =>
+      fetch(`/mock-api/v1${path}`, { method: "POST", headers: { "x-mock-user": user, "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+    const project = await post("/projects", { name: "Axe 접근 검토", description: "e2e" });
+    const request = await post("/access-requests", {
+      dataset_id: "00000000-0000-7000-8000-000000002001",
+      project_id: project.project_id,
+      purpose: "ACADEMIC_RESEARCH",
+      purpose_detail: "접근성 점검을 위한 충분히 긴 목적 상세 설명입니다.",
+      operations: ["READ"],
+      requested_days: 30,
+    });
+    return request.access_request_id as string;
+  }, A_STEWARD);
+  expect(id).toMatch(/^[0-9a-f-]{36}$/);
+  await context.addCookies([{ name: "nais_mock_user", value: B_STEWARD, url: baseURL! }]);
+
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons/access");
+    await expect(page.getByRole("tab", { name: /검토할 요청/ })).toHaveAttribute("aria-selected", "true");
+    const table = page.getByRole("table", { name: "검토할 요청" });
+    await expect(table).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("tab", { name: "내 권한" }).click();
+    await expect(page).toHaveURL(/\?tab=grants$/);
+    // A soft navigation re-renders the metadata; wait for <title> to come back before axe looks at it.
+    await expect(page).toHaveTitle(/.+/);
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.goto(`/commons/access/${id}`);
+    await expect(page.getByRole("region", { name: "검토" }).getByRole("button", { name: "승인" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+
+  await page.goto("/commons/access");
+  const row = page.getByRole("table", { name: "검토할 요청" }).getByRole("row").filter({ hasText: "이서연" }).first();
+  await row.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/commons\/access\/[0-9a-f-]+$/);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const path of ["/commons/access", `/commons/access/${id}`]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("activity: the timeline and its action filter pass axe in both themes; no sideways scroll on a phone", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000101", url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons/activity");
+    const timeline = page.getByRole("region", { name: "활동 목록" });
+    await expect(timeline.getByRole("heading", { level: 2 }).first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "행동 종류" }).click();
+    await expect(page.getByRole("checkbox", { name: "프로젝트 생성" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await timeline.getByRole("button", { name: "상세 보기" }).first().click();
+    await expect(timeline.getByText("추적 ID").first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/commons/activity");
+  await expect(page.getByRole("region", { name: "활동 목록" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test("Settings and organization: axe clean in both themes, the theme choice persists, no sideways scroll at 390", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b01", url: baseURL! }]); // 한유나 (ORG_ADMIN)
   await page.goto("/settings");

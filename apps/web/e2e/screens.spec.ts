@@ -304,6 +304,153 @@ test.describe("v2 track B: dataset form and projects", () => {
   });
 });
 
+// Task 9: access management. The mock API lives in the web server's memory, so seeding through it shows up on the next page load.
+const MOCK_USERS = { aResearcher: "00000000-0000-7000-8000-000000000a02", aSteward: "00000000-0000-7000-8000-000000000a03", aAdmin: "00000000-0000-7000-8000-000000000a01", bResearcher: "00000000-0000-7000-8000-000000000b02" };
+const T9 = process.env.SHOT_PREFIX ?? "task9";
+
+async function seedReviewQueue(page: Page, baseURL: string): Promise<string> {
+  const api = (path: string, user: string, data?: unknown) =>
+    data === undefined
+      ? page.request.get(`${baseURL}/mock-api/v1${path}`, { headers: { "x-mock-user": user } })
+      : page.request.post(`${baseURL}/mock-api/v1${path}`, { headers: { "x-mock-user": user }, data });
+  const pending = (await (await api("/access-requests?role=reviewer&status=SUBMITTED&status=UNDER_REVIEW", USERS.steward)).json()) as { items: { access_request_id: string; status: string }[] };
+  if (pending.items.length >= 3) return pending.items.find((r) => r.status === "SUBMITTED")?.access_request_id ?? pending.items[0]!.access_request_id;
+  const file = async (user: string, project: string, body: Record<string, unknown>) => {
+    const p = (await (await api("/projects", user, { name: project, description: "접근 요청 화면 시연" })).json()) as { project_id: string };
+    const r = await api("/access-requests", user, { project_id: p.project_id, operations: ["READ"], ...body });
+    return r.ok() ? ((await r.json()) as { access_request_id: string }).access_request_id : null;
+  };
+  await file(MOCK_USERS.aSteward, "센서 융합 공동연구", { dataset_id: DATASET_BATTERY, purpose: "ACADEMIC_RESEARCH", purpose_detail: "충방전 사이클 데이터로 열화 지표를 비교하는 공동연구에 사용합니다.", requested_days: 30 });
+  await file(MOCK_USERS.aAdmin, "기관 품질 비교", { dataset_id: DATASET_BATTERY, purpose: "ACADEMIC_RESEARCH", purpose_detail: "두 기관의 셀 시험 기록 형식을 비교해 공통 단위 규칙을 정리합니다.", requested_days: 60 });
+  const id = await file(MOCK_USERS.aResearcher, "열화 예측 모델 학습", {
+    dataset_id: DATASET_BATTERY,
+    purpose: "AI_TRAINING",
+    purpose_detail: "배터리 열화 예측 모델을 학습하기 위해 셀별 충방전 곡선과 온도 기록을 사용합니다.\n학습 결과는 기관 내부 보고서에만 사용합니다.",
+    requested_days: 90,
+  });
+  return id!;
+}
+
+test.describe("task 9 screens", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+
+  test("access review list and steward request detail", async ({ page, baseURL }) => {
+    const id = await seedReviewQueue(page, baseURL!);
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/access?tab=review");
+    await expect(page.getByRole("heading", { level: 1, name: "접근 관리" })).toBeVisible();
+    await expect(page.getByText("김민준").first()).toBeVisible();
+    await shoot(page, `${T9}-access-review`);
+
+    await page.goto(`/commons/access/${id}`);
+    await expect(page.getByRole("button", { name: "승인" }).first()).toBeVisible();
+    await shoot(page, `${T9}-access-detail-steward`);
+  });
+
+  test("my requests, my grants and the download panel", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/access");
+    await expect(page.getByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" }).first()).toBeVisible();
+    await shoot(page, `${T9}-access-requests`, [[1440, 900]]);
+    await page.goto("/commons/access?tab=grants");
+    await expect(page.getByRole("link", { name: "다운로드" }).first()).toBeVisible();
+    await shoot(page, `${T9}-access-grants`, [[1440, 900]]);
+    await page.goto("/commons/access/00000000-0000-7000-8000-000000003001");
+    await expect(page.getByRole("link", { name: "다운로드" })).toBeVisible();
+    await shoot(page, `${T9}-access-detail-requester`, [[1440, 900]]);
+
+    await page.goto(`/commons/data/${DATASET_BATTERY}/versions/00000000-0000-7000-8000-000000002101`);
+    const panel = page.getByRole("region", { name: "다운로드" });
+    await panel.getByRole("button", { name: "다운로드 링크 받기" }).click();
+    await expect(panel.getByRole("link").first()).toBeVisible();
+    await panel.scrollIntoViewIfNeeded();
+    for (const theme of ["light", "dark"] as Theme[]) {
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      mkdirSync(OUT, { recursive: true });
+      await panel.screenshot({ path: `${OUT}/${T9}-download-1440-${theme}.png` });
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await panel.screenshot({ path: `${OUT}/${T9}-download-390-light.png` });
+
+    await page.context().clearCookies();
+    await as(page, "admin", baseURL!);
+    await page.goto("/commons/access");
+    await expect(page.getByText("보낸 접근 요청이 없습니다.")).toBeVisible();
+    await shoot(page, `${T9}-access-empty`, [[1440, 900]]);
+  });
+});
+
+// Task 10: activity and notifications.
+const T10 = process.env.SHOT_PREFIX_10 ?? "task10";
+const SENSORS_VERSION = "00000000-0000-7000-8000-000000002104";
+
+/**
+ * Decided requests (approved / rejected with a reason / changes requested), a project invitation and a denied download,
+ * so the timeline shows reasons and a DENIED row and A Steward's notifications cover several kinds. A Steward, not
+ * A Researcher, receives them: the smoke tests count A Researcher's unread notifications on the same server.
+ */
+async function seedTask10(page: Page, baseURL: string) {
+  const call = (method: "get" | "post", path: string, user: string, data?: unknown) =>
+    page.request[method](`${baseURL}/mock-api/v1${path}`, { headers: { "x-mock-user": user }, ...(data === undefined ? {} : { data }) });
+  const notes = (await (await call("get", "/notifications?limit=50", MOCK_USERS.aSteward)).json()) as { items: { type: string }[] };
+  if (notes.items.some((n) => n.type === "ACCESS_REJECTED")) return;
+  // The mock seeds its audit log a few seconds into the future; wait until "now" passes it so the new rows sort on top.
+  const newest = (await (await call("get", "/audit-events?limit=1", USERS.admin)).json()) as { items: { occurred_at: string }[] };
+  const ahead = Date.parse(newest.items[0]?.occurred_at ?? "") - Date.now();
+  if (ahead > 0) await page.waitForTimeout(Math.min(ahead + 1000, 60_000));
+  const file = async (name: string, purpose: string, days: number) => {
+    const p = (await (await call("post", "/projects", MOCK_USERS.aSteward, { name, description: "알림 시연" })).json()) as { project_id: string };
+    const r = await call("post", "/access-requests", MOCK_USERS.aSteward, {
+      dataset_id: DATASET_BATTERY,
+      project_id: p.project_id,
+      purpose,
+      purpose_detail: "배터리 셀 열화 패턴을 비교 분석하기 위해 사이클 데이터를 사용합니다.",
+      operations: ["READ"],
+      requested_days: days,
+    });
+    return ((await r.json()) as { access_request_id: string }).access_request_id;
+  };
+  const approved = await file("셀 열화 비교", "ACADEMIC_RESEARCH", 30);
+  const rejected = await file("상용 모델 학습", "AI_TRAINING", 90);
+  const changes = await file("충전 프로토콜 연구", "ACADEMIC_RESEARCH", 60);
+  await call("post", `/access-requests/${approved}/approve`, USERS.steward, { grant_days: 30, operations: ["READ"] });
+  await call("post", `/access-requests/${rejected}/reject`, USERS.steward, { reason: "상용 목적 학습은 이 데이터의 이용 조건에 맞지 않습니다." });
+  await call("post", `/access-requests/${changes}/request-changes`, USERS.steward, { comment: "분석할 셀 범위와 기간을 구체적으로 적어 주세요." });
+  const shared = (await (await call("post", "/projects", MOCK_USERS.bResearcher, { name: "공동 전해질 연구", description: "B 기관 주관" })).json()) as { project_id: string };
+  await call("post", `/projects/${shared.project_id}/members`, MOCK_USERS.bResearcher, { user_id: MOCK_USERS.aSteward, role: "RESEARCHER" });
+  await call("post", `/dataset-versions/${SENSORS_VERSION}/download-session`, MOCK_USERS.bResearcher, { project_id: shared.project_id });
+}
+
+test.describe("task 10 screens", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+
+  test("activity timeline and the open notification popover", async ({ page, baseURL }) => {
+    await seedTask10(page, baseURL!);
+    await as(page, "admin", baseURL!);
+    await page.goto("/commons/activity");
+    await expect(page.getByRole("heading", { level: 1, name: "활동 · 감사 로그" })).toBeVisible();
+    await expect(page.getByText("다운로드가 거부되었습니다").first()).toBeVisible();
+    await shoot(page, `${T10}-activity`);
+
+    await page.context().clearCookies();
+    await page.context().addCookies([{ name: "nais_mock_user", value: MOCK_USERS.aSteward, url: baseURL! }]);
+    for (const theme of ["light", "dark"] as Theme[]) {
+      await setup(page, [1440, 900], theme);
+      await page.goto("/commons/access");
+      await page.getByRole("button", { name: /^알림/ }).click();
+      await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+      await shootOne(page, `${T10}-notifications-open`, 1440, theme);
+      await page.keyboard.press("Escape");
+    }
+    await setup(page, [390, 844], "light");
+    await page.goto("/commons/access");
+    await page.getByRole("button", { name: /^알림/ }).click();
+    await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+    await shootOne(page, `${T10}-notifications-open`, 390, "light");
+  });
+});
+
 test.describe("settings and organization (Task 11)", () => {
   test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
   const prefix = process.env.SHOTS_PREFIX ?? "task11";
@@ -371,5 +518,62 @@ test.describe("dashboard and error pages (Task 12)", () => {
     await page.goto("/blocked?code=MEMBERSHIP_DISABLED");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await shoot(page, `${prefix}-blocked`, [[1440, 900]]);
+  });
+});
+
+// UI v2 (Track C): access management and activity. V2_PHASE=before|after names the set: v2-access-<screen>-<phase>-<w>-<theme>.png.
+test.describe("v2 track C screens", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  const phase = process.env.V2_PHASE ?? "after";
+
+  test("access", async ({ page, baseURL }) => {
+    await seedTask10(page, baseURL!);
+    const id = await seedReviewQueue(page, baseURL!);
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/access");
+    await expect(page.getByText("김민준").first()).toBeVisible();
+    await shoot(page, `v2-access-review-${phase}`);
+    await page.goto(`/commons/access/${id}`);
+    await expect(page.getByRole("button", { name: "승인" }).first()).toBeVisible();
+    await shoot(page, `v2-access-detail-${phase}`);
+    await page.goto("/commons/access?tab=org-grants");
+    await expect(page.getByRole("tab", { name: "기관 권한" })).toHaveAttribute("aria-selected", "true");
+    await page.waitForLoadState("networkidle");
+    await shoot(page, `v2-access-org-grants-${phase}`, [[1440, 900]]);
+
+    await page.context().clearCookies();
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/access");
+    await expect(page.getByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" }).first()).toBeVisible();
+    await shoot(page, `v2-access-requests-${phase}`, [[1440, 900]]);
+    await page.goto("/commons/access?tab=grants");
+    await expect(page.getByRole("link", { name: "다운로드" }).first()).toBeVisible();
+    await shoot(page, `v2-access-grants-${phase}`);
+    await page.goto("/commons/access/00000000-0000-7000-8000-000000003001");
+    await expect(page.getByRole("link", { name: "다운로드" })).toBeVisible();
+    await shoot(page, `v2-access-detail-requester-${phase}`, [[1440, 900]]);
+  });
+
+  test("activity and notifications", async ({ page, baseURL }) => {
+    await seedTask10(page, baseURL!);
+    await as(page, "admin", baseURL!);
+    await page.goto("/commons/activity");
+    await expect(page.getByText("다운로드가 거부되었습니다").first()).toBeVisible();
+    await shoot(page, `v2-activity-${phase}`);
+    await page.context().clearCookies();
+    await page.context().addCookies([{ name: "nais_mock_user", value: MOCK_USERS.aSteward, url: baseURL! }]);
+    for (const theme of ["light", "dark"] as Theme[]) {
+      await setup(page, [1440, 900], theme);
+      await page.goto("/commons/activity");
+      await page.getByRole("button", { name: /^알림/ }).click();
+      await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+      await shootOne(page, `v2-activity-notifications-${phase}`, 1440, theme);
+      await page.keyboard.press("Escape");
+    }
+    await setup(page, [390, 844], "light");
+    await page.goto("/commons/activity");
+    await page.getByRole("button", { name: /^알림/ }).click();
+    await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+    await shootOne(page, `v2-activity-notifications-${phase}`, 390, "light");
   });
 });
