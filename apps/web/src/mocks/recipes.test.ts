@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applySteps, parseCsv, previewRows, schemaOnly, StepError, type Table } from "./recipes";
+import { applySteps, parseCsv, previewRows, primaryFile, schemaOnly, StepError, type Table } from "./recipes";
+import type { StoredVersion } from "./types";
 
 const L = "left-input";
 const R = "right-input";
@@ -40,5 +41,13 @@ describe("mock recipe engine", () => {
     expect(() => applySteps(cast, t, [L])).toThrow(expect.objectContaining({ reason: "CAST_FAILED", stepIndex: 0 }) as unknown as StepError);
     expect(() => applySteps([{ type: "convert_unit", column: "cell", factor: 1, offset: 0, unit_label: "K" }], schema, [L])).toThrow(expect.objectContaining({ reason: "TYPE_MISMATCH", column: "cell" }) as unknown as StepError);
     expect(() => applySteps([{ type: "filter_rows", column: "cell", op: "lt", value: 3 }], schema, [L])).toThrow(expect.objectContaining({ reason: "TYPE_MISMATCH" }) as unknown as StepError);
+  });
+
+  it("picks the largest VERIFIED table and never a codebook, wherever it is listed (reader.primary_file)", () => {
+    const file = (path: string, size_bytes: number, status: "VERIFIED" | "PENDING" = "VERIFIED") => ({ file_id: path, path, size_bytes, sha256: "0".repeat(64), media_type: "text/csv", status });
+    const v = (files: ReturnType<typeof file>[]) => ({ files }) as unknown as StoredVersion;
+    expect(primaryFile(v([file("_codebook.csv", 9000), file("data/test_cells.csv", 300), file("data/measurements.csv", 4000), file("big.csv", 9999, "PENDING")]))?.path).toBe("data/measurements.csv");
+    expect(primaryFile(v([file("_codebook.csv", 10)]))).toBeUndefined();
+    expect(primaryFile(v([file("b.csv", 5), file("a.csv", 5)]))?.path).toBe("a.csv");
   });
 });

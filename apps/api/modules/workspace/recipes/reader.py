@@ -74,7 +74,14 @@ def file_kind(path: str) -> str | None:
 
 
 def primary_file(version: VersionView) -> FileRef | None:
-    return next((f for f in version.files if f.status == "VERIFIED" and file_kind(f.path)), None)
+    """The input's data table: the largest VERIFIED CSV/Parquet file (ties: path order). Files whose name starts with
+    "_" (codebooks, schemas) describe the data and are never the table, wherever they sort in the manifest."""
+    candidates = [
+        f
+        for f in version.files
+        if f.status == "VERIFIED" and file_kind(f.path) and not f.path.rsplit("/", 1)[-1].startswith("_")
+    ]
+    return min(candidates, key=lambda f: (-f.size_bytes, f.path), default=None)
 
 
 @dataclass(frozen=True)

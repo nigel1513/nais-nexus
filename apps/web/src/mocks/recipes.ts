@@ -67,11 +67,10 @@ export function seedTableText(datasetId: string, versionId: string, path: string
   return null;
 }
 
-/** reader.primary_file: the version's first VERIFIED CSV file (path order; codebooks starting with "_" are not data). */
+/** reader.primary_file: the largest VERIFIED CSV/Parquet file (ties: path order); "_" files (codebooks, schemas) are never the table. */
 export function primaryFile(v: StoredVersion) {
-  return [...v.files]
-    .sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
-    .find((f) => f.status === "VERIFIED" && /\.csv$/i.test(f.path) && !(f.path.split("/").pop() ?? "").startsWith("_"));
+  const candidates = v.files.filter((f) => f.status === "VERIFIED" && /\.(csv|parquet)$/i.test(f.path) && !(f.path.split("/").pop() ?? "").startsWith("_"));
+  return candidates.sort((a, b) => b.size_bytes - a.size_bytes || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))[0];
 }
 
 export class InputProblem extends Error {
@@ -148,7 +147,8 @@ export function readInput(db: MockDb, versionId: string, maxRows?: number): Tabl
   const file = primaryFile(v);
   if (!file) throw new InputProblem("INPUT_NOT_TABULAR");
   const text = db.objects[file.file_id] ?? seedTableText(v.dataset_id, v.dataset_version_id, file.path);
-  if (text === null || text === undefined) throw new InputProblem("INPUT_UNAVAILABLE");
+  // The mock reads CSV text only: a Parquet table, or a file whose body was not captured, cannot be read here.
+  if (text === null || text === undefined || /\.parquet$/i.test(file.path)) throw new InputProblem("INPUT_UNAVAILABLE");
   return parseCsv(text, maxRows).table;
 }
 

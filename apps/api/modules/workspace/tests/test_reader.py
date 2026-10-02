@@ -42,6 +42,18 @@ def test_primary_file_is_the_first_verified_tabular_file() -> None:
     assert R.primary_file(version(readme)) is None
 
 
+def test_primary_file_skips_codebooks_and_prefers_the_largest_table() -> None:
+    codebook = file_ref("_codebook.csv", b"column,unit\ncycle,1\ncapacity_ah,A.h\n")
+    cells = file_ref("data/test_cells.csv", b"cell_id\nC01\n")
+    measurements = file_ref("data/measurements.csv", b"cycle,capacity_ah\n1,3.05\n2,3.04\n")
+    nested_schema = file_ref("meta/_schema.csv", b"x" * 500)
+    assert R.primary_file(version(codebook, nested_schema, cells, measurements)) == measurements
+    assert R.primary_file(version(codebook)) is None
+    same_a = file_ref("b.csv", b"xy")
+    same_b = file_ref("a.csv", b"xy")
+    assert R.primary_file(version(same_a, same_b)) == same_b
+
+
 def test_csv_is_typed_after_reading() -> None:
     port = FakeReader()
     ref = port.add("data.csv", CSV)
