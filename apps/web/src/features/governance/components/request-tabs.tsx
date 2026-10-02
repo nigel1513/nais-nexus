@@ -58,7 +58,7 @@ function RequestTable({
     who,
     { key: "purpose", header: t("access.columns.purpose"), cell: (r) => t(`enums.Purpose.${r.purpose}`) },
     { key: "days", header: t("access.columns.days"), numeric: true, cell: (r) => t("data.detail.days", { count: r.requested_days }) },
-    { key: "status", header: t("access.columns.status"), cell: (r) => <RequestStatusBadge status={r.status} /> },
+    { key: "status", header: t("access.columns.status"), className: "pl-6", cell: (r) => <RequestStatusBadge status={r.status} /> },
     { key: "submitted", header: t("access.columns.submitted"), numeric: true, cell: (r) => <DateTime value={submittedAt(r)} /> },
   ];
 

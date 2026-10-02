@@ -85,7 +85,6 @@ export function OrgGrantsTab() {
   if (q.isError) return <ErrorView error={q.error} onRetry={() => void q.refetch()} />;
   return (
     <>
-      <ListToolbar count={flattenPages(q.data).length} more={q.hasNextPage} />
       <DataTable<AccessGrant>
         caption={t("access.tabs.orgGrants")}
         rows={flattenPages(q.data)}

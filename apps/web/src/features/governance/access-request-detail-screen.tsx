@@ -37,7 +37,7 @@ function Row({ term, children }: { term: string; children: ReactNode }) {
 function Panel({ title, id, children }: { title: string; id: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} className="rounded-md border border-border bg-bg-panel p-4">
-      <h2 id={id} className="mb-3 text-caption text-fg-muted">
+      <h2 id={id} className="mb-3 text-small font-medium leading-6 text-fg">
         {title}
       </h2>
       {children}
@@ -68,10 +68,10 @@ function History({ request }: { request: AccessRequest }) {
         const actor = byRequester ? requester : t("access.detail.byReviewer");
         return (
           <li key={`${h.status}-${h.at}-${i}`} className="relative flex gap-3 pb-5 last:pb-0">
-            {i < items.length - 1 ? <span aria-hidden="true" className="absolute bottom-0 left-3 top-7 w-px -translate-x-1/2 bg-border" /> : null}
-            <Avatar name={actor} size={24} decorative className="mt-0.5" />
+            {i < items.length - 1 ? <span aria-hidden="true" className="absolute bottom-0 left-3 top-6 w-px -translate-x-1/2 bg-border" /> : null}
+            <Avatar name={actor} size={24} decorative />
             <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-small">
+              <p className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-small leading-6">
                 <span className="font-medium text-fg">{actor}</span>
                 <RequestStatusBadge status={h.status} />
                 <span className="num text-fg-muted sm:ml-auto">
@@ -141,7 +141,7 @@ export function AccessRequestDetailScreen({ accessRequestId }: { accessRequestId
         }
       />
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="flex min-w-0 flex-col gap-8">
+        <div className="flex min-w-0 flex-col gap-8 lg:pt-4">
           <section aria-labelledby="request-summary">
             <h2 id="request-summary" className="mb-2 text-heading text-fg">
               {t("access.detail.summary")}
@@ -171,11 +171,6 @@ export function AccessRequestDetailScreen({ accessRequestId }: { accessRequestId
               <Row term={t("access.columns.days")}>
                 <span className="num">{t("data.detail.days", { count: req.requested_days })}</span>
               </Row>
-              <Row term={t("access.detail.createdAt")}>
-                <span className="num">
-                  <DateTime value={req.created_at} />
-                </span>
-              </Row>
             </dl>
           </section>
 
@@ -195,7 +190,6 @@ export function AccessRequestDetailScreen({ accessRequestId }: { accessRequestId
           {reviewable ? (
             <Panel id="request-review" title={t("access.detail.reviewPanel")}>
               <RailFacts>
-                <Fact term={t("access.detail.requestedDays")}>{t("data.detail.days", { count: req.requested_days })}</Fact>
                 <Fact term={t("access.detail.maxGrant")}>{t("data.detail.days", { count: Math.min(req.requested_days, maxDays) })}</Fact>
                 {policy.data ? (
                   <Fact term={t("access.detail.accessLevel")}>

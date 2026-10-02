@@ -61,7 +61,8 @@ export function ReviewActions({ request, maxGrantDays }: { request: AccessReques
         <Button variant="secondary" onClick={() => openDialog("changes")}>
           {t("access.detail.requestChanges")}
         </Button>
-        <Button variant="danger" onClick={() => openDialog("reject")}>
+        {/* Quiet in the rail; the filled red button lives in the confirming dialog. */}
+        <Button variant="secondary" className="text-danger" onClick={() => openDialog("reject")}>
           {t("access.detail.reject")}
         </Button>
       </div>

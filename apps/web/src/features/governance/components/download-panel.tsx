@@ -38,7 +38,7 @@ function CopySha({ path, sha }: { path: string; sha: string }) {
       <IconButton
         label={t("download.copyShaFor", { path })}
         size="sm"
-       
+
         onClick={async () => {
           if (await copyText(sha)) {
             setState("copied");
@@ -51,7 +51,9 @@ function CopySha({ path, sha }: { path: string; sha: string }) {
       >
         {state === "copied" ? <Check aria-hidden="true" className="text-success" /> : <Copy aria-hidden="true" />}
       </IconButton>
-      {state === "manual" ? <code className="col-span-full block select-all break-all rounded-sm bg-bg-subtle px-2 py-1 font-mono text-mono text-fg">{sha}</code> : null}
+      {state === "manual" ? (
+        <code className="col-span-full block select-all break-all rounded-sm bg-bg-subtle px-2 py-1 font-mono text-mono text-fg">{sha}</code>
+      ) : null}
     </>
   );
 }
@@ -164,7 +166,10 @@ export function DownloadPanel({ dataset, versionId, focus = false }: { dataset: 
         <>
           <ul className="divide-y divide-border">
             {session.files.map((f) => (
-              <li key={f.file_id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2 md:grid-cols-[minmax(0,1fr)_5rem_11rem_auto]">
+              <li
+                key={f.file_id}
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 px-4 py-2 md:grid-cols-[minmax(0,1fr)_5rem_11rem_auto]"
+              >
                 <span className="flex min-w-0 items-center gap-2 max-md:col-span-full">
                   <FileText aria-hidden="true" className="size-4 shrink-0 text-fg-muted" strokeWidth={1.75} />
                   {expired ? (
@@ -172,7 +177,14 @@ export function DownloadPanel({ dataset, versionId, focus = false }: { dataset: 
                       <MiddlePath path={f.path} />
                     </span>
                   ) : (
-                    <a href={f.url} download target="_blank" rel="noopener noreferrer" title={f.path} className="flex min-w-0 font-mono text-mono text-fg underline-offset-4 hover:underline">
+                    <a
+                      href={f.url}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      title={f.path}
+                      className="flex min-w-0 font-mono text-mono text-fg underline-offset-4 hover:underline"
+                    >
                       <MiddlePath path={f.path} />
                     </a>
                   )}

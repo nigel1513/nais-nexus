@@ -36,7 +36,7 @@ export function AccessScreen() {
         <TabsList aria-label={t("access.tabsLabel")}>
           {visible.map((k) =>
             k === "review" ? (
-              <TabsTrigger key={k} value={k} count={review.data ? reviewCount : undefined} aria-label={t("access.tabs.reviewLabel", { count: reviewCount })}>
+              <TabsTrigger key={k} value={k} count={review.data ? reviewCount : undefined} aria-label={review.data ? t("access.tabs.reviewLabel", { count: reviewCount }) : undefined}>
                 {t(LABEL[k])}
               </TabsTrigger>
             ) : (
