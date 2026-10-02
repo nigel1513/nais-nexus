@@ -581,17 +581,19 @@ class _ThriftCompact:
         elif wire == 8:
             self.skip(self.varint())
         elif wire in (9, 10):
+            self.nest(depth + 1)
             head = self.byte()
             count = head >> 4 if head >> 4 != 15 else self.varint()
             for _ in range(count):  # every element is at least one byte, so this is bounded by the buffer
-                self.element(head & 0x0F, depth)
+                self.element(head & 0x0F, depth + 1)
         elif wire == 11:
+            self.nest(depth + 1)
             count = self.varint()
             if count:
                 kv = self.byte()
                 for _ in range(count):
-                    self.element(kv >> 4, depth)
-                    self.element(kv & 0x0F, depth)
+                    self.element(kv >> 4, depth + 1)
+                    self.element(kv & 0x0F, depth + 1)
         elif wire == 12:
             self.struct(depth + 1)
         else:
@@ -603,9 +605,14 @@ class _ThriftCompact:
         else:
             self.value(wire, depth)
 
-    def struct(self, depth: int) -> None:
+    @staticmethod
+    def nest(depth: int) -> None:
+        """Structs, lists, sets and maps all count toward the nesting bound."""
         if depth > _THRIFT_MAX_DEPTH:
-            raise ValueError("thrift struct nested too deep")
+            raise ValueError("thrift value nested too deep")
+
+    def struct(self, depth: int) -> None:
+        self.nest(depth)
         field_id = 0
         while True:
             head = self.byte()
@@ -618,7 +625,7 @@ class _ThriftCompact:
             self.value(head & 0x0F, depth)
 
     def page_header(self) -> tuple[int, int]:
-        """(type, uncompressed_page_size) of a whole top-level PageHeader. Stricter than the thrift decoder:
+        """(type, max(uncompressed_page_size, compressed_page_size)) of a whole top-level PageHeader. Stricter than the thrift decoder:
         every long-form field header or repeated field id is rejected, because the decoder keeps the LAST value
         of a repeated field (a first-match parser could be shown a tiny size while pyarrow allocates a huge one)."""
         fields: dict[int, int] = {}
@@ -645,15 +652,17 @@ class _ThriftCompact:
                 self.value(wire, 1)
         if not {1, 2, 3} <= fields.keys() or fields[2] < 0 or fields[3] < 0:
             raise ValueError("PageHeader without type and sizes")
-        return fields[1], fields[2]
+        # for UNCOMPRESSED chunks the decoder reads compressed_page_size (field 3) bytes and ignores field 2;
+        # otherwise it decompresses into uncompressed_page_size (field 2): the larger one bounds both
+        return fields[1], max(fields[2], fields[3])
 
 
 def page_header_sizes(buf: bytes) -> tuple[int, int] | None:
-    """(page type, uncompressed page size) of the thrift-compact PageHeader that `buf` starts with, or None if
+    """(page type, page size the decoder allocates: max of fields 2 and 3) of the thrift-compact PageHeader that `buf` starts with, or None if
     the bytes are not one complete, unambiguous PageHeader (see _ThriftCompact.page_header)."""
     try:
         return _ThriftCompact(buf).page_header()
-    except (_ShortHeader, ValueError):
+    except (_ShortHeader, ValueError, RecursionError):
         return None
 
 
@@ -662,7 +671,7 @@ def _peek_page_header(peek: Callable[[int, int], bytes], offset: int) -> tuple[i
     for attempt in range(2):
         try:
             return _ThriftCompact(buf).page_header()
-        except ValueError:
+        except (ValueError, RecursionError):
             return None
         except _ShortHeader:
             if attempt or len(buf) < PAGE_HEADER_PEEK:
@@ -677,7 +686,7 @@ def _footer_uncompressed(group: Any, leaves: list[int]) -> int:
 
 
 def _dictionary_page_size(chunk: Any, peek: Callable[[int, int], bytes]) -> int | None:
-    """Uncompressed size of the dictionary page the decoder will use, from the page header it actually reads
+    """Size of the dictionary page the decoder will use (max of the header's uncompressed and compressed sizes), from the page header it actually reads
     first (0: the chunk starts with a data page and declares no dictionary; None: unreadable or inconsistent, so
     the column is never decoded). The header, not the footer, is what the decoder allocates from.
 
