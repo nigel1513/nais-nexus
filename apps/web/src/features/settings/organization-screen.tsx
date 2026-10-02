@@ -1,63 +1,121 @@
 "use client";
+import { Avatar, Badge, DataTable, EmptyState, type DataColumn } from "@nais/ui";
 import { useTranslations } from "next-intl";
 import { useGetOrganization, useListOrganizationMembers } from "@/features/organizations/api";
 import { flattenPages } from "@/shared/api/pagination";
-import { useMeData } from "@/shared/hooks/use-me";
+import type { OrganizationMembership } from "@/shared/api/types";
+import { hasOrgRole, useMeData } from "@/shared/hooks/use-me";
+import { DateTime } from "@/shared/ui/date-text";
 import { PageHeader } from "@/shared/ui/page-header";
 import { RequireRole } from "@/shared/ui/require-role";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
-import { MemberRow } from "./components/member-row";
+import { MemberActions, MemberStatusBadge, RoleBadges } from "./components/member-row";
+import { SettingsLayout } from "./components/settings-layout";
 import { TransferCard } from "./components/transfer-card";
 
-function Members() {
+function Members({ total }: { total: number | null | undefined }) {
   const t = useTranslations();
   const me = useMeData();
   const orgId = me.organization.organization_id;
-  const org = useGetOrganization(orgId);
   const members = useListOrganizationMembers(orgId);
-  if (members.isPending || org.isPending) return <DelayedSkeleton lines={5} />;
-  if (members.isError) return <ErrorView error={members.error} onRetry={() => void members.refetch()} />;
+  const rows = flattenPages(members.data);
+
+  const columns: DataColumn<OrganizationMembership>[] = [
+    {
+      key: "name",
+      header: t("org.columns.member"),
+      className: "py-1",
+      cell: (m) => {
+        const name = m.display_name ?? m.user_id;
+        return (
+          <span className="flex min-w-0 items-center gap-2">
+            <Avatar name={name} size={24} decorative />
+            <span className={m.status === "ACTIVE" ? "truncate font-medium text-fg" : "truncate font-medium text-fg-muted"}>{name}</span>
+            {m.user_id === me.user_id ? <Badge>{t("org.you")}</Badge> : null}
+          </span>
+        );
+      },
+    },
+    { key: "email", header: t("org.columns.email"), cell: (m) => <span className="break-all text-fg-muted">{m.email ?? "—"}</span> },
+    {
+      key: "roles",
+      header: t("org.columns.roles"),
+      cell: (m) =>
+        m.roles.length ? (
+          <span className="flex flex-wrap gap-1">
+            <RoleBadges roles={m.roles} />
+          </span>
+        ) : (
+          <span className="text-fg-muted">{t("org.noRoles")}</span>
+        ),
+    },
+    { key: "status", header: t("org.columns.status"), cell: (m) => <MemberStatusBadge status={m.status} /> },
+    { key: "updated", header: t("org.columns.updated"), numeric: true, cell: (m) => (m.updated_at ? <DateTime value={m.updated_at} dateOnly /> : "—") },
+    {
+      key: "actions",
+      header: t("org.columns.actions"),
+      className: "w-12 py-1 text-right",
+      cell: (m) => <MemberActions key={`${m.user_id}:${m.updated_at ?? ""}`} member={m} isSelf={m.user_id === me.user_id} organizationId={orgId} />,
+    },
+  ];
+
   return (
-    <div className="flex flex-col gap-4">
-      {org.data ? (
-        <dl className="grid max-w-md grid-cols-[8rem_1fr] gap-y-1 text-sm">
-          <dt className="text-muted-foreground">{t("org.code")}</dt>
-          <dd>{org.data.code}</dd>
-          <dt className="text-muted-foreground">{t("org.type")}</dt>
-          <dd>{t(`enums.OrganizationType.${org.data.type}`)}</dd>
-          <dt className="text-muted-foreground">{t("org.memberCount")}</dt>
-          <dd>{org.data.member_count ?? "—"}</dd>
-          <dt className="text-muted-foreground">{t("org.datasetCount")}</dt>
-          <dd>{org.data.dataset_count ?? "—"}</dd>
-        </dl>
-      ) : null}
-      <section aria-labelledby="org-members" className="flex flex-col gap-2">
-        <h2 id="org-members" className="text-lg font-semibold">
+    <section aria-labelledby="org-members" className="flex flex-col gap-3">
+      <div className="flex items-baseline gap-2">
+        <h2 id="org-members" className="text-title text-fg">
           {t("org.members")}
         </h2>
-        {flattenPages(members.data).map((m) => (
-          <MemberRow key={`${m.user_id}:${m.updated_at ?? ""}`} member={m} isSelf={m.user_id === me.user_id} organizationId={orgId} />
-        ))}
-        <LoadMore hasNextPage={members.hasNextPage} isFetchingNextPage={members.isFetchingNextPage} fetchNextPage={members.fetchNextPage} />
-      </section>
-    </div>
+        {total != null ? <span className="num text-small text-fg-muted">{t("org.memberTotal", { count: total })}</span> : null}
+      </div>
+      {members.isPending ? (
+        <DelayedSkeleton lines={5} />
+      ) : members.isError ? (
+        <ErrorView error={members.error} onRetry={() => void members.refetch()} />
+      ) : (
+        <>
+          <DataTable caption={t("org.memberTable")} columns={columns} rows={rows} rowKey={(m) => m.user_id} empty={<EmptyState title={t("org.noMembers")} />} />
+          <LoadMore hasNextPage={members.hasNextPage} isFetchingNextPage={members.isFetchingNextPage} fetchNextPage={members.fetchNextPage} />
+        </>
+      )}
+    </section>
   );
 }
 
 export function OrganizationScreen() {
   const t = useTranslations();
   const me = useMeData();
-  const orgAdmin = me.org_roles.includes("ORG_ADMIN");
+  const orgAdmin = hasOrgRole(me, "ORG_ADMIN");
   const platformAdmin = me.platform_roles.includes("PLATFORM_ADMIN");
+  const org = useGetOrganization(orgAdmin || platformAdmin ? me.organization.organization_id : undefined);
+  const header = (
+    <PageHeader
+      title={t("org.title", { name: me.organization.name })}
+      description={t("org.description")}
+      meta={
+        org.data ? (
+          <>
+            <span>
+              {t("org.code")} <span className="font-mono text-mono text-fg">{org.data.code}</span>
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>{t(`enums.OrganizationType.${org.data.type}`)}</span>
+            <span aria-hidden="true">·</span>
+            <span className="num">{org.data.member_count != null ? t("org.memberCountValue", { count: org.data.member_count }) : t("org.memberCountUnknown")}</span>
+            <span aria-hidden="true">·</span>
+            <span className="num">{org.data.dataset_count != null ? t("org.datasetCountValue", { count: org.data.dataset_count }) : t("org.datasetCountUnknown")}</span>
+          </>
+        ) : null
+      }
+    />
+  );
   return (
-    <>
-      <PageHeader title={t("org.title", { name: me.organization.name })} description={t("org.description")} />
+    <SettingsLayout page="organization" header={header}>
       {orgAdmin || !platformAdmin ? (
         <RequireRole anyOf={["ORG_ADMIN"]}>
-          <Members />
+          <Members total={org.data?.member_count} />
         </RequireRole>
       ) : null}
       {platformAdmin ? <TransferCard /> : null}
-    </>
+    </SettingsLayout>
   );
 }

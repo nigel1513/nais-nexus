@@ -56,3 +56,16 @@ export function formatBytes(n: number): string {
 export function shortHash(sha: string): string {
   return sha.length <= 12 ? sha : `${sha.slice(0, 8)}…${sha.slice(-4)}`;
 }
+
+const UTC_IN_TEXT = /(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}) UTC/g;
+
+/**
+ * Server-written texts (notification titles) carry times as "YYYY-MM-DD HH:mm UTC"; the UI shows every time in
+ * Asia/Seoul (formatDateTime), so rewrite them to match. Anything that does not parse is left as it was.
+ */
+export function localizeUtcTimes(text: string): string {
+  return text.replace(UTC_IN_TEXT, (whole, date: string, time: string) => {
+    const local = formatDateTime(`${date}T${time}:00Z`);
+    return local === "-" ? whole : local;
+  });
+}

@@ -217,3 +217,32 @@ test("shell: ⌘K, notifications, user menu and the phone sheet pass axe in both
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });
+
+test("Settings and organization: axe clean in both themes, the theme choice persists, no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b01", url: baseURL! }]); // B Admin (ORG_ADMIN)
+  await page.goto("/settings");
+  const theme = page.getByRole("radiogroup", { name: "화면 테마" });
+  await expect(theme.getByRole("radio", { name: "시스템" })).toBeChecked();
+  expect(await seriousViolations(page)).toEqual([]);
+  await theme.getByRole("radio", { name: "다크" }).click();
+  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+  await expect(page.getByRole("radiogroup", { name: "화면 테마" }).getByRole("radio", { name: "다크" })).toBeChecked();
+  expect(await seriousViolations(page)).toEqual([]);
+
+  await page.getByRole("navigation", { name: "설정 메뉴" }).getByRole("link", { name: "기관 관리" }).click();
+  await expect(page.getByRole("table", { name: "기관 멤버" })).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+  await page.getByRole("button", { name: "B Steward 관리" }).first().click();
+  await expect(page.getByRole("menuitem", { name: "역할 변경" })).toBeVisible();
+  expect(await seriousViolations(page)).toEqual([]);
+  await page.keyboard.press("Escape");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const path of ["/settings", "/settings/organization"]) {
+    await page.goto(path);
+    await expect(page.getByRole("navigation", { name: "설정 메뉴" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
