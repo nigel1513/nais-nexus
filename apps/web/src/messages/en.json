@@ -368,5 +368,44 @@
       "UNKNOWN_ORGANIZATION": "Unknown organization",
       "MUTUALLY_EXCLUSIVE": "A council institute and a free-text name cannot be combined"
     }
+  },
+  "projects": {
+    "list": {
+      "description": "Joint studies you take part in and projects open to the council.",
+      "emptyMineHint": "A project keeps data access requests and members in one place.",
+      "count": "{more, select, more {{count}+} other {{count}}}",
+      "members": "Members"
+    },
+    "detail": {
+      "about": "About",
+      "noDescription": "No description.",
+      "noKeywords": "No keywords.",
+      "info": "Project details",
+      "roleSplit": "Roles",
+      "leadBy": "Led by {org}",
+      "orgCount": "{count, plural, one {# organization} other {# organizations}}",
+      "updatedAt": "Updated",
+      "more": "More project actions",
+      "archiveEllipsis": "Archive…",
+      "tabs": {
+        "members": "Members"
+      }
+    },
+    "members": {
+      "inviteTitle": "Invite a member",
+      "inviteHint": "Anyone in the council can be invited.",
+      "you": "You"
+    },
+    "data": {
+      "noGrantsHint": "Approved access requests show up here.",
+      "noRequestsHint": "Request access for this project from a dataset page.",
+      "findData": "Find data"
+    },
+    "form": {
+      "sectionBasic": "Basics",
+      "sectionBasicHint": "Name and description are shown to members and in the public list.",
+      "sectionVisibilityHint": "Public projects show a summary to everyone; details stay with members.",
+      "sectionPeriodHint": "When the study runs. Optional."
+    }
   }
 }

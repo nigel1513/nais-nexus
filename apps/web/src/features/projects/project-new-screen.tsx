@@ -19,6 +19,7 @@ export function ProjectNewScreen() {
       <ProjectForm
         defaultValues={emptyProjectForm}
         submitLabel={t("projects.new.submit")}
+        onCancel={() => router.push("/commons/projects")}
         onSubmit={async (values) => {
           const project = await create.mutateAsync(toProjectCreate(values));
           notify.success(t("projects.new.created"));

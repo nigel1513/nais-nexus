@@ -6,6 +6,7 @@ import { mkdirSync } from "node:fs";
 const OUT = process.env.SHOTS_DIR ?? "../../.superpowers/sdd/2026-10-01-ui-redesign/shots";
 const USERS = { steward: "00000000-0000-7000-8000-000000000b03", researcher: "00000000-0000-7000-8000-000000000a02", admin: "00000000-0000-7000-8000-000000000101" };
 const DATASET_BATTERY = "00000000-0000-7000-8000-000000002001";
+const PROJECT_SEED = "00000000-0000-7000-8000-000000001001";
 
 type Size = readonly [number, number];
 type Theme = "light" | "dark";
@@ -151,5 +152,25 @@ test.describe("screens", () => {
       await page.waitForLoadState("networkidle");
       await shootOne(page, `${prefix}-dataset-edit-sheet`, size[0], theme);
     }
+  });
+  test("projects list and project detail members (Task 8)", async ({ page, baseURL }) => {
+    const prefix = process.env.SHOT_PREFIX ?? "task8";
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/projects");
+    await expect(page.getByRole("heading", { level: 1, name: "프로젝트" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Seed: Battery Materials Joint Study" }).first()).toBeVisible();
+    await shoot(page, `${prefix}-projects-list`);
+
+    await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
+    await expect(page.getByRole("heading", { level: 1, name: "Seed: Battery Materials Joint Study" })).toBeVisible();
+    await shoot(page, `${prefix}-project-detail-members`);
+
+    await page.goto(`/commons/projects/${PROJECT_SEED}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Seed: Battery Materials Joint Study" })).toBeVisible();
+    await shoot(page, `${prefix}-project-detail-overview`, [[1440, 900]]);
+
+    await page.goto("/commons/projects/new");
+    await expect(page.getByRole("heading", { level: 1, name: "새 프로젝트" })).toBeVisible();
+    await shoot(page, `${prefix}-project-new`, [[1440, 900]]);
   });
 });

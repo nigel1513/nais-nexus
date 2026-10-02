@@ -244,3 +244,25 @@ test("dataset form: sections, pickers and the edit sheet pass axe in both themes
     await expect(sheet).toBeHidden();
   }
 });
+
+test("projects: list, detail members and the actions menu pass axe in both themes; no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/projects");
+    await expect(page.getByRole("table", { name: "내 프로젝트" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.goto("/commons/projects/00000000-0000-7000-8000-000000001001?tab=members");
+    await expect(page.getByRole("form", { name: "구성원 초대" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "프로젝트 작업 더 보기" }).click();
+    await expect(page.getByRole("menuitem", { name: "보관…" })).toBeVisible();
+    expect(await seriousViolations(page, "[role=menu]")).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
