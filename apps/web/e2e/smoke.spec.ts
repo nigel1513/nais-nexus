@@ -223,6 +223,76 @@ test("shell: ⌘K, notifications, user menu and the phone sheet pass axe in both
   }
 });
 
+test("dataset form: sections, pickers and the edit sheet pass axe in both themes and work by keyboard", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b03", url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/data/new");
+    await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    const pi = page.getByRole("combobox", { name: /연구책임자/ });
+    await pi.fill("최유진");
+    await expect(page.getByRole("option", { name: /최유진/ })).toBeVisible();
+    // Base UI's combobox marks everything outside the input and list aria-hidden while the list is open (its
+    // FloatingFocusManager runs modal when the input sits outside the popup), which axe reports as aria-hidden-focus
+    // on the page behind; it is lifted on close. Check the open list itself.
+    expect(await seriousViolations(page, "[role=listbox]")).toEqual([]);
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("group", { name: /연구책임자/ })).toContainText("최유진");
+
+    await page.getByRole("button", { name: "연구 분야 선택" }).click();
+    const vocab = page.getByRole("dialog", { name: "연구 분야" });
+    await expect(vocab).toBeVisible();
+    // Scoped to the popover: axe's target-size rule flags whatever input the popover half covers on the page behind.
+    expect(await seriousViolations(page, "[role=dialog]")).toEqual([]);
+    await vocab.getByRole("checkbox", { name: "재료" }).check();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("group", { name: "연구 분야" })).toContainText("재료");
+
+    await page.getByRole("button", { name: "달력에서 기간 고르기" }).click();
+    await expect(page.getByRole("grid")).toBeVisible();
+    expect(await seriousViolations(page, "[role=dialog]")).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/data/00000000-0000-7000-8000-000000002001");
+    await page.getByRole("button", { name: "편집" }).click();
+    const sheet = page.getByRole("dialog", { name: "데이터셋 편집" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByLabel(/^제목/)).toHaveValue("리튬이온 배터리 셀 사이클 시험 데이터");
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+  }
+});
+
+test("projects: list, detail members and the actions menu pass axe in both themes; no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/projects");
+    await expect(page.getByRole("table", { name: "내 프로젝트" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.goto("/commons/projects/00000000-0000-7000-8000-000000001001?tab=members");
+    await expect(page.getByRole("form", { name: "구성원 초대" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "프로젝트 작업 더 보기" }).click();
+    await expect(page.getByRole("menuitem", { name: "보관…" })).toBeVisible();
+    expect(await seriousViolations(page, "[role=menu]")).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
 test("Settings and organization: axe clean in both themes, the theme choice persists, no sideways scroll at 390", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b01", url: baseURL! }]); // 한유나 (ORG_ADMIN)
   await page.goto("/settings");

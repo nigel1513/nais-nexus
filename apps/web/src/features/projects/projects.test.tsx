@@ -57,6 +57,48 @@ describe("ProjectsListScreen", () => {
   });
 });
 
+describe("Projects redesign (Task 8)", () => {
+  it("list is a DataTable: name, lead, members (numeric), my role badge, updated", async () => {
+    renderScreen(<ProjectsListScreen />, { user: USER.aResearcher, path: "/commons/projects" });
+    const table = await screen.findByRole("table", { name: "내 프로젝트" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["이름", "주관 기관", "구성원", "내 역할", "수정일"]);
+    const row = within(table).getAllByRole("row")[1]!;
+    const cells = within(row).getAllByRole("cell");
+    expect(cells[2]).toHaveTextContent("2");
+    expect(cells[2]!.className).toMatch(/text-right/);
+    expect(within(cells[3]!).getByText("소유자")).toBeInTheDocument();
+    expect(within(row).getByLabelText("비공개")).toBeInTheDocument();
+  });
+
+  it("an empty list offers 새 프로젝트 in the EmptyState", async () => {
+    renderScreen(<ProjectsListScreen />, { user: USER.aSteward, path: "/commons/projects" });
+    expect(await screen.findByText("아직 참여한 프로젝트가 없습니다.")).toBeInTheDocument();
+    const links = screen.getAllByRole("link", { name: "새 프로젝트" });
+    expect(links.length).toBe(2);
+    for (const l of links) expect(l).toHaveAttribute("href", "/commons/projects/new");
+  });
+
+  it("detail: header actions, tabs 개요/구성원/데이터/활동 with a member count, and a right rail", async () => {
+    renderScreen(<ProjectDetailScreen projectId={PROJECT.seed} />, { user: USER.aResearcher, path: `/commons/projects/${PROJECT.seed}` });
+    await screen.findByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" });
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["개요", "구성원2", "데이터", "활동"]);
+    const info = screen.getByRole("region", { name: "프로젝트 정보" });
+    expect(info).toHaveTextContent("한국에너지기술연구원");
+    expect(info).toHaveTextContent("주관");
+    const roles = screen.getByRole("region", { name: "역할 분포" });
+    await waitFor(() => expect(within(roles).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["소유자1", "관리자0", "연구자1", "열람자0"]));
+    expect(screen.getByRole("button", { name: "편집" })).toBeInTheDocument();
+  });
+
+  it("members tab: invite through the combobox, roles as selects or badges", async () => {
+    renderScreen(<ProjectDetailScreen projectId={PROJECT.seed} />, { user: USER.aResearcher, path: `/commons/projects/${PROJECT.seed}?tab=members` });
+    const invite = await screen.findByRole("form", { name: "구성원 초대" });
+    expect(within(invite).getByRole("combobox", { name: "사용자 검색" })).toBeInTheDocument();
+    expect(within(invite).getByRole("button", { name: "추가" })).toBeDisabled();
+    expect((await screen.findAllByText("나")).length).toBeGreaterThan(0);
+  });
+});
+
 describe("ProjectsListScreen URL state (Back/Forward)", () => {
   it("re-derives tab, search text and status when the URL changes under the screen", async () => {
     seedPublicProject();
@@ -148,8 +190,9 @@ describe("ProjectDetailScreen", () => {
     open(USER.aResearcher);
     expect(await screen.findByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeInTheDocument();
     expect(screen.getByText(/Seed project shared by 한국에너지기술연구원 and 한국재료연구원/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "보관" }));
-    const dialog = screen.getByRole("dialog");
+    await userEvent.click(screen.getByRole("button", { name: "프로젝트 작업 더 보기" }));
+    await userEvent.click(await screen.findByRole("menuitem", { name: "보관…" }));
+    const dialog = await screen.findByRole("dialog", { name: "프로젝트 보관" });
     expect(dialog).toHaveTextContent("보관 시 이 프로젝트로 받은 모든 데이터 접근 권한이 즉시 회수됩니다");
     await userEvent.click(within(dialog).getByRole("button", { name: "보관" }));
     expect(await screen.findByText("보관된 프로젝트입니다. 모든 변경이 비활성화되었습니다.")).toBeInTheDocument();
@@ -158,10 +201,11 @@ describe("ProjectDetailScreen", () => {
 
   it("adds a member with the keyboard-operable user search", async () => {
     open(USER.aResearcher);
-    await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
+    await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
     const combo = await screen.findByRole("combobox", { name: "사용자 검색" });
     await userEvent.type(combo, "b.st");
-    expect(await screen.findByRole("option", { name: "정현우 (한국재료연구원)" })).toBeInTheDocument();
+    // Options show name · organization · NTIS (UserPicker on the Base UI combobox, list in a popover).
+    expect(await screen.findByRole("option", { name: /^정현우\s*한국재료연구원/ })).toBeInTheDocument();
     await userEvent.keyboard("{Enter}");
     await userEvent.selectOptions(screen.getByLabelText("추가할 역할"), "VIEWER");
     await userEvent.click(screen.getByRole("button", { name: "추가" }));
@@ -170,7 +214,7 @@ describe("ProjectDetailScreen", () => {
 
   it("shows the server message when demoting the last owner", async () => {
     open(USER.aResearcher);
-    await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
+    await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
     const selects = await screen.findAllByLabelText("김민준 역할");
     await userEvent.selectOptions(selects[0]!, "RESEARCHER");
     expect(await screen.findByText("프로젝트에는 소유자가 최소 1명 있어야 합니다.")).toBeInTheDocument();
@@ -178,14 +222,14 @@ describe("ProjectDetailScreen", () => {
 
   it("re-derives the active tab when the URL changes (Back/Forward)", async () => {
     renderScreen(<ProjectDetailScreen projectId={PROJECT.seed} />, { user: USER.aResearcher, path: `/commons/projects/${PROJECT.seed}?tab=members` });
-    expect(await screen.findByRole("tab", { name: "멤버" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("tab", { name: /^구성원/ })).toHaveAttribute("aria-selected", "true");
     act(() => setLocation(`/commons/projects/${PROJECT.seed}`));
     await waitFor(() => expect(screen.getByRole("tab", { name: "개요" })).toHaveAttribute("aria-selected", "true"));
   });
 
   it("the sole owner leaving gets the server's last-owner message and stays on the page", async () => {
     open(USER.aResearcher);
-    await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
+    await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
     await userEvent.click((await screen.findAllByRole("button", { name: "프로젝트 나가기" }))[0]!);
     await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "프로젝트 나가기" }));
     expect(await screen.findByText("프로젝트에는 소유자가 최소 1명 있어야 합니다.")).toBeInTheDocument();
@@ -199,7 +243,7 @@ describe("ProjectDetailScreen", () => {
       ),
     );
     open(USER.aResearcher);
-    await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
+    await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
     await userEvent.click((await screen.findAllByRole("button", { name: "제거" }))[0]!);
     await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "제거" }));
     expect(await screen.findByText("프로젝트에는 소유자가 최소 1명 있어야 합니다.")).toBeInTheDocument();
@@ -228,11 +272,11 @@ describe("ProjectDetailScreen role rules", () => {
     setRole(USER.bResearcher, "PROJECT_ADMIN");
     open(USER.bResearcher);
     await screen.findByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" });
-    expect(screen.queryByRole("button", { name: "보관" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "프로젝트 작업 더 보기" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "편집" }));
-    for (const radio of screen.getAllByRole("radio")) expect(radio).toBeDisabled();
+    for (const radio of screen.getAllByRole("radio")) expect(radio).toHaveAttribute("aria-disabled", "true");
     await userEvent.click(screen.getByRole("button", { name: "취소" }));
-    await userEvent.click(screen.getByRole("tab", { name: "멤버" }));
+    await userEvent.click(screen.getByRole("tab", { name: /^구성원/ }));
     await screen.findByRole("combobox", { name: "사용자 검색" });
     expect(screen.queryByLabelText("김민준 역할")).not.toBeInTheDocument();
     const add = screen.getByLabelText("추가할 역할");
@@ -242,7 +286,7 @@ describe("ProjectDetailScreen role rules", () => {
   it("VIEWER sees no management controls but can leave", async () => {
     setRole(USER.bResearcher, "VIEWER");
     open(USER.bResearcher);
-    await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
+    await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
     await screen.findAllByText("김민준");
     expect(screen.queryByRole("combobox", { name: "사용자 검색" })).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "프로젝트 나가기" }).length).toBeGreaterThan(0);
@@ -252,7 +296,7 @@ describe("ProjectDetailScreen role rules", () => {
   it("archived project: read-only except self-leave", async () => {
     getDb().projects[0]!.status = "ARCHIVED";
     open(USER.aResearcher);
-    await userEvent.click(await screen.findByRole("tab", { name: "멤버" }));
+    await userEvent.click(await screen.findByRole("tab", { name: /^구성원/ }));
     await screen.findAllByText("김민준");
     expect(screen.queryByRole("combobox", { name: "사용자 검색" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("최유진 역할")).not.toBeInTheDocument();

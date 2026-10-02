@@ -332,12 +332,16 @@
       "name": "이름",
       "lead": "주관 기관",
       "myRole": "내 역할",
-      "members": "멤버 수",
+      "members": "구성원",
       "status": "상태",
       "updated": "수정일",
       "noMatch": "조건에 맞는 프로젝트가 없습니다.",
       "emptyMine": "아직 참여한 프로젝트가 없습니다.",
-      "emptyDiscover": "공개된 프로젝트가 없습니다."
+      "emptyDiscover": "공개된 프로젝트가 없습니다.",
+      "description": "참여 중인 공동연구와 연구회에 공개된 프로젝트입니다.",
+      "emptyMineHint": "프로젝트를 만들면 데이터 접근 요청과 구성원 관리를 한곳에서 할 수 있습니다.",
+      "count": "{more, select, more {{count}개 이상} other {{count}개}}",
+      "context": "공동 연구"
     },
     "new": {
       "title": "새 프로젝트",
@@ -358,14 +362,23 @@
         "PRIVATE": "멤버만 프로젝트를 볼 수 있습니다. (기본값)",
         "PUBLIC": "모든 인증 사용자가 요약을 볼 수 있고, 상세는 멤버만 볼 수 있습니다."
       },
-      "visibilityOwnerOnly": "공개 범위는 소유자만 변경할 수 있습니다."
+      "visibilityOwnerOnly": "공개 범위는 소유자만 변경할 수 있습니다.",
+      "sectionBasic": "기본 정보",
+      "sectionBasicHint": "이름과 소개는 구성원 화면과 공개 목록에 보입니다.",
+      "sectionVisibilityHint": "공개 프로젝트는 요약만 공개되고 상세는 구성원만 봅니다.",
+      "sectionPeriodHint": "연구 수행 기간입니다. 비워 둘 수 있습니다.",
+      "kicker": {
+        "basic": "식별",
+        "visibility": "공개",
+        "period": "일정"
+      }
     },
     "detail": {
       "title": "프로젝트",
       "tabsLabel": "프로젝트 정보",
       "tabs": {
         "overview": "개요",
-        "members": "멤버",
+        "members": "구성원",
         "data": "데이터",
         "activity": "활동"
       },
@@ -382,6 +395,30 @@
       "orgRole": {
         "LEAD": "주관",
         "PARTNER": "참여"
+      },
+      "about": "소개",
+      "noDescription": "설명이 없습니다.",
+      "noKeywords": "키워드가 없습니다.",
+      "info": "프로젝트 정보",
+      "roleSplit": "역할 분포",
+      "leadBy": "주관 {org}",
+      "orgCount": "참여 기관 {count}곳",
+      "updatedAt": "수정",
+      "more": "프로젝트 작업 더 보기",
+      "archiveEllipsis": "보관…",
+      "context": "프로젝트",
+      "summary": "프로젝트 요약",
+      "myRole": "내 역할 {role}",
+      "factMembers": "구성원",
+      "factOrgs": "참여 기관",
+      "unitPeople": "명",
+      "unitOrgs": "곳",
+      "noPeriod": "기간 미정",
+      "kicker": {
+        "about": "개요",
+        "keywords": "검색",
+        "info": "기관",
+        "roles": "구성원"
       }
     },
     "members": {
@@ -404,13 +441,28 @@
       "searchUser": "사용자 검색",
       "searchPlaceholder": "이름 또는 이메일 앞부분 (2자 이상)",
       "searchHint": "2자 이상 입력하세요.",
-      "resultCount": "{count}명 검색됨"
+      "resultCount": "{count}명 검색됨",
+      "inviteTitle": "구성원 초대",
+      "inviteHint": "연구회 소속 누구나 초대할 수 있습니다.",
+      "you": "나",
+      "listTitle": "구성원",
+      "kicker": {
+        "invite": "초대",
+        "list": "명단"
+      }
     },
     "data": {
       "grants": "이 프로젝트로 받은 권한",
       "requests": "이 프로젝트의 접근 요청",
       "noGrants": "받은 권한이 없습니다.",
-      "noRequests": "접근 요청이 없습니다."
+      "noRequests": "접근 요청이 없습니다.",
+      "noGrantsHint": "접근 요청이 승인되면 여기에 표시됩니다.",
+      "noRequestsHint": "데이터 화면에서 이 프로젝트로 접근을 요청하세요.",
+      "findData": "데이터 찾기",
+      "kicker": {
+        "grants": "승인",
+        "requests": "요청"
+      }
     }
   },
   "data": {
@@ -467,7 +519,19 @@
       "title": "데이터셋 등록",
       "description": "데이터셋은 내 기관 소유로 등록됩니다. 등록 후 첫 버전을 만들어 파일을 올리세요.",
       "submit": "데이터셋 등록",
-      "created": "데이터셋을 등록했습니다."
+      "created": "데이터셋을 등록했습니다.",
+      "stepsLabel": "등록 단계",
+      "stepInfo": "데이터셋 정보",
+      "stepUpload": "파일 업로드",
+      "stepProcessing": "정제 기록",
+      "stepPublish": "발행",
+      "stepPlanned": "예정",
+      "stepCurrent": "현재 단계",
+      "context": "데이터",
+      "stepInfoHint": "지금 작성하는 단계",
+      "stepUploadHint": "등록 후 버전 화면에서",
+      "stepProcessingHint": "정제 과정 기록",
+      "stepPublishHint": "검증을 거쳐 공개"
     },
     "form": {
       "owner": "소유 기관",
@@ -530,7 +594,63 @@
       "publicationUrl": "URL",
       "publicationAdd": "논문 추가",
       "publicationRemove": "논문 제거",
-      "contributorsSaveFailed": "공동연구자 저장 실패 — 편집에서 다시 시도하세요"
+      "contributorsSaveFailed": "공동연구자 저장 실패 — 편집에서 다시 시도하세요",
+      "sectionBasicHint": "검색 결과와 데이터 카드 머리에 그대로 쓰입니다.",
+      "titleHint": "3–300자. 인용 문구에도 쓰입니다.",
+      "descriptionView": "설명 보기",
+      "descriptionWrite": "작성",
+      "descriptionPreview": "미리보기",
+      "descriptionEmpty": "아직 설명이 없습니다.",
+      "ownerMembersOnly": "소유 기관({org})의 현재 구성원만 선택할 수 있습니다.",
+      "contributorName": "이름 · 소속",
+      "contributorRemoveNamed": "{name} ({role}) 제거",
+      "contributorScope": "연구회 소속 누구나 추가할 수 있습니다.",
+      "contributorsHint": "연구회 소속 누구나 · 최대 50명",
+      "sectionContextHint": "데이터를 만든 연구과제입니다. 메타데이터와 인용 정보에 들어갑니다.",
+      "sectionDataHint": "기간과 수집 기관은 검색 필터로 쓰입니다.",
+      "period": "데이터 기간",
+      "periodCalendar": "달력에서 기간 고르기",
+      "periodDays": "{count}일",
+      "methodDetailHint": "장비, 조건, 절차를 적어 주세요.",
+      "sectionClassify": "분류",
+      "sectionClassifyHint": "연구회 공통 어휘에서 고릅니다. 검색 패싯이 됩니다.",
+      "sectionTerms": "이용 조건",
+      "sectionTermsHint": "접근 요청 심사와 권한 기간의 기준이 됩니다.",
+      "sectionTermsEditHint": "바꾼 조건은 새 요청부터 적용됩니다.",
+      "usagePolicyHint": "인용 의무, 재배포 금지 같은 추가 조건",
+      "sectionPublicationsHint": "이 데이터로 쓴 논문이나 데이터를 설명하는 논문. 최대 20편.",
+      "publicationRemoveNumbered": "{n}번째 논문 제거",
+      "publicationsEmpty": "등록된 논문이 없습니다.",
+      "unsaved": "저장하지 않은 변경 사항",
+      "previewTitle": "카드 미리보기",
+      "previewUntitled": "제목 없음",
+      "guideTitle": "작성 안내",
+      "guideAccess": "통제·민감 데이터는 메타데이터만 연구회에 공개되고, 파일과 미리보기는 승인받은 사용자에게만 보입니다.",
+      "guideNext": "등록하면 데이터셋 화면에서 첫 버전을 만들고 파일을 올립니다.",
+      "vocabRemove": "{name} 제거",
+      "vocabOpen": "{legend} 선택",
+      "vocabEdit": "편집",
+      "vocabChoose": "선택",
+      "vocabSearch": "{legend} 검색",
+      "vocabSearchPlaceholder": "이름으로 찾기",
+      "vocabNoMatch": "맞는 항목이 없습니다.",
+      "vocabCount": "{count} / {max} 선택",
+      "vocabFull": "최대 {max}개까지 고를 수 있습니다",
+      "personChange": "{field} 변경",
+      "previewAccess": "공개 수준",
+      "previewLicense": "라이선스",
+      "outline": "작성 순서",
+      "outlineDone": "작성됨",
+      "outlineRequired": "필수",
+      "kicker": {
+        "basic": "식별",
+        "people": "책임",
+        "context": "출처",
+        "data": "범위",
+        "classify": "검색",
+        "terms": "접근",
+        "publications": "인용"
+      }
     },
     "detail": {
       "metadata": "메타데이터",
@@ -653,6 +773,14 @@
       "columnsTruncated": "일부 열만 표시",
       "showMore": "더 보기",
       "empty": "표 형식 파일이 없습니다"
+    },
+    "edit": {
+      "title": "데이터셋 편집",
+      "description": "{title}",
+      "discardTitle": "저장하지 않은 변경 사항을 버릴까요?",
+      "discardDescription": "편집한 내용이 저장되지 않고 사라집니다.",
+      "discard": "버리기",
+      "keepEditing": "계속 편집"
     }
   },
   "version": {

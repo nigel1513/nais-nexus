@@ -293,7 +293,63 @@
       "publicationUrl": "URL",
       "publicationAdd": "Add publication",
       "publicationRemove": "Remove publication",
-      "contributorsSaveFailed": "Could not save contributors — try again from edit"
+      "contributorsSaveFailed": "Could not save contributors — try again from edit",
+      "sectionBasicHint": "Shown as-is in search results and the data card header.",
+      "titleHint": "3–300 characters. Also used in the citation.",
+      "descriptionView": "Description view",
+      "descriptionWrite": "Write",
+      "descriptionPreview": "Preview",
+      "descriptionEmpty": "No description yet.",
+      "ownerMembersOnly": "Only current members of the owner organization ({org}) can be chosen.",
+      "contributorName": "Name · affiliation",
+      "contributorRemoveNamed": "Remove {name} ({role})",
+      "contributorScope": "Anyone in the council can be added.",
+      "contributorsHint": "Anyone in the council · up to 50",
+      "sectionContextHint": "The research project that produced the data. Goes into metadata and citations.",
+      "sectionDataHint": "Period and collecting organization are used as search filters.",
+      "period": "Data period",
+      "periodCalendar": "Pick the period on a calendar",
+      "periodDays": "{count, plural, one {# day} other {# days}}",
+      "methodDetailHint": "Instruments, conditions and procedure.",
+      "sectionClassify": "Classification",
+      "sectionClassifyHint": "Chosen from the shared council vocabularies. Used as search facets.",
+      "sectionTerms": "Terms of use",
+      "sectionTermsHint": "The basis for reviewing access requests and grant periods.",
+      "sectionTermsEditHint": "Changed terms apply to new requests only.",
+      "usagePolicyHint": "Extra conditions such as citation duty or no redistribution",
+      "sectionPublicationsHint": "Papers that use or describe this data. Up to 20.",
+      "publicationRemoveNumbered": "Remove publication {n}",
+      "publicationsEmpty": "No publications yet.",
+      "unsaved": "Unsaved changes",
+      "previewTitle": "Card preview",
+      "previewUntitled": "Untitled",
+      "guideTitle": "Notes",
+      "guideAccess": "For controlled and sensitive data only the metadata is visible to the council; files and previews need an approved request.",
+      "guideNext": "After registering, create the first version on the dataset page and upload files.",
+      "vocabRemove": "Remove {name}",
+      "vocabOpen": "Choose {legend}",
+      "vocabEdit": "Edit",
+      "vocabChoose": "Choose",
+      "vocabSearch": "Search {legend}",
+      "vocabSearchPlaceholder": "Find by name",
+      "vocabNoMatch": "No matching terms.",
+      "vocabCount": "{count} / {max} chosen",
+      "vocabFull": "Up to {max} can be chosen",
+      "personChange": "Change {field}",
+      "previewAccess": "Access",
+      "previewLicense": "License",
+      "outline": "Sections",
+      "outlineDone": "Filled in",
+      "outlineRequired": "Required",
+      "kicker": {
+        "basic": "Identity",
+        "people": "People",
+        "context": "Origin",
+        "data": "Scope",
+        "classify": "Search",
+        "terms": "Access",
+        "publications": "Citations"
+      }
     },
     "explorer": {
       "view": "View",
@@ -342,6 +398,28 @@
       "columnsTruncated": "Only some columns are shown",
       "showMore": "Show more",
       "empty": "No tabular files"
+    },
+    "new": {
+      "stepsLabel": "Registration steps",
+      "stepInfo": "Dataset details",
+      "stepUpload": "Upload files",
+      "stepProcessing": "Processing log",
+      "stepPublish": "Publish",
+      "stepPlanned": "Planned",
+      "stepCurrent": "Current step",
+      "context": "Data",
+      "stepInfoHint": "You are here",
+      "stepUploadHint": "On the version page after registering",
+      "stepProcessingHint": "Processing log",
+      "stepPublishHint": "Published after checks"
+    },
+    "edit": {
+      "title": "Edit dataset",
+      "description": "{title}",
+      "discardTitle": "Discard unsaved changes?",
+      "discardDescription": "Your edits will be lost.",
+      "discard": "Discard",
+      "keepEditing": "Keep editing"
     }
   },
   "validation": {
@@ -362,6 +440,72 @@
       "TEMPORAL_RANGE": "The period end is before its start",
       "UNKNOWN_ORGANIZATION": "Unknown organization",
       "MUTUALLY_EXCLUSIVE": "A council institute and a free-text name cannot be combined"
+    }
+  },
+  "projects": {
+    "list": {
+      "description": "Joint studies you take part in and projects open to the council.",
+      "emptyMineHint": "A project keeps data access requests and members in one place.",
+      "count": "{more, select, more {{count}+} other {{count}}}",
+      "members": "Members",
+      "context": "Joint research"
+    },
+    "detail": {
+      "about": "About",
+      "noDescription": "No description.",
+      "noKeywords": "No keywords.",
+      "info": "Project details",
+      "roleSplit": "Roles",
+      "leadBy": "Led by {org}",
+      "orgCount": "{count, plural, one {# organization} other {# organizations}}",
+      "updatedAt": "Updated",
+      "more": "More project actions",
+      "archiveEllipsis": "Archive…",
+      "tabs": {
+        "members": "Members"
+      },
+      "context": "Project",
+      "summary": "Project summary",
+      "myRole": "My role {role}",
+      "factMembers": "Members",
+      "factOrgs": "Institutes",
+      "noPeriod": "Not set",
+      "kicker": {
+        "about": "Overview",
+        "keywords": "Search",
+        "info": "Institutes",
+        "roles": "Members"
+      }
+    },
+    "members": {
+      "inviteTitle": "Invite a member",
+      "inviteHint": "Anyone in the council can be invited.",
+      "you": "You",
+      "listTitle": "Members",
+      "kicker": {
+        "invite": "Invite",
+        "list": "Roster"
+      }
+    },
+    "data": {
+      "noGrantsHint": "Approved access requests show up here.",
+      "noRequestsHint": "Request access for this project from a dataset page.",
+      "findData": "Find data",
+      "kicker": {
+        "grants": "Granted",
+        "requests": "Requested"
+      }
+    },
+    "form": {
+      "sectionBasic": "Basics",
+      "sectionBasicHint": "Name and description are shown to members and in the public list.",
+      "sectionVisibilityHint": "Public projects show a summary to everyone; details stay with members.",
+      "sectionPeriodHint": "When the study runs. Optional.",
+      "kicker": {
+        "basic": "Identity",
+        "visibility": "Visibility",
+        "period": "Schedule"
+      }
     }
   },
   "settings": {

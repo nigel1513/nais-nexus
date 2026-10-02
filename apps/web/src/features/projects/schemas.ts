@@ -7,14 +7,28 @@ export const splitKeywords = (s: string) =>
     .map((k) => k.trim())
     .filter(Boolean);
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+/** "" or a YYYY-MM-DD that exists on the calendar (the inputs are typeable). */
+const date = z.union([
+  z.literal(""),
+  z
+    .string()
+    .regex(DATE, "validation.date")
+    .refine((s) => {
+      const [y, m, d] = s.split("-").map(Number) as [number, number, number];
+      const t = new Date(Date.UTC(y, m - 1, d));
+      return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+    }, "validation.date"),
+]);
+
 export const projectFormSchema = z
   .object({
     name: z.string().trim().min(2, "validation.projectName").max(200, "validation.projectName"),
     description: z.string().max(10000, "validation.projectDescription"),
     visibility: z.enum(["PRIVATE", "PUBLIC"]),
     keywords: z.string(),
-    start_date: z.string(),
-    end_date: z.string(),
+    start_date: date,
+    end_date: date,
   })
   .superRefine((v, ctx) => {
     const kws = splitKeywords(v.keywords);

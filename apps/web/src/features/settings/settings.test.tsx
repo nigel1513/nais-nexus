@@ -250,7 +250,7 @@ describe("NTIS number and institute transfer (Wave 1.5)", () => {
     expect(within(card).getByText(/이전 기관의 역할과 접근 권한은 종료되고/)).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "이동" })).toBeDisabled();
     await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "김민준");
-    await userEvent.click(await within(card).findByRole("option", { name: /김민준/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /김민준/ })); // the result list is a popover outside the card
     await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "한국재료연구원");
     await userEvent.click(within(card).getByRole("button", { name: "이동" }));
     const confirm = await screen.findByRole("dialog", { name: "김민준 님을 한국재료연구원(으)로 이동" });
@@ -264,7 +264,7 @@ describe("NTIS number and institute transfer (Wave 1.5)", () => {
     renderScreen(<OrganizationScreen />, { user: USER.admin, path: "/settings/organization" });
     const card = await screen.findByRole("region", { name: "기관 이동" });
     await userEvent.type(within(card).getByRole("combobox", { name: /사용자/ }), "김민준");
-    await userEvent.click(await within(card).findByRole("option", { name: /김민준/ }));
+    await userEvent.click(await screen.findByRole("option", { name: /김민준/ })); // the result list is a popover outside the card
     await userEvent.selectOptions(within(card).getByLabelText("이동할 기관"), "한국재료연구원");
     await userEvent.click(within(card).getByRole("button", { name: "이동" }));
     await userEvent.click(await screen.findByRole("button", { name: "이동 확인" }));

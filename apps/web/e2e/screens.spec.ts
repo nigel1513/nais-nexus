@@ -6,6 +6,7 @@ import { mkdirSync } from "node:fs";
 const OUT = process.env.SHOTS_DIR ?? "../../.superpowers/sdd/2026-10-01-ui-redesign/shots";
 const USERS = { steward: "00000000-0000-7000-8000-000000000b03", researcher: "00000000-0000-7000-8000-000000000a02", admin: "00000000-0000-7000-8000-000000000101", bAdmin: "00000000-0000-7000-8000-000000000b01" };
 const DATASET_BATTERY = "00000000-0000-7000-8000-000000002001";
+const PROJECT_SEED = "00000000-0000-7000-8000-000000001001";
 
 type Size = readonly [number, number];
 type Theme = "light" | "dark";
@@ -124,6 +125,112 @@ test.describe("screens", () => {
     await page.getByRole("button", { name: "메뉴" }).click();
     await expect(page.getByRole("dialog", { name: "메뉴" })).toBeVisible();
     await shootOne(page, "task3-sheet", 390, "light");
+  });
+
+  test("dataset register form and edit sheet (Task 7)", async ({ page, baseURL }) => {
+    const prefix = process.env.SHOT_PREFIX ?? "task7";
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/data/new");
+    await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
+    await expect(page.getByRole("group", { name: /담당자/ })).toContainText("정현우");
+    await shoot(page, `${prefix}-dataset-new`);
+
+    if (prefix === "task7") {
+      for (const theme of ["light", "dark"] as Theme[]) {
+        await setup(page, [1440, 900], theme);
+        await page.getByRole("combobox", { name: /연구책임자/ }).fill("최유진");
+        await expect(page.getByRole("option", { name: /최유진/ })).toBeVisible();
+        await shootOne(page, `${prefix}-user-picker`, 1440, theme);
+        await page.keyboard.press("Escape");
+        await page.getByRole("combobox", { name: /연구책임자/ }).fill("");
+
+        await page.getByRole("button", { name: "연구 분야 선택" }).click();
+        const vocab = page.getByRole("dialog", { name: "연구 분야" });
+        for (const name of ["재료", "에너지"]) await vocab.getByRole("checkbox", { name }).check();
+        await shootOne(page, `${prefix}-vocabulary-picker`, 1440, theme);
+        await page.keyboard.press("Escape");
+
+        await page.getByLabel("데이터 기간 시작").fill("2025-03-02");
+        await page.getByLabel("데이터 기간 끝").fill("2025-03-20");
+        await page.getByRole("button", { name: "달력에서 기간 고르기" }).click();
+        await expect(page.getByRole("grid")).toBeVisible();
+        await shootOne(page, `${prefix}-date-range`, 1440, theme);
+        await page.keyboard.press("Escape");
+        await page.reload();
+        await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
+      }
+    }
+
+    for (const [size, theme] of [[[1440, 900], "light"], [[1440, 900], "dark"], [[390, 844], "light"]] as [Size, Theme][]) {
+      await setup(page, size, theme);
+      await page.goto(`/commons/data/${DATASET_BATTERY}`);
+      await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+      await page.getByRole("button", { name: "편집" }).click();
+      await expect(page.getByLabel(/^제목/)).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await shootOne(page, `${prefix}-dataset-edit-sheet`, size[0], theme);
+    }
+  });
+  test("projects list and project detail members (Task 8)", async ({ page, baseURL }) => {
+    const prefix = process.env.SHOT_PREFIX ?? "task8";
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/projects");
+    await expect(page.getByRole("heading", { level: 1, name: "프로젝트" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
+    await shoot(page, `${prefix}-projects-list`);
+
+    await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
+    await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
+    await shoot(page, `${prefix}-project-detail-members`);
+
+    await page.goto(`/commons/projects/${PROJECT_SEED}`);
+    await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
+    await shoot(page, `${prefix}-project-detail-overview`, [[1440, 900]]);
+
+    await page.goto("/commons/projects/new");
+    await expect(page.getByRole("heading", { level: 1, name: "새 프로젝트" })).toBeVisible();
+    await shoot(page, `${prefix}-project-new`, [[1440, 900]]);
+  });
+});
+
+test.describe("v2 track B: dataset form and projects", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  // V2_PHASE=before|after: v2-dataset-form-<phase>-*, v2-projects-<phase>-*.
+  const phase = process.env.V2_PHASE ?? "after";
+
+  test("dataset form (new page and edit sheet)", async ({ page, baseURL }) => {
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/data/new");
+    await expect(page.getByRole("heading", { level: 1, name: /데이터셋 등록/ })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByRole("group", { name: /담당자/ })).toContainText("정현우");
+    await shoot(page, `v2-dataset-form-${phase}-new`);
+    await setup(page, [1440, 900], "light");
+    await shootOne(page, `v2-dataset-form-${phase}-new-fold`, 1440, "light");
+    for (const [size, theme] of [[[1440, 900], "light"], [[1440, 900], "dark"], [[390, 844], "light"]] as [Size, Theme][]) {
+      await setup(page, size, theme);
+      await page.goto(`/commons/data/${DATASET_BATTERY}`);
+      await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+      await page.getByRole("button", { name: "편집" }).click();
+      await expect(page.getByLabel(/^제목/)).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      await shootOne(page, `v2-dataset-form-${phase}-edit`, size[0], theme);
+    }
+  });
+
+  test("projects list, detail and new", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/projects");
+    await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
+    await shoot(page, `v2-projects-${phase}-list`);
+    await page.goto(`/commons/projects/${PROJECT_SEED}`);
+    await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
+    await shoot(page, `v2-projects-${phase}-detail`);
+    await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
+    await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
+    await shoot(page, `v2-projects-${phase}-members`, [[1440, 900]]);
+    await page.goto("/commons/projects/new");
+    await expect(page.getByRole("heading", { level: 1, name: /새 프로젝트/ })).toBeVisible();
+    await shoot(page, `v2-projects-${phase}-new`);
   });
 });
 
