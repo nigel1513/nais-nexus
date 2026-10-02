@@ -226,6 +226,36 @@ def get_rerank_client() -> RerankClient | None
 
 - [ ] **Step 1:** 실패 테스트(권한 필터, 대체 경로, 재정렬 순서) → 구현 → 통과 → Commit `feat(notes): semantic note search with embedding and rerank`.
 
+### Task 11b: notes — 표준 연구노트 양식 + 노트북 기반 초안 (Amendment A1, 사용자 결정 2026-10-03)
+
+**사용자 결정:** 연구노트는 표준 양식 하나. LLM은 **그날 작성한 Jupyter 노트북 내용**만 보고 양식 초안을 쓰고, 사용자가 수정해 저장한다. Jupyter(M07)는 이 계획 다음에 만든다. 이 태스크는 노트북 쪽을 포트(기본값 빈 목록)로만 소비한다.
+
+**Files:** `NAIS_PRD/contracts/openapi.yaml` + 생성물(1.6.0 미배포라 제자리 수정), `error_codes.json` 변경 없음, `apps/web/src/i18n/ko.json`(enum 라벨), `apps/api/modules/notes/{interfaces.py, adapters.py, wiring.py, deps.py, drafting/prompt.py, drafting/parse.py, drafting/apply.py, jobs.py, service/drafting.py, views.py, hashing.py(섹션 순서), service/export.py(HTML 양식)}`, `migrations/notes_0001_*.py`(섹션 CHECK 제자리 수정 — 아직 어떤 DB에도 적용 전), 관련 tests
+
+**양식 (NoteSection enum 교체, 이 순서로 표시·해시·내보내기):**
+`OBJECTIVE` 연구 목표 / `METHOD` 연구 방법·재료 / `PROCEDURE` 수행 내용 / `RESULTS` 결과 및 관찰 / `DISCUSSION` 고찰·문제점 / `NEXT` 향후 계획 / `REFERENCES` 참고 자료.
+머리 정보(과제명=프로젝트명, 연구일자, 기록자, 소속)와 서명란(기록자·확인자)은 기존 필드로 채운다. 내보내기 HTML도 이 양식 표 형태로.
+
+**노트북 포트 (소비 쪽, `interfaces.py`):**
+```python
+class NotebookActivityPort(Protocol):
+    def list_notebook_activity(self, user_id: UUID, project_id: UUID | None, day: date) -> list[NotebookActivity]: ...
+    def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]: ...  # (user_id, project_id) with saved notebooks that day
+@dataclass(frozen=True)
+class NotebookCell: type: Literal["code", "markdown"]; source_head: str; output_kinds: tuple[str, ...]; output_count: int; has_error: bool
+@dataclass(frozen=True)
+class NotebookActivity: notebook_id: UUID; title: str; version_id: UUID | None; saved_at: datetime; cells: tuple[NotebookCell, ...]
+```
+기본 어댑터 `NoNotebooks`(둘 다 `[]`). M07이 실제 구현을 `ports.provide`로 바꿔 끼운다.
+
+**초안 입력:** 노트 프로젝트의 그날 노트북 활동만. 번호 줄 = 노트북 1개당 머리줄(`[n] 노트북 '제목' (저장 HH:MM)`) + 셀 줄(`[n.k] 코드|설명: source_head 한 줄(≤400자)` + 코드 셀은 `출력: 종류 목록 N개, 오류 있음|없음`). 출력 값·텍스트는 포트에 없고 프롬프트에도 없다. 노트북 최대 10개, 셀 총 120개(넘으면 노트북별 앞부분 우선, 잘린 수 표기). 작업 공간 이벤트 근거(evidence 테이블)는 **LLM에 보내지 않는다** — 화면의 "오늘 활동" 목록으로만 쓴다(Task 15).
+**시스템 프롬프트:** 위 7개 섹션 키 JSON 하나만 출력. 노트북에 없는 사실·수치를 만들지 않는다. PROCEDURE·RESULTS 문장은 근거 번호 필수. OBJECTIVE·DISCUSSION·NEXT는 노트북 설명(markdown) 셀에 근거가 있을 때만. REFERENCES는 사용한 노트북 목록(제목)으로. 문장당 120자, 섹션당 6문장.
+**근거:** `NoteEvidenceType`에 `NOTEBOOK` 추가. AI 블록 evidence = `{type: NOTEBOOK, ref_id: version_id ?? notebook_id, label: "제목 · 셀 k", at: saved_at}`.
+**draftNote / 일정:** 그날 노트북 활동이 없으면 draftNote → 409 `NOTE_LOCKED`가 아니라 **422 `VALIDATION_FAILED` reason `NO_NOTEBOOK_ACTIVITY`**(메시지 "오늘 저장한 노트북이 없습니다."). 저녁 일정은 대상 선정을 `list_notebook_authors(day)`로 바꾼다(기본 빈 목록 → 아무 일도 안 함). `ResearchNote`에 `draft_source_count: integer`(기록자 본인에게만 그날 노트북 수, 그 외 0) 추가 — 웹이 버튼 비활성에 사용.
+**저장 의미:** 편집기 저장은 AI 블록을 `accepted=true`로 보낸다(Task 15). 백엔드 규칙(제출 시 미수락 AI 블록 금지)은 그대로.
+
+- [ ] **Step 1:** 실패 테스트 — 섹션 enum·순서(해시/내보내기), 포트 기본값 빈 목록 → 422 NO_NOTEBOOK_ACTIVITY, 가짜 포트 활동 → 7섹션 AI 블록 + NOTEBOOK 근거, 금지 키(출력 값) 주입 시 프롬프트에 없음, 저녁 일정이 `list_notebook_authors` 사용, `draft_source_count` 권한별 값 → 구현 → 통과 → Commit `feat(notes): standard research-note template and notebook-based drafting`.
+
 ### Task 12: 웹 mock — 허브·작업 공간·연구노트 핸들러(백엔드 규칙 미러)
 
 **Files:** `apps/web/src/mocks/types.ts`(컬렉션 추가), `src/mocks/fixtures.ts`(시드: 기존 프로젝트에 입력 2개·레시피 1개·성공 실행 1개·파생 산출물 1개·스레드 2개·김민준의 SIGNED 노트 1개(과거 날짜)·DRAFT 노트 1개), `src/mocks/handlers/hub.ts`, `workspace.ts`, `notes.ts`, `src/mocks/handlers/index.ts`, `src/mocks/recipes.ts`(웹 mock용 단계 적용 — 미리 만든 CSV 시드에 적용), `src/mocks/llm.ts`(서버 env `NAIS_LLM_BASE_URL` 있으면 fetch로 :8001 호출, 없으면 근거로 결정적 문장), tests `src/mocks/handlers/workspace.test.ts`, `notes.test.ts`, `hub.test.ts`, `src/mocks/contract.test.ts`(operationId 총수 갱신 + 새 호출)
