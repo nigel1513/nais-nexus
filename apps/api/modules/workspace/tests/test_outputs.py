@@ -10,7 +10,7 @@ from uuid import UUID
 import pytest
 
 from api.modules.catalog.public import AccessLevel, DatasetPolicyView
-from api.modules.workspace.service.outputs import STRICTNESS
+from api.modules.workspace.access import STRICTNESS
 from api.modules.workspace.tests.conftest import WorkspaceApi, World, outbox, sql
 from api.modules.workspace.tests.fakes import ORG_B, USERS
 from api.platform import clock

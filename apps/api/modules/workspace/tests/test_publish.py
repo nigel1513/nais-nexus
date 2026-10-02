@@ -1,10 +1,12 @@
 """Hub publication of outputs through owner review (spec §5.4; openapi requestOutputPublish/listPublishRequests/
-decidePublishRequest): one approval slot per owner organization of the lineage inputs (the lead organization for an
-output without inputs), any REJECT rejects, all APPROVE approves and the catalog dataset is then created by the
-publication job (CatalogPublishPort) before the output becomes PUBLISHED."""
+decidePublishRequest): one approval slot per owner organization of the lineage inputs plus the lead organization when it
+owns none of them (only the lead organization for an output without inputs), each decided by a DATA_STEWARD who is not
+the requester; any REJECT rejects, all APPROVE approves and the catalog dataset is then created by the publication job
+(CatalogPublishPort) before the output becomes PUBLISHED. A terminal publication failure rejects the request."""
 
 import hashlib
 import json
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -14,10 +16,13 @@ import pytest
 
 from api.modules.catalog.public import CatalogPublishRejected, DatasetPolicyView, StorageUnavailable
 from api.modules.workspace import MODULE, jobs
+from api.modules.workspace.deps import WorkspaceDeps
+from api.modules.workspace.schemas import PublishDecisionIn
 from api.modules.workspace.service import publish as publish_service
 from api.modules.workspace.tests.conftest import STUB_BROKER, WorkspaceApi, World, outbox, sql
 from api.modules.workspace.tests.fakes import ORG_A, ORG_B, USERS
-from api.platform import clock
+from api.platform import clock, ports
+from api.platform.db import session_factory
 from api.platform.ids import new_id
 from api.platform.scheduler import Scheduler
 from api.platform.testing.contracts import assert_matches_response, assert_valid_event
@@ -166,6 +171,18 @@ def test_an_output_without_inputs_needs_the_lead_organization(
     assert [a["organization_id"] for a in response.json()["approvals"]] == [str(ORG_A)]
 
 
+def test_the_lead_organization_gets_a_slot_when_it_owns_no_input(
+    api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
+) -> None:
+    pin(api, setup.project_id, setup.b_public)
+    out = output(api, world, setup.project_id)
+    response = request(api, setup.project_id, out["output_id"])
+    assert response.status_code == 201, response.text
+    assert [a["organization_id"] for a in response.json()["approvals"]] == [str(ORG_B), str(ORG_A)]
+    [event] = [e for e in outbox(db) if e["event_type"] == "workspace.publish.requested.v1"]
+    assert event["payload"]["approver_organization_ids"] == [str(ORG_B), str(ORG_A)]
+
+
 def test_a_pending_or_approved_output_cannot_be_requested_again(
     api: WorkspaceApi, setup: Setup, world: World
 ) -> None:
@@ -288,6 +305,7 @@ def test_any_reject_rejects_and_requires_a_comment(
         "request_status": "REJECTED",
         "requested_by": str(USERS["a.researcher"].user_id),
         "published_dataset_id": None,
+        "failure_reason": None,
     }
     assert publish_messages() == []
     late = decide(api, req["request_id"], "b.steward", "APPROVE")
@@ -328,7 +346,9 @@ def test_only_a_steward_of_a_slot_organization_decides(api: WorkspaceApi, setup:
     assert member_without_role.status_code == 403 and code(member_without_role) == "FORBIDDEN"
     b_admin = decide(api, req["request_id"], "b.admin", "APPROVE")  # ORG_ADMIN does not decide input slots
     assert b_admin.status_code == 403
-    other_steward = decide(api, req["request_id"], "a.steward", "APPROVE")  # ORG_A has no slot here
+    a_admin = decide(api, req["request_id"], "a.admin", "APPROVE")  # the lead slot is a DATA_STEWARD's too
+    assert a_admin.status_code == 403
+    other_steward = decide(api, req["request_id"], "c.steward", "APPROVE")  # ORG_C has no slot here
     assert other_steward.status_code == 404 and code(other_steward) == "NOT_FOUND"
     member_other_org = decide(api, req["request_id"], "a.researcher", "APPROVE")
     assert member_other_org.status_code == 403
@@ -338,15 +358,68 @@ def test_only_a_steward_of_a_slot_organization_decides(api: WorkspaceApi, setup:
     assert bad.status_code == 422
 
 
-def test_the_lead_organization_admin_or_steward_decides_an_output_without_inputs(
+def test_the_lead_organization_steward_decides_an_output_without_inputs(
     api: WorkspaceApi, setup: Setup, world: World
 ) -> None:
     out = output(api, world, setup.project_id)
     req = request(api, setup.project_id, out["output_id"]).json()
     assert decide(api, req["request_id"], "b.steward", "APPROVE").status_code == 404
-    response = decide(api, req["request_id"], "a.admin", "APPROVE")
+    assert decide(api, req["request_id"], "a.admin", "APPROVE").status_code == 403
+    response = decide(api, req["request_id"], "a.steward", "APPROVE")
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "APPROVED"
+
+
+def test_the_requester_never_decides_their_own_request(api: WorkspaceApi, setup: Setup, world: World) -> None:
+    world.projects.add(setup.project_id, USERS["a.steward"], "RESEARCHER")
+    pin(api, setup.project_id, setup.b_public)
+    out = output(api, world, setup.project_id)
+    req = request(api, setup.project_id, out["output_id"], user="a.steward").json()
+    assert decide(api, req["request_id"], "b.steward", "APPROVE").status_code == 200
+    own = decide(api, req["request_id"], "a.steward", "APPROVE")
+    assert own.status_code == 403 and code(own) == "FORBIDDEN"
+    assert_matches_response("decidePublishRequest", 403, own.json())
+    assert output_status(api, setup.project_id, out["output_id"]) == "PENDING"
+
+
+def test_concurrent_final_approvals_approve_once(
+    api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
+) -> None:
+    """Two stewards deciding the last two slots at once: the request row lock serializes them; exactly one sees every
+    slot approved, so the request is APPROVED once and one publication message is sent."""
+    out = two_owner_output(api, world, setup)
+    request_id = UUID(request(api, setup.project_id, out["output_id"]).json()["request_id"])
+    deps = ports.get(WorkspaceDeps)
+    factory = session_factory(db.app)
+    approve = PublishDecisionIn(decision="APPROVE")
+    first = factory()
+    first.begin()
+    publish_service.decide(first, deps, USERS["b.steward"], request_id, approve)  # holds the request row lock
+    results: list[str] = []
+
+    def second() -> None:
+        with factory() as session, session.begin():
+            results.append(
+                publish_service.decide(session, deps, USERS["a.steward"], request_id, approve).status
+            )
+
+    thread = threading.Thread(target=second)
+    thread.start()
+    thread.join(timeout=1)
+    assert thread.is_alive()  # waiting for the lock
+    first.commit()
+    first.close()
+    thread.join(timeout=10)
+    assert results == ["APPROVED"]
+    [row] = sql(db, "SELECT status, planned_dataset_id FROM workspace.publish_requests")
+    assert row["status"] == "APPROVED" and row["planned_dataset_id"] is not None
+    assert [m["args"] for m in publish_messages()] == [[str(request_id)]]
+    decided = [
+        e["payload"]["request_status"]
+        for e in outbox(db)
+        if e["event_type"] == "workspace.publish.decided.v1"
+    ]
+    assert decided == ["PENDING", "APPROVED"]
 
 
 # ---------------------------------------------------------------- list
@@ -379,17 +452,23 @@ def test_requester_and_reviewer_lists(api: WorkspaceApi, setup: Setup, world: Wo
     assert api.get("a.outsider", "/publish-requests").json()["items"] == []
     review = api.get("b.steward", "/publish-requests", params={"role": "reviewer"}).json()
     assert [i["request_id"] for i in review["items"]] == [second["request_id"], first["request_id"]]
-    assert api.get("a.steward", "/publish-requests", params={"role": "reviewer"}).json()["items"] == []
+    lead = api.get("a.steward", "/publish-requests", params={"role": "reviewer"}).json()  # the lead slots
+    assert [i["request_id"] for i in lead["items"]] == [second["request_id"], first["request_id"]]
+    assert api.get("c.steward", "/publish-requests", params={"role": "reviewer"}).json()["items"] == []
+    assert api.get("a.admin", "/publish-requests", params={"role": "reviewer"}).json()["items"] == []
     assert api.get("b.researcher", "/publish-requests", params={"role": "reviewer"}).json()["items"] == []
     assert api.get("b.admin", "/publish-requests", params={"role": "reviewer"}).json()["items"] == []
     assert api.get("a.researcher", "/publish-requests", params={"role": "boss"}).status_code == 422
     assert api.get("a.researcher", "/publish-requests", params={"cursor": "garbage"}).status_code == 422
 
 
-def test_the_lead_admin_reviews_outputs_without_inputs(api: WorkspaceApi, setup: Setup, world: World) -> None:
+def test_the_lead_steward_reviews_outputs_without_inputs(
+    api: WorkspaceApi, setup: Setup, world: World
+) -> None:
     req = request(api, setup.project_id, output(api, world, setup.project_id)["output_id"]).json()
-    review = api.get("a.admin", "/publish-requests", params={"role": "reviewer"}).json()
+    review = api.get("a.steward", "/publish-requests", params={"role": "reviewer"}).json()
     assert [i["request_id"] for i in review["items"]] == [req["request_id"]]
+    assert api.get("a.admin", "/publish-requests", params={"role": "reviewer"}).json()["items"] == []
 
 
 # ---------------------------------------------------------------- publication
@@ -401,6 +480,7 @@ def approved(api: WorkspaceApi, setup: Setup, world: World) -> tuple[dict[str, A
     req = request(
         api, setup.project_id, out["output_id"], title="파생 측정 데이터", description="요약"
     ).json()
+    assert decide(api, req["request_id"], "a.steward", "APPROVE").status_code == 200  # lead organization
     assert decide(api, req["request_id"], "b.steward", "APPROVE").status_code == 200
     return out, req
 
@@ -422,14 +502,18 @@ def test_publication_creates_the_catalog_dataset_and_publishes_the_output(
     assert call["allowed_purposes"] == ["ACADEMIC_RESEARCH"]
     assert (call["created_by"], call["published_by"], call["publisher_organization_id"]) == (
         USERS["a.researcher"].user_id,
-        USERS["b.steward"].user_id,
-        ORG_B,
+        USERS["a.steward"].user_id,  # the lead organization's approving steward, not the last approver
+        ORG_A,
     )
     [source] = call["files"]
     assert (source.path, source.storage_org_code, source.media_type) == ("result.csv", "inst-a", "text/csv")
     assert source.storage_key == f"workspace/{setup.project_id}/outputs/{out['output_id']}/result.csv"
     assert "이차전지 충방전 측정@v2" in call["lineage_note"]
     assert str(setup.b_controlled.dataset_id) in call["lineage_note"]
+    assert (
+        f"organization {ORG_A}" in call["lineage_note"]
+        and str(USERS["a.steward"].user_id) in call["lineage_note"]
+    )
     assert output_status(api, setup.project_id, out["output_id"]) == "PUBLISHED"
     [listed] = api.get("a.researcher", "/publish-requests").json()["items"]
     assert (listed["status"], listed["published_dataset_id"]) == ("APPROVED", str(dataset_id))
@@ -440,7 +524,8 @@ def test_publication_creates_the_catalog_dataset_and_publishes_the_output(
         UUID(out["output_id"]),
         setup.project_id,
     )
-    assert (activity["actor_id"], activity["occurred_at"]) == (USERS["b.steward"].user_id, T)
+    assert (activity["actor_id"], activity["occurred_at"]) == (USERS["a.steward"].user_id, T)
+    assert listed["failure_reason"] is None
     assert publish_service.publish_approved(UUID(req["request_id"])) == "SKIPPED"
     assert len(world.publisher.calls) == 1
 
@@ -495,27 +580,82 @@ def test_a_lease_held_by_another_worker_is_respected(api: WorkspaceApi, setup: S
     assert world.publisher.calls == []
 
 
-def test_catalog_refusal_marks_the_publication_failed(
+def assert_failed(
+    api: WorkspaceApi, setup: Setup, db: PgUrls, out: dict[str, Any], req: dict[str, Any]
+) -> str:
+    """The request ended REJECTED by the system with a reason; the output can be requested again."""
+    [listed] = [
+        i
+        for i in api.get("a.researcher", "/publish-requests").json()["items"]
+        if i["request_id"] == req["request_id"]
+    ]
+    assert_matches_response(
+        "listPublishRequests", 200, {"items": [listed], "page": {"next_cursor": None, "has_more": False}}
+    )
+    assert listed["status"] == "REJECTED" and listed["failure_reason"]
+    assert output_status(api, setup.project_id, out["output_id"]) == "REJECTED"
+    event = [e for e in outbox(db) if e["event_type"] == "workspace.publish.decided.v1"][-1]
+    assert_valid_event(event)
+    payload = event["payload"]
+    assert (payload["decision"], payload["request_status"], payload["organization_id"]) == (
+        "REJECT",
+        "REJECTED",
+        str(ORG_A),
+    )
+    assert payload["failure_reason"] == listed["failure_reason"]
+    assert payload["requested_by"] == str(USERS["a.researcher"].user_id)
+    assert event["actor"]["type"] == "SYSTEM"
+    with clock.frozen(clock.now() + timedelta(hours=1)):
+        assert jobs.resend_publications() == 0
+    return str(listed["failure_reason"])
+
+
+def test_catalog_refusal_rejects_the_request_and_allows_a_new_one(
     api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
 ) -> None:
     out, req = approved(api, setup, world)
-    world.publisher.fail_with = CatalogPublishRejected("withdrawn")
+    world.publisher.fail_with = CatalogPublishRejected("the owner organization has no storage configured")
     assert publish_service.publish_approved(UUID(req["request_id"])) == "FAILED"
-    [row] = sql(db, "SELECT publication_status, publication_error FROM workspace.publish_requests")
-    assert row["publication_status"] == "FAILED" and row["publication_error"]
-    assert output_status(api, setup.project_id, out["output_id"]) == "APPROVED"
-    with clock.frozen(clock.now() + timedelta(hours=1)):
-        assert jobs.resend_publications() == 0
+    reason = assert_failed(api, setup, db, out, req)
+    assert "storage" in reason
+    world.publisher.fail_with = None
+    again = request(api, setup.project_id, out["output_id"])
+    assert again.status_code == 201, again.text
+    second = again.json()
+    assert second["failure_reason"] is None
+    assert decide(api, second["request_id"], "a.steward", "APPROVE").status_code == 200
+    assert decide(api, second["request_id"], "b.steward", "APPROVE").status_code == 200
+    assert publish_service.publish_approved(UUID(second["request_id"])) == "PUBLISHED"
+    first_call, second_call = world.publisher.calls
+    assert first_call["dataset_id"] != second_call["dataset_id"]  # a fresh planned dataset id
+    assert output_status(api, setup.project_id, out["output_id"]) == "PUBLISHED"
 
 
-def test_failed_verification_marks_the_publication_failed(
+def test_failed_verification_rejects_the_request(
     api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
 ) -> None:
-    _, req = approved(api, setup, world)
+    out, req = approved(api, setup, world)
     world.publisher.status = "FAILED"
     assert publish_service.publish_approved(UUID(req["request_id"])) == "FAILED"
+    assert "verification" in assert_failed(api, setup, db, out, req)
     [row] = sql(db, "SELECT publication_status, published_dataset_id FROM workspace.publish_requests")
     assert row["publication_status"] == "FAILED" and row["published_dataset_id"] is not None
+
+
+def test_repeated_retryable_failures_end_in_rejection(
+    api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
+) -> None:
+    out, req = approved(api, setup, world)
+    world.publisher.fail_with = StorageUnavailable("down")
+    at = T
+    for _ in range(publish_service.MAX_FAILURES - 1):
+        with clock.frozen(at):
+            assert publish_service.publish_approved(UUID(req["request_id"])) == "RETRY"
+        at += timedelta(minutes=2)
+    assert output_status(api, setup.project_id, out["output_id"]) == "APPROVED"
+    with clock.frozen(at):
+        assert publish_service.publish_approved(UUID(req["request_id"])) == "FAILED"
+    assert "attempts" in assert_failed(api, setup, db, out, req)
 
 
 def test_publication_never_loosens_the_inputs_current_level(
@@ -557,7 +697,7 @@ def test_database_rejects_inconsistent_requests(
         sql(
             db,
             "INSERT INTO workspace.publish_requests (request_id, output_id, project_id, status, title, description,"
-            " created_by, created_at) VALUES (:r, :o, :p, 'PENDING', 'title', '', :u, now())",
+            " created_by, created_at, lead_organization_id) VALUES (:r, :o, :p, 'PENDING', 'title', '', :u, now(), :u)",
             r=new_id(),
             o=out["output_id"],
             p=setup.project_id,
@@ -569,6 +709,14 @@ def test_database_rejects_inconsistent_requests(
             "UPDATE workspace.publish_approvals SET decision = 'REJECT', decided_by = :u, decided_at = now()"
             " WHERE request_id = :r",
             u=USERS["b.steward"].user_id,
+            r=req["request_id"],
+        )
+    with pytest.raises(IntegrityError):  # FAILED publication on a request that is not REJECTED
+        sql(
+            db,
+            "UPDATE workspace.publish_requests SET status = 'APPROVED', planned_dataset_id = :d,"
+            " publication_status = 'FAILED', publication_error = 'x' WHERE request_id = :r",
+            d=new_id(),
             r=req["request_id"],
         )
     with pytest.raises(IntegrityError):  # APPROVED without a planned dataset

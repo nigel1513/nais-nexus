@@ -22,7 +22,13 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
 from api.modules.workspace import repo
-from api.modules.workspace.access import has_dataset_access, require_open_writer, require_reader
+from api.modules.workspace.access import (
+    STRICTNESS,
+    accessible,
+    require_not_looser,
+    require_open_writer,
+    require_reader,
+)
 from api.modules.workspace.deps import WorkspaceDeps
 from api.modules.workspace.errors import forbidden, not_found
 from api.modules.workspace.paging import keyset_page, sort_key
@@ -39,7 +45,6 @@ from api.platform.pagination import Page, PageParams
 
 logger = logging.getLogger("nais.workspace")
 
-STRICTNESS: tuple[str, ...] = ("PUBLIC", "INTERNAL", "CONTROLLED", "SENSITIVE")  # loosest -> strictest
 NO_INPUTS_FLOOR = "INTERNAL"
 UPLOAD_TTL_S = 15 * 60
 DOWNLOAD_TTL_S = 300
@@ -135,7 +140,7 @@ def create_upload(
     require_open_writer(deps, project_id, user)
     lineage, floor = _lineage_snapshot(session, deps, project_id)
     requested = body.access_level.value
-    _require_not_looser(requested, floor)
+    require_not_looser(requested, floor)
     org_code = _lead_org_code(deps, project_id)
     output_id = new_id()
     now = clock.now()
@@ -175,15 +180,6 @@ def create_upload(
     return OutputUploadSession.model_validate(
         {"output_id": output_id, "expires_at": expires_at, "files": uploads}
     )
-
-
-def _require_not_looser(requested: str, floor: str) -> None:
-    if STRICTNESS.index(requested) < STRICTNESS.index(floor):
-        raise ApiError(
-            ErrorCode.VALIDATION_FAILED,
-            f"access_level may not be looser than {floor}, the strictest level of the project's inputs.",
-            {"field": "access_level", "minimum": floor},
-        )
 
 
 def current_floor(deps: WorkspaceDeps, dataset_ids: Sequence[UUID]) -> str:
@@ -257,7 +253,7 @@ def complete_upload(
         raise ApiError(ErrorCode.UPLOAD_SESSION_EXPIRED, "The upload session expired; start a new upload.")
     lineage = repo.lineage_of(session, [output_id])[output_id]
     # a lineage dataset may have been tightened since the session started: the floor is re-derived now
-    _require_not_looser(row["access_level"], current_floor(deps, [i["dataset_id"] for i in lineage]))
+    require_not_looser(row["access_level"], current_floor(deps, [i["dataset_id"] for i in lineage]))
     _verify(deps, row["storage_org_code"], repo.files_of(session, [output_id])[output_id])
     row = repo.update_output(session, output_id, status=repo.READY, created_at=now)
     outbox.write(
@@ -310,7 +306,7 @@ def download(
     lapsed = [
         str(i["input_id"])
         for i in repo.lineage_of(session, [output_id])[output_id]
-        if not _accessible(deps, user, i["dataset_id"])
+        if not accessible(deps, user, i["dataset_id"])
     ]
     if lapsed:
         raise ApiError(
@@ -331,8 +327,3 @@ def download(
         for f in repo.files_of(session, [output_id])[output_id]
     ]
     return OutputDownload.model_validate({"output_id": output_id, "expires_at": expires_at, "files": files})
-
-
-def _accessible(deps: WorkspaceDeps, user: CurrentUser, dataset_id: UUID) -> bool:
-    policy = deps.catalog.get_policy_view(dataset_id)
-    return policy is not None and has_dataset_access(deps, user, policy)

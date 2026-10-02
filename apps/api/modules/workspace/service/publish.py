@@ -4,27 +4,31 @@ listPublishRequests / decidePublishRequest).
 Request: an ACTIVE member other than VIEWER of an ACTIVE project, for a READY output whose publish_status is NONE or
 REJECTED (else 409 OUTPUT_PUBLISH_PENDING). The requester's access to every lineage input must still be live (409
 INPUT_ACCESS_LAPSED), the output may not be looser than its inputs' current levels (422), and its files must pass the
-catalog upload rules (422, CatalogPublishPort.output_file_problems). One approval slot per owner organization of the
-lineage inputs, in lineage order (kind INPUT_OWNER, decided by that organization's DATA_STEWARD); an output without
-inputs gets one slot for the project lead organization (kind LEAD_ORGANIZATION, decided by its DATA_STEWARD or
-ORG_ADMIN). Emits workspace.publish.requested.v1.
+catalog upload rules (422, CatalogPublishPort.output_file_problems). Approval slots (D-013): one per owner organization
+of the lineage inputs in lineage order (kind INPUT_OWNER), then the project lead organization — the new dataset's
+owner — when it owns none of them (kind LEAD_ORGANIZATION; the only slot of an output without inputs). Every slot is
+decided by a DATA_STEWARD of its organization. Emits workspace.publish.requested.v1.
 
-Decision: a user holding the slot role in a slot organization (CurrentUser organization + roles), once per slot
-(409 when decided or when the request is no longer PENDING). REJECT needs a comment (422). Any REJECT -> request and
-output REJECTED; every slot APPROVE -> request APPROVED, output APPROVED, and the publication job is queued after
-commit. Emits workspace.publish.decided.v1 (published_dataset_id is null: the catalog dataset does not exist yet).
+Decision: a DATA_STEWARD of a slot organization (CurrentUser organization + roles), never the requester (403,
+separation of duties), once per slot (409 when decided or when the request is no longer PENDING). REJECT needs a
+comment (422). Any REJECT -> request and output REJECTED; every slot APPROVE -> request APPROVED, output APPROVED, the
+lead organization's approving steward recorded as the publishing actor, and the publication job queued after commit.
+Emits workspace.publish.decided.v1 (published_dataset_id is null: the catalog dataset does not exist yet).
 Others: 404 when the caller can neither decide nor is a project member or a slot organization's user, else 403.
 
 Publication (publish_approved, Dramatiq actor workspace.publish_output + a one-minute re-send sweep): under a
 30-minute lease, CatalogPublishPort.create_dataset_from_output with the planned dataset id fixed at approval
 (idempotency key). The dataset is owned by the project lead organization (whose bucket holds the output objects), at
 the stricter of the output's level and its inputs' current levels, purposes = those every input allows (ACADEMIC_
-RESEARCH when none or no inputs), provenance = a lineage note (source datasets @ versions, recipe @ version, run; no
-data values). The catalog copies, verifies and publishes v1 through its own rules; the request records the dataset id
-as soon as it exists, and only when the catalog reports the version PUBLISHED does the output become PUBLISHED, with a
-dataset_activity OUTPUT_PUBLISHED row on the new dataset. DRAFT (files still verifying) or a storage outage releases
-the lease for the sweep; a permanent catalog refusal or a failed file verification ends the publication FAILED (the
-output stays APPROVED; an operator must look at it).
+RESEARCH when none or no inputs), created by the requester and published by the lead organization's approving
+steward, provenance = a lineage note (source datasets @ versions, recipe @ version, run, the approval; no data
+values). The catalog copies, verifies and publishes v1 through its own rules (and refuses a resume whose level became
+stricter than the dataset it created); the request records the dataset id as soon as it exists, and only when the
+catalog reports the version PUBLISHED does the output become PUBLISHED, with a dataset_activity OUTPUT_PUBLISHED row.
+DRAFT (files still verifying) releases the lease for the sweep; an outage too, up to MAX_FAILURES. A terminal failure
+(catalog refusal, failed file verification, MAX_FAILURES outages) rejects the request: status REJECTED with a
+human-readable failure_reason, output REJECTED (it may be requested again with a fresh planned dataset id), and a
+system workspace.publish.decided.v1 (REJECT by the lead organization slot, failure_reason set) for the requester.
 """
 
 import logging
@@ -44,12 +48,18 @@ from api.modules.catalog.public import (
     StorageUnavailable,
 )
 from api.modules.workspace import jobs, repo
-from api.modules.workspace.access import require_reader, require_writer
+from api.modules.workspace.access import (
+    STRICTNESS,
+    accessible,
+    require_not_looser,
+    require_reader,
+    require_writer,
+)
 from api.modules.workspace.deps import WorkspaceDeps
 from api.modules.workspace.errors import forbidden, not_found
 from api.modules.workspace.paging import keyset_page, sort_key
 from api.modules.workspace.schemas import PublishDecisionIn, PublishRequest, PublishRequestIn
-from api.modules.workspace.service.outputs import STRICTNESS, _accessible, _require_not_looser, current_floor
+from api.modules.workspace.service.outputs import current_floor
 from api.platform import clock, ports
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
@@ -63,13 +73,11 @@ from api.platform.pagination import Page, PageParams
 logger = logging.getLogger("nais.workspace")
 
 DATA_STEWARD = "DATA_STEWARD"
-ORG_ADMIN = "ORG_ADMIN"
 INPUT_OWNER = "INPUT_OWNER"
 LEAD_ORGANIZATION = "LEAD_ORGANIZATION"
-SLOT_ROLES: dict[str, frozenset[str]] = {
-    INPUT_OWNER: frozenset({DATA_STEWARD}),
-    LEAD_ORGANIZATION: frozenset({DATA_STEWARD, ORG_ADMIN}),
-}
+MAX_FAILURES = (
+    5  # retryable publication failures (storage/database/port outages) before the request is rejected
+)
 OPEN_TO_REQUEST = ("NONE", "REJECTED")
 DEFAULT_PURPOSE = "ACADEMIC_RESEARCH"
 LEASE = timedelta(minutes=30)
@@ -117,11 +125,16 @@ def _views(session: Session, deps: WorkspaceDeps, rows: Sequence[RowMapping]) ->
             "created_at": r["created_at"],
             "output_title": titles.get(r["output_id"], ""),
             "published_dataset_id": r["published_dataset_id"],
+            "failure_reason": _failure_reason(r),
         }
         if project_names[r["project_id"]] is not None:
             body["project_name"] = project_names[r["project_id"]]
         views.append(PublishRequest.model_validate(body))
     return views
+
+
+def _failure_reason(r: RowMapping) -> str | None:
+    return r["publication_error"] if r["publication_status"] == "FAILED" else None
 
 
 def _view(session: Session, deps: WorkspaceDeps, row: RowMapping) -> PublishRequest:
@@ -150,14 +163,14 @@ def request_publish(
             ErrorCode.OUTPUT_PUBLISH_PENDING, "The output already has a pending or approved publish request."
         )
     lineage = repo.lineage_of(session, [output_id])[output_id]
-    lapsed = [str(i["input_id"]) for i in lineage if not _accessible(deps, user, i["dataset_id"])]
+    lapsed = [str(i["input_id"]) for i in lineage if not accessible(deps, user, i["dataset_id"])]
     if lapsed:
         raise ApiError(
             ErrorCode.INPUT_ACCESS_LAPSED,
             "Access to an input this output derives from was revoked or expired.",
             {"input_ids": lapsed},
         )
-    _require_not_looser(output["access_level"], current_floor(deps, [i["dataset_id"] for i in lineage]))
+    require_not_looser(output["access_level"], current_floor(deps, [i["dataset_id"] for i in lineage]))
     title = body.title if body is not None and body.title is not None else output["title"]
     if len(title.strip()) < 3:
         raise ApiError(
@@ -174,7 +187,8 @@ def request_publish(
             "The output's files cannot become a catalog dataset (file name, type or size).",
             {"files": problems},
         )
-    slots = _slots(deps, project_id, lineage)
+    lead = _lead_organization(deps, project_id)
+    slots = _slots(deps, lead, lineage)
     now = clock.now()
     row = repo.insert_publish_request(
         session,
@@ -187,6 +201,7 @@ def request_publish(
             "description": (body.description if body is not None else None) or "",
             "created_by": user.user_id,
             "created_at": now,
+            "lead_organization_id": lead,
         },
         [{"organization_id": org, "kind": kind} for org, kind in slots],
     )
@@ -210,15 +225,17 @@ def request_publish(
     return _view(session, deps, row)
 
 
-def _slots(deps: WorkspaceDeps, project_id: UUID, lineage: Sequence[RowMapping]) -> list[tuple[UUID, str]]:
+def _slots(deps: WorkspaceDeps, lead: UUID, lineage: Sequence[RowMapping]) -> list[tuple[UUID, str]]:
+    """Input owners in lineage order, then the lead organization (the new dataset's owner, D-013) unless it is one."""
     owners: dict[UUID, None] = {}
     for entry in lineage:
         policy = deps.catalog.get_policy_view(entry["dataset_id"])
         if policy is not None:  # a missing dataset already failed the access check
             owners.setdefault(policy.owner_organization_id, None)
-    if owners:
-        return [(org, INPUT_OWNER) for org in owners]
-    return [(_lead_organization(deps, project_id), LEAD_ORGANIZATION)]
+    slots = [(org, INPUT_OWNER) for org in owners]
+    if lead not in owners:
+        slots.append((lead, LEAD_ORGANIZATION))
+    return slots
 
 
 def _lead_organization(deps: WorkspaceDeps, project_id: UUID) -> UUID:
@@ -246,7 +263,7 @@ def _sources(output: RowMapping, files: Sequence[RowMapping]) -> list[OutputFile
 
 
 def _may_decide(user: CurrentUser, slot: RowMapping) -> bool:
-    return user.organization_id == slot["organization_id"] and bool(SLOT_ROLES[slot["kind"]] & user.org_roles)
+    return user.organization_id == slot["organization_id"] and DATA_STEWARD in user.org_roles
 
 
 def decide(
@@ -262,6 +279,8 @@ def decide(
         if involved or deps.projects.get_member_role(row["project_id"], user.user_id) is not None:
             raise forbidden("Only a DATA_STEWARD of an organization with an approval slot can decide.")
         raise not_found("Publish request")
+    if user.user_id == row["created_by"]:  # separation of duties
+        raise forbidden("The requester cannot decide their own publish request.")
     decision = body.decision.value
     comment = body.comment if body.comment is not None and body.comment.strip() else None
     if decision == "REJECT" and comment is None:
@@ -287,13 +306,16 @@ def decide(
         row = repo.update_publish_request(session, request_id, status="REJECTED", decided_at=now)
         repo.update_output(session, row["output_id"], publish_status="REJECTED")
     elif others_approved:
+        # the publishing actor: the lead organization's approving steward (its slot is always among the slots)
+        lead_slot = next((s for s in slots if s["organization_id"] == row["lead_organization_id"]), slot)
+        publisher = user.user_id if lead_slot is slot else lead_slot["decided_by"]
         row = repo.update_publish_request(
             session,
             request_id,
             status="APPROVED",
             decided_at=now,
-            approved_by=user.user_id,
-            approved_by_organization_id=user.organization_id,
+            approved_by=publisher,
+            approved_by_organization_id=lead_slot["organization_id"],
             planned_dataset_id=new_id(),
             publication_status="PENDING",
         )
@@ -314,6 +336,7 @@ def decide(
             "request_status": row["status"],
             "requested_by": str(row["created_by"]),
             "published_dataset_id": None,
+            "failure_reason": None,
         },
         EventActor.for_user(user),
     )
@@ -337,10 +360,9 @@ def list_requests(
     project_ids: list[UUID] | None = None
     reviewer: tuple[UUID, list[str]] | None = None
     if role == "reviewer":
-        kinds = [kind for kind, roles in SLOT_ROLES.items() if roles & user.org_roles]
-        if not kinds:
+        if DATA_STEWARD not in user.org_roles:
             return keyset_page([], params.limit, ("created_at", "request_id"), lambda _: [])
-        reviewer = (user.organization_id, kinds)
+        reviewer = (user.organization_id, [INPUT_OWNER, LEAD_ORGANIZATION])
     else:
         project_ids = deps.projects.list_project_ids_for_member(user.user_id)
     rows = repo.list_publish_requests(
@@ -386,31 +408,80 @@ def publish_approved(request_id: UUID) -> str:
         logger.error(
             "catalog refused the publication", extra={"request_id": str(request_id), "reason": str(exc)[:300]}
         )
-        _release(request_id, publication_status="FAILED", publication_error=f"CATALOG_REJECTED: {exc}"[:500])
+        _fail(claimed, f"카탈로그가 공개를 거부했습니다: {exc}", None)
         return "FAILED"
     except (StorageUnavailable, ports.PortNotProvided, OperationalError, InterfaceError) as exc:
-        logger.warning(
-            "publication deferred", extra={"request_id": str(request_id), "error_type": type(exc).__name__}
-        )
-        _release(request_id)
-        return "RETRY"
+        return _retry(claimed, type(exc).__name__)
     except ApiError as exc:
         if exc.code != ErrorCode.DEPENDENCY_UNAVAILABLE:
             raise
-        _release(request_id)
-        return "RETRY"
+        return _retry(claimed, type(exc).__name__)
     if state.status == "PUBLISHED":
         _published(claimed, state.dataset_id)
     elif state.status == "FAILED":
-        _release(
-            request_id,
-            published_dataset_id=state.dataset_id,
-            publication_status="FAILED",
-            publication_error="FILE_VERIFICATION_FAILED: a file failed catalog verification",
+        _fail(
+            claimed,
+            "카탈로그 파일 검증에 실패했습니다(verification failed): 산출물 파일을 확인한 뒤 다시 요청하세요.",
+            state.dataset_id,
         )
     else:
-        _release(request_id, published_dataset_id=state.dataset_id)
+        _release(claimed["request_id"], published_dataset_id=state.dataset_id)
     return state.status
+
+
+def _retry(req: RowMapping, error_type: str) -> str:
+    """A retryable outage: release the lease for the sweep, or reject after MAX_FAILURES of them."""
+    failures = req["publication_failures"] + 1
+    logger.warning(
+        "publication deferred",
+        extra={"request_id": str(req["request_id"]), "error_type": error_type, "failures": failures},
+    )
+    if failures >= MAX_FAILURES:
+        _fail(
+            req,
+            f"카탈로그 공개를 {failures}번 시도했지만 저장소·서비스 장애로 실패했습니다(attempts exhausted).",
+            None,
+        )
+        return "FAILED"
+    _release(req["request_id"], publication_failures=failures)
+    return "RETRY"
+
+
+def _fail(req: RowMapping, reason: str, dataset_id: UUID | None) -> None:
+    """Terminal failure: the request and the output become REJECTED (the output may be requested again; the partial
+    unique index no longer holds the output), with the reason as failure_reason and a system decided event."""
+    now = clock.now()
+    values: dict[str, Any] = {
+        "status": "REJECTED",
+        "decided_at": now,
+        "publication_claimed_until": None,
+        "publication_status": "FAILED",
+        "publication_error": reason[:500],
+    }
+    if dataset_id is not None:
+        values["published_dataset_id"] = dataset_id
+    with jobs.job_session() as session, session.begin():
+        row = repo.update_publish_request(session, req["request_id"], **values)
+        repo.update_output(session, row["output_id"], publish_status="REJECTED")
+        outbox.write(
+            session,
+            EventType.WORKSPACE_PUBLISH_DECIDED_V1,
+            {
+                "project_id": str(row["project_id"]),
+                "actor_id": str(row["approved_by"]),  # the publishing actor; the envelope actor is SYSTEM
+                "occurred_at": now.isoformat(),
+                "request_id": str(row["request_id"]),
+                "output_id": str(row["output_id"]),
+                "output_title": repo.output_titles(session, [row["output_id"]]).get(row["output_id"], ""),
+                "organization_id": str(row["lead_organization_id"]),
+                "decision": "REJECT",
+                "request_status": "REJECTED",
+                "requested_by": str(row["created_by"]),
+                "published_dataset_id": str(dataset_id) if dataset_id is not None else None,
+                "failure_reason": row["publication_error"],
+            },
+            EventActor.system(),
+        )
 
 
 def _create_in_catalog(req: RowMapping) -> OutputDatasetState:
@@ -432,7 +503,7 @@ def _create_in_catalog(req: RowMapping) -> OutputDatasetState:
         access_level=level,
         allowed_purposes=_purposes(deps, dataset_ids),
         files=_sources(output, files),
-        lineage_note=_lineage_note(output, lineage),
+        lineage_note=_lineage_note(output, lineage, req),
         created_by=req["created_by"],
         published_by=req["approved_by"],
         publisher_organization_id=req["approved_by_organization_id"],
@@ -449,7 +520,7 @@ def _purposes(deps: WorkspaceDeps, dataset_ids: Sequence[UUID]) -> list[str]:
     return common or [DEFAULT_PURPOSE]
 
 
-def _lineage_note(output: RowMapping, lineage: Sequence[RowMapping]) -> str:
+def _lineage_note(output: RowMapping, lineage: Sequence[RowMapping], req: RowMapping) -> str:
     """Entity labels and ids only (dataset titles @ version labels, recipe @ version, run) — never data values."""
     lines = [
         f"NAIS 프로젝트 산출물(output {output['output_id']})에서 소유 기관 검토를 거쳐 공개된 파생 데이터셋."
@@ -467,6 +538,10 @@ def _lineage_note(output: RowMapping, lineage: Sequence[RowMapping]) -> str:
         lines.append(
             f"레시피 {output['recipe_id']} v{output['recipe_version']}, 실행 {output['produced_by_run_id']}"
         )
+    lines.append(
+        f"공개 승인: 주관 기관(organization {req['approved_by_organization_id']}) 데이터 관리자"
+        f" {req['approved_by']} 및 입력 소유 기관 검토 (publish request {req['request_id']})."
+    )
     return "\n".join(lines)[:MAX_NOTE]
 
 

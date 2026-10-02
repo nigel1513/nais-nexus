@@ -35,11 +35,11 @@ from sqlalchemy.orm import Session
 
 from api.modules.catalog.public import DatasetPolicyView, ObjectMissing, StorageUnavailable
 from api.modules.workspace import repo
-from api.modules.workspace.access import dataset_access
+from api.modules.workspace.access import STRICTNESS, dataset_access
 from api.modules.workspace.deps import WorkspaceDeps
 from api.modules.workspace.recipes import reader, steps
 from api.modules.workspace.recipes.model import parse_steps
-from api.modules.workspace.service.outputs import NO_INPUTS_FLOOR, STRICTNESS
+from api.modules.workspace.service.outputs import NO_INPUTS_FLOOR
 from api.modules.workspace.settings import get_workspace_settings
 from api.platform import clock, ports
 from api.platform.db import session_factory

@@ -15,6 +15,7 @@ from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
 
 VIEWER = "VIEWER"
+STRICTNESS: tuple[str, ...] = ("PUBLIC", "INTERNAL", "CONTROLLED", "SENSITIVE")  # loosest -> strictest
 
 
 def require_reader(deps: WorkspaceDeps, project_id: UUID, user: CurrentUser) -> None:
@@ -56,3 +57,19 @@ def dataset_access(
         or organization_id == policy.owner_organization_id
         or deps.grants.has_active_grant(user_id, policy.dataset_id)
     )
+
+
+def accessible(deps: WorkspaceDeps, user: CurrentUser, dataset_id: UUID) -> bool:
+    """The user's access to the dataset is live (a dataset missing from the catalog is not accessible)."""
+    policy = deps.catalog.get_policy_view(dataset_id)
+    return policy is not None and has_dataset_access(deps, user, policy)
+
+
+def require_not_looser(requested: str, floor: str) -> None:
+    """422 VALIDATION_FAILED when the access level `requested` is looser than `floor` (details.minimum)."""
+    if STRICTNESS.index(requested) < STRICTNESS.index(floor):
+        raise ApiError(
+            ErrorCode.VALIDATION_FAILED,
+            f"access_level may not be looser than {floor}, the strictest level of the project's inputs.",
+            {"field": "access_level", "minimum": floor},
+        )

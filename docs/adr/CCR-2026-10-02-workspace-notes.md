@@ -143,3 +143,12 @@ ALTER DEFAULT PRIVILEGES FOR ROLE nais_migrator IN SCHEMA notes GRANT USAGE, SEL
 - `workspace.comment.added.v1`: `scope=DATASET`이면 `project_id`는 `null`, 그 밖의 범위는 `project_id` 필수(스키마 if/then).
 - 산출물 업로드는 단일 presigned PUT이므로 파일당 5 GiB 이하.
 - 레시피 필터 값은 정수·실수·문자열·불리언·null·배열(`in`)을 받는다. 정수는 정수로 유지된다.
+
+## 보완 (Task 7 리뷰, 계약 1.6.0 안의 설명·선택 필드 추가)
+- 허브 공개 승인 슬롯(D-013): 계보 입력의 소유 기관마다 1개, 프로젝트 주관 기관(새 데이터셋 소유 기관)이 그중에 없으면 주관 기관
+  슬롯 1개를 더한다. 입력이 없는 산출물은 주관 기관 슬롯만. 모든 슬롯은 해당 기관 DATA_STEWARD가 결정한다(ORG_ADMIN 아님).
+- 요청자는 자기 요청을 결정할 수 없다(`403 FORBIDDEN`, 직무 분리).
+- 승인 후 카탈로그 공개가 최종 실패하면(카탈로그 거부, 파일 검증 실패, 재시도 상한) 요청은 `REJECTED`가 되고 산출물도 `REJECTED`라서
+  다시 요청할 수 있다. `PublishRequest.failure_reason`(nullable, 사람이 읽는 사유, 데이터 값 없음)과
+  `workspace.publish.decided.v1` payload `failure_reason`(선택, nullable)을 추가했다. 이 시스템 반려 이벤트는 envelope actor가
+  SYSTEM이고 `organization_id`는 주관 기관, `decision`은 `REJECT`다. 새 필드는 모두 선택이라 기존 소비자와 호환된다.

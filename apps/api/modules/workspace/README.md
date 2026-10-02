@@ -90,18 +90,21 @@ Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4
   `GET /publish-requests` (`role=requester|reviewer`), `POST /publish-requests/{id}/decision`.
   - Request (writer; output READY with `publish_status` NONE/REJECTED, else 409 `OUTPUT_PUBLISH_PENDING`): lapsed input
     access → 409 `INPUT_ACCESS_LAPSED`; output looser than its inputs' current levels → 422; files the catalog upload
-    rules refuse (e.g. PDF) → 422 `details.files` (`CatalogPublishPort.output_file_problems`). One approval slot per
-    owner organization of the lineage inputs (DATA_STEWARD); an output without inputs needs the lead organization
-    (DATA_STEWARD or ORG_ADMIN). `workspace.publish.requested.v1`.
-  - Decision: once per slot; REJECT needs a comment (422). Any REJECT → REJECTED; all APPROVE → APPROVED (output
-    APPROVED) and the `workspace.publish_output` message (queue `workspace_publish`, general worker) is sent after
-    commit. `workspace.publish.decided.v1` (published_dataset_id null: the dataset is created afterwards).
+    rules refuse (e.g. PDF) → 422 `details.files` (`CatalogPublishPort.output_file_problems`). Approval slots (D-013,
+    D-047): one per owner organization of the lineage inputs, then the lead organization (the dataset owner) when it
+    owns none of them; only the lead organization for an output without inputs. `workspace.publish.requested.v1`.
+  - Decision: a DATA_STEWARD of a slot organization, never the requester (403); once per slot; REJECT needs a comment
+    (422). Any REJECT → REJECTED; all APPROVE → APPROVED (output APPROVED), the lead organization's approving steward
+    is recorded as the publishing actor, and `workspace.publish_output` (queue `workspace_publish`, general worker) is
+    sent after commit. `workspace.publish.decided.v1` (published_dataset_id null: the dataset is created afterwards).
   - Publication job: 30-min lease, `CatalogPublishPort.create_dataset_from_output` with the dataset id planned at
     approval (idempotency key). Owner = lead organization, level = stricter of output/current input levels, purposes
-    every input allows, provenance = lineage note (dataset@version, recipe@version, run; no values). The catalog copies,
-    verifies and publishes v1 by its own rules; only when it reports PUBLISHED does the output become PUBLISHED (plus a
-    `dataset_activity` OUTPUT_PUBLISHED row). DRAFT (verifying) or outages are retried by a one-minute re-send sweep;
-    a catalog refusal or failed file verification ends `publication_status` FAILED (output stays APPROVED).
+    every input allows, created_by = requester, published_by = lead approving steward, provenance = lineage note
+    (dataset@version, recipe@version, run, approval; no values). The catalog copies, verifies and publishes v1 by its
+    own rules; only when it reports PUBLISHED does the output become PUBLISHED (plus a `dataset_activity`
+    OUTPUT_PUBLISHED row). DRAFT (verifying) is re-sent by a one-minute sweep; outages too, up to 5 times. A terminal
+    failure (catalog refusal — including a resume whose level became stricter —, failed verification, 5 outages)
+    rejects the request: `failure_reason`, output REJECTED (may be requested again), system decided event (REJECT).
 - Data-Hub (`service/hub.py`, tag `hub`): `GET /hub/overview`, `GET /datasets/{d}/projects`,
   `GET /datasets/{d}/activity`.
   - Visibility is the catalog's: one batched `CatalogQueryPort.list_visible_dataset_summaries` for the overview

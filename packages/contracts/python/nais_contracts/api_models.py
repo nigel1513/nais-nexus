@@ -1585,13 +1585,21 @@ class PublishRequest(BaseModel):
     output_id: Id
     project_id: Id
     status: PublishRequestStatus
-    approvals: list[PublishApproval] = Field(..., min_length=1)
+    approvals: list[PublishApproval] = Field(
+        ...,
+        description='One slot per owner organization of the lineage inputs, then the project lead organization when it owns none of them (only the lead organization for an output without inputs); each decided by a DATA_STEWARD of that organization',
+        min_length=1,
+    )
     created_by: Id
     created_at: Timestamp
     output_title: str | None = None
     project_name: str | None = None
     published_dataset_id: Id | None = Field(
         None, description='Catalog dataset created once APPROVED'
+    )
+    failure_reason: str | None = Field(
+        None,
+        description='Set when an APPROVED request could not be published by the catalog and was turned REJECTED by the system (human-readable, no data values)',
     )
 
 

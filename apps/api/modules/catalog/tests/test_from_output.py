@@ -19,7 +19,7 @@ from api.modules.catalog.public import (
 )
 from api.modules.catalog.settings import CatalogSettings
 from api.modules.catalog.testing import MemoryObjectStore, RecordingVerificationQueue, memory_store
-from api.modules.catalog.tests.support import ORG_A, ORG_B, outbox_events, rows, seed_user_id
+from api.modules.catalog.tests.support import ORG_A, ORG_B, execute, outbox_events, rows, seed_user_id
 from api.modules.catalog.tests.support_api import CatalogApi
 from api.platform import ports
 from api.platform.ids import new_id
@@ -192,3 +192,32 @@ def test_memory_store_copy(api: CatalogApi) -> None:
     store = put(api, "a/b.csv", CSV)
     store.copy("a/b.csv", "c/d.csv")
     assert store.objects["c/d.csv"] == CSV
+
+
+def test_a_resume_with_a_stricter_level_is_refused(api: CatalogApi, db: PgUrls) -> None:
+    api.use(replace(api.deps, settings=CatalogSettings(catalog_sync_verify_max_bytes=4)))
+    src = source("result.csv", CSV)
+    put(api, src.storage_key, CSV)
+    dataset_id = new_id()
+    assert create([src], dataset_id).status == "DRAFT"  # waiting for the verify worker
+    with pytest.raises(CatalogPublishRejected, match="stricter"):
+        create([src], dataset_id, access_level="SENSITIVE")
+    assert (
+        create([src], dataset_id, access_level="INTERNAL").status == "DRAFT"
+    )  # looser is the caller's floor issue
+    assert rows(db, "SELECT status FROM catalog.dataset_versions")[0]["status"] == "DRAFT"
+
+
+def test_a_withdrawn_v1_is_not_reported_published(api: CatalogApi, db: PgUrls) -> None:
+    src = source("result.csv", CSV)
+    put(api, src.storage_key, CSV)
+    dataset_id = new_id()
+    state = create([src], dataset_id)
+    assert state.status == "PUBLISHED"
+    execute(
+        db,
+        "UPDATE catalog.dataset_versions SET status = 'WITHDRAWN' WHERE dataset_version_id = :v",
+        v=state.dataset_version_id,
+    )
+    with pytest.raises(CatalogPublishRejected):
+        create([src], dataset_id)

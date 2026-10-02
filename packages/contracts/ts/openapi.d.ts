@@ -1204,8 +1204,9 @@ export interface paths {
         put?: never;
         /**
          * @description ACTIVE member other than VIEWER asks to publish the output to the hub as a new dataset (owner = project lead organization).
-         *     Allowed when publish_status is NONE or REJECTED (else 409 OUTPUT_PUBLISH_PENDING). One approval slot per owner organization of the lineage inputs;
-         *     an output without inputs needs the lead organization. Emits workspace.publish.requested.v1.
+         *     Allowed when publish_status is NONE or REJECTED (else 409 OUTPUT_PUBLISH_PENDING). One approval slot per owner organization of the lineage inputs,
+         *     plus one for the project lead organization when it owns none of them (it becomes the dataset owner); an output without inputs needs only the
+         *     lead organization. Every slot is decided by a DATA_STEWARD of its organization. Emits workspace.publish.requested.v1.
          */
         post: operations["requestOutputPublish"];
         delete?: never;
@@ -1242,8 +1243,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description DATA_STEWARD of an organization with a pending approval slot (403 otherwise). Any REJECT -> REJECTED; all APPROVE -> APPROVED,
-         *     then the catalog dataset is created and the output becomes PUBLISHED. Decided slots cannot change (409). Emits workspace.publish.decided.v1.
+         * @description DATA_STEWARD of an organization with a pending approval slot (403 otherwise); the requester never decides their own request (403).
+         *     A REJECT needs a comment (422). Any REJECT -> REJECTED; all APPROVE -> APPROVED, then the catalog dataset is created (published by the lead
+         *     organization's approving steward) and the output becomes PUBLISHED. If the catalog cannot publish it (terminal failure), the request becomes
+         *     REJECTED with failure_reason and the output can be requested again. Decided slots cannot change (409). Emits workspace.publish.decided.v1.
          */
         post: operations["decidePublishRequest"];
         delete?: never;
@@ -2703,6 +2706,7 @@ export interface components {
             output_id: components["schemas"]["Id"];
             project_id: components["schemas"]["Id"];
             status: components["schemas"]["PublishRequestStatus"];
+            /** @description One slot per owner organization of the lineage inputs, then the project lead organization when it owns none of them (only the lead organization for an output without inputs); each decided by a DATA_STEWARD of that organization */
             approvals: components["schemas"]["PublishApproval"][];
             created_by: components["schemas"]["Id"];
             created_at: components["schemas"]["Timestamp"];
@@ -2710,6 +2714,8 @@ export interface components {
             project_name?: string;
             /** @description Catalog dataset created once APPROVED */
             published_dataset_id?: components["schemas"]["Id"] | null;
+            /** @description Set when an APPROVED request could not be published by the catalog and was turned REJECTED by the system (human-readable, no data values) */
+            failure_reason?: string | null;
         };
         PublishRequestCreate: {
             /** @description Dataset title; default = output title */

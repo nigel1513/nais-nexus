@@ -206,9 +206,8 @@ def _csv_problem(exc: BaseException) -> str:
 _INTEGER = r"^(0|-?[1-9][0-9]*)$"
 _DECIMAL = r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$|^-?\.[0-9]+$"
 _BOOLEAN = r"^(?i:true|false)$"
-SAFE_SIGNIFICANT_DIGITS = (
-    15  # a normal-range decimal with at most 15 significant digits survives float64 exactly
-)
+# a normal-range decimal with at most 15 significant digits survives float64 exactly
+SAFE_SIGNIFICANT_DIGITS = 15
 SMALLEST_NORMAL = sys.float_info.min  # below it float64 underflows (subnormal or 0.0) and loses digits
 
 

@@ -26,8 +26,9 @@ from api.platform.ids import new_id
 
 ORG_A = UUID("00000000-0000-7000-8000-00000000000a")
 ORG_B = UUID("00000000-0000-7000-8000-00000000000b")
-ORG_NAMES = {ORG_A: "Institute A", ORG_B: "Institute B"}
-ORG_CODES = {ORG_A: "inst-a", ORG_B: "inst-b"}
+ORG_C = UUID("00000000-0000-7000-8000-00000000000c")
+ORG_NAMES = {ORG_A: "Institute A", ORG_B: "Institute B", ORG_C: "Institute C"}
+ORG_CODES = {ORG_A: "inst-a", ORG_B: "inst-b", ORG_C: "inst-c"}
 T0 = datetime(2026, 9, 1, tzinfo=UTC)
 
 
@@ -51,6 +52,7 @@ USERS: dict[str, CurrentUser] = {
     "a.steward": _user("0a03", ORG_A, "A Steward", frozenset({"DATA_STEWARD"})),
     "a.admin": _user("0a04", ORG_A, "A Admin", frozenset({"ORG_ADMIN"})),
     "b.admin": _user("0b04", ORG_B, "B Admin", frozenset({"ORG_ADMIN"})),
+    "c.steward": _user("0c03", ORG_C, "C Steward", frozenset({"DATA_STEWARD"})),
 }
 
 

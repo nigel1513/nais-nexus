@@ -184,7 +184,7 @@
     {
       "event_type": "workspace.publish.decided.v1",
       "producer": "workspace",
-      "description": "One organization decided a publish request; request_status is the request status after this decision (Audit OUTPUT_PUBLISH_DECIDED; notifies the requester)."
+      "description": "One organization decided a publish request; request_status is the request status after this decision (Audit OUTPUT_PUBLISH_DECIDED; notifies the requester). A terminal catalog publication failure is reported as a system REJECT (request_status REJECTED) with failure_reason."
     },
     {
       "event_type": "workspace.comment.added.v1",

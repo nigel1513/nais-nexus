@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.domain import (
+    ACCESS_LEVELS,
     MAX_FILE_BYTES,
     MAX_FILES_PER_VERSION,
     InvalidPolicy,
@@ -139,6 +140,8 @@ class CatalogOutputPublisher:
             if version["status"] == "DRAFT":
                 self._verify(self._copy_pending(store, version_id, sources))
                 return self._publish_if_ready(dataset_id, version_id, published_by, actor)
+            if version["status"] != "PUBLISHED":
+                raise CatalogPublishRejected(f"version {VERSION_LABEL} is {version['status']}")
         except InternalStorageUnavailable as exc:
             raise StorageUnavailable(str(exc)) from exc
         except StorageNotConfigured as exc:
@@ -175,6 +178,13 @@ class CatalogOutputPublisher:
             )
             if ds["owner_organization_id"] != owner or version is None:
                 raise CatalogPublishRejected("dataset_id is already used by another dataset")
+            stricter = ACCESS_LEVELS.index(policy_args.access_level) > ACCESS_LEVELS.index(ds["access_level"])
+            if version["status"] == "DRAFT" and stricter:
+                # an input was tightened since the dataset was created: v1 may not publish at the older level
+                raise CatalogPublishRejected(
+                    f"the required access level {policy_args.access_level} is stricter than the dataset's"
+                    f" {ds['access_level']}"
+                )
             return version
         insert_dataset(
             session,

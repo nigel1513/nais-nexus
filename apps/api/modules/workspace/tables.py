@@ -219,7 +219,8 @@ run_inputs = Table(
 
 # Hub publication requests (spec §5.4; openapi requestOutputPublish/listPublishRequests/decidePublishRequest). status is
 # the contract PublishRequestStatus; publication_* track the catalog side after approval (internal): planned dataset id
-# (idempotency key of CatalogPublishPort), PENDING -> PUBLISHED | FAILED, a worker lease and the last attempt.
+# (idempotency key of CatalogPublishPort), PENDING -> PUBLISHED | FAILED (FAILED turns the request REJECTED with
+# publication_error as failure_reason), a worker lease, the last attempt and the retryable-failure count.
 publish_requests = Table(
     "publish_requests",
     metadata,
@@ -231,6 +232,7 @@ publish_requests = Table(
     Column("description", Text, nullable=False),
     Column("created_by", PG_UUID(as_uuid=True), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("lead_organization_id", PG_UUID(as_uuid=True), nullable=False),
     Column("decided_at", DateTime(timezone=True)),
     Column("approved_by", PG_UUID(as_uuid=True)),
     Column("approved_by_organization_id", PG_UUID(as_uuid=True)),
@@ -241,11 +243,12 @@ publish_requests = Table(
     Column("publication_claimed_until", DateTime(timezone=True)),
     Column("publication_attempted_at", DateTime(timezone=True)),
     Column("publication_attempts", Integer, nullable=False, server_default=text("0")),
+    Column("publication_failures", Integer, nullable=False, server_default=text("0")),
 )
 
-# One approval slot per organization: the owner organizations of the lineage inputs (kind INPUT_OWNER, decided by a
-# DATA_STEWARD), or the project lead organization for an output without inputs (kind LEAD_ORGANIZATION, decided by a
-# DATA_STEWARD or ORG_ADMIN). position keeps the lineage order.
+# One approval slot per organization, each decided by a DATA_STEWARD of it: the owner organizations of the lineage inputs
+# (kind INPUT_OWNER, lineage order), then the project lead organization when it owns none of them (kind
+# LEAD_ORGANIZATION; the only slot of an output without inputs).
 publish_approvals = Table(
     "publish_approvals",
     metadata,
