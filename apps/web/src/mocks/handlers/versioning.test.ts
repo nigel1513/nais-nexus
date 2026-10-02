@@ -211,6 +211,39 @@ describe("diff, file history, citation", () => {
     expect(diff.metadata).toContainEqual({ field: "license", before: "CC-BY-4.0", after: "CC0-1.0" });
   });
 
+  it("shows policy and usage_policy edits in the metadata layer, with backend snapshot keys only", async () => {
+    const d = await draft("v3");
+    await json(S, "PATCH", `/datasets/${DATASET.battery}`, { access_level: "PUBLIC", usage_policy: "자유롭게 이용" });
+    const diff = await json(S, "GET", `/dataset-versions/${d.dataset_version_id}/diff`);
+    const fields = diff.metadata.map((m: { field: string }) => m.field);
+    expect(fields).toEqual(expect.arrayContaining(["access_level", "usage_policy"]));
+    expect(diff.metadata.find((m: { field: string }) => m.field === "access_level")).toMatchObject({ before: "CONTROLLED", after: "PUBLIC" });
+    const snap = getDb().versions.find((v) => v.dataset_version_id === VERSION.battery)!.metadata_snapshot!;
+    expect(snap).not.toHaveProperty("collecting_organization");
+    expect(snap).not.toHaveProperty("contact_email_public");
+    expect(Object.keys(snap)).toEqual(expect.arrayContaining(["allowed_purposes", "max_grant_days", "provenance", "domain", "contact_email", "people", "data_steward_contact_id"]));
+    expect(JSON.stringify(snap.people)).not.toContain("@");
+  });
+
+  it("hides an invisible default predecessor (404), like an explicit against", async () => {
+    const v = getDb().versions.find((x) => x.dataset_version_id === VERSION.battery)!;
+    v.previous_version_id = VERSION.batteryDraft;
+    expect((await send(USER.aResearcher, "GET", `/dataset-versions/${VERSION.battery}/diff`)).status).toBe(404);
+  });
+
+  it("rebase THEIRS releases the dropped draft upload's object", async () => {
+    const a = await draft("v3-a");
+    const b = await draft("v3-b");
+    await upload(a.dataset_version_id, { "README.md": "# a\n" });
+    await note(a.dataset_version_id);
+    await publish(a.dataset_version_id);
+    await upload(b.dataset_version_id, { "README.md": "# b!!\n" });
+    const mineId = (await get(b.dataset_version_id)).files.find((f: { path: string }) => f.path === "README.md").file_id;
+    expect(getDb().objects[mineId]).toBeDefined();
+    await json(S, "POST", `/dataset-versions/${b.dataset_version_id}/rebase`, { resolutions: { "README.md": "THEIRS" } });
+    expect(getDb().objects[mineId]).toBeUndefined();
+  });
+
   it("compares two published versions with the schema layer from inherited-aware profiles", async () => {
     const diff = await json(S, "GET", `/dataset-versions/${VERSION.battery}/diff?against=${VERSION.batteryV10}`);
     expect(diff.summary).toEqual({ added: 3, removed: 0, changed: 2, unchanged: 0 });

@@ -23,6 +23,11 @@ import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 type IncompleteFile = { file_id?: string; path: string; status?: string };
 
 /** DATASET_VERSION_INCOMPLETE carries details.files = the files that are not VERIFIED (M03 §6.5). */
+function needsChangeNote(error: unknown): boolean {
+  const e = asApiError(error);
+  return e.code === "DATASET_VERSION_INCOMPLETE" && Array.isArray(e.details.reasons) && e.details.reasons.includes("CHANGE_NOTE_REQUIRED");
+}
+
 function incompleteFiles(error: unknown): IncompleteFile[] {
   const e = asApiError(error);
   if (e.code !== "DATASET_VERSION_INCOMPLETE") return [];
@@ -91,7 +96,7 @@ export function VersionDetailScreen({
       </PageHeader>
       {publishError ? (
         <div role="alert" className="mb-4 rounded-md border border-danger p-3 text-sm">
-          <p>{errorText(publishError)}</p>
+          <p>{needsChangeNote(publishError) ? t("version.changeNoteRequired") : errorText(publishError)}</p>
           {incompleteFiles(publishError).length ? (
             <ul className="mt-2 list-disc pl-5">
               {incompleteFiles(publishError).map((f) => (

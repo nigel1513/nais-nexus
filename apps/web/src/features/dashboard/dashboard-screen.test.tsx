@@ -33,7 +33,8 @@ describe("DashboardScreen (portal-volume mock seed)", () => {
     const review = await panel("검토할 요청");
     const actions = await within(review).findAllByRole("link", { name: /^검토: / });
     expect(actions).toHaveLength(4);
-    expect(within(review).getByText("6일째")).toHaveClass("text-warning");
+    // The seed is built relative to now (and skips weekends), so the age of the oldest request varies by weekday.
+    expect(within(review).getAllByText(/^\d+일째$/).some((el) => el.classList.contains("text-warning"))).toBe(true);
     expect(within(review).getAllByText(/강다은 · 한국에너지기술연구원/)[0]).toBeInTheDocument();
   });
 

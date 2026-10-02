@@ -70,7 +70,10 @@ export function readinessOverallFor(db: MockDb, versionId: string): Schemas["Rea
 
 const byPath = (a: { path: string }, b: { path: string }) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
-const latestPublishedVersion = (db: MockDb, datasetId: string) => db.versions.filter((x) => x.dataset_id === datasetId && x.status === "PUBLISHED").sort(newestFirst("published_at"))[0];
+const latestPublishedVersion = (db: MockDb, datasetId: string) =>
+  db.versions
+    .filter((x) => x.dataset_id === datasetId && x.status === "PUBLISHED")
+    .sort((a, b) => (a.published_at! < b.published_at! ? 1 : a.published_at! > b.published_at! ? -1 : a.dataset_version_id < b.dataset_version_id ? 1 : -1))[0];
 const filesOf = (db: MockDb, versionId: string | null | undefined): StoredFile[] => (versionId ? (db.versions.find((x) => x.dataset_version_id === versionId)?.files ?? []) : []);
 
 /** service.diff.default_target: a DRAFT compares with its base, a published version with its predecessor. */
@@ -99,16 +102,26 @@ export function previewOf(db: MockDb, file: StoredFile) {
   return undefined;
 }
 
-/** Fields frozen into `metadata_snapshot` at publish (same keys the diff metadata layer and the citation read). */
-const SNAPSHOT_KEYS = ["title", "subtitle", "description", "keywords", "license", "contact_email_public", "project_title", "project_code", "funding_agency", "subject_codes", "method_codes", "material_codes", "method_detail", "temporal_start", "temporal_end", "collecting_organization", "update_frequency", "related_publications"] as const;
+/** domain.SNAPSHOT_FIELDS (plus contact_email, domain, people): frozen into `metadata_snapshot` at publish. */
+const SNAPSHOT_FIELDS = [
+  "access_level", "allowed_purposes", "collecting_organization_id", "collecting_organization_name", "contact_email", "data_steward_contact_id", "description", "domain", "funding_agency", "keywords",
+  "license", "material_codes", "max_grant_days", "method_codes", "method_detail", "project_code", "project_title", "provenance", "related_publications", "subject_codes", "subtitle", "temporal_end",
+  "temporal_start", "title", "update_frequency", "usage_policy",
+] as const;
+const SNAPSHOT_LISTS = new Set(["keywords", "allowed_purposes", "subject_codes", "method_codes", "material_codes", "related_publications"]);
 
+/** publish.metadata_snapshot: people carries no emails; the steward's email enters only as the public `contact_email` fallback. */
 function liveSnapshot(db: MockDb, ds: StoredDataset): Record<string, unknown> {
-  const view = datasetView(db, ds) as unknown as Record<string, unknown>;
-  const people = view.people as Schemas["DatasetPeople"];
-  const out: Record<string, unknown> = {};
-  for (const k of SNAPSHOT_KEYS) if (view[k] !== undefined) out[k] = view[k];
-  out.people = { principal_investigator: people.principal_investigator, steward_contact: people.steward_contact, contributors: people.contributors };
-  return out;
+  const raw: Record<string, unknown> = { ...ds, allowed_purposes: ds.policy.allowed_purposes, max_grant_days: ds.policy.max_grant_days };
+  const snap: Record<string, unknown> = {};
+  for (const f of SNAPSHOT_FIELDS) snap[f] = SNAPSHOT_LISTS.has(f) ? [...((raw[f] as unknown[] | null | undefined) ?? [])] : (raw[f] ?? null);
+  const people = structuredClone(peopleBlock(db, ds)) as Schemas["DatasetPeople"];
+  const publicEmail = people.steward_contact?.email ?? null;
+  if (people.steward_contact) delete people.steward_contact.email;
+  snap.contact_email = ds.contact_email ?? publicEmail;
+  snap.domain = ds.domain ?? ds.subject_codes?.[0] ?? null;
+  snap.people = people;
+  return snap;
 }
 
 /**
@@ -1197,6 +1210,11 @@ export const catalogHandlers = [
     }
     // In place: paths taken from the latest version become inherited copies (or disappear); draft-owned uploads stay.
     const take = new Set(plan.takeTheirs);
+    for (const f of v.files) {
+      if (!take.has(f.path) || f.inherited_from) continue;
+      delete db.objects[f.file_id];
+      delete db.previews[f.file_id];
+    }
     v.files = [...v.files.filter((f) => !take.has(f.path)), ...theirsRows.filter((f) => take.has(f.path)).map(inheritedCopy)];
     v.base_version_id = latest?.dataset_version_id ?? null;
     recompute(v);
@@ -1208,15 +1226,10 @@ export const catalogHandlers = [
     const db = getDb();
     const { v, ds } = visibleVersion(db, String(params.version_id), user);
     const against = new URL(request.url).searchParams.get("against");
-    let target: StoredVersion | undefined;
-    if (against) {
-      // A missing or invisible target is a 404 (never reveal it); a visible version of another dataset is a 422.
-      target = visibleVersion(db, against, user).v;
-      if (target.dataset_id !== v.dataset_id) invalid([{ field: "against", reason: "DIFFERENT_DATASET" }], "Both versions must belong to the same dataset.");
-    } else {
-      const id = defaultTarget(v);
-      target = id ? db.versions.find((x) => x.dataset_version_id === id) : undefined;
-    }
+    // A missing or invisible target (explicit or default) is a 404, never revealed; a visible version of another dataset is a 422.
+    const targetId = against ?? defaultTarget(v);
+    const target = targetId ? visibleVersion(db, targetId, user).v : undefined;
+    if (target && target.dataset_id !== v.dataset_id) invalid([{ field: "against", reason: "DIFFERENT_DATASET" }], "Both versions must belong to the same dataset.");
     const before = target?.files ?? [];
     const changes = diffFiles(before, v.files);
     const profile = (f: StoredFile | undefined): ProfileLite | null => {

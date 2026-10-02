@@ -962,6 +962,7 @@
     "publishTitle": "버전 게시",
     "publishWarning": "게시 후에는 수정할 수 없습니다. 게시하면 AI-Ready 검증이 자동으로 시작됩니다.",
     "published": "버전을 게시했습니다.",
+    "changeNoteRequired": "게시하려면 변경 메모(3자 이상)가 필요합니다.",
     "publishHint": "모든 파일이 검증되고 1개 이상일 때 게시할 수 있습니다.",
     "files": {
       "title": "파일",
