@@ -70,7 +70,7 @@ test("Data Card: explorer, gated preview and JSON-LD download work on any origin
   await page.goto(`/commons/data/${BATTERY}`);
   await expect(page.getByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeVisible();
   await expect(page.getByRole("button", { name: /AI-ready/ })).toBeVisible();
-  await page.getByRole("radio", { name: "Compact" }).check();
+  await page.getByRole("button", { name: "Compact" }).click();
   await expect(page.getByRole("table", { name: /미리보기/ })).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("region", { name: "메타데이터" }).getByRole("button", { name: "JSON-LD" }).click();
@@ -82,7 +82,7 @@ test("Data Card: explorer, gated preview and JSON-LD download work on any origin
 test("Data Card: a visitor without permission sees the gated notice", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000a01", url: baseURL! }]); // A Admin, no grant
   await page.goto(`/commons/data/${BATTERY}`);
-  await page.getByRole("radio", { name: "Detail" }).check();
+  await page.getByRole("button", { name: "Detail" }).click();
   await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
 });
 
@@ -209,6 +209,8 @@ test("data search: rail, table view, empty result and the phone filter sheet pas
     await page.getByRole("button", { name: "표" }).click();
     await expect(page).toHaveURL(/view=table/);
     await expect(page.getByRole("table", { name: "검색 결과" })).toBeVisible();
+    // A client-side URL update can momentarily drop <title> while Next re-applies metadata; axe would flag that.
+    await expect(page).toHaveTitle(/\S/);
     expect(await seriousViolations(page)).toEqual([]);
 
     await page.goto("/commons/data?q=zzzz");
