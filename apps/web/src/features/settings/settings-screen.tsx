@@ -8,6 +8,7 @@ import { useLocale, useTranslations } from "next-intl";
 import { useUpdateMe } from "@/features/organizations/api";
 import { useListNotifications, useMarkAllNotificationsRead, useMarkNotificationRead } from "@/features/notifications/api";
 import { LOCALE_COOKIE } from "@/shared/config";
+import { localizeUtcTimes } from "@/shared/lib/format";
 import { safeInternalPath } from "@/shared/lib/links";
 import { useMeData } from "@/shared/hooks/use-me";
 import { DateTime } from "@/shared/ui/date-text";
@@ -288,7 +289,7 @@ function NotificationsSection() {
                   <div className="min-w-0 flex-1">
                     <p className={cn("break-words text-body", n.read ? "text-fg-muted" : "font-medium text-fg")}>
                       {n.read ? null : <span className="sr-only">{t("settings.unread")} </span>}
-                      {n.title}
+                      {localizeUtcTimes(n.title)}
                     </p>
                     <p className="mt-0.5 text-caption text-fg-muted">
                       {t(`enums.NotificationType.${n.type}`)} ·{" "}

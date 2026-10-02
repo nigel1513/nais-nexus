@@ -130,22 +130,65 @@
   },
   "notFound": {
     "title": "페이지를 찾을 수 없습니다",
-    "home": "대시보드로 이동"
+    "home": "대시보드로 이동",
+    "help": "주소를 확인하거나 대시보드에서 다시 찾아보세요.",
+    "search": "데이터 검색"
   },
   "dashboard": {
     "title": "대시보드",
-    "greeting": "{name}님, 오늘 확인할 일을 모았습니다.",
     "myProjects": "내 프로젝트",
-    "openRequests": "진행 중 요청",
+    "openRequests": "진행 중인 내 요청",
     "myGrants": "내 권한",
-    "reviewQueue": "검토 대기",
+    "reviewQueue": "검토할 요청",
     "noProjects": "아직 참여한 프로젝트가 없습니다.",
     "createFirstProject": "첫 공동 프로젝트 만들기",
     "noRequests": "진행 중인 요청이 없습니다.",
     "noGrants": "유효한 접근 권한이 없습니다.",
     "noReview": "검토할 요청이 없습니다.",
     "viewAll": "전체 보기",
-    "requestedBy": "{name} 요청"
+    "requestedBy": "{name} 요청",
+    "recentActivity": "최근 활동",
+    "activityList": "최근 활동 목록",
+    "orgDatasets": "{org} 데이터셋 최근 버전",
+    "noDatasets": "아직 등록된 데이터셋이 없습니다.",
+    "newDataset": "새 데이터셋 등록",
+    "findData": "데이터 찾기",
+    "openAccess": "접근 관리 열기",
+    "openActivity": "활동 열기",
+    "days": "{count}일",
+    "factReview": "검토 대기 {count}건",
+    "factRequests": "진행 중 요청 {count}건",
+    "factExpiring": "7일 내 만료 권한 {count}건",
+    "factLatest": "최근 발행",
+    "stat": {
+      "projects": "내 프로젝트",
+      "projectsHint": "참여 중인 공동 프로젝트",
+      "review": "검토 대기",
+      "reviewHint": "내가 보낸 요청",
+      "reviewHintSteward": "내가 검토할 요청",
+      "grants": "활성 권한",
+      "grantsHint": "지금 쓸 수 있는 데이터",
+      "expiring": "7일 내 만료",
+      "expiringHint": "연장이 필요한 권한"
+    },
+    "columns": {
+      "dataset": "데이터셋",
+      "requester": "요청자",
+      "project": "프로젝트",
+      "purpose": "목적",
+      "days": "기간",
+      "status": "상태",
+      "submitted": "제출일",
+      "version": "버전",
+      "access": "공개 수준",
+      "readiness": "AI-Ready",
+      "updated": "수정일",
+      "myRole": "내 역할",
+      "members": "구성원",
+      "expires": "만료"
+    },
+    "summary": "요약",
+    "repeat": "×{count}"
   },
   "projects": {
     "list": {
@@ -1088,5 +1131,8 @@
       "FAILED": "생성 실패",
       "UNSUPPORTED": "미리보기 미지원"
     }
+  },
+  "errorPage": {
+    "message": "예기치 않은 오류로 화면을 표시하지 못했습니다. 다시 시도하거나 추적 ID와 함께 관리자에게 알려 주세요."
   }
 }

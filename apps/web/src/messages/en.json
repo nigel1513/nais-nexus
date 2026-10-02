@@ -407,5 +407,70 @@
     },
     "memberCountUnknown": "Members —",
     "datasetCountUnknown": "Datasets —"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "myProjects": "My projects",
+    "openRequests": "My open requests",
+    "myGrants": "My access",
+    "reviewQueue": "Requests to review",
+    "noProjects": "You are not in any project yet.",
+    "createFirstProject": "Create your first joint project",
+    "noRequests": "No open requests.",
+    "noGrants": "No active access.",
+    "noReview": "Nothing to review.",
+    "viewAll": "View all",
+    "requestedBy": "{name}",
+    "recentActivity": "Recent activity",
+    "activityList": "Recent activity list",
+    "orgDatasets": "Latest versions at {org}",
+    "noDatasets": "No datasets yet.",
+    "newDataset": "Register a dataset",
+    "findData": "Find data",
+    "openAccess": "Open access management",
+    "openActivity": "Open activity",
+    "days": "{count, plural, one {# day} other {# days}}",
+    "factReview": "{count} to review",
+    "factRequests": "{count} open requests",
+    "factExpiring": "{count} grants expire within 7 days",
+    "factLatest": "Latest release",
+    "stat": {
+      "projects": "My projects",
+      "projectsHint": "Joint projects you are in",
+      "review": "Awaiting review",
+      "reviewHint": "Requests you sent",
+      "reviewHintSteward": "Requests you review",
+      "grants": "Active access",
+      "grantsHint": "Data you can use now",
+      "expiring": "Expiring in 7 days",
+      "expiringHint": "Access to renew"
+    },
+    "columns": {
+      "dataset": "Dataset",
+      "requester": "Requester",
+      "project": "Project",
+      "purpose": "Purpose",
+      "days": "Period",
+      "status": "Status",
+      "submitted": "Submitted",
+      "version": "Version",
+      "access": "Access",
+      "readiness": "AI-Ready",
+      "updated": "Updated",
+      "myRole": "My role",
+      "members": "Members",
+      "expires": "Expires"
+    },
+    "summary": "Summary",
+    "repeat": "×{count}"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "home": "Go to dashboard",
+    "help": "Check the address or start again from the dashboard.",
+    "search": "Search data"
+  },
+  "errorPage": {
+    "message": "Something went wrong while showing this page. Try again, or tell an admin with the trace ID."
   }
 }

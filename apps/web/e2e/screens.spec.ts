@@ -151,3 +151,30 @@ test.describe("settings and organization (Task 11)", () => {
     }
   });
 });
+
+test.describe("dashboard and error pages (Task 12)", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  const prefix = process.env.SHOTS_PREFIX ?? "task12";
+
+  test("dashboard", async ({ page, baseURL }) => {
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons");
+    await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
+    await shoot(page, `${prefix}-dashboard`);
+    await page.context().clearCookies();
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons");
+    await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
+    await shoot(page, `${prefix}-dashboard-researcher`, [[1440, 900]]);
+  });
+
+  test("not-found and blocked", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/no-such-page");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await shoot(page, `${prefix}-not-found`);
+    await page.goto("/blocked?code=MEMBERSHIP_DISABLED");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await shoot(page, `${prefix}-blocked`, [[1440, 900]]);
+  });
+});

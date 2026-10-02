@@ -136,7 +136,7 @@ describe("PlatformShell: top bar", () => {
     const bell = await screen.findByRole("button", { name: "알림 1개 읽지 않음" });
     await userEvent.click(bell);
     const panel = await screen.findByRole("dialog", { name: "알림" });
-    await userEvent.click(within(panel).getByRole("button", { name: /접근 권한이 .* UTC에 만료됩니다/ }));
+    await userEvent.click(within(panel).getByRole("button", { name: /접근 권한이 .* 만료됩니다/ }));
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/commons/access?tab=grants"));
     expect(getDb().notifications.find((n) => n.link === "/commons/access?tab=grants")?.read).toBe(true);
   });
@@ -147,7 +147,7 @@ describe("PlatformShell: top bar", () => {
     const panel = await screen.findByRole("dialog", { name: "알림" });
     await userEvent.click(within(panel).getByRole("button", { name: "모두 읽음" }));
     expect(await screen.findByRole("button", { name: "알림" })).toBeInTheDocument();
-    expect(within(panel).getByRole("button", { name: /접근 권한이 .* UTC에 만료됩니다/ })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: /접근 권한이 .* 만료됩니다/ })).toBeInTheDocument();
     expect(within(panel).queryByRole("button", { name: "모두 읽음" })).not.toBeInTheDocument();
   });
 
@@ -156,7 +156,7 @@ describe("PlatformShell: top bar", () => {
     server.use(http.post("*/mock-api/v1/notifications/:id/read", () => HttpResponse.json({ error: { code: "INTERNAL_ERROR", message: "x", trace_id: "t" } }, { status: 500 })));
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     await userEvent.click(await screen.findByRole("button", { name: "알림 1개 읽지 않음" }));
-    await userEvent.click(await screen.findByRole("button", { name: /접근 권한이 .* UTC에 만료됩니다/ }));
+    await userEvent.click(await screen.findByRole("button", { name: /접근 권한이 .* 만료됩니다/ }));
     expect(await screen.findByRole("alert")).toHaveTextContent("알림을 읽음 처리하지 못했습니다.");
     expect(router.push).not.toHaveBeenCalled();
   });
