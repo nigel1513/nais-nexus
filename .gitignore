@@ -11,3 +11,4 @@ dist/
 *.egg-info/
 .superpowers/
 infra/nginx/opensearch-auth.conf
+.env.bak*
