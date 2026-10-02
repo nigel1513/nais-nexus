@@ -577,3 +577,24 @@ test.describe("v2 track C screens", () => {
     await shootOne(page, `v2-activity-notifications-${phase}`, 390, "light");
   });
 });
+
+test.describe("version history (stage 2)", () => {
+  test("steward reverts to v1.0 as a new draft from the 버전 tab", async ({ page, baseURL }) => {
+    await as(page, "steward", baseURL!);
+    await page.goto(`/commons/data/${DATASET_BATTERY}?tab=versions`);
+    const history = page.getByRole("list", { name: "게시 이력" });
+    await expect(history.getByRole("listitem")).toHaveCount(3);
+    await expect(history.getByRole("listitem").first()).toContainText("v2.0");
+    await expect(history.getByRole("listitem").first().getByRole("link", { name: "다운로드" })).toHaveAttribute("href", /\?download=1$/);
+    await history.getByRole("listitem", { name: /^v1\.0 / }).getByRole("button", { name: "이 버전으로 되돌리기" }).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("v1.0의 파일로 새 초안을 만듭니다");
+    await dialog.getByRole("button", { name: "v2.1 (작은 수정)" }).click();
+    await expect(dialog.getByLabel(/^버전 이름/)).toHaveValue("v2.1");
+    // The mock store outlives one test run: a unique label keeps reruns and both projects independent.
+    await dialog.getByLabel(/^버전 이름/).fill(`v2.1-e2e-${Date.now().toString(36)}`);
+    await dialog.getByRole("button", { name: "초안 만들기" }).click();
+    await expect(page.getByText("파일 2개를 이어받았습니다")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/commons/data/${DATASET_BATTERY}/versions/[0-9a-f-]{36}$`));
+  });
+});

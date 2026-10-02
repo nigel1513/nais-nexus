@@ -1,17 +1,13 @@
 "use client";
 import { Button, cn, EmptyState, Tabs, TabsContent, TabsList, TabsTrigger } from "@nais/ui";
 import { Info, Plus } from "lucide-react";
-import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useRef, useState } from "react";
 import { useMeData } from "@/shared/hooks/use-me";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
-import { VersionStatusBadge } from "@/shared/ui/badges";
-import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { useGetDataset, useListDatasetVersions } from "./api";
 import { DatasetEditSheet } from "./components/dataset-edit-sheet";
-import { NewVersionDialog } from "./components/new-version-dialog";
 import { About } from "./data-card/about";
 import { DataCardHeader, VersionPicker } from "./data-card/header";
 import { MetadataBlock } from "./data-card/metadata-block";
@@ -23,6 +19,8 @@ import { ColumnTable } from "./explorer/column-table";
 import { DataExplorer } from "./explorer/data-explorer";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 import { PanelHead } from "@/shared/ui/work-hero";
+import { NewDraftDialog } from "./versions/new-draft-dialog";
+import { VersionHistoryTab, versionAccess } from "./versions/version-history-tab";
 
 // Section anchors land below the sticky top bar and section nav: html's scroll-padding-top (4rem) + 3rem = 112px.
 const sectionCls = "scroll-mt-12 outline-none";
@@ -42,10 +40,8 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   if (ds.isPending) return <DelayedSkeleton lines={6} />;
   if (ds.isError) return <ErrorView error={ds.error} onRetry={() => void ds.refetch()} />;
   const d = ds.data;
-  const steward = me.organization.organization_id === d.owner_organization_id && me.org_roles.includes("DATA_STEWARD");
   // DRAFT versions are visible only to the owner organization's steward/admin (M03 §6); the server filters too.
-  const ownOrg = me.organization.organization_id === d.owner_organization_id;
-  const seesDrafts = (ownOrg && (me.org_roles.includes("DATA_STEWARD") || me.org_roles.includes("ORG_ADMIN"))) || me.platform_roles.includes("PLATFORM_ADMIN");
+  const { steward, seesDrafts } = versionAccess(me, d);
   const versionItems = (versions.data?.items ?? []).filter((v) => v.status !== "DRAFT" || seesDrafts);
   const selected = pickVersion(versionItems, params.get("v"), seesDrafts);
   const tab = params.get("tab") === "versions" ? "versions" : "card";
@@ -60,7 +56,7 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
             {t("data.detail.firstVersionHint")}
           </span>
           <Button size="sm" onClick={() => setNewVersion(true)}>
-            {t("data.version.newTitle")}
+            {t("data.versioning.newDraft")}
           </Button>
         </div>
       ) : null}
@@ -72,10 +68,10 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
           </TabsList>
           <div className="flex items-center gap-2 pb-2 sm:pb-0">
             <VersionPicker dataset={d} versions={versionItems} selected={selected} onSelect={(id) => setParams({ v: id })} />
-            {steward ? (
+            {steward && tab === "card" ? (
               <Button variant="ghost" onClick={() => setNewVersion(true)}>
                 <Plus aria-hidden="true" strokeWidth={1.75} />
-                {t("data.version.newTitle")}
+                {t("data.versioning.newDraft")}
               </Button>
             ) : null}
           </div>
@@ -120,27 +116,7 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
         <TabsContent value="versions">
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
             <div className="min-w-0 xl:col-span-8">
-              {versions.isPending ? (
-                <DelayedSkeleton lines={2} />
-              ) : versionItems.length === 0 ? (
-                <EmptyState title={t("data.detail.noVersions")} />
-              ) : (
-                <ul className="flex flex-col divide-y divide-border border-y border-border text-small">
-                  {versionItems.map((v) => (
-                    <li key={v.dataset_version_id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2.5">
-                      <Link href={`/commons/data/${d.dataset_id}/versions/${v.dataset_version_id}`} className="font-mono text-mono font-medium text-fg underline-offset-4 hover:underline">
-                        {v.version_label}
-                      </Link>
-                      <span className="flex items-center gap-3 text-fg-muted">
-                        <VersionStatusBadge status={v.status} />
-                        <span className="num">
-                          <DateTime value={v.published_at ?? v.created_at} dateOnly />
-                        </span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <VersionHistoryTab dataset={d} />
             </div>
             <div className="xl:col-span-4">
               <SideCard ref={contactRef} dataset={d} versions={versionItems} />
@@ -149,7 +125,7 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
         </TabsContent>
       </Tabs>
       {steward ? <DatasetEditSheet dataset={d} open={editing} onOpenChange={setEditing} /> : null}
-      {steward ? <NewVersionDialog datasetId={d.dataset_id} open={newVersion} onOpenChange={setNewVersion} /> : null}
+      {steward ? <NewDraftDialog datasetId={d.dataset_id} latestLabel={d.latest_published_version?.version_label ?? null} open={newVersion} onOpenChange={setNewVersion} /> : null}
     </>
   );
 }

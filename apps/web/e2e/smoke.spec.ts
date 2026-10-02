@@ -463,3 +463,22 @@ test("Dashboard: steward and first-day views pass axe in both themes, the chart 
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });
+
+test("version history: the 버전 tab and the new-draft dialog pass axe in both themes; no sideways scroll at 390", async ({ page, baseURL }) => {
+  await page.context().addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b03", url: baseURL! }]);
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.goto("/commons/data/00000000-0000-7000-8000-000000002001?tab=versions");
+    await expect(page.getByRole("list", { name: "게시 이력" }).getByRole("listitem")).toHaveCount(3);
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "새 초안", exact: true }).click();
+    await expect(page.getByRole("dialog", { name: "새 초안" })).toBeVisible();
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
+    await page.keyboard.press("Escape");
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.reload();
+  await expect(page.getByRole("list", { name: "게시 이력" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
