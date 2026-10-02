@@ -50,14 +50,14 @@ test("mock login → dashboard → data search show mock data", async ({ page })
   await page.getByRole("button", { name: "로그인" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "알림 1개 읽지 않음" })).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 
   await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "데이터" }).click();
   await expect(page).toHaveURL(/\/commons\/data$/);
   await expect(page.getByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
-  await expect(page.getByText("총 4건")).toBeVisible();
+  await expect(page.getByText("총 12건")).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 });
 
@@ -78,7 +78,7 @@ test("no secure-context-only APIs needed: dashboard renders without a service-un
   await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
   await page.goto("/commons");
   await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" }).first()).toBeVisible();
   await expect(page.getByText(/서비스를 사용할 수 없|service unavailable/i)).toHaveCount(0);
   await expect(page.getByText("DEPENDENCY_UNAVAILABLE")).toHaveCount(0);
 });
@@ -429,6 +429,37 @@ test("Settings and organization: axe clean in both themes, the theme choice pers
   for (const path of ["/settings", "/settings/organization"]) {
     await page.goto(path);
     await expect(page.getByRole("navigation", { name: "설정 메뉴" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("Dashboard: steward and first-day views pass axe in both themes, the chart works by keyboard, no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  for (const [user, queue] of [
+    ["00000000-0000-7000-8000-000000000b03", "검토할 요청"], // 정현우 (DATA_STEWARD)
+    ["00000000-0000-7000-8000-000000009d03", "내 요청 진행"], // 문가영 (no requests, grants or downloads yet)
+  ] as const) {
+    await context.clearCookies();
+    await context.addCookies([{ name: "nais_mock_user", value: user, url: baseURL! }]);
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/commons");
+      await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
+      await expect(page.getByRole("region", { name: new RegExp(`^${queue}`) })).toBeVisible();
+      const chart = page.getByRole("slider", { name: /최근 30일 일별 건수/ });
+      await expect(chart).toBeVisible();
+      await expect(page.getByRole("region", { name: /데이터 상태/ }).getByRole("table")).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      expect(await seriousViolations(page)).toEqual([]);
+      await chart.focus();
+      await page.keyboard.press("ArrowLeft");
+      await expect(chart).toHaveAttribute("aria-valuenow", "28");
+      expect(await seriousViolations(page)).toEqual([]);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/commons");
+    await expect(page.getByRole("region", { name: new RegExp(`^${queue}`) })).toBeVisible();
+    await page.waitForLoadState("networkidle");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });
