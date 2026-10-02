@@ -76,6 +76,24 @@ describe("Data Card layout", () => {
     const rail = screen.getByRole("complementary", { name: "데이터셋 정보" });
     for (const name of ["담당자", "연구책임자", "이용 정책", "활동"]) expect(within(rail).getByRole("region", { name })).toBeInTheDocument();
   });
+
+  it("has a section nav, a 한눈에 facts panel beside About and metadata grouped into panels", async () => {
+    renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
+    const nav = await screen.findByRole("navigation", { name: "데이터 카드 섹션" });
+    const links = within(nav).getAllByRole("link");
+    expect(links.map((l) => l.textContent)).toEqual(["개요", "파일·분포", "스키마", "메타데이터"]);
+    expect(links[0]).toHaveAttribute("aria-current", "location");
+    for (const l of links) expect(document.getElementById(l.getAttribute("href")!.slice(1))).not.toBeNull();
+    await userEvent.click(links[2]!);
+    expect(links[2]).toHaveAttribute("aria-current", "location");
+    expect(document.getElementById("card-schema")).toHaveFocus();
+    const facts = screen.getByRole("region", { name: "한눈에" });
+    expect(within(facts).getByText("에너지")).toBeInTheDocument();
+    expect(within(facts).getByText("CC-BY-4.0")).toBeInTheDocument();
+    const meta = screen.getByRole("region", { name: "메타데이터" });
+    for (const name of ["사람", "연구 맥락", "수집", "이용"]) expect(within(meta).getByRole("region", { name })).toBeInTheDocument();
+    expect(within(within(meta).getByRole("region", { name: "이용" })).getByRole("button", { name: "JSON-LD" })).toBeInTheDocument();
+  });
 });
 
 describe("Data Card extras", () => {

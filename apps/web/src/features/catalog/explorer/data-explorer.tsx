@@ -1,5 +1,5 @@
 "use client";
-import { EmptyState, PathText, SegmentedControl } from "@nais/ui";
+import { cn, EmptyState, PathText, SegmentedControl } from "@nais/ui";
 import { FolderOpen } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState, type ReactNode } from "react";
@@ -18,9 +18,10 @@ type View = "detail" | "compact" | "column";
 
 /**
  * Data Explorer (reference A): one bordered panel — title, file count and the Detail / Compact / Column switch in its
- * header; a 220px file tree beside the view (stacked on phones).
+ * header; a 256px file tree beside the view (stacked on phones). The body stretches to the panel's height, so the panel
+ * can match the rail beside it.
  */
-export function DataExplorer({ dataset, versionId, fileCount }: { dataset: Dataset; versionId: string; fileCount: number }) {
+export function DataExplorer({ dataset, versionId, fileCount, className }: { dataset: Dataset; versionId: string; fileCount: number; className?: string }) {
   const t = useTranslations();
   const version = useGetDatasetVersion(versionId);
   const [fileId, setFileId] = useState<string | undefined>();
@@ -31,10 +32,10 @@ export function DataExplorer({ dataset, versionId, fileCount }: { dataset: Datas
   let body: ReactNode;
   if (version.isPending) body = <div className="p-4"><DelayedSkeleton lines={3} /></div>;
   else if (version.isError) body = <div className="p-4"><ErrorView error={version.error} onRetry={() => void version.refetch()} /></div>;
-  else if (files.length === 0) body = <EmptyState icon={FolderOpen} title={t("data.explorer.noFiles")} />;
+  else if (files.length === 0) body = <div className="flex flex-1 flex-col justify-center"><EmptyState icon={FolderOpen} title={t("data.explorer.noFiles")} /></div>;
   else
     body = (
-      <div className="grid md:grid-cols-[256px_minmax(0,1fr)]">
+      <div className="grid flex-1 md:grid-cols-[256px_minmax(0,1fr)]">
         <div className="border-b border-border bg-bg-subtle p-2 md:border-b-0 md:border-r">
           <FileTree files={files} currentId={current?.file_id} onSelect={setFileId} />
         </div>
@@ -59,7 +60,7 @@ export function DataExplorer({ dataset, versionId, fileCount }: { dataset: Datas
     );
 
   return (
-    <section aria-labelledby="explorer-title" className="overflow-hidden rounded-md border border-border bg-bg-panel">
+    <section aria-labelledby="explorer-title" className={cn("flex flex-col overflow-hidden rounded-md border border-border bg-bg-panel", className)}>
       <div className="flex flex-wrap items-end justify-between gap-2 border-b border-border px-4 py-3">
         <PanelHead id="explorer-title" crumb={t("data.card.hero.explorerCrumb")} title={t("data.card.explorerTitle")} count={t("data.card.explorerFiles", { count: fileCount })} />
         <SegmentedControl

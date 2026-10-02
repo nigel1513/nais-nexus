@@ -98,8 +98,8 @@ describe("Data Explorer", () => {
     db.previews[copyId] = db.previews[src.file_id]!;
     open(USER.bResearcher);
     const table = await screen.findByRole("table", { name: "열 설명표" });
-    await within(table).findAllByRole("cell", { name: "data/second.csv" });
-    const paths = within(table).getAllByRole("cell", { name: /^data\// }).map((c) => c.textContent);
+    await within(table).findByText("data/second.csv");
+    const paths = within(table).getAllByText(/^data\//).map((c) => c.textContent);
     expect(paths).toContain("data/measurements.csv");
     expect(paths).toContain("data/second.csv");
   });
