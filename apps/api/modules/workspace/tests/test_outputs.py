@@ -144,6 +144,9 @@ def test_upload_request_is_validated(api: WorkspaceApi, setup: Setup) -> None:
         {"files": []},
         {"files": [file_spec(name="../etc/passwd")]},
         {"files": [file_spec(name="a b.pdf")]},
+        {"files": [file_spec(name=".")]},
+        {"files": [file_spec(name="..")]},
+        {"files": [file_spec(name="...")]},
         {"files": [file_spec(size_bytes=0)]},
         {"files": [file_spec(size_bytes=5 * 1024**3 + 1)]},
         {"files": [file_spec(sha256="ABC")]},
@@ -190,6 +193,35 @@ def test_access_level_may_not_be_looser_than_the_strictest_input(
 def test_public_inputs_allow_a_public_output(api: WorkspaceApi, setup: Setup) -> None:
     pin(api, setup.project_id, setup.public)
     assert start(api, setup.project_id, "PUBLIC").status_code == 201
+
+
+def test_dotted_names_that_are_not_only_dots_are_fine(api: WorkspaceApi, setup: Setup) -> None:
+    assert start(api, setup.project_id, files=[file_spec(name=".hidden")]).status_code == 201
+    assert start(api, setup.project_id, files=[file_spec(name="a..b.csv")]).status_code == 201
+
+
+def test_complete_rechecks_the_floor_against_current_catalog_levels(
+    api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
+) -> None:
+    pin(api, setup.project_id, setup.public)
+    session = start(api, setup.project_id, "PUBLIC")
+    assert session.status_code == 201, session.text
+    output_id = session.json()["output_id"]
+    world.storage.put("inst-a", key(setup.project_id, output_id), REPORT)
+    world.catalog.set_access_level(
+        setup.public.dataset_id, "CONTROLLED"
+    )  # tightened after the session started
+    response = api.post("a.researcher", f"/projects/{setup.project_id}/outputs/{output_id}/complete")
+    assert (response.status_code, error_code(response)) == (422, "VALIDATION_FAILED")
+    details = response.json()["error"]["details"]
+    assert (details["field"], details["minimum"]) == ("access_level", "CONTROLLED")
+    assert outbox(db) == [e for e in outbox(db) if e["event_type"] != "workspace.output.created.v1"]
+    [row] = sql(db, "SELECT status FROM workspace.outputs WHERE output_id = :o", o=output_id)
+    assert row["status"] == "UPLOADING"
+    # a level that still satisfies the floor completes
+    world.catalog.set_access_level(setup.public.dataset_id, "PUBLIC")
+    done = api.post("a.researcher", f"/projects/{setup.project_id}/outputs/{output_id}/complete")
+    assert done.status_code == 200, done.text
 
 
 # ---------------------------------------------------------------- completion

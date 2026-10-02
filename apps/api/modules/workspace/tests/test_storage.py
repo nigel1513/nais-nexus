@@ -75,3 +75,27 @@ def test_missing_objects_are_none_and_other_errors_503() -> None:
         with pytest.raises(ApiError) as exc:
             s.head("inst-a", KEY)
         assert exc.value.code == "DEPENDENCY_UNAVAILABLE"
+
+
+def test_put_file_uploads_through_the_internal_client(tmp_path: Any) -> None:
+    from botocore.stub import ANY
+
+    s = storage()
+    path = tmp_path / "result.parquet"
+    path.write_bytes(b"PAR1 result")
+    params = {
+        "Bucket": "nais-inst-a",
+        "Key": KEY,
+        "Body": ANY,
+        "ChecksumAlgorithm": ANY,
+        "ContentType": "application/vnd.apache.parquet",
+    }
+    with _stubbed(s) as stub:
+        stub.add_response("put_object", {}, params)
+        s.put_file("inst-a", KEY, str(path), "application/vnd.apache.parquet")
+        stub.assert_no_pending_responses()
+    with _stubbed(s) as stub:
+        stub.add_client_error("put_object", "InternalError", http_status_code=500)
+        with pytest.raises(ApiError) as exc:
+            s.put_file("inst-a", KEY, str(path), "application/vnd.apache.parquet")
+        assert exc.value.code == "DEPENDENCY_UNAVAILABLE"

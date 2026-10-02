@@ -52,7 +52,7 @@ def build_default_deps(settings: CatalogSettings | None = None) -> CatalogDeps:
 
 def install(deps: CatalogDeps) -> None:
     """Register the deps container and the public ports (M04 uses CatalogQueryPort + StoragePort,
-    M05 uses CatalogQueryPort + CatalogReadPort; the registry cannot restrict consumers, see README)."""
+    M05 and M13 use CatalogQueryPort + CatalogReadPort; the registry cannot restrict consumers, see README)."""
     ports.provide(CatalogDeps, deps)
     ports.provide(CatalogQueryPort, CatalogQueryService(deps))
     ports.provide(StoragePort, CatalogStorageService(deps))

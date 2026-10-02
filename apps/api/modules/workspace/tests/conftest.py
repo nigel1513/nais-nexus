@@ -1,3 +1,6 @@
+"""Workspace fixtures. The run actor binds to the global Dramatiq broker when the module is imported (D-036); pytest
+may import the package before this conftest, so the actor is bound to our StubBroker explicitly (as readiness does)."""
+
 from collections.abc import Iterator
 from dataclasses import dataclass
 from typing import Any
@@ -5,12 +8,13 @@ from uuid import UUID
 
 import httpx
 import pytest
+from dramatiq.brokers.stub import StubBroker
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 
-from api.modules.catalog.public import CatalogQueryPort
+from api.modules.catalog.public import CatalogQueryPort, CatalogReadPort
 from api.modules.project.public import ProjectQueryPort
-from api.modules.workspace import MODULE
+from api.modules.workspace import MODULE, jobs
 from api.modules.workspace.deps import WorkspaceDeps
 from api.modules.workspace.settings import WorkspaceSettings
 from api.modules.workspace.tests.fakes import (
@@ -20,10 +24,12 @@ from api.modules.workspace.tests.fakes import (
     FakeOutputStorage,
     FakePeople,
     FakeProjects,
+    FakeReader,
 )
 from api.modules.workspace.wiring import install
 from api.platform import ports
 from api.platform.auth import CurrentUser, PrincipalResolver, TokenVerifier, get_token_verifier
+from api.platform.broker import configure_broker
 from api.platform.migrate import upgrade_all
 from api.platform.settings import Settings
 from api.platform.testing.app import create_test_app
@@ -31,6 +37,10 @@ from api.platform.testing.fixtures import PgUrls
 from api.platform.testing.tokens import FakeIssuer
 
 ISSUER = FakeIssuer()
+STUB_BROKER = configure_broker(Settings(), StubBroker())
+if jobs.run_recipe_actor.broker is not STUB_BROKER:
+    jobs.run_recipe_actor.broker = STUB_BROKER
+    STUB_BROKER.declare_actor(jobs.run_recipe_actor)
 
 
 @pytest.fixture(scope="session")
@@ -49,12 +59,19 @@ def db(workspace_db: PgUrls) -> Iterator[PgUrls]:
             text(
                 "TRUNCATE workspace.inputs, workspace.processed_events, workspace.threads, workspace.comments,"
                 " workspace.dataset_activity, workspace.hub_access_requests, workspace.outputs,"
-                " workspace.output_files, workspace.output_lineage_inputs"
+                " workspace.output_files, workspace.output_lineage_inputs, workspace.recipes,"
+                " workspace.recipe_versions, workspace.runs, workspace.run_inputs"
             )
         )
         conn.execute(text("DELETE FROM platform.outbox_events"))
     engine.dispose()
-    yield workspace_db
+    STUB_BROKER.flush_all()
+    previous = jobs.RUNTIME.database_url
+    jobs.RUNTIME.database_url = workspace_db.app
+    try:
+        yield workspace_db
+    finally:
+        jobs.RUNTIME.database_url = previous
 
 
 class FakePrincipals:
@@ -71,13 +88,15 @@ class World:
     grants: FakeGrants
     people: FakePeople
     storage: FakeOutputStorage
+    reader: FakeReader
 
 
 @pytest.fixture
 def world() -> World:
-    w = World(FakeProjects(), FakeCatalog(), FakeGrants(), FakePeople(), FakeOutputStorage())
+    w = World(FakeProjects(), FakeCatalog(), FakeGrants(), FakePeople(), FakeOutputStorage(), FakeReader())
     ports.provide(ProjectQueryPort, w.projects)
     ports.provide(CatalogQueryPort, w.catalog)
+    ports.provide(CatalogReadPort, w.reader)
     return w
 
 
@@ -87,6 +106,7 @@ class WorkspaceApi:
 
     def request(self, method: str, user: str | None, path: str, **kwargs: Any) -> httpx.Response:
         headers = {"Authorization": f"Bearer {ISSUER.token(sub=user)}"} if user else {}
+        headers |= kwargs.pop("headers", None) or {}
         return self.client.request(method, f"/api/v1{path}", headers=headers, **kwargs)
 
     def get(self, user: str | None, path: str, **kwargs: Any) -> httpx.Response:
@@ -100,6 +120,9 @@ class WorkspaceApi:
 
     def delete(self, user: str | None, path: str, **kwargs: Any) -> httpx.Response:
         return self.request("DELETE", user, path, **kwargs)
+
+    def put(self, user: str | None, path: str, **kwargs: Any) -> httpx.Response:
+        return self.request("PUT", user, path, **kwargs)
 
 
 @pytest.fixture

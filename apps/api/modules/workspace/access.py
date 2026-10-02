@@ -44,8 +44,15 @@ def require_open_writer(deps: WorkspaceDeps, project_id: UUID, user: CurrentUser
 def has_dataset_access(deps: WorkspaceDeps, user: CurrentUser, policy: DatasetPolicyView) -> bool:
     """Same rule as the catalog preview gate (catalog.service.previews.can_preview) minus the platform-admin
     bypass: an operator account is not a researcher pinning data."""
+    return dataset_access(deps, user.user_id, user.organization_id, policy)
+
+
+def dataset_access(
+    deps: WorkspaceDeps, user_id: UUID, organization_id: UUID, policy: DatasetPolicyView
+) -> bool:
+    """has_dataset_access without a request (the run worker re-checks the run's starter)."""
     return (
         policy.access_level == "PUBLIC"
-        or user.organization_id == policy.owner_organization_id
-        or deps.grants.has_active_grant(user.user_id, policy.dataset_id)
+        or organization_id == policy.owner_organization_id
+        or deps.grants.has_active_grant(user_id, policy.dataset_id)
     )

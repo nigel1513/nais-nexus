@@ -1,15 +1,23 @@
 """In-memory stand-ins for the ports the workspace consumes (project, catalog, grants, people)."""
 
 import hashlib
+import io
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
-from typing import Literal
+from typing import BinaryIO, Literal
 from uuid import UUID
 
 from nais_contracts.api_models import ProjectSummary
 
-from api.modules.catalog.public import AccessLevel, DatasetPolicyView, DatasetSummary, VersionView
+from api.modules.catalog.public import (
+    AccessLevel,
+    DatasetPolicyView,
+    DatasetSummary,
+    FileRef,
+    ObjectMissing,
+    VersionView,
+)
 from api.platform.auth import CurrentUser
 from api.platform.ids import new_id
 
@@ -114,6 +122,7 @@ class FakeCatalog:
         label: str,
         status: Literal["DRAFT", "PUBLISHED", "WITHDRAWN"] = "PUBLISHED",
         published_at: datetime | None = None,
+        files: tuple[FileRef, ...] = (),
     ) -> VersionView:
         view = VersionView(
             dataset_version_id=new_id(),
@@ -123,7 +132,7 @@ class FakeCatalog:
             status=status,
             manifest_sha256=None,
             metadata_snapshot={} if status != "DRAFT" else None,
-            files=(),
+            files=tuple(sorted(files, key=lambda f: f.path.encode())),
         )
         self.versions[view.dataset_version_id] = view
         if status == "PUBLISHED":
@@ -186,6 +195,44 @@ class FakeCatalog:
         )
 
 
+def file_ref(path: str, data: bytes, status: Literal["VERIFIED", "UPLOADED"] = "VERIFIED") -> FileRef:
+    return FileRef(
+        file_id=new_id(),
+        path=path,
+        size_bytes=len(data),
+        sha256=hashlib.sha256(data).hexdigest(),
+        media_type="text/csv" if path.endswith(".csv") else "application/octet-stream",
+        status=status,
+        storage_bucket="bucket-b",
+        storage_key=f"datasets/{path}",
+    )
+
+
+@dataclass
+class FakeReader:
+    """CatalogReadPort over in-memory bytes keyed by file_id; `fail_with` makes every open raise."""
+
+    data: dict[UUID, bytes] = field(default_factory=dict)
+    opened: list[tuple[UUID, tuple[int, int] | None]] = field(default_factory=list)
+    fail_with: Exception | None = None
+
+    def add(self, path: str, data: bytes) -> FileRef:
+        ref = file_ref(path, data)
+        self.data[ref.file_id] = data
+        return ref
+
+    def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO:
+        self.opened.append((file.file_id, byte_range))
+        if self.fail_with is not None:
+            raise self.fail_with
+        if file.file_id not in self.data:
+            raise ObjectMissing(file.path)
+        data = self.data[file.file_id]
+        if byte_range is not None:
+            data = data[byte_range[0] : byte_range[1] + 1]
+        return io.BytesIO(data)
+
+
 @dataclass
 class FakeGrants:
     """GrantQueryPort: ACTIVE grants as (user_id, dataset_id) pairs."""
@@ -225,6 +272,8 @@ class FakeOutputStorage:
     objects: dict[tuple[str, str], bytes] = field(default_factory=dict)
     presigned: list[tuple[str, str, str, int]] = field(default_factory=list)  # (method, org_code, key, ttl)
     hashed: list[tuple[str, str]] = field(default_factory=list)
+    content_types: dict[tuple[str, str], str] = field(default_factory=dict)
+    fail_put: Exception | None = None
 
     def put(self, org_code: str, key: str, data: bytes) -> None:
         self.objects[(org_code, key)] = data
@@ -243,6 +292,13 @@ class FakeOutputStorage:
         self.hashed.append((org_code, key))
         data = self.objects.get((org_code, key))
         return None if data is None else hashlib.sha256(data).hexdigest()
+
+    def put_file(self, org_code: str, key: str, path: str, content_type: str) -> None:
+        if self.fail_put is not None:
+            raise self.fail_put
+        with open(path, "rb") as fh:
+            self.objects[(org_code, key)] = fh.read()
+        self.content_types[(org_code, key)] = content_type
 
     def presign_get(self, org_code: str, key: str, filename: str, ttl: int) -> str:
         self.presigned.append(("GET", org_code, key, ttl))

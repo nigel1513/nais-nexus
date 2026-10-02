@@ -38,9 +38,49 @@ Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4
     streamed through the internal client; any mismatch/missing → 422 `UPLOAD_CHECKSUM_MISMATCH` with
     `details.files[{name, reason}]`. Success sets `status = READY`, `created_at`, emits
     `workspace.output.created.v1`. Repeating it returns the same output without a second event.
+  - Complete also re-derives the floor from the lineage datasets' *current* levels: an input tightened since the
+    session started → 422 `VALIDATION_FAILED` (`details.field = access_level`). File names may not be dots only.
   - Download (any member, any project status; non-member 403): every lineage input must still be accessible to the
     caller (409 `INPUT_ACCESS_LAPSED`, `details.input_ids`); presigned GETs live 300 s.
   - OUTPUT threads resolve to the output's project (READY outputs only).
+- Recipes (`service/recipes.py`, `recipes/`): `GET/POST /projects/{p}/recipes`, `GET/PUT/DELETE .../{r}`,
+  `POST .../{r}/preview`.
+  - A recipe names project inputs (`input_ids`, the first is the base table; join steps read the others) and up to 50
+    steps (`recipes/model.py` mirrors the contract's `RecipeStep` oneOf with strict JSON types).
+  - Saving validates the steps against the inputs' columns: `recipes/steps.plan` walks the steps over the schema of
+    the first 10,000 rows of every input the steps read (cached per file in `reader.SCHEMAS`). Misfits are 422
+    `RECIPE_INVALID` with `details.step_index` (null for an input problem), `details.reason` (`UNKNOWN_COLUMN`,
+    `TYPE_MISMATCH`, `INVALID_VALUE`, `DUPLICATE_COLUMN`, `UNKNOWN_INPUT`, `INPUT_NOT_TABULAR`, `INPUT_UNREADABLE`,
+    `INPUT_UNAVAILABLE`, `CAST_FAILED`, `TOO_MANY_ROWS`, ...) and `details.column` / `details.input_id`.
+  - Every save is a new version (`recipe_versions` keeps all of them) and emits `workspace.recipe.saved.v1`; PUT needs
+    `If-Match` = current version (409 `CONFLICT`, `details.current_version`). Create on an archived project is 403
+    (no 409 in the contract); update/delete there are 409 `PROJECT_ARCHIVED`. Delete is soft, refused while a run is
+    QUEUED/RUNNING (409 `RUN_NOT_ALLOWED`); runs and outputs keep their lineage. RECIPE threads resolve to live recipes.
+  - Preview (any member; lapsed input → 409 `INPUT_ACCESS_LAPSED`): at most 10,000 rows per input, first 100 result
+    rows as strings ≤ 200 characters, 20 s budget (503 `DEPENDENCY_UNAVAILABLE`). The body may override `input_ids`
+    / `steps` without saving.
+- Inputs are read through the catalog's `CatalogReadPort` (`recipes/reader.py`): the version's first VERIFIED
+  `.csv`/`.parquet` file by path. CSV is UTF-8, comma-separated, header required; columns are read as text and typed
+  over the rows read (integer → float → boolean → text; missing tokens `""`, NA, N/A, null, NULL, NaN). Date/time
+  columns stay text until a `cast_type` step. Parquet keeps its types (dictionaries decoded). Errors never quote file
+  content. Step semantics (`recipes/steps.py`): missing values (and NaN) never match a comparison; aggregate columns
+  are `<column>_<fn>` (`count` counts non-missing values); join collisions get `_right`; group-by/join run
+  single-threaded so results are deterministic.
+- Runs (`service/runs.py`, `jobs.py`): `POST .../recipes/{r}/runs` (202), `GET /projects/{p}/runs[/{run}]`.
+  - Start (writer): pins the recipe version and every input's dataset version (titles/labels snapshotted in
+    `run_inputs`), one QUEUED/RUNNING run per recipe (409 `RUN_NOT_ALLOWED`, also a partial unique index), lapsed
+    access → 409 `INPUT_ACCESS_LAPSED`, unpublished input version → 409 `RUN_NOT_ALLOWED`, removed input → 422.
+    The Dramatiq message (`workspace.run_recipe`, queue `workspace`) is sent after commit.
+  - Worker: claim → re-check the starter's access → read the needed inputs (`WORKSPACE_MAX_ROWS` rows,
+    `WORKSPACE_MAX_INPUT_BYTES` file size) → apply the pinned version → Parquet (zstd) in a temp file → upload to the
+    lead organization's bucket → one transaction: `DERIVED_DATASET` output (READY, access level = strictest current
+    input level, lineage = pinned inputs + recipe@version + run) + run SUCCEEDED + `workspace.run.succeeded.v1` +
+    `workspace.output.created.v1`. No transaction is open while reading/computing/uploading.
+  - Failures end FAILED with `CODE: summary` (≤ 500 chars, no stack trace, no data values) and
+    `workspace.run.failed.v1`. Storage/database outages are retried (3 attempts). `WORKSPACE_RUN_TIMEOUT_SECONDS` is
+    the Dramatiq time limit; the sweeper (every 10 min) fails runs QUEUED > 1 h or RUNNING > timeout + 10 min.
+  - The `workspace` queue has its own worker (`WORKSPACE_WORKER_CONCURRENCY`, default 1): a run holds its inputs
+    and result in memory, so size the worker container for `WORKSPACE_MAX_ROWS`.
 - Data-Hub (`service/hub.py`, tag `hub`): `GET /hub/overview`, `GET /datasets/{d}/projects`,
   `GET /datasets/{d}/activity`.
   - Visibility is the catalog's: one batched `CatalogQueryPort.list_visible_dataset_summaries` for the overview
@@ -63,7 +103,7 @@ contract models; request bodies mirror them with the null/minProperties rules.
 ## Ports
 - Consumed (`deps.WorkspaceDeps`, registered by `wiring.install`): `ProjectQueryPort` and `CatalogQueryPort` are
   resolved per call (503 `DEPENDENCY_UNAVAILABLE` when unwired); `grants: GrantQueryPort` and
-  `people: DisplayNameLookup` are consumer-side Protocols in `interfaces.py`; `storage: OutputStorage` defaults to
+  `people: DisplayNameLookup` are consumer-side Protocols; `CatalogReadPort` (recipe inputs) is resolved per call too in `interfaces.py`; `storage: OutputStorage` defaults to
   `storage.S3OutputStorage` (platform storage clients, `NAIS_PUBLIC_BASE_URL` for presigned URLs).
 - **No governance backend yet:** `grants` defaults to `adapters.grants.NoGrants` (always False, fail closed).
   When M04 ships, replace it in `wiring.build_default_deps()` with an adapter over M04's public port.

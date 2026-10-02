@@ -1,5 +1,6 @@
 """SQL for workspace tables (Core). Callers own the transaction."""
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 from uuid import UUID
@@ -17,6 +18,10 @@ from api.modules.workspace.tables import (
     output_files,
     output_lineage_inputs,
     outputs,
+    recipe_versions,
+    recipes,
+    run_inputs,
+    runs,
     threads,
 )
 
@@ -260,3 +265,184 @@ def lineage_of(session: Session, output_ids: list[UUID]) -> dict[UUID, list[RowM
         for row in session.execute(stmt).mappings():
             found[row["output_id"]].append(row)
     return found
+
+
+def live_inputs_by_id(
+    session: Session, project_id: UUID, input_ids: Sequence[UUID]
+) -> dict[UUID, RowMapping]:
+    """The live (not removed) inputs of the project among input_ids."""
+    if not input_ids:
+        return {}
+    stmt = select(inputs).where(
+        inputs.c.project_id == project_id,
+        inputs.c.input_id.in_(list(input_ids)),
+        inputs.c.removed_at.is_(None),
+    )
+    return {row["input_id"]: row for row in session.execute(stmt).mappings()}
+
+
+# ---------------------------------------------------------------- recipes
+
+ACTIVE_RUN = ("QUEUED", "RUNNING")
+
+
+def insert_recipe(session: Session, **values: Any) -> RowMapping:
+    row = session.execute(insert(recipes).values(**values).returning(recipes)).mappings().one()
+    _insert_recipe_version(session, row)
+    return row
+
+
+def _insert_recipe_version(session: Session, row: RowMapping) -> None:
+    session.execute(
+        insert(recipe_versions).values(
+            recipe_id=row["recipe_id"],
+            version=row["version"],
+            name=row["name"],
+            input_ids=row["input_ids"],
+            steps=row["steps"],
+            saved_by=row["updated_by"],
+            saved_at=row["updated_at"],
+        )
+    )
+
+
+def save_recipe_version(session: Session, recipe_id: UUID, **values: Any) -> RowMapping:
+    """Update the live row (values include the new version) and record that version."""
+    stmt = update(recipes).where(recipes.c.recipe_id == recipe_id).values(**values).returning(recipes)
+    row = session.execute(stmt).mappings().one()
+    _insert_recipe_version(session, row)
+    return row
+
+
+def soft_delete_recipe(session: Session, recipe_id: UUID, at: datetime) -> None:
+    session.execute(update(recipes).where(recipes.c.recipe_id == recipe_id).values(deleted_at=at))
+
+
+def load_recipe(
+    session: Session, project_id: UUID, recipe_id: UUID, *, for_update: bool = False
+) -> RowMapping | None:
+    stmt = select(recipes).where(
+        recipes.c.recipe_id == recipe_id, recipes.c.project_id == project_id, recipes.c.deleted_at.is_(None)
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    return session.execute(stmt).mappings().first()
+
+
+def list_recipes(session: Session, project_id: UUID) -> list[RowMapping]:
+    stmt = (
+        select(recipes)
+        .where(recipes.c.project_id == project_id, recipes.c.deleted_at.is_(None))
+        .order_by(recipes.c.updated_at.desc(), recipes.c.recipe_id.desc())
+    )
+    return list(session.execute(stmt).mappings())
+
+
+def live_recipe_project(session: Session, recipe_id: UUID) -> UUID | None:
+    stmt = select(recipes.c.project_id).where(
+        recipes.c.recipe_id == recipe_id, recipes.c.deleted_at.is_(None)
+    )
+    return session.execute(stmt).scalar_one_or_none()
+
+
+def load_recipe_version(session: Session, recipe_id: UUID, version: int) -> RowMapping | None:
+    stmt = select(recipe_versions).where(
+        recipe_versions.c.recipe_id == recipe_id, recipe_versions.c.version == version
+    )
+    return session.execute(stmt).mappings().first()
+
+
+# ---------------------------------------------------------------- runs
+
+
+def active_run(session: Session, recipe_id: UUID) -> RowMapping | None:
+    stmt = select(runs).where(runs.c.recipe_id == recipe_id, runs.c.status.in_(ACTIVE_RUN))
+    return session.execute(stmt).mappings().first()
+
+
+def insert_run(session: Session, run: dict[str, Any], pinned: list[dict[str, Any]]) -> RowMapping:
+    row = session.execute(insert(runs).values(**run).returning(runs)).mappings().one()
+    session.execute(
+        insert(run_inputs), [p | {"run_id": row["run_id"], "position": i} for i, p in enumerate(pinned)]
+    )
+    return row
+
+
+def load_run(session: Session, project_id: UUID, run_id: UUID) -> RowMapping | None:
+    stmt = select(runs).where(runs.c.run_id == run_id, runs.c.project_id == project_id)
+    return session.execute(stmt).mappings().first()
+
+
+def load_run_by_id(session: Session, run_id: UUID, *, for_update: bool = False) -> RowMapping | None:
+    stmt = select(runs).where(runs.c.run_id == run_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return session.execute(stmt).mappings().first()
+
+
+def update_run(
+    session: Session, run_id: UUID, *, from_statuses: Sequence[str], **values: Any
+) -> RowMapping | None:
+    """Guarded transition: only a run currently in one of from_statuses changes (None otherwise)."""
+    stmt = (
+        update(runs)
+        .where(runs.c.run_id == run_id, runs.c.status.in_(list(from_statuses)))
+        .values(**values)
+        .returning(runs)
+    )
+    return session.execute(stmt).mappings().first()
+
+
+def pinned_inputs(session: Session, run_id: UUID) -> list[RowMapping]:
+    stmt = select(run_inputs).where(run_inputs.c.run_id == run_id).order_by(run_inputs.c.position)
+    return list(session.execute(stmt).mappings())
+
+
+def list_runs(
+    session: Session,
+    project_id: UUID,
+    *,
+    recipe_id: UUID | None,
+    statuses: Sequence[str] | None,
+    after: SortKey | None,
+    limit: int,
+) -> list[RowMapping]:
+    """Newest first; `after` is the (queued_at, run_id) of the previous page's last row."""
+    stmt = select(runs).where(runs.c.project_id == project_id)
+    if recipe_id is not None:
+        stmt = stmt.where(runs.c.recipe_id == recipe_id)
+    if statuses:
+        stmt = stmt.where(runs.c.status.in_(list(statuses)))
+    if after is not None:
+        stmt = stmt.where(tuple_(runs.c.queued_at, runs.c.run_id) < tuple_(*after))
+    stmt = stmt.order_by(runs.c.queued_at.desc(), runs.c.run_id.desc()).limit(limit)
+    return list(session.execute(stmt).mappings())
+
+
+def stale_run_ids(session: Session, *, queued_before: datetime, running_before: datetime) -> list[UUID]:
+    stmt = select(runs.c.run_id).where(_stale(queued_before, running_before))
+    return list(session.execute(stmt).scalars())
+
+
+def _stale(queued_before: datetime, running_before: datetime) -> Any:
+    return ((runs.c.status == "QUEUED") & (runs.c.queued_at < queued_before)) | (
+        (runs.c.status == "RUNNING") & (runs.c.started_at < running_before)
+    )
+
+
+def fail_if_stale(
+    session: Session,
+    run_id: UUID,
+    *,
+    queued_before: datetime,
+    running_before: datetime,
+    error: str,
+    at: datetime,
+) -> RowMapping | None:
+    stmt = (
+        update(runs)
+        .where(runs.c.run_id == run_id, _stale(queued_before, running_before))
+        .values(status="FAILED", error=error, finished_at=at)
+        .returning(runs)
+    )
+    return session.execute(stmt).mappings().first()

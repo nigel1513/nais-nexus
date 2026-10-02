@@ -135,12 +135,7 @@ def create_upload(
     require_open_writer(deps, project_id, user)
     lineage, floor = _lineage_snapshot(session, deps, project_id)
     requested = body.access_level.value
-    if STRICTNESS.index(requested) < STRICTNESS.index(floor):
-        raise ApiError(
-            ErrorCode.VALIDATION_FAILED,
-            f"access_level may not be looser than {floor}, the strictest level of the project's inputs.",
-            {"field": "access_level", "minimum": floor},
-        )
+    _require_not_looser(requested, floor)
     org_code = _lead_org_code(deps, project_id)
     output_id = new_id()
     now = clock.now()
@@ -180,6 +175,27 @@ def create_upload(
     return OutputUploadSession.model_validate(
         {"output_id": output_id, "expires_at": expires_at, "files": uploads}
     )
+
+
+def _require_not_looser(requested: str, floor: str) -> None:
+    if STRICTNESS.index(requested) < STRICTNESS.index(floor):
+        raise ApiError(
+            ErrorCode.VALIDATION_FAILED,
+            f"access_level may not be looser than {floor}, the strictest level of the project's inputs.",
+            {"field": "access_level", "minimum": floor},
+        )
+
+
+def current_floor(deps: WorkspaceDeps, dataset_ids: Sequence[UUID]) -> str:
+    """Strictest *current* catalog level of the datasets (missing dataset -> SENSITIVE, fail closed); INTERNAL
+    when there are none."""
+    if not dataset_ids:
+        return NO_INPUTS_FLOOR
+    levels = []
+    for dataset_id in dataset_ids:
+        policy = deps.catalog.get_policy_view(dataset_id)
+        levels.append(policy.access_level if policy is not None else STRICTNESS[-1])
+    return max(levels, key=STRICTNESS.index)
 
 
 def _lineage_snapshot(
@@ -239,9 +255,11 @@ def complete_upload(
     now = clock.now()
     if now > row["upload_expires_at"]:
         raise ApiError(ErrorCode.UPLOAD_SESSION_EXPIRED, "The upload session expired; start a new upload.")
+    lineage = repo.lineage_of(session, [output_id])[output_id]
+    # a lineage dataset may have been tightened since the session started: the floor is re-derived now
+    _require_not_looser(row["access_level"], current_floor(deps, [i["dataset_id"] for i in lineage]))
     _verify(deps, row["storage_org_code"], repo.files_of(session, [output_id])[output_id])
     row = repo.update_output(session, output_id, status=repo.READY, created_at=now)
-    lineage = repo.lineage_of(session, [output_id])[output_id]
     outbox.write(
         session,
         EventType.WORKSPACE_OUTPUT_CREATED_V1,

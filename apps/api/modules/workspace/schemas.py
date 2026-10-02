@@ -17,10 +17,16 @@ from nais_contracts.api_models import (
     OutputKind,
     OutputUploadSession,
     ProjectInput,
+    Recipe,
+    RecipePreview,
+    Run,
+    RunStatus,
     Thread,
     ThreadScope,
 )
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+from api.modules.workspace.recipes.model import Step
 
 
 def _no_nul(value: str) -> str:
@@ -32,6 +38,12 @@ def _no_nul(value: str) -> str:
 def _not_blank(value: str) -> str:
     if not value.strip():
         raise ValueError("must not be blank")
+    return value
+
+
+def _not_only_dots(value: str) -> str:
+    if set(value) == {"."}:
+        raise ValueError("must not consist of dots only")
     return value
 
 
@@ -123,7 +135,9 @@ class CommentCreateIn(StrictIn):
 class OutputFileIn(StrictIn):
     """One file of openapi OutputUploadCreate. media_type is additionally bounded (it becomes a signed header)."""
 
-    name: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,255}$")]
+    name: Annotated[
+        str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,255}$"), AfterValidator(_not_only_dots)
+    ]
     size_bytes: Annotated[int, Field(ge=1, le=MAX_FILE_BYTES, strict=True)]
     sha256: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
     media_type: Annotated[str, StringConstraints(pattern=r"^[\x20-\x7e]{1,255}$")]
@@ -144,6 +158,36 @@ class OutputUploadIn(StrictIn):
         return self
 
 
+def _unique_ids(values: list[UUID]) -> list[UUID]:
+    if len(set(values)) != len(values):
+        raise ValueError("input ids must be unique")
+    return values
+
+
+InputIds = Annotated[list[UUID], Field(min_length=1, max_length=10), AfterValidator(_unique_ids)]
+RecipeName = Title  # 1..200 characters, no NUL, not blank
+Steps = Annotated[list[Step], Field(max_length=50)]
+
+
+class RecipeWriteIn(StrictIn):
+    """openapi RecipeWrite (input_ids: project input ids, the first is the base table)."""
+
+    name: RecipeName
+    input_ids: InputIds
+    steps: Steps
+
+
+class RecipePreviewIn(StrictIn):
+    """openapi RecipePreviewRequest: omitted fields use the saved recipe."""
+
+    input_ids: InputIds | None = None
+    steps: Steps | None = None
+
+
+class RecipeList(BaseModel):
+    items: list[Recipe]
+
+
 __all__ = [
     "AccessLevel",
     "Comment",
@@ -161,6 +205,13 @@ __all__ = [
     "OutputUploadSession",
     "ProjectInput",
     "ProjectInputList",
+    "Recipe",
+    "RecipeList",
+    "RecipePreview",
+    "RecipePreviewIn",
+    "RecipeWriteIn",
+    "Run",
+    "RunStatus",
     "Thread",
     "ThreadCreateIn",
     "ThreadScope",

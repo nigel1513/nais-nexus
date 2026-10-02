@@ -112,7 +112,8 @@ class StoragePort(Protocol):
 
 
 class CatalogReadPort(Protocol):
-    """Readiness worker only (D-018): reads bytes with the service credentials, independent of user grants.
+    """Readiness worker (D-018) and M13 workspace recipe previews/runs: reads bytes with the service credentials,
+    independent of user grants (the workspace checks the caller's dataset access before every read).
     The FileRef is re-verified against the catalog (VERIFIED file of a PUBLISHED version, same bucket/key),
     otherwise ObjectMissing; byte_range must satisfy 0 <= start <= end (ValueError). Raises ObjectMissing (404) or StorageUnavailable (connection/timeout/5xx), both defined above."""
 

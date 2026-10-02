@@ -22,6 +22,15 @@ EXPECTED = {
     "completeOutputUpload",
     "getOutput",
     "getOutputDownload",
+    "listRecipes",
+    "createRecipe",
+    "getRecipe",
+    "updateRecipe",
+    "deleteRecipe",
+    "previewRecipe",
+    "startRun",
+    "listRuns",
+    "getRun",
 }
 TAGS = {"workspace", "hub"}
 

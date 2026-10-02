@@ -11,6 +11,7 @@ import threading
 from collections.abc import Mapping
 from typing import Any
 
+from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 
 from api.platform.errors import ApiError
@@ -122,3 +123,11 @@ class S3OutputStorage:
         finally:
             body.close()
         return digest.hexdigest()
+
+    def put_file(self, org_code: str, key: str, path: str, content_type: str) -> None:
+        try:
+            self.internal(org_code).upload_file(
+                path, self._bucket(org_code), key, ExtraArgs={"ContentType": content_type}
+            )
+        except (BotoCoreError, ClientError, S3UploadFailedError) as exc:
+            raise _unavailable("Storage is unavailable.") from exc

@@ -102,7 +102,8 @@ without `temporal_start` never match a period filter.
 - **M01 Identity:** the catalog calls `IdentityQueryPort.get_organization_summary` imported from
   `api.modules.identity.public`; installed but unwired → 503 `DEPENDENCY_UNAVAILABLE`; without the identity package it
   uses `FakeIdentityPort` (seed organizations).
-- The ports registry cannot restrict which module reads `StoragePort`/`CatalogReadPort`; only M04/M05 may use them.
+- The ports registry cannot restrict which module reads `StoragePort`/`CatalogReadPort`; only M04/M05 (and M13 workspace,
+  `CatalogReadPort` only, after its own dataset-access check) may use them.
 
 ## Visibility (ruling M03-R3)
 Search returns ACTIVE datasets only. A direct `GET /datasets/{id}` of a WITHDRAWN dataset succeeds only for the owner

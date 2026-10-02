@@ -38,10 +38,11 @@ DATA_STEWARD = "DATA_STEWARD"
 
 ProjectOf = Callable[[Session, UUID], UUID | None]
 # scope -> the project owning a target id (None: no such target). OUTPUT targets are completed outputs only (an
-# upload session is not discussable). RECIPE is registered by the task that adds recipes; until then 404.
+# upload session is not discussable); RECIPE targets are live (not deleted) recipes.
 TARGET_PROJECT: dict[str, ProjectOf] = {
     "PROJECT": lambda _session, target_id: target_id,
     "OUTPUT": repo.ready_output_project,
+    "RECIPE": repo.live_recipe_project,
 }
 
 
