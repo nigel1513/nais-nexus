@@ -37,4 +37,25 @@ describe("Menu", () => {
     await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
     expect(trigger).toHaveFocus();
   });
+  it("radio items report the choice and stay open", async () => {
+    const user = userEvent.setup();
+    const onValueChange = vi.fn();
+    render(
+      <Menu.Root>
+        <Menu.Trigger>테마</Menu.Trigger>
+        <Menu.Content>
+          <Menu.RadioGroup value="system" onValueChange={onValueChange}>
+            <Menu.RadioItem value="system">시스템</Menu.RadioItem>
+            <Menu.RadioItem value="dark">다크</Menu.RadioItem>
+          </Menu.RadioGroup>
+        </Menu.Content>
+      </Menu.Root>,
+    );
+    await user.click(screen.getByRole("button", { name: "테마" }));
+    expect(await screen.findByRole("menuitemradio", { name: "시스템" })).toHaveAttribute("aria-checked", "true");
+    await user.click(screen.getByRole("menuitemradio", { name: "다크" }));
+    expect(onValueChange).toHaveBeenCalledWith("dark");
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+  });
 });
+

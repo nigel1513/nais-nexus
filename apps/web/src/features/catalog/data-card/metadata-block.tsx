@@ -3,7 +3,7 @@ import { Button } from "@nais/ui";
 import { useTranslations } from "next-intl";
 import type { ReactNode } from "react";
 import type { Dataset } from "@/shared/api/types";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { downloadJsonLd } from "../api";
 import { PersonLine } from "../components/person-line";
 import { VocabularyTags } from "../components/vocabulary-tags";
@@ -19,13 +19,12 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 
 export function JsonLdButton({ dataset }: { dataset: Pick<Dataset, "dataset_id" | "title"> }) {
   const t = useTranslations();
-  const toast = useToast();
   return (
     <Button
       variant="outline"
       size="sm"
       onClick={() => {
-        downloadJsonLd(dataset.dataset_id, dataset.title).catch(() => toast(t("data.card.jsonldFailed")));
+        downloadJsonLd(dataset.dataset_id, dataset.title).catch(() => notify.error(t("data.card.jsonldFailed")));
       }}
     >
       {t("data.card.jsonld")}

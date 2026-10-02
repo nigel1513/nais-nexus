@@ -9,7 +9,7 @@ import type { IdentityPublicProfile, Project, ProjectMember, ProjectRole } from 
 import { useMeData } from "@/shared/hooks/use-me";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useAddProjectMember, useListProjectMembers, useRemoveProjectMember, useUpdateProjectMemberRole } from "../api";
 import { UserCombobox } from "./user-combobox";
 
@@ -27,7 +27,6 @@ export function canManageMember(actor: ProjectRole | null | undefined, target: P
 export function MembersTab({ project, manager }: { project: Project; manager: boolean }) {
   const t = useTranslations();
   const router = useRouter();
-  const toast = useToast();
   const errorText = useErrorText();
   const me = useMeData();
   const pid = project.project_id;
@@ -39,7 +38,7 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
   const [newRole, setNewRole] = useState<ProjectRole>("RESEARCHER");
   const [removing, setRemoving] = useState<ProjectMember | null>(null);
   const [comboKey, setComboKey] = useState(0);
-  const fail = (e: unknown) => toast(errorText(e), "error");
+  const fail = (e: unknown) => notify.error(errorText(e));
   const myRole = project.my_role ?? null;
   const addable = assignableRoles(myRole);
 
@@ -59,7 +58,7 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
               { user_id: picked.user_id, role: newRole },
               {
                 onSuccess: () => {
-                  toast(t("projects.members.added"));
+                  notify.success(t("projects.members.added"));
                   setPicked(null);
                   setComboKey((k) => k + 1);
                 },
@@ -104,7 +103,7 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
                   onChange={(e) =>
                     updateRole.mutate(
                       { userId: m.user_id, role: e.target.value as ProjectRole },
-                      { onSuccess: () => toast(t("projects.members.roleChanged")), onError: fail },
+                      { onSuccess: () => notify.success(t("projects.members.roleChanged")), onError: fail },
                     )
                   }
                 >
@@ -152,7 +151,7 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
             onSuccess: () => {
               setRemoving(null);
               if (self) router.push("/commons/projects");
-              else toast(t("projects.members.removed"));
+              else notify.success(t("projects.members.removed"));
             },
             onError: (e) => {
               setRemoving(null);

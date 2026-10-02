@@ -5,16 +5,16 @@ import { api, unwrap } from "@/shared/api/client";
 import { useMeData } from "@/shared/hooks/use-me";
 import { PageHeader } from "@/shared/ui/page-header";
 import { RequireRole } from "@/shared/ui/require-role";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useCreateDataset } from "./api";
 import { DatasetForm } from "./components/dataset-form";
 import { emptyDatasetForm, toDatasetCreate } from "./schemas";
+import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 
 function NewDataset() {
   const t = useTranslations();
   const me = useMeData();
   const router = useRouter();
-  const toast = useToast();
   const create = useCreateDataset();
   const defaults = {
     ...emptyDatasetForm,
@@ -30,7 +30,7 @@ function NewDataset() {
       onSubmit={async (values) => {
         // owner_organization_id is always the steward's own organization (M10 §7.5).
         const ds = await create.mutateAsync(toDatasetCreate(values, me.organization.organization_id));
-        toast(t("data.new.created"));
+        notify.success(t("data.new.created"));
         if (values.contributors.length) {
           try {
             // The dataset id exists only now, so this uses the client directly instead of usePutDatasetContributors(datasetId).
@@ -41,7 +41,7 @@ function NewDataset() {
               }),
             );
           } catch {
-            toast(t("data.form.contributorsSaveFailed"));
+            notify.error(t("data.form.contributorsSaveFailed"));
           }
         }
         router.push(`/commons/data/${ds.dataset_id}?created=1`);
@@ -52,6 +52,7 @@ function NewDataset() {
 
 export function DatasetNewScreen() {
   const t = useTranslations();
+  useBreadcrumbs([{ label: t("data.new.title") }]);
   return (
     <>
       <PageHeader title={t("data.new.title")} description={t("data.new.description")} />

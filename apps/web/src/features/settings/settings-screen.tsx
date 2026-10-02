@@ -10,7 +10,7 @@ import { LOCALE_COOKIE } from "@/shared/config";
 import { safeInternalPath } from "@/shared/lib/links";
 import { useMeData } from "@/shared/hooks/use-me";
 import { DateTime } from "@/shared/ui/date-text";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useErrorText } from "@/shared/api/use-error-text";
 import { asApiError } from "@/shared/api/errors";
 import { PageHeader } from "@/shared/ui/page-header";
@@ -20,7 +20,6 @@ const NTIS_PATTERN = /^[0-9]{8}$/;
 
 function NtisForm({ current }: { current: string | null }) {
   const t = useTranslations();
-  const toast = useToast();
   const errorText = useErrorText();
   const update = useUpdateMe();
   const [value, setValue] = useState(current ?? "");
@@ -31,13 +30,13 @@ function NtisForm({ current }: { current: string | null }) {
       onSuccess: () => {
         setError(null);
         if (next === null) setValue("");
-        toast(t("settings.ntis.saved"));
+        notify.success(t("settings.ntis.saved"));
       },
       onError: (e) => {
         const err = asApiError(e);
         if (err.code === "CONFLICT") setError(t("settings.ntis.duplicate"));
         else if (err.code === "VALIDATION_FAILED") setError(t("settings.ntis.format"));
-        else toast(errorText(e), "error");
+        else notify.error(errorText(e));
       },
     });
 

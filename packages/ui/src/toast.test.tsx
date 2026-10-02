@@ -28,4 +28,23 @@ describe("notify", () => {
     expect(await screen.findByText("3개 검증됨")).toBeInTheDocument();
     act(() => notify.dismiss());
   });
+  it("announces errors assertively and everything else politely, in Sonner's one live region", async () => {
+    const { container } = render(<Toaster closeLabel="닫기" />);
+    const region = () => container.ownerDocument.querySelector("section[aria-live]")!;
+    act(() => {
+      notify.success("저장했습니다");
+    });
+    expect(await screen.findByText("저장했습니다")).toBeInTheDocument();
+    expect(region()).toHaveAttribute("aria-live", "polite");
+    act(() => {
+      notify.error("저장하지 못했습니다");
+    });
+    expect(await screen.findByText("저장하지 못했습니다")).toBeInTheDocument();
+    expect(region()).toHaveAttribute("aria-live", "assertive");
+    act(() => {
+      notify.info("다시 연결했습니다");
+    });
+    expect(region()).toHaveAttribute("aria-live", "polite");
+    act(() => notify.dismiss());
+  });
 });

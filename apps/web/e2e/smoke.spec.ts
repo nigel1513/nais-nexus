@@ -155,3 +155,43 @@ test("ui gallery: primitives pass axe in both themes, menus work by keyboard, co
   await page.emulateMedia({ colorScheme: "dark" });
   expect(await seriousViolations(page)).toEqual([]);
 });
+
+test("shell: ⌘K, notifications, user menu and the phone sheet pass axe in both themes and work by keyboard", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons");
+    await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.keyboard.press("ControlOrMeta+k");
+    const palette = page.getByRole("dialog", { name: "명령 팔레트" });
+    await expect(palette).toBeVisible();
+    await page.keyboard.type("활동");
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Enter");
+    await expect(page).toHaveURL(/\/commons\/activity$/);
+    await expect(page.getByRole("navigation", { name: "현재 위치" })).toContainText("활동");
+
+    await page.getByRole("button", { name: "알림 1개 읽지 않음" }).click();
+    await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: /A Researcher/ }).click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByRole("button", { name: "메뉴" }).click();
+    const sheet = page.getByRole("dialog", { name: "메뉴" });
+    await expect(sheet).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await sheet.getByRole("link", { name: "데이터" }).click();
+    await expect(page).toHaveURL(/\/commons\/data$/);
+    await expect(sheet).toBeHidden();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});

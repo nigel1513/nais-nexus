@@ -14,6 +14,7 @@ import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { useGetAccessRequest, useListAccessGrants, useStartAccessReview } from "./api";
 import { RequesterActions } from "./components/requester-actions";
 import { ReviewActions } from "./components/review-actions";
+import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 
 const REVIEWABLE = ["SUBMITTED", "UNDER_REVIEW"];
 const SENSITIVE_MAX_DAYS = 30;
@@ -24,6 +25,7 @@ export function AccessRequestDetailScreen({ accessRequestId }: { accessRequestId
   const me = useMeData();
   const orgNames = useOrgNames();
   const q = useGetAccessRequest(accessRequestId);
+  useBreadcrumbs(q.data ? [{ label: q.data.dataset_title ?? q.data.dataset_id }] : []);
   const r = q.data;
   const policy = useGetDatasetPolicy(r?.dataset_id ?? "", { enabled: !!r });
   const startReview = useStartAccessReview(accessRequestId);

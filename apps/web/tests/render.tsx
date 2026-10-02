@@ -1,3 +1,4 @@
+import { Toaster } from "@nais/ui";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
 import { IntlErrorCode, NextIntlClientProvider } from "next-intl";
@@ -6,12 +7,13 @@ import { MeGate } from "@/features/shell/platform-shell";
 import ko from "@/messages/ko.json";
 import { makeQueryClient } from "@/shared/api/query-client";
 import { MOCK_USER_COOKIE } from "@/shared/config";
-import { ToastProvider } from "@/shared/ui/toast";
 import { setLocation } from "./navigation";
 
 export function setMockUser(userId: string | null) {
   document.cookie = userId ? `${MOCK_USER_COOKIE}=${userId}; path=/` : `${MOCK_USER_COOKIE}=; max-age=0; path=/`;
 }
+
+export { mockViewport } from "./viewport";
 
 export function renderWithProviders(ui: ReactElement, { user }: { user?: string } = {}) {
   if (user) setMockUser(user);
@@ -27,7 +29,8 @@ export function renderWithProviders(ui: ReactElement, { user }: { user?: string 
       }}
     >
       <QueryClientProvider client={queryClient}>
-        <ToastProvider>{ui}</ToastProvider>
+        {ui}
+        <Toaster closeLabel="닫기" />
       </QueryClientProvider>
     </NextIntlClientProvider>,
   );

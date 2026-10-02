@@ -35,7 +35,15 @@ function Group({ className, ...props }: React.ComponentProps<typeof Command.Grou
   );
 }
 
-function Item({ className, icon, shortcut, children, ...props }: React.ComponentProps<typeof Command.Item> & { icon?: React.ReactNode; shortcut?: string }) {
+type ItemProps = React.ComponentProps<typeof Command.Item> & {
+  icon?: React.ReactNode;
+  /** Keyboard hint on the right, mono (e.g. "G D"). */
+  shortcut?: string;
+  /** Secondary text on the right, e.g. a dataset's institute. */
+  hint?: React.ReactNode;
+};
+
+function Item({ className, icon, shortcut, hint, children, ...props }: ItemProps) {
   return (
     <Command.Item
       className={cn(
@@ -48,6 +56,7 @@ function Item({ className, icon, shortcut, children, ...props }: React.Component
     >
       {icon}
       <span className="min-w-0 flex-1 truncate">{children}</span>
+      {hint ? <span className="max-w-[40%] shrink-0 truncate text-small text-fg-muted">{hint}</span> : null}
       {shortcut ? <span className="font-mono text-caption text-fg-muted">{shortcut}</span> : null}
     </Command.Item>
   );
@@ -67,12 +76,18 @@ function DialogRoot({
   label,
   children,
   className,
+  shouldFilter,
+  loop = true,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   label: string;
   children: React.ReactNode;
   className?: string;
+  /** false when the caller filters (e.g. server results that must not be re-filtered by cmdk). */
+  shouldFilter?: boolean;
+  /** Arrow keys wrap from the last item to the first. */
+  loop?: boolean;
 }) {
   return (
     <BaseDialog.Root open={open} onOpenChange={onOpenChange}>
@@ -85,7 +100,9 @@ function DialogRoot({
             className,
           )}
         >
-          <Root label={label}>{children}</Root>
+          <Root label={label} shouldFilter={shouldFilter} loop={loop}>
+            {children}
+          </Root>
         </BaseDialog.Popup>
       </BaseDialog.Portal>
     </BaseDialog.Root>

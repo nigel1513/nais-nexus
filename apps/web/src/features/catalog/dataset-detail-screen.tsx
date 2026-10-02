@@ -8,7 +8,7 @@ import { useUrlQuery } from "@/shared/hooks/use-url-query";
 import { VersionStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useGetDataset, useListDatasetVersions, usePutDatasetContributors, useUpdateDataset } from "./api";
 import { DatasetForm } from "./components/dataset-form";
 import { NewVersionDialog } from "./components/new-version-dialog";
@@ -21,12 +21,13 @@ import { SideCard } from "./data-card/side-card";
 import { ColumnTable } from "./explorer/column-table";
 import { DataExplorer } from "./explorer/data-explorer";
 import { contributorsChanged, fromDataset, toDatasetUpdate } from "./schemas";
+import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 
 export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const t = useTranslations();
   const me = useMeData();
-  const toast = useToast();
   const ds = useGetDataset(datasetId);
+  useBreadcrumbs(ds.data ? [{ label: ds.data.title }] : []);
   const versions = useListDatasetVersions(datasetId);
   const update = useUpdateDataset(datasetId);
   const putContributors = usePutDatasetContributors(datasetId);
@@ -80,12 +81,12 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
             if (contributorsChanged(before, values)) {
               await putContributors.mutateAsync({ contributors: values.contributors.map((c) => ({ user_id: c.user_id, role: c.role })) });
             }
-            toast(t("data.detail.saved"));
+            notify.success(t("data.detail.saved"));
             setEditing(false);
           }}
         />
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
           <Tabs value={tab} onValueChange={(v) => setParams({ tab: v === "versions" ? "versions" : null })}>
             <TabsList aria-label={t("data.card.tabsLabel")}>
               <TabsTrigger value="card">{t("data.card.tabCard")}</TabsTrigger>

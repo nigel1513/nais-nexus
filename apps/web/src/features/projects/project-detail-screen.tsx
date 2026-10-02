@@ -14,12 +14,13 @@ import { ProjectStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { PageHeader } from "@/shared/ui/page-header";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useArchiveProject, useGetProject, useListProjects, useUpdateProject } from "./api";
 import { MembersTab } from "./components/members-tab";
 import { ProjectDataTab } from "./components/project-data-tab";
 import { ProjectForm } from "./components/project-form";
 import { fromProject, toProjectUpdate } from "./schemas";
+import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 
 const TABS = ["overview", "members", "data", "activity"] as const;
 type Tab = (typeof TABS)[number];
@@ -53,7 +54,6 @@ function PublicSummary({ projectId }: { projectId: string }) {
 
 function Overview({ project, canEdit, canArchive }: { project: Project; canEdit: boolean; canArchive: boolean }) {
   const t = useTranslations();
-  const toast = useToast();
   const errorText = useErrorText();
   const update = useUpdateProject(project.project_id);
   const archive = useArchiveProject(project.project_id);
@@ -72,7 +72,7 @@ function Overview({ project, canEdit, canArchive }: { project: Project; canEdit:
           // Only the OWNER may change visibility (M02): never send it for an ADMIN.
           if (!canArchive) delete body.visibility;
           await update.mutateAsync(body);
-          toast(t("projects.detail.saved"));
+          notify.success(t("projects.detail.saved"));
           setEditing(false);
         }}
       />
@@ -130,11 +130,11 @@ function Overview({ project, canEdit, canArchive }: { project: Project; canEdit:
           archive.mutate(undefined, {
             onSuccess: () => {
               setConfirming(false);
-              toast(t("projects.detail.archived"));
+              notify.success(t("projects.detail.archived"));
             },
             onError: (e) => {
               setConfirming(false);
-              toast(errorText(e), "error");
+              notify.error(errorText(e));
             },
           })
         }
@@ -146,6 +146,7 @@ function Overview({ project, canEdit, canArchive }: { project: Project; canEdit:
 export function ProjectDetailScreen({ projectId }: { projectId: string }) {
   const t = useTranslations();
   const q = useGetProject(projectId);
+  useBreadcrumbs(q.data ? [{ label: q.data.name }] : []);
   const [params, setParams] = useUrlQuery();
   const requested = params.get("tab");
   const tab: Tab = TABS.includes(requested as Tab) ? (requested as Tab) : "overview";

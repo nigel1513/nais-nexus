@@ -8,14 +8,13 @@ import { asApiError, fieldErrors } from "@/shared/api/errors";
 import { useErrorText } from "@/shared/api/use-error-text";
 import type { AccessRequest, Purpose } from "@/shared/api/types";
 import { useValidationText } from "@/shared/hooks/use-validation-text";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useGetAccessRequest, useResubmitAccessRequest, useWithdrawAccessRequest } from "../api";
 import { accessRequestSchema, type AccessRequestFormValues } from "../schemas";
 
 export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { request: AccessRequest; allowedPurposes: Purpose[]; maxGrantDays: number }) {
   const t = useTranslations();
   const tv = useValidationText();
-  const toast = useToast();
   const errorText = useErrorText();
   const id = request.access_request_id;
   const current = useGetAccessRequest(id);
@@ -34,9 +33,9 @@ export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { r
   }, [request.updated_at, request.project_id, request.purpose, request.purpose_detail, request.requested_days, reset]);
   const onError = (e: unknown) => {
     if (asApiError(e).code === "ACCESS_REQUEST_INVALID_STATE") {
-      toast(t("access.detail.handledElsewhere"), "error");
+      notify.error(t("access.detail.handledElsewhere"));
       void current.refetch();
-    } else toast(errorText(e), "error");
+    } else notify.error(errorText(e));
   };
 
   return (
@@ -48,7 +47,7 @@ export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { r
           onSubmit={form.handleSubmit(async (v) => {
             try {
               await resubmit.mutateAsync({ purpose: v.purpose as Purpose, purpose_detail: v.purpose_detail.trim(), requested_days: v.requested_days });
-              toast(t("access.detail.resubmitted"));
+              notify.success(t("access.detail.resubmitted"));
             } catch (e) {
               const err = asApiError(e);
               const mapped = Object.entries(fieldErrors(err)).filter(([k]) => k === "purpose" || k === "purpose_detail" || k === "requested_days");
@@ -102,7 +101,7 @@ export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { r
           withdraw.mutate(undefined, {
             onSuccess: () => {
               setConfirming(false);
-              toast(t("access.detail.withdrawn"));
+              notify.success(t("access.detail.withdrawn"));
             },
             onError: (e) => {
               setConfirming(false);

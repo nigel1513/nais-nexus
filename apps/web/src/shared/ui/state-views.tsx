@@ -50,7 +50,7 @@ export function LoadMore({
   if (!hasNextPage) return null;
   return (
     <div className="mt-4 flex justify-center">
-      <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+      <Button variant="secondary" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
         {isFetchingNextPage ? t("common.loading") : t("common.loadMore")}
       </Button>
     </div>

@@ -122,6 +122,9 @@
   /* ss06 = Pretendard "High legibility" (tells l / I / 1 apart in IDs and paths).
      geometricPrecision: with hinted advances, Chromium on Linux rounds each glyph's width at 12–13px / 500, which
      opened gaps like "flo at64" and "too ltip". Unhinted, fractional advances keep the spacing the font designed. */
+  /* Chromium's UA sheet resets text-rendering to auto on form controls, so text inside a <button> (menu rows,
+     notification items) got the hinted "UT C" / "20 26" spacing back. */
+  button, input, textarea, select { text-rendering: inherit; }
   :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
   button, a, [role="button"] { touch-action: manipulation; }
   @media (max-width: 767px) { input, textarea, select { font-size: 16px; } }

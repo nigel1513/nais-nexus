@@ -5,13 +5,12 @@ import { useId, useState } from "react";
 import { UserPicker } from "@/features/catalog/components/user-picker";
 import { useListOrganizations, useTransferUser } from "@/features/organizations/api";
 import type { IdentityPublicProfile } from "@/shared/api/types";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { ErrorView } from "@/shared/ui/state-views";
 
 /** PLATFORM_ADMIN only (the caller gates it; the server still decides): move a user to another institute. */
 export function TransferCard() {
   const t = useTranslations();
-  const toast = useToast();
   const headingId = useId();
   const selectId = useId();
   const orgs = useListOrganizations();
@@ -29,7 +28,7 @@ export function TransferCard() {
       {
         onSuccess: () => {
           setConfirming(false);
-          toast(t("org.transfer.done", { name, org: org?.name ?? "" }));
+          notify.success(t("org.transfer.done", { name, org: org?.name ?? "" }));
           setUser(null);
           setOrgId("");
           setPickerKey((k) => k + 1);

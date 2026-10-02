@@ -11,7 +11,7 @@ import type { AccessGrant, AccessGrantStatus } from "@/shared/api/types";
 import { GrantStatusBadge } from "@/shared/ui/badges";
 import { DateTime, ExpiryText } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useListAccessGrants, useRevokeAccessGrant } from "../api";
 import { ReasonDialog, useServerFieldError } from "./reason-dialog";
 
@@ -74,7 +74,6 @@ export function MyGrantsTab() {
 
 export function OrgGrantsTab() {
   const t = useTranslations();
-  const toast = useToast();
   const errorText = useErrorText();
   const fieldError = useServerFieldError();
   const q = useListAccessGrants({ role: "owner", status: ["ACTIVE"] });
@@ -135,13 +134,13 @@ export function OrgGrantsTab() {
             {
               onSuccess: () => {
                 close();
-                toast(t("access.revoked"));
+                notify.success(t("access.revoked"));
               },
               onError: (e) => {
                 const field = fieldError(e, "reason");
                 if (field) return setReasonError(field);
                 close();
-                toast(errorText(e), "error");
+                notify.error(errorText(e));
               },
             },
           )

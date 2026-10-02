@@ -44,7 +44,15 @@ export function ToastCard({ kind, title, description, onClose }: { kind: Kind; t
   );
 }
 
+/**
+ * Sonner's container is one polite live region. An error must interrupt (WCAG 4.1.3), so the region is switched to
+ * assertive right before an error is added and back to polite before anything else. The attribute is read when the
+ * content changes, so each toast is announced once, with its own urgency. Set through the <Toaster> ref.
+ */
+let liveRegion: HTMLElement | null = null;
+
 function show(kind: Kind, title: React.ReactNode, opts: NotifyOptions = {}) {
+  liveRegion?.setAttribute("aria-live", kind === "error" ? "assertive" : "polite");
   // Errors stay until dismissed: they carry what the user must act on. Success / info leave after 4s.
   const duration = opts.duration ?? (kind === "error" || kind === "loading" ? Infinity : 4000);
   return toast.custom(
@@ -79,7 +87,17 @@ export const notify = {
 export function Toaster({ theme, closeLabel, className }: { theme?: "light" | "dark"; closeLabel: string; className?: string }) {
   return (
     <CloseLabel.Provider value={closeLabel}>
-      <Sonner position="bottom-right" theme={theme} className={className} style={{ zIndex: "var(--z-toast)" }} toastOptions={{ unstyled: true }} gap={8} />
+      <Sonner
+        ref={(el) => {
+          liveRegion = el;
+        }}
+        position="bottom-right"
+        theme={theme}
+        className={className}
+        style={{ zIndex: "var(--z-toast)" }}
+        toastOptions={{ unstyled: true }}
+        gap={8}
+      />
     </CloseLabel.Provider>
   );
 }

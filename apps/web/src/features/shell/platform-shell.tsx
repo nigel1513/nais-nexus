@@ -6,11 +6,11 @@ import { useAuthReady } from "@/features/auth/use-auth-ready";
 import { asApiError, isBlockedCode } from "@/shared/api/errors";
 import { isMocking } from "@/shared/config";
 import { useMe } from "@/shared/hooks/use-me";
-import { AppShell } from "@/shared/ui/app-shell";
+import { AppShell, AppShellFrame } from "@/shared/ui/app-shell";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 
-/** Loads getMe once; blocked accounts go to /blocked, signed-out users to login (M10 §3.4, §6). */
-export function MeGate({ children }: { children: ReactNode }) {
+/** Loads getMe once (`frame` wraps the loading and error views, e.g. in the empty shell); blocked accounts go to /blocked, signed-out users to login (M10 §3.4, §6). */
+export function MeGate({ children, frame = (c) => c }: { children: ReactNode; frame?: (content: ReactNode) => ReactNode }) {
   const ready = useAuthReady();
   const router = useRouter();
   const pathname = usePathname();
@@ -31,8 +31,8 @@ export function MeGate({ children }: { children: ReactNode }) {
     }
   }, [code, pathname, router, search]);
 
-  if (!ready || me.isPending || redirecting) return <DelayedSkeleton lines={4} />;
-  if (me.isError && !me.data) return <ErrorView error={me.error} onRetry={() => void me.refetch()} />;
+  if (!ready || me.isPending || redirecting) return frame(<DelayedSkeleton lines={4} />);
+  if (me.isError && !me.data) return frame(<ErrorView error={me.error} onRetry={() => void me.refetch()} />);
   return <>{children}</>;
 }
 
@@ -43,7 +43,7 @@ function Frame({ children }: { children: ReactNode }) {
 
 export function PlatformShell({ children }: { children: ReactNode }) {
   return (
-    <MeGate>
+    <MeGate frame={(content) => <AppShellFrame>{content}</AppShellFrame>}>
       <Frame>{children}</Frame>
     </MeGate>
   );

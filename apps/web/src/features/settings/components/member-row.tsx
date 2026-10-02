@@ -7,13 +7,12 @@ import { asApiError } from "@/shared/api/errors";
 import { useErrorText } from "@/shared/api/use-error-text";
 import type { ActiveStatus, OrganizationMembership, OrgRole } from "@/shared/api/types";
 import { useMeData } from "@/shared/hooks/use-me";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 
 const ROLES: OrgRole[] = ["ORG_ADMIN", "DATA_STEWARD", "RESOURCE_MANAGER"];
 
 export function MemberRow({ member, isSelf, organizationId }: { member: OrganizationMembership; isSelf: boolean; organizationId: string }) {
   const t = useTranslations();
-  const toast = useToast();
   const errorText = useErrorText();
   const update = useUpdateOrganizationMember();
   const [roles, setRoles] = useState<OrgRole[]>(member.roles);
@@ -35,13 +34,13 @@ export function MemberRow({ member, isSelf, organizationId }: { member: Organiza
       {
         onSuccess: () => {
           setStep(0);
-          toast(t("org.saved"));
+          notify.success(t("org.saved"));
         },
         onError: (e) => {
           setStep(0);
           // The server reports the last-ORG_ADMIN rule with the generic ROLE_NOT_ASSIGNABLE code; derive it from what was attempted.
           const lastAdmin = asApiError(e).code === "ROLE_NOT_ASSIGNABLE" && !isSelf && member.roles.includes("ORG_ADMIN") && (!roles.includes("ORG_ADMIN") || status === "DISABLED");
-          toast(lastAdmin ? t("org.lastAdminError") : errorText(e), "error");
+          notify.error(lastAdmin ? t("org.lastAdminError") : errorText(e));
         },
       },
     );

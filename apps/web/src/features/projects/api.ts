@@ -5,11 +5,11 @@ import { api, unwrap } from "@/shared/api/client";
 import { nextCursor } from "@/shared/api/pagination";
 import type { Page, Project, ProjectMember, ProjectRole, ProjectSummary, Query, Schemas } from "@/shared/api/types";
 
-export function useListProjects(query: Query<"listProjects">) {
+export function useListProjects(query: Query<"listProjects">, { enabled = true }: { enabled?: boolean } = {}) {
   const ready = useAuthReady();
   return useInfiniteQuery({
     queryKey: ["listProjects", query],
-    enabled: ready,
+    enabled: ready && enabled,
     queryFn: async ({ pageParam }) => (await unwrap(api.GET("/projects", { params: { query: { ...query, cursor: pageParam } } }))) as Page<ProjectSummary>,
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextCursor,

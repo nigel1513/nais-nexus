@@ -2,15 +2,16 @@
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { PageHeader } from "@/shared/ui/page-header";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useCreateProject } from "./api";
 import { ProjectForm } from "./components/project-form";
 import { emptyProjectForm, toProjectCreate } from "./schemas";
+import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 
 export function ProjectNewScreen() {
   const t = useTranslations();
+  useBreadcrumbs([{ label: t("projects.new.title") }]);
   const router = useRouter();
-  const toast = useToast();
   const create = useCreateProject();
   return (
     <>
@@ -20,7 +21,7 @@ export function ProjectNewScreen() {
         submitLabel={t("projects.new.submit")}
         onSubmit={async (values) => {
           const project = await create.mutateAsync(toProjectCreate(values));
-          toast(t("projects.new.created"));
+          notify.success(t("projects.new.created"));
           router.push(`/commons/projects/${project.project_id}`);
         }}
       />

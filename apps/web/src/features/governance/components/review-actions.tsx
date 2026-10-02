@@ -5,14 +5,13 @@ import { useState } from "react";
 import { asApiError } from "@/shared/api/errors";
 import { useErrorText } from "@/shared/api/use-error-text";
 import type { AccessRequest, Operation } from "@/shared/api/types";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useApproveAccessRequest, useGetAccessRequest, useRejectAccessRequest, useRequestAccessChanges } from "../api";
 import { ReasonDialog, useServerFieldError } from "./reason-dialog";
 
 /** Reviewer decisions (M10 §7.10). ACCESS_REQUEST_INVALID_STATE → "someone else handled it" + refetch. */
 export function ReviewActions({ request, maxGrantDays }: { request: AccessRequest; maxGrantDays: number }) {
   const t = useTranslations();
-  const toast = useToast();
   const errorText = useErrorText();
   const fieldError = useServerFieldError();
   const id = request.access_request_id;
@@ -41,13 +40,13 @@ export function ReviewActions({ request, maxGrantDays }: { request: AccessReques
     if (Object.values(shown).some(Boolean)) return setServerErrors(shown);
     setDialog(null);
     if (asApiError(e).code === "ACCESS_REQUEST_INVALID_STATE") {
-      toast(t("access.detail.handledElsewhere"), "error");
+      notify.error(t("access.detail.handledElsewhere"));
       void current.refetch();
-    } else toast(errorText(e), "error");
+    } else notify.error(errorText(e));
   };
   const done = (message: string) => () => {
     setDialog(null);
-    toast(message);
+    notify.success(message);
   };
   const daysValid = Number.isInteger(days) && days >= 1 && days <= cap;
 

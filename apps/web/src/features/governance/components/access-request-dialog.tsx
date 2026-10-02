@@ -12,7 +12,7 @@ import { flattenPages } from "@/shared/api/pagination";
 import type { Dataset, Purpose } from "@/shared/api/types";
 import { useValidationText } from "@/shared/hooks/use-validation-text";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useCreateAccessRequest } from "../api";
 import { accessRequestSchema, type AccessRequestFormValues } from "../schemas";
 
@@ -52,7 +52,6 @@ function RequestForm({ dataset, onNotRequired }: { dataset: Dataset; onNotRequir
   const t = useTranslations();
   const tv = useValidationText();
   const router = useRouter();
-  const toast = useToast();
   const create = useCreateAccessRequest();
   const maxDays = dataset.policy.max_grant_days;
   const projects = useListProjects({ scope: "mine", status: "ACTIVE", limit: 100 });
@@ -100,7 +99,7 @@ function RequestForm({ dataset, onNotRequired }: { dataset: Dataset; onNotRequir
             operations: ["READ"],
             requested_days: v.requested_days,
           });
-          toast(t("access.request.sent"));
+          notify.success(t("access.request.sent"));
           router.push(`/commons/access/${r.access_request_id}`);
         } catch (e) {
           const err = asApiError(e);

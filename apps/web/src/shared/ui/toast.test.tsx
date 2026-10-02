@@ -1,43 +1,49 @@
-import { act, screen } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../../tests/render";
-import { useToast } from "./toast";
+import { notify } from "./toast";
 
-function Fire({ tone }: { tone?: "info" | "error" }) {
-  const toast = useToast();
-  return <button onClick={() => toast("메시지", tone)}>fire</button>;
+function Fire({ kind }: { kind: "success" | "error" }) {
+  return <button onClick={() => notify[kind]("메시지")}>fire</button>;
 }
+
+const region = () => document.querySelector("section[aria-live]");
 
 afterEach(() => vi.useRealTimers());
 
-describe("toasts", () => {
-  it("info toasts time out", () => {
-    vi.useFakeTimers();
-    renderWithProviders(<Fire />);
-    act(() => screen.getByText("fire").click());
-    expect(screen.getByText("메시지")).toBeInTheDocument();
-    act(() => vi.advanceTimersByTime(6100));
-    expect(screen.queryByText("메시지")).not.toBeInTheDocument();
-  });
-
-  it("error toasts stay until dismissed with the close button", async () => {
+describe("app toasts (notify → Sonner)", () => {
+  it("success toasts leave by themselves after 4s and are announced politely", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    renderWithProviders(<Fire tone="error" />);
+    renderWithProviders(<Fire kind="success" />);
     await user.click(screen.getByText("fire"));
+    expect(await screen.findByText("메시지")).toBeInTheDocument();
+    expect(region()).toHaveAttribute("aria-live", "polite");
+    act(() => vi.advanceTimersByTime(4500));
+    await waitFor(() => expect(screen.queryByText("메시지")).not.toBeInTheDocument());
+  });
+
+  it("error toasts stay until closed with the labelled button and are announced assertively", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderWithProviders(<Fire kind="error" />);
+    await user.click(screen.getByText("fire"));
+    expect(await screen.findByText("메시지")).toBeInTheDocument();
+    expect(region()).toHaveAttribute("aria-live", "assertive");
     act(() => vi.advanceTimersByTime(60_000));
     expect(screen.getByText("메시지")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "닫기" }));
-    expect(screen.queryByText("메시지")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText("메시지")).not.toBeInTheDocument());
   });
 
-  it("clears pending timers on unmount", () => {
-    vi.useFakeTimers();
-    const { unmount } = renderWithProviders(<Fire />);
-    act(() => screen.getByText("fire").click());
-    expect(vi.getTimerCount()).toBeGreaterThan(0);
+  it("nothing leaks across a remount: the toaster starts empty", async () => {
+    const { unmount } = renderWithProviders(<Fire kind="error" />);
+    await userEvent.click(screen.getByText("fire"));
+    expect(await screen.findByText("메시지")).toBeInTheDocument();
+    act(() => notify.dismiss());
     unmount();
-    expect(vi.getTimerCount()).toBe(0);
+    renderWithProviders(<Fire kind="error" />);
+    expect(screen.queryByText("메시지")).not.toBeInTheDocument();
   });
 });

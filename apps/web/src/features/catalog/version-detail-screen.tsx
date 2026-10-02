@@ -1,6 +1,5 @@
 "use client";
 import { Button, ConfirmDialog, DataTable } from "@nais/ui";
-import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { DownloadPanel } from "@/features/governance/components/download-panel";
@@ -17,8 +16,9 @@ import { FileStatusBadge, VersionStatusBadge } from "@/shared/ui/badges";
 import { PageHeader } from "@/shared/ui/page-header";
 import { CopyShaButton } from "@/shared/ui/copy-sha-button";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useGetDataset, useGetDatasetVersion, usePublishDatasetVersion } from "./api";
+import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 
 type IncompleteFile = { file_id?: string; path: string; status?: string };
 
@@ -43,10 +43,13 @@ export function VersionDetailScreen({
 }) {
   const t = useTranslations();
   const me = useMeData();
-  const toast = useToast();
   const errorText = useErrorText();
   const ds = useGetDataset(datasetId);
   const v = useGetDatasetVersion(versionId, { pollMs: 1500 });
+  useBreadcrumbs([
+    ...(ds.data ? [{ label: ds.data.title, href: `/commons/data/${datasetId}` }] : []),
+    ...(v.data ? [{ label: t("version.title", { label: v.data.version_label }) }] : []),
+  ]);
   const publish = usePublishDatasetVersion(versionId);
   const deleteFile = useDeleteDraftFile(versionId);
   const [confirming, setConfirming] = useState(false);
@@ -65,21 +68,6 @@ export function VersionDetailScreen({
 
   return (
     <>
-      <nav aria-label={t("common.breadcrumb")} className="mb-2 text-sm">
-        <ol className="flex flex-wrap gap-2">
-          <li>
-            <Link href="/commons/data" className="underline-offset-4 hover:underline">
-              {t("nav.data")}
-            </Link>
-          </li>
-          <li aria-hidden="true">/</li>
-          <li>
-            <Link href={`/commons/data/${datasetId}`} className="underline-offset-4 hover:underline">
-              {dataset.title}
-            </Link>
-          </li>
-        </ol>
-      </nav>
       <PageHeader
         title={t("version.title", { label: version.version_label })}
         actions={
@@ -181,11 +169,11 @@ export function VersionDetailScreen({
           deleteFile.mutate(deleting.file_id, {
             onSuccess: () => {
               setDeleting(null);
-              toast(t("version.deleted"));
+              notify.success(t("version.deleted"));
             },
             onError: (e) => {
               setDeleting(null);
-              toast(errorText(e, uploadMessageParams()), "error");
+              notify.error(errorText(e, uploadMessageParams()));
             },
           })
         }
@@ -204,12 +192,12 @@ export function VersionDetailScreen({
             onSuccess: () => {
               setConfirming(false);
               setPublishError(null);
-              toast(t("version.published"));
+              notify.success(t("version.published"));
             },
             onError: (e) => {
               setConfirming(false);
               setPublishError(e);
-              toast(errorText(e), "error");
+              notify.error(errorText(e));
             },
           })
         }

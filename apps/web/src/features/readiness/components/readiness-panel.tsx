@@ -7,7 +7,7 @@ import type { ReadinessValidation } from "@/shared/api/types";
 import { CheckStatusBadge, ReadinessBadge, RunStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
-import { useToast } from "@/shared/ui/toast";
+import { notify } from "@/shared/ui/toast";
 import { useGetReadiness, useListReadinessProfiles, useStartReadinessValidation } from "../api";
 
 function ValidationCard({ v }: { v: ReadinessValidation }) {
@@ -80,7 +80,6 @@ function ValidationCard({ v }: { v: ReadinessValidation }) {
 
 export function ReadinessPanel({ versionId, published, steward, pollMs = 5000 }: { versionId: string; published: boolean; steward: boolean; pollMs?: number }) {
   const t = useTranslations();
-  const toast = useToast();
   const errorText = useErrorText();
   const q = useGetReadiness(versionId, { enabled: published, intervalMs: pollMs });
   const profiles = useListReadinessProfiles();
@@ -123,7 +122,7 @@ export function ReadinessPanel({ versionId, published, steward, pollMs = 5000 }:
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            start.mutate(profile, { onSuccess: () => toast(t("readiness.started")), onError: (err) => toast(errorText(err), "error") });
+            start.mutate(profile, { onSuccess: () => notify.info(t("readiness.started")), onError: (err) => notify.error(errorText(err)) });
           }}
         >
           <FormField id="readiness-profile" label={t("readiness.profile")}>

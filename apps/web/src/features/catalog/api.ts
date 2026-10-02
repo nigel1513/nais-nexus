@@ -12,11 +12,11 @@ import type {
 
 export type SearchQuery = Query<"searchDatasets">;
 
-export function useSearchDatasets(query: SearchQuery) {
+export function useSearchDatasets(query: SearchQuery, { enabled = true }: { enabled?: boolean } = {}) {
   const ready = useAuthReady();
   return useInfiniteQuery({
     queryKey: ["searchDatasets", query],
-    enabled: ready,
+    enabled: ready && enabled,
     queryFn: async ({ pageParam }) => (await unwrap(api.GET("/datasets", { params: { query: { ...query, cursor: pageParam } } }))) as SearchPage,
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextCursor,

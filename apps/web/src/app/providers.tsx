@@ -13,7 +13,6 @@ import { makeQueryClient } from "@/shared/api/query-client";
 import { getAccessToken } from "@/shared/api/client";
 import { isMocking } from "@/shared/config";
 import { ThemeProvider } from "@/shared/ui/theme";
-import { ToastProvider } from "@/shared/ui/toast";
 
 /** The one Sonner toaster (notify.* from @nais/ui), following the resolved theme. */
 function AppToaster() {
@@ -61,11 +60,9 @@ function ApiProviders({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={client}>
       <TooltipProvider>
-        <ToastProvider>
-          {isMocking() ? null : <SessionWatcher handler={handler} />}
-          {children}
-          <AppToaster />
-        </ToastProvider>
+        {isMocking() ? null : <SessionWatcher handler={handler} />}
+        {children}
+        <AppToaster />
       </TooltipProvider>
     </QueryClientProvider>
   );
