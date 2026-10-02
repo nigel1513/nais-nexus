@@ -20,6 +20,8 @@ DEFAULT_MODULE_ORDER: tuple[str, ...] = (
     "catalog",
     "readiness",
     "governance",
+    "workspace",
+    "notes",
     "audit",
     "marketplace",
     "compute",
