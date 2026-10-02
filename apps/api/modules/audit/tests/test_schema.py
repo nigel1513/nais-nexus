@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from nais_contracts.api_models import AuditAction, NotificationType, ResourceType
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
@@ -116,4 +117,51 @@ def test_notification_unique_per_event_and_recipient(db: PgUrls) -> None:
         conn.execute(sql, {"id": uuid.uuid4(), "r": rcpt, "s": src})
     with pytest.raises(IntegrityError), engine.begin() as conn:
         conn.execute(sql, {"id": uuid.uuid4(), "r": rcpt, "s": src})
+    engine.dispose()
+
+
+# audit_0003: the CHECK constraints accept every value of the current contract enums (contract 1.6.0 widening).
+# A contract enum value the database refuses would dead-letter its event, so this fails until a migration widens them.
+
+
+@pytest.mark.parametrize("action", [a.value for a in AuditAction])
+def test_every_contract_audit_action_is_accepted(db: PgUrls, action: str) -> None:
+    engine = create_engine(db.app)
+    with engine.begin() as conn:
+        _insert_audit(conn, action=action)
+    engine.dispose()
+
+
+@pytest.mark.parametrize("rtype", [r.value for r in ResourceType])
+def test_every_contract_resource_type_is_accepted(db: PgUrls, rtype: str) -> None:
+    engine = create_engine(db.app)
+    with engine.begin() as conn:
+        _insert_audit(conn, rtype=rtype)
+    engine.dispose()
+
+
+@pytest.mark.parametrize("ntype", [n.value for n in NotificationType])
+def test_every_contract_notification_type_is_accepted(db: PgUrls, ntype: str) -> None:
+    engine = create_engine(db.app)
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO audit.notifications (notification_id, recipient_user_id, type, title, link, "
+                "source_event_id) VALUES (:id, :r, :t, 't', '/x', :s)"
+            ),
+            {"id": uuid.uuid4(), "r": uuid.uuid4(), "t": ntype, "s": uuid.uuid4()},
+        )
+    engine.dispose()
+
+
+def test_widened_checks_still_reject_unknown_notification_types(db: PgUrls) -> None:
+    engine = create_engine(db.app)
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO audit.notifications (notification_id, recipient_user_id, type, title, link, "
+                "source_event_id) VALUES (:id, :r, 'NOPE', 't', '/x', :s)"
+            ),
+            {"id": uuid.uuid4(), "r": uuid.uuid4(), "s": uuid.uuid4()},
+        )
     engine.dispose()

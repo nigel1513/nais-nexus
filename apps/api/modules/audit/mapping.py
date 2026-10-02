@@ -163,6 +163,54 @@ AUDIT_RULES: dict[str, AuditRule] = {
         "validation_id",
         owner_key="owner_organization_id",
     ),
+    # Contract 1.6.0: project workspace (M13) and research notes (M14), D-043/D-044/D-047
+    "workspace.input.added.v1": AuditRule(
+        A.PROJECT_INPUT_ADDED, R.PROJECT_INPUT, "input_id", owner_key=_OWNER, project_key=_PROJ
+    ),
+    "workspace.input.version_changed.v1": AuditRule(
+        A.PROJECT_INPUT_VERSION_CHANGED, R.PROJECT_INPUT, "input_id", owner_key=_OWNER, project_key=_PROJ
+    ),
+    "workspace.input.removed.v1": AuditRule(
+        A.PROJECT_INPUT_REMOVED, R.PROJECT_INPUT, "input_id", owner_key=_OWNER, project_key=_PROJ
+    ),
+    "workspace.recipe.saved.v1": AuditRule(A.RECIPE_SAVED, R.RECIPE, "recipe_id", project_key=_PROJ),
+    "workspace.run.succeeded.v1": AuditRule(A.RUN_SUCCEEDED, R.RUN, "run_id", project_key=_PROJ),
+    "workspace.run.failed.v1": AuditRule(A.RUN_FAILED, R.RUN, "run_id", project_key=_PROJ),
+    "workspace.output.created.v1": AuditRule(A.OUTPUT_CREATED, R.OUTPUT, "output_id", project_key=_PROJ),
+    "workspace.publish.requested.v1": AuditRule(
+        A.OUTPUT_PUBLISH_REQUESTED, R.PUBLISH_REQUEST, "request_id", project_key=_PROJ
+    ),
+    # owner = the deciding slot's organization; a system REJECT (publication failed) carries failure_reason
+    "workspace.publish.decided.v1": AuditRule(
+        A.OUTPUT_PUBLISH_DECIDED,
+        R.PUBLISH_REQUEST,
+        "request_id",
+        owner_key="organization_id",
+        project_key=_PROJ,
+        reason_key="failure_reason",
+    ),
+    # project_id is null for DATASET threads; owner = the dataset's owner organization (null otherwise)
+    "workspace.comment.added.v1": AuditRule(
+        A.COMMENT_ADDED, R.THREAD, "thread_id", owner_key=_OWNER, project_key=_PROJ
+    ),
+    # owner = the note's organization (fixed at creation, D-044)
+    "notes.note.submitted.v1": AuditRule(
+        A.NOTE_SUBMITTED, R.RESEARCH_NOTE, "note_id", owner_key="organization_id", project_key=_PROJ
+    ),
+    "notes.note.signed.v1": AuditRule(
+        A.NOTE_SIGNED, R.RESEARCH_NOTE, "note_id", owner_key="organization_id", project_key=_PROJ
+    ),
+    "notes.note.rejected.v1": AuditRule(
+        A.NOTE_REJECTED,
+        R.RESEARCH_NOTE,
+        "note_id",
+        owner_key="organization_id",
+        project_key=_PROJ,
+        reason_key="reason",
+    ),
+    "notes.note.viewed.v1": AuditRule(  # 열람 관리대장 (지침 제11조)
+        A.NOTE_VIEWED, R.RESEARCH_NOTE, "note_id", owner_key="organization_id", project_key=_PROJ
+    ),
 }
 
 # Consumed but intentionally not audited: still claimed as audit_writer so they are not reprocessed.

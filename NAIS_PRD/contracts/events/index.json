@@ -169,7 +169,7 @@
     {
       "event_type": "workspace.run.failed.v1",
       "producer": "workspace",
-      "description": "Recipe run failed; error is a short summary without data values (Audit RUN_FAILED; notes evidence RUN_FAILED)."
+      "description": "Recipe run failed; error is a short summary without data values (Audit RUN_FAILED; notifies the run starter; notes evidence RUN_FAILED)."
     },
     {
       "event_type": "workspace.output.created.v1",

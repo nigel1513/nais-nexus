@@ -3,13 +3,21 @@
 Spec: `NAIS_PRD/modules/M09_audit_notification.md`. Schema `audit`.
 
 ## What it does
-- Subscribes `audit_writer` and `notifier` to **every** event type in `contracts/events/index.json` (26).
+- Subscribes `audit_writer` and `notifier` to **every** event type in `contracts/events/index.json` (42).
   Each claims `audit.processed_events(event_id, handler)` in the same transaction as its writes (D-006).
 - `audit_writer`: `mapping.AUDIT_RULES` -> `audit.audit_events` (append-only). `expiring_soon` and
   `validation.started` are claimed but not audited. Unmapped types are claimed and logged as warnings.
 - `notifier`: `notification_rules` -> `audit.notifications` + `audit.email_deliveries` (PENDING).
   Inactive recipients are skipped. If the email address lookup fails for one recipient, the in-app notification
   is kept and only that recipient's email is skipped (warning logged).
+- Contract 1.6.0 (workspace M13, notes M14): every event is audited. Notifications: publish requested -> the
+  DATA_STEWARDs of each approval-slot organization; publish decided -> the requester (a system REJECT with
+  `failure_reason` reads as a failed publication); run failed -> the run starter; DATASET-scope comment -> the owner
+  organization's DATA_STEWARDs (project-side threads notify nobody); note submitted -> the snapshot witnesses; note
+  rejected / signed -> the recorder. Input, recipe, run-succeeded, output and note-viewed events are audit-only.
+  For these rules the acting user is never notified of their own action (a failed run excepted).
+- CHECK constraints on action / resource_type / notification type hold frozen enum copies; `audit_0003` widened them
+  to contract 1.6.0. A new contract enum value needs a new migration (`test_schema` inserts every current value).
 
 ## Append-only guarantee
 Two independent layers, both from migration `audit_0002`:

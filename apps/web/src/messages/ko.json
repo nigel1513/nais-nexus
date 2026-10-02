@@ -1728,7 +1728,8 @@
       "NOTE_SUBMITTED": "연구노트 확인 요청",
       "NOTE_REJECTED": "연구노트 반려",
       "NOTE_SIGNED": "연구노트 서명 완료",
-      "DATASET_COMMENT_ADDED": "데이터 토론 새 댓글"
+      "DATASET_COMMENT_ADDED": "데이터 토론 새 댓글",
+      "RUN_FAILED": "변환 실행 실패"
     },
     "VocabularyScheme": {
       "SUBJECT": "연구 분야",

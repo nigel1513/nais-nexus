@@ -658,6 +658,53 @@ def test_repeated_retryable_failures_end_in_rejection(
     assert "attempts" in assert_failed(api, setup, db, out, req)
 
 
+def decided_events(db: PgUrls) -> list[dict[str, Any]]:
+    return [e for e in outbox(db) if e["event_type"] == "workspace.publish.decided.v1"]
+
+
+def test_a_stale_worker_cannot_reject_a_published_request(
+    api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
+) -> None:
+    out, req = approved(api, setup, world)
+    request_id = UUID(req["request_id"])
+    with clock.frozen(T):
+        stale = publish_service.claim_publication(request_id)  # a worker that stalls past its lease
+    assert stale is not None
+    with clock.frozen(T + publish_service.LEASE + timedelta(minutes=1)):
+        assert publish_service.publish_approved(request_id) == "PUBLISHED"
+    before = len(decided_events(db))
+    publish_service._fail(stale, "late failure from the stalled worker", None)
+    assert output_status(api, setup.project_id, out["output_id"]) == "PUBLISHED"
+    [listed] = api.get("a.researcher", "/publish-requests").json()["items"]
+    assert (listed["status"], listed["failure_reason"]) == ("APPROVED", None)
+    assert len(decided_events(db)) == before  # no system REJECT for the requester
+
+
+def test_a_stale_worker_cannot_reject_a_publication_leased_by_another(
+    api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
+) -> None:
+    out, req = approved(api, setup, world)
+    request_id = UUID(req["request_id"])
+    with clock.frozen(T):
+        stale = publish_service.claim_publication(request_id)
+    with clock.frozen(T + publish_service.LEASE + timedelta(minutes=1)):
+        fresh = publish_service.claim_publication(
+            request_id
+        )  # the lease expired; another worker holds it now
+    assert stale is not None and fresh is not None
+    before = len(decided_events(db))
+    publish_service._fail(stale, "late failure from the stalled worker", None)
+    [row] = sql(
+        db, "SELECT status, publication_status, publication_claimed_until FROM workspace.publish_requests"
+    )
+    assert (row["status"], row["publication_status"]) == ("APPROVED", "PENDING")
+    assert row["publication_claimed_until"] == fresh["publication_claimed_until"]
+    assert output_status(api, setup.project_id, out["output_id"]) == "APPROVED"
+    assert len(decided_events(db)) == before
+    publish_service._fail(fresh, "카탈로그가 공개를 거부했습니다: the lease holder fails", None)
+    assert assert_failed(api, setup, db, out, req).endswith("the lease holder fails")
+
+
 def test_publication_never_loosens_the_inputs_current_level(
     api: WorkspaceApi, setup: Setup, world: World
 ) -> None:

@@ -13,11 +13,18 @@ from api.modules.audit.mapping import (
 )
 from api.modules.audit.tests.support.events import (
     GRANT_ID,
+    INPUT_ID,
+    NOTE_ID,
+    OUTPUT_ID,
     PAYLOADS,
     POLICY_VERSION,
     PROJECT_GOLDEN,
+    PUBLISH_REQUEST_ID,
+    RECIPE_ID,
     REQUEST_ID,
+    RUN_ID,
     SYSTEM,
+    THREAD_ID,
     VALIDATION_ID,
     VERSION_ID,
     as_json,
@@ -163,24 +170,43 @@ EXPECTED = {
 }
 
 
-# Contract 1.6.0 events (hub / workspace / research notes) whose audit rules are implemented in Task 8 of the
-# 2026-10-02 data-hub plan. Task 8 maps each one (AUDIT_RULES or NOT_AUDITED) and empties this set.
-PENDING_AUDIT_RULES: frozenset[str] = frozenset(
+# Contract 1.6.0 (hub / workspace / research notes)
+_I = (INPUT_ID, ORG_B, P)
+EXPECTED.update(
     {
-        "workspace.input.added.v1",
-        "workspace.input.version_changed.v1",
-        "workspace.input.removed.v1",
-        "workspace.recipe.saved.v1",
-        "workspace.run.succeeded.v1",
-        "workspace.run.failed.v1",
-        "workspace.output.created.v1",
-        "workspace.publish.requested.v1",
-        "workspace.publish.decided.v1",
-        "workspace.comment.added.v1",
-        "notes.note.submitted.v1",
-        "notes.note.signed.v1",
-        "notes.note.rejected.v1",
-        "notes.note.viewed.v1",
+        "workspace.input.added.v1": ("PROJECT_INPUT_ADDED", "SUCCESS", "PROJECT_INPUT", *_I),
+        "workspace.input.version_changed.v1": (
+            "PROJECT_INPUT_VERSION_CHANGED",
+            "SUCCESS",
+            "PROJECT_INPUT",
+            *_I,
+        ),
+        "workspace.input.removed.v1": ("PROJECT_INPUT_REMOVED", "SUCCESS", "PROJECT_INPUT", *_I),
+        "workspace.recipe.saved.v1": ("RECIPE_SAVED", "SUCCESS", "RECIPE", RECIPE_ID, None, P),
+        "workspace.run.succeeded.v1": ("RUN_SUCCEEDED", "SUCCESS", "RUN", RUN_ID, None, P),
+        "workspace.run.failed.v1": ("RUN_FAILED", "SUCCESS", "RUN", RUN_ID, None, P),
+        "workspace.output.created.v1": ("OUTPUT_CREATED", "SUCCESS", "OUTPUT", OUTPUT_ID, None, P),
+        "workspace.publish.requested.v1": (
+            "OUTPUT_PUBLISH_REQUESTED",
+            "SUCCESS",
+            "PUBLISH_REQUEST",
+            PUBLISH_REQUEST_ID,
+            None,
+            P,
+        ),
+        "workspace.publish.decided.v1": (
+            "OUTPUT_PUBLISH_DECIDED",
+            "SUCCESS",
+            "PUBLISH_REQUEST",
+            PUBLISH_REQUEST_ID,
+            ORG_B,
+            P,
+        ),
+        "workspace.comment.added.v1": ("COMMENT_ADDED", "SUCCESS", "THREAD", THREAD_ID, ORG_B, None),
+        "notes.note.submitted.v1": ("NOTE_SUBMITTED", "SUCCESS", "RESEARCH_NOTE", NOTE_ID, ORG_A, P),
+        "notes.note.signed.v1": ("NOTE_SIGNED", "SUCCESS", "RESEARCH_NOTE", NOTE_ID, ORG_A, P),
+        "notes.note.rejected.v1": ("NOTE_REJECTED", "SUCCESS", "RESEARCH_NOTE", NOTE_ID, ORG_A, P),
+        "notes.note.viewed.v1": ("NOTE_VIEWED", "SUCCESS", "RESEARCH_NOTE", NOTE_ID, ORG_A, P),
     }
 )
 
@@ -189,9 +215,12 @@ def test_index_json_lists_exactly_the_42_consumed_types() -> None:
     index = json.loads((get_settings().contracts_dir / "events" / "index.json").read_text(encoding="utf-8"))
     types = {e["event_type"] for e in index["events"]}
     assert len(types) == 42
-    assert types == set(AUDIT_RULES) | NOT_AUDITED | PENDING_AUDIT_RULES == {e.value for e in EventType}
+    assert types == set(AUDIT_RULES) | NOT_AUDITED == {e.value for e in EventType}
     assert not set(AUDIT_RULES) & NOT_AUDITED
-    assert not (set(AUDIT_RULES) | NOT_AUDITED) & PENDING_AUDIT_RULES
+
+
+def test_every_audit_rule_has_an_expected_row() -> None:
+    assert set(EXPECTED) == set(AUDIT_RULES)
 
 
 @pytest.mark.parametrize("event_type", [e.value for e in EventType])
@@ -238,6 +267,8 @@ def test_required_actions_are_all_mapped() -> None:
         ("governance.access.changes_requested.v1", "연구 목적을 구체화해 주세요"),
         ("governance.download.denied.v1", "ACCESS_GRANT_EXPIRED"),
         ("governance.access.approved.v1", None),
+        ("notes.note.rejected.v1", "근거 보완 필요"),
+        ("workspace.publish.decided.v1", None),
     ],
 )
 def test_reason_sources(event_type: str, reason: str | None) -> None:
@@ -288,3 +319,33 @@ def test_details_copy_payload_without_purpose_detail() -> None:  # M09-AT-16
     assert sanitize_details({"a": {"purpose_detail": "x", "b": [{"purpose_detail": "y", "c": 1}]}}) == {
         "a": {"b": [{"c": 1}]}
     }
+
+
+def test_publication_failure_reason_is_the_audit_reason() -> None:
+    event = envelope(
+        "workspace.publish.decided.v1",
+        actor=SYSTEM,
+        decision="REJECT",
+        request_status="REJECTED",
+        failure_reason="카탈로그가 공개를 거부했습니다",
+    )
+    record = to_audit_record(event)
+    assert record is not None
+    assert (record.action, record.reason, record.actor_type) == (
+        "OUTPUT_PUBLISH_DECIDED",
+        "카탈로그가 공개를 거부했습니다",
+        "SYSTEM",
+    )
+
+
+def test_project_scope_comment_records_the_project() -> None:
+    record = to_audit_record(
+        envelope(
+            "workspace.comment.added.v1",
+            scope="PROJECT",
+            project_id=P,
+            target_id=P,
+            owner_organization_id=None,
+        )
+    )
+    assert record is not None and (record.project_id, record.resource_owner_organization_id) == (P, None)

@@ -510,6 +510,26 @@ def update_publish_request(session: Session, request_id: UUID, **values: Any) ->
     return session.execute(stmt).mappings().one()
 
 
+def fail_pending_publication(
+    session: Session, request_id: UUID, *, lease_until: datetime | None, **values: Any
+) -> RowMapping | None:
+    """Guarded terminal failure: only an APPROVED request whose publication is still PENDING under the caller's lease
+    (publication_claimed_until as it claimed it). None when a stale worker lost it (published, failed, re-leased)."""
+    t = publish_requests.c
+    lease = (
+        t.publication_claimed_until.is_(None)
+        if lease_until is None
+        else t.publication_claimed_until == lease_until
+    )
+    stmt = (
+        update(publish_requests)
+        .where(t.request_id == request_id, t.status == "APPROVED", t.publication_status == "PENDING", lease)
+        .values(**values)
+        .returning(publish_requests)
+    )
+    return session.execute(stmt).mappings().first()
+
+
 def approvals_of(session: Session, request_ids: list[UUID]) -> dict[UUID, list[RowMapping]]:
     found: dict[UUID, list[RowMapping]] = {i: [] for i in request_ids}
     if request_ids:

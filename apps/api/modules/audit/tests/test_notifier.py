@@ -21,6 +21,7 @@ from api.modules.audit.tests.support.events import envelope
 from api.platform import ports
 from api.platform.db import session_factory
 from api.platform.event_bus import registry
+from api.platform.events import EventActor
 from api.platform.generated.event_types import EventType
 from api.platform.testing.fixtures import PgUrls
 
@@ -200,3 +201,32 @@ def test_rollback_after_deliver_never_kicks_actor(db: PgUrls, actor: RecordingAc
         raise RuntimeError("boom")
     assert scalar(db, "SELECT count(*) FROM audit.notifications") == 0
     assert actor.calls == 0
+
+
+@pytest.mark.parametrize(
+    ("event_type", "actor_user", "recipient", "ntype"),
+    [
+        ("workspace.publish.requested.v1", A_RESEARCHER, B_STEWARD, "OUTPUT_PUBLISH_REQUESTED"),
+        ("workspace.publish.decided.v1", B_STEWARD, A_RESEARCHER, "OUTPUT_PUBLISH_DECIDED"),
+        ("workspace.run.failed.v1", A_RESEARCHER, A_RESEARCHER, "RUN_FAILED"),
+        ("workspace.comment.added.v1", A_RESEARCHER, B_STEWARD, "DATASET_COMMENT_ADDED"),
+        ("notes.note.submitted.v1", A_RESEARCHER, B_RESEARCHER, "NOTE_SUBMITTED"),
+        ("notes.note.rejected.v1", B_RESEARCHER, A_RESEARCHER, "NOTE_REJECTED"),
+        ("notes.note.signed.v1", B_RESEARCHER, A_RESEARCHER, "NOTE_SIGNED"),
+    ],
+)
+def test_workspace_and_notes_notifications_are_stored(
+    db: PgUrls, actor: RecordingActor, event_type: str, actor_user: Any, recipient: Any, ntype: str
+) -> None:
+    """The notifications CHECK accepts the contract 1.6.0 types (audit_0003)."""
+    user = next(u for u in SEED_USERS if u.user_id == actor_user)
+    run(
+        db,
+        notifier,
+        envelope(
+            event_type,
+            actor=EventActor(type="USER", user_id=user.user_id, organization_id=user.organization_id),
+        ),
+    )
+    [n] = fetch(db, "SELECT recipient_user_id, type FROM audit.notifications")
+    assert (n["recipient_user_id"], n["type"]) == (recipient, ntype)

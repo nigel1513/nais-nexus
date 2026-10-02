@@ -287,7 +287,8 @@ export const ENUMS = {
     "NOTE_SUBMITTED",
     "NOTE_REJECTED",
     "NOTE_SIGNED",
-    "DATASET_COMMENT_ADDED"
+    "DATASET_COMMENT_ADDED",
+    "RUN_FAILED"
   ],
   "VocabularyScheme": [
     "SUBJECT",

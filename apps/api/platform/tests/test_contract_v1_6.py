@@ -395,6 +395,7 @@ def test_audit_and_notification_enums_cover_the_new_events() -> None:
         "NOTE_REJECTED",
         "NOTE_SIGNED",
         "DATASET_COMMENT_ADDED",
+        "RUN_FAILED",
     } <= set(schemas["NotificationType"]["enum"])
 
 

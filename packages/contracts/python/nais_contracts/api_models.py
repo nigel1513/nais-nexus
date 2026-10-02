@@ -258,6 +258,7 @@ class NotificationType(StrEnum):
     NOTE_REJECTED = 'NOTE_REJECTED'
     NOTE_SIGNED = 'NOTE_SIGNED'
     DATASET_COMMENT_ADDED = 'DATASET_COMMENT_ADDED'
+    RUN_FAILED = 'RUN_FAILED'
 
 
 class IdentityPublicProfile(BaseModel):

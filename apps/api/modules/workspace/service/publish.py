@@ -449,7 +449,9 @@ def _retry(req: RowMapping, error_type: str) -> str:
 
 def _fail(req: RowMapping, reason: str, dataset_id: UUID | None) -> None:
     """Terminal failure: the request and the output become REJECTED (the output may be requested again; the partial
-    unique index no longer holds the output), with the reason as failure_reason and a system decided event."""
+    unique index no longer holds the output), with the reason as failure_reason and a system decided event. Guarded:
+    only while the request is APPROVED with its publication PENDING under this worker's lease, so a worker that
+    stalled past its lease cannot reject a request another worker has since published or re-leased."""
     now = clock.now()
     values: dict[str, Any] = {
         "status": "REJECTED",
@@ -461,7 +463,12 @@ def _fail(req: RowMapping, reason: str, dataset_id: UUID | None) -> None:
     if dataset_id is not None:
         values["published_dataset_id"] = dataset_id
     with jobs.job_session() as session, session.begin():
-        row = repo.update_publish_request(session, req["request_id"], **values)
+        row = repo.fail_pending_publication(
+            session, req["request_id"], lease_until=req["publication_claimed_until"], **values
+        )
+        if row is None:  # a stale worker: the request was published, failed or re-leased meanwhile
+            logger.warning("stale publication failure ignored", extra={"request_id": str(req["request_id"])})
+            return
         repo.update_output(session, row["output_id"], publish_status="REJECTED")
         outbox.write(
             session,
