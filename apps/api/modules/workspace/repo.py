@@ -9,7 +9,16 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
-from api.modules.workspace.tables import comments, dataset_activity, hub_access_requests, inputs, threads
+from api.modules.workspace.tables import (
+    comments,
+    dataset_activity,
+    hub_access_requests,
+    inputs,
+    output_files,
+    output_lineage_inputs,
+    outputs,
+    threads,
+)
 
 SortKey = tuple[datetime, UUID]
 
@@ -168,3 +177,86 @@ def activity_page(
         limit
     )
     return list(session.execute(stmt).mappings())
+
+
+# ---------------------------------------------------------------- outputs
+
+READY = "READY"
+
+
+def insert_output(
+    session: Session,
+    output: dict[str, Any],
+    files: list[dict[str, Any]],
+    lineage: list[dict[str, Any]],
+) -> RowMapping:
+    row = session.execute(insert(outputs).values(**output).returning(outputs)).mappings().one()
+    output_id = row["output_id"]
+    session.execute(
+        insert(output_files), [f | {"output_id": output_id, "position": i} for i, f in enumerate(files)]
+    )
+    if lineage:
+        session.execute(
+            insert(output_lineage_inputs),
+            [entry | {"output_id": output_id, "position": i} for i, entry in enumerate(lineage)],
+        )
+    return row
+
+
+def load_output(
+    session: Session, project_id: UUID, output_id: UUID, *, for_update: bool = False
+) -> RowMapping | None:
+    """Any status (upload sessions included); callers decide what an UPLOADING row means."""
+    stmt = select(outputs).where(outputs.c.output_id == output_id, outputs.c.project_id == project_id)
+    if for_update:
+        stmt = stmt.with_for_update()
+    return session.execute(stmt).mappings().first()
+
+
+def ready_output_project(session: Session, output_id: UUID) -> UUID | None:
+    stmt = select(outputs.c.project_id).where(outputs.c.output_id == output_id, outputs.c.status == READY)
+    return session.execute(stmt).scalar_one_or_none()
+
+
+def update_output(session: Session, output_id: UUID, **values: Any) -> RowMapping:
+    stmt = update(outputs).where(outputs.c.output_id == output_id).values(**values).returning(outputs)
+    return session.execute(stmt).mappings().one()
+
+
+def list_ready_outputs(
+    session: Session, project_id: UUID, *, kind: str | None, after: SortKey | None, limit: int
+) -> list[RowMapping]:
+    """Completed outputs, newest first; `after` is the (created_at, output_id) of the previous page's last row."""
+    stmt = select(outputs).where(outputs.c.project_id == project_id, outputs.c.status == READY)
+    if kind is not None:
+        stmt = stmt.where(outputs.c.kind == kind)
+    if after is not None:
+        stmt = stmt.where(tuple_(outputs.c.created_at, outputs.c.output_id) < tuple_(*after))
+    stmt = stmt.order_by(outputs.c.created_at.desc(), outputs.c.output_id.desc()).limit(limit)
+    return list(session.execute(stmt).mappings())
+
+
+def files_of(session: Session, output_ids: list[UUID]) -> dict[UUID, list[RowMapping]]:
+    found: dict[UUID, list[RowMapping]] = {i: [] for i in output_ids}
+    if output_ids:
+        stmt = (
+            select(output_files)
+            .where(output_files.c.output_id.in_(output_ids))
+            .order_by(output_files.c.output_id, output_files.c.position)
+        )
+        for row in session.execute(stmt).mappings():
+            found[row["output_id"]].append(row)
+    return found
+
+
+def lineage_of(session: Session, output_ids: list[UUID]) -> dict[UUID, list[RowMapping]]:
+    found: dict[UUID, list[RowMapping]] = {i: [] for i in output_ids}
+    if output_ids:
+        stmt = (
+            select(output_lineage_inputs)
+            .where(output_lineage_inputs.c.output_id.in_(output_ids))
+            .order_by(output_lineage_inputs.c.output_id, output_lineage_inputs.c.position)
+        )
+        for row in session.execute(stmt).mappings():
+            found[row["output_id"]].append(row)
+    return found

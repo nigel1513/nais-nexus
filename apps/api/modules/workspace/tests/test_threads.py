@@ -109,9 +109,23 @@ def test_archived_project_threads_are_readable_but_closed(
     assert create(api, "PROJECT", setup.project_id).status_code == 403
 
 
-def test_output_and_recipe_targets_are_not_found_until_they_exist(api: WorkspaceApi, setup: Setup) -> None:
+def test_unknown_output_and_recipe_targets_are_not_found(api: WorkspaceApi, setup: Setup) -> None:
     for scope in ("OUTPUT", "RECIPE"):
         assert create(api, scope, new_id()).status_code == 404
+
+
+def test_nul_and_blank_text_is_rejected(api: WorkspaceApi, setup: Setup, db: PgUrls) -> None:
+    for extra in ({"title": "a\u0000b"}, {"title": "  \t "}, {"body": "x\u0000"}, {"body": " \n "}):
+        response = create(api, "PROJECT", setup.project_id, **extra)
+        assert (response.status_code, error_code(response)) == (422, "VALIDATION_FAILED"), extra
+    thread_id = create(api, "PROJECT", setup.project_id).json()["thread_id"]
+    for body in ("\u0000", "   "):
+        reply = api.post("a.researcher", f"/threads/{thread_id}/comments", json={"body": body})
+        assert (reply.status_code, error_code(reply)) == (422, "VALIDATION_FAILED"), body
+    for title in ("\u0000", "   "):
+        patch = api.patch("a.researcher", f"/threads/{thread_id}", json={"title": title})
+        assert (patch.status_code, error_code(patch)) == (422, "VALIDATION_FAILED"), title
+    assert len(outbox(db)) == 1
 
 
 def test_add_comment_bumps_thread_and_emits(api: WorkspaceApi, setup: Setup, db: PgUrls) -> None:

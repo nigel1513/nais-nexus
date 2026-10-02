@@ -1,24 +1,54 @@
 """Request/response bodies. Responses reuse the generated contract models (nais_contracts.api_models); request
-bodies mirror ProjectInputCreate/ProjectInputUpdate with plain UUIDs and the two rules the generated models
-cannot express: explicit null only where the contract type is nullable, and ProjectInputUpdate minProperties: 1."""
+bodies mirror the contract request schemas with plain UUIDs and the rules the generated models cannot express: explicit
+null only where the contract type is nullable, minProperties: 1, and text PostgreSQL can store (no NUL characters;
+titles and bodies not blank)."""
 
 from typing import Annotated, Any, ClassVar
 from uuid import UUID
 
 from nais_contracts.api_models import (
+    AccessLevel,
     Comment,
     DatasetActivity,
     DatasetProjectsResult,
     HubOverview,
+    Output,
+    OutputDownload,
+    OutputKind,
+    OutputUploadSession,
     ProjectInput,
     Thread,
     ThreadScope,
 )
-from pydantic import BaseModel, ConfigDict, StringConstraints, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
-Note = Annotated[str, StringConstraints(max_length=2000)]
-Title = Annotated[str, StringConstraints(min_length=1, max_length=200)]
-Markdown = Annotated[str, StringConstraints(min_length=1, max_length=10_000)]
+
+def _no_nul(value: str) -> str:
+    if "\x00" in value:
+        raise ValueError("must not contain NUL characters")
+    return value
+
+
+def _not_blank(value: str) -> str:
+    if not value.strip():
+        raise ValueError("must not be blank")
+    return value
+
+
+Note = Annotated[str, StringConstraints(max_length=2000), AfterValidator(_no_nul)]
+Title = Annotated[
+    str, StringConstraints(min_length=1, max_length=200), AfterValidator(_no_nul), AfterValidator(_not_blank)
+]
+Markdown = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=10_000),
+    AfterValidator(_no_nul),
+    AfterValidator(_not_blank),
+]
+OutputTitle = Annotated[
+    str, StringConstraints(min_length=1, max_length=300), AfterValidator(_no_nul), AfterValidator(_not_blank)
+]
+MAX_FILE_BYTES = 5 * 1024**3  # single presigned PUT
 
 
 class StrictIn(BaseModel):
@@ -90,7 +120,32 @@ class CommentCreateIn(StrictIn):
     body: Markdown
 
 
+class OutputFileIn(StrictIn):
+    """One file of openapi OutputUploadCreate. media_type is additionally bounded (it becomes a signed header)."""
+
+    name: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,255}$")]
+    size_bytes: Annotated[int, Field(ge=1, le=MAX_FILE_BYTES, strict=True)]
+    sha256: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
+    media_type: Annotated[str, StringConstraints(pattern=r"^[\x20-\x7e]{1,255}$")]
+
+
+class OutputUploadIn(StrictIn):
+    """openapi OutputUploadCreate; file names are unique within one output (they become object keys)."""
+
+    title: OutputTitle
+    access_level: AccessLevel
+    files: Annotated[list[OutputFileIn], Field(min_length=1, max_length=20)]
+
+    @model_validator(mode="after")
+    def _unique_names(self) -> "OutputUploadIn":
+        names = [f.name for f in self.files]
+        if len(set(names)) != len(names):
+            raise ValueError("file names must be unique")
+        return self
+
+
 __all__ = [
+    "AccessLevel",
     "Comment",
     "CommentCreateIn",
     "DatasetActivity",
@@ -98,6 +153,12 @@ __all__ = [
     "HubOverview",
     "InputCreateIn",
     "InputUpdateIn",
+    "Output",
+    "OutputDownload",
+    "OutputFileIn",
+    "OutputKind",
+    "OutputUploadIn",
+    "OutputUploadSession",
     "ProjectInput",
     "ProjectInputList",
     "Thread",

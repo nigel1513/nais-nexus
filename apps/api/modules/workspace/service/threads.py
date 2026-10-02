@@ -37,9 +37,12 @@ MODERATORS = frozenset({"PROJECT_OWNER", "PROJECT_ADMIN"})
 DATA_STEWARD = "DATA_STEWARD"
 
 ProjectOf = Callable[[Session, UUID], UUID | None]
-# scope -> the project owning a target id (None: no such target). OUTPUT and RECIPE are registered by the tasks
-# that add those tables; until then their threads are 404 like any unknown target.
-TARGET_PROJECT: dict[str, ProjectOf] = {"PROJECT": lambda _session, target_id: target_id}
+# scope -> the project owning a target id (None: no such target). OUTPUT targets are completed outputs only (an
+# upload session is not discussable). RECIPE is registered by the task that adds recipes; until then 404.
+TARGET_PROJECT: dict[str, ProjectOf] = {
+    "PROJECT": lambda _session, target_id: target_id,
+    "OUTPUT": repo.ready_output_project,
+}
 
 
 @dataclass(frozen=True)

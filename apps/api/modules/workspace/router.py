@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from api.modules.workspace.routes import hub, inputs, threads
+from api.modules.workspace.routes import hub, inputs, outputs, threads
 
 router = APIRouter()
-for sub in (inputs.router, threads.router, hub.router):
+for sub in (inputs.router, outputs.router, threads.router, hub.router):
     router.include_router(sub)

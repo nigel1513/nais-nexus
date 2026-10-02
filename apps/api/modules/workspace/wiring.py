@@ -6,14 +6,17 @@ from api.modules.workspace.deps import WorkspaceDeps
 from api.modules.workspace.public import WorkspaceQueryPort
 from api.modules.workspace.public_impl import SqlWorkspaceQuery
 from api.modules.workspace.settings import WorkspaceSettings, get_workspace_settings
+from api.modules.workspace.storage import S3OutputStorage
 from api.platform import ports
 
 
 def build_default_deps(settings: WorkspaceSettings | None = None) -> WorkspaceDeps:
+    settings = settings or get_workspace_settings()
     return WorkspaceDeps(
-        settings=settings or get_workspace_settings(),
+        settings=settings,
         grants=NoGrants(),  # TODO(M04): adapter over governance's public grant port
         people=IdentityDisplayNames(),
+        storage=S3OutputStorage(settings.nais_public_base_url),
     )
 
 

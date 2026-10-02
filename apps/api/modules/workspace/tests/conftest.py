@@ -13,7 +13,14 @@ from api.modules.project.public import ProjectQueryPort
 from api.modules.workspace import MODULE
 from api.modules.workspace.deps import WorkspaceDeps
 from api.modules.workspace.settings import WorkspaceSettings
-from api.modules.workspace.tests.fakes import USERS, FakeCatalog, FakeGrants, FakePeople, FakeProjects
+from api.modules.workspace.tests.fakes import (
+    USERS,
+    FakeCatalog,
+    FakeGrants,
+    FakeOutputStorage,
+    FakePeople,
+    FakeProjects,
+)
 from api.modules.workspace.wiring import install
 from api.platform import ports
 from api.platform.auth import CurrentUser, PrincipalResolver, TokenVerifier, get_token_verifier
@@ -41,7 +48,8 @@ def db(workspace_db: PgUrls) -> Iterator[PgUrls]:
         conn.execute(
             text(
                 "TRUNCATE workspace.inputs, workspace.processed_events, workspace.threads, workspace.comments,"
-                " workspace.dataset_activity, workspace.hub_access_requests"
+                " workspace.dataset_activity, workspace.hub_access_requests, workspace.outputs,"
+                " workspace.output_files, workspace.output_lineage_inputs"
             )
         )
         conn.execute(text("DELETE FROM platform.outbox_events"))
@@ -62,11 +70,12 @@ class World:
     catalog: FakeCatalog
     grants: FakeGrants
     people: FakePeople
+    storage: FakeOutputStorage
 
 
 @pytest.fixture
 def world() -> World:
-    w = World(FakeProjects(), FakeCatalog(), FakeGrants(), FakePeople())
+    w = World(FakeProjects(), FakeCatalog(), FakeGrants(), FakePeople(), FakeOutputStorage())
     ports.provide(ProjectQueryPort, w.projects)
     ports.provide(CatalogQueryPort, w.catalog)
     return w
@@ -96,8 +105,15 @@ class WorkspaceApi:
 @pytest.fixture
 def api(db: PgUrls, world: World) -> WorkspaceApi:
     app = create_test_app(modules=[MODULE], settings=Settings(database_url=db.app))
-    # replace the wired defaults (NoGrants, identity adapter) with the test doubles
-    install(WorkspaceDeps(settings=WorkspaceSettings(), grants=world.grants, people=world.people))
+    # replace the wired defaults (NoGrants, identity adapter, S3 storage) with the test doubles
+    install(
+        WorkspaceDeps(
+            settings=WorkspaceSettings(),
+            grants=world.grants,
+            people=world.people,
+            storage=world.storage,
+        )
+    )
     app.dependency_overrides[get_token_verifier] = lambda: TokenVerifier(
         issuer=ISSUER.issuer, audience=ISSUER.audience, jwk_client=ISSUER.jwk_client()
     )

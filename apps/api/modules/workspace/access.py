@@ -31,6 +31,16 @@ def require_writer(deps: WorkspaceDeps, project_id: UUID, user: CurrentUser) -> 
         raise ApiError(ErrorCode.PROJECT_ARCHIVED, "The project is archived.")
 
 
+def require_open_writer(deps: WorkspaceDeps, project_id: UUID, user: CurrentUser) -> None:
+    """require_writer for operations whose contract lists no 409: an ARCHIVED project is 403 FORBIDDEN."""
+    projects = deps.projects
+    role = projects.get_member_role(project_id, user.user_id)
+    if role is None or role == VIEWER:
+        raise forbidden("Only project members other than VIEWER can change the workspace.")
+    if not projects.is_active_member(project_id, user.user_id):
+        raise forbidden("The project is archived; its workspace is read-only.")
+
+
 def has_dataset_access(deps: WorkspaceDeps, user: CurrentUser, policy: DatasetPolicyView) -> bool:
     """Same rule as the catalog preview gate (catalog.service.previews.can_preview) minus the platform-admin
     bypass: an operator account is not a researcher pinning data."""

@@ -16,6 +16,7 @@ from api.modules.workspace.adapters.identity import IdentityDisplayNames
 from api.modules.workspace.deps import WorkspaceDeps, get_deps
 from api.modules.workspace.public import PinnedInput, WorkspaceQueryPort
 from api.modules.workspace.public_impl import SqlWorkspaceQuery
+from api.modules.workspace.storage import S3OutputStorage
 from api.modules.workspace.tables import comments, inputs, threads
 from api.modules.workspace.tests.conftest import WorkspaceApi, World
 from api.modules.workspace.tests.fakes import ORG_A, USERS
@@ -34,6 +35,7 @@ def test_wire_registers_deps_with_fail_closed_grants() -> None:
     assert isinstance(deps.people, IdentityDisplayNames)
     assert deps.grants.has_active_grant(new_id(), new_id()) is False
     assert isinstance(ports.get(WorkspaceQueryPort), SqlWorkspaceQuery)
+    assert isinstance(deps.storage, S3OutputStorage)
 
 
 def test_unwired_ports_fail_with_503() -> None:
@@ -158,6 +160,12 @@ def test_organization_names_come_from_identity_summaries() -> None:
     assert IdentityDisplayNames().get_organization_names([ORG_A, unknown, ORG_A]) == {ORG_A: "Institute A"}
     assert organizations.calls == [ORG_A, unknown]
     assert IdentityDisplayNames().get_organization_names([]) == {}
+
+
+def test_organization_code_comes_from_identity_summaries() -> None:
+    ports.provide(IdentityQueryPort, _Organizations())  # type: ignore[arg-type]
+    assert IdentityDisplayNames().get_organization_code(ORG_A) == "inst-a"
+    assert IdentityDisplayNames().get_organization_code(new_id()) is None
 
 
 def test_discussion_rules_are_enforced_by_the_database(db: PgUrls) -> None:

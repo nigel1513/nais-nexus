@@ -25,6 +25,22 @@ Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4
   - Markdown body ≤ 10,000 characters (422 `VALIDATION_FAILED`, also a DB check). Each comment, including the
     first one, emits `workspace.comment.added.v1` (`project_id` null iff `scope == DATASET`; `owner_organization_id`
     = dataset owner for DATASET threads, else null).
+  - Titles and bodies may not contain NUL characters or be blank (422); input notes may not contain NUL.
+- Outputs (`service/outputs.py`): `GET/POST /projects/{p}/outputs`, `GET /projects/{p}/outputs/{o}`,
+  `POST .../{o}/complete`, `POST .../{o}/download`.
+  - Upload session (writer of an ACTIVE project; archived → 403): files declared with size and sha256, one
+    presigned PUT each (15 min, `x-amz-checksum-sha256` signed) to the lead organization's bucket under
+    `workspace/{project_id}/outputs/{output_id}/{name}`. Sessions (`status = UPLOADING`) are invisible to readers.
+  - Access level: never looser than the strictest live input at session time (PUBLIC < INTERNAL < CONTROLLED <
+    SENSITIVE); floor INTERNAL with no inputs; else 422 `VALIDATION_FAILED` (`details.field = access_level`,
+    `details.minimum`). Those inputs are snapshotted as the output's lineage.
+  - Complete (uploader only, 403 otherwise; expired → 409 `UPLOAD_SESSION_EXPIRED`): HEAD size, then sha256
+    streamed through the internal client; any mismatch/missing → 422 `UPLOAD_CHECKSUM_MISMATCH` with
+    `details.files[{name, reason}]`. Success sets `status = READY`, `created_at`, emits
+    `workspace.output.created.v1`. Repeating it returns the same output without a second event.
+  - Download (any member, any project status; non-member 403): every lineage input must still be accessible to the
+    caller (409 `INPUT_ACCESS_LAPSED`, `details.input_ids`); presigned GETs live 300 s.
+  - OUTPUT threads resolve to the output's project (READY outputs only).
 - Data-Hub (`service/hub.py`, tag `hub`): `GET /hub/overview`, `GET /datasets/{d}/projects`,
   `GET /datasets/{d}/activity`.
   - Visibility is the catalog's: one batched `CatalogQueryPort.list_visible_dataset_summaries` for the overview
@@ -47,7 +63,8 @@ contract models; request bodies mirror them with the null/minProperties rules.
 ## Ports
 - Consumed (`deps.WorkspaceDeps`, registered by `wiring.install`): `ProjectQueryPort` and `CatalogQueryPort` are
   resolved per call (503 `DEPENDENCY_UNAVAILABLE` when unwired); `grants: GrantQueryPort` and
-  `people: DisplayNameLookup` are consumer-side Protocols in `interfaces.py`.
+  `people: DisplayNameLookup` are consumer-side Protocols in `interfaces.py`; `storage: OutputStorage` defaults to
+  `storage.S3OutputStorage` (platform storage clients, `NAIS_PUBLIC_BASE_URL` for presigned URLs).
 - **No governance backend yet:** `grants` defaults to `adapters.grants.NoGrants` (always False, fail closed).
   When M04 ships, replace it in `wiring.build_default_deps()` with an adapter over M04's public port.
 - Provided: `public.WorkspaceQueryPort.list_pinned_inputs(project_id)` (leaf module; `public_impl.py`).

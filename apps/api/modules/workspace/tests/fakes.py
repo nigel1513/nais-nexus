@@ -1,5 +1,6 @@
 """In-memory stand-ins for the ports the workspace consumes (project, catalog, grants, people)."""
 
+import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -15,6 +16,7 @@ from api.platform.ids import new_id
 ORG_A = UUID("00000000-0000-7000-8000-00000000000a")
 ORG_B = UUID("00000000-0000-7000-8000-00000000000b")
 ORG_NAMES = {ORG_A: "Institute A", ORG_B: "Institute B"}
+ORG_CODES = {ORG_A: "inst-a", ORG_B: "inst-b"}
 T0 = datetime(2026, 9, 1, tzinfo=UTC)
 
 
@@ -211,3 +213,37 @@ class FakePeople:
 
     def get_organization_names(self, organization_ids: Sequence[UUID]) -> dict[UUID, str]:
         return {i: ORG_NAMES[i] for i in organization_ids if i in ORG_NAMES}
+
+    def get_organization_code(self, organization_id: UUID) -> str | None:
+        return ORG_CODES.get(organization_id)
+
+
+@dataclass
+class FakeOutputStorage:
+    """OutputStorage over a dict: (org_code, key) -> bytes. Presigned URLs are recorded, never fetched."""
+
+    objects: dict[tuple[str, str], bytes] = field(default_factory=dict)
+    presigned: list[tuple[str, str, str, int]] = field(default_factory=list)  # (method, org_code, key, ttl)
+    hashed: list[tuple[str, str]] = field(default_factory=list)
+
+    def put(self, org_code: str, key: str, data: bytes) -> None:
+        self.objects[(org_code, key)] = data
+
+    def presign_put(
+        self, org_code: str, key: str, content_type: str, sha256_hex: str, ttl: int
+    ) -> tuple[str, dict[str, str]]:
+        self.presigned.append(("PUT", org_code, key, ttl))
+        return f"http://storage.test/{org_code}/{key}?sig=put", {"Content-Type": content_type}
+
+    def head(self, org_code: str, key: str) -> int | None:
+        data = self.objects.get((org_code, key))
+        return None if data is None else len(data)
+
+    def sha256(self, org_code: str, key: str) -> str | None:
+        self.hashed.append((org_code, key))
+        data = self.objects.get((org_code, key))
+        return None if data is None else hashlib.sha256(data).hexdigest()
+
+    def presign_get(self, org_code: str, key: str, filename: str, ttl: int) -> str:
+        self.presigned.append(("GET", org_code, key, ttl))
+        return f"http://storage.test/{org_code}/{key}?sig=get"

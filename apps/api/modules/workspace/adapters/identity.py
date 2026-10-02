@@ -36,3 +36,7 @@ class IdentityDisplayNames:
             if summary is not None:
                 names[organization_id] = summary.name
         return names
+
+    def get_organization_code(self, organization_id: UUID) -> str | None:
+        summary = _identity().get_organization_summary(organization_id)
+        return summary.code if summary is not None else None

@@ -7,7 +7,7 @@ from fastapi import Depends
 
 from api.modules.catalog.public import CatalogQueryPort
 from api.modules.project.public import ProjectQueryPort
-from api.modules.workspace.interfaces import DisplayNameLookup, GrantQueryPort
+from api.modules.workspace.interfaces import DisplayNameLookup, GrantQueryPort, OutputStorage
 from api.modules.workspace.settings import WorkspaceSettings
 from api.platform import ports
 from api.platform.errors import ApiError
@@ -26,6 +26,7 @@ class WorkspaceDeps:
     settings: WorkspaceSettings
     grants: GrantQueryPort
     people: DisplayNameLookup
+    storage: OutputStorage
 
     @property
     def projects(self) -> ProjectQueryPort:

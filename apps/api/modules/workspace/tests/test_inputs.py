@@ -181,6 +181,8 @@ def test_request_body_is_validated(api: WorkspaceApi, setup: Setup) -> None:
     assert null_note.status_code == 422
     long_note = add(api, setup, setup.public.dataset_id, note="x" * 2001)
     assert long_note.status_code == 422
+    nul_note = add(api, setup, setup.public.dataset_id, note="a\u0000b")  # PostgreSQL text cannot hold NUL
+    assert nul_note.status_code == 422
 
 
 # ---------------------------------------------------------------- list

@@ -17,6 +17,11 @@ EXPECTED = {
     "getHubOverview",
     "listDatasetProjects",
     "listDatasetActivity",
+    "listOutputs",
+    "createOutputUpload",
+    "completeOutputUpload",
+    "getOutput",
+    "getOutputDownload",
 }
 TAGS = {"workspace", "hub"}
 
