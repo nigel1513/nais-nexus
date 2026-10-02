@@ -13,7 +13,7 @@ import { MemberActions, MemberStatusBadge, RoleBadges } from "./components/membe
 import { SettingsLayout } from "./components/settings-layout";
 import { TransferCard } from "./components/transfer-card";
 
-function Members() {
+function Members({ total }: { total: number | null | undefined }) {
   const t = useTranslations();
   const me = useMeData();
   const orgId = me.organization.organization_id;
@@ -30,7 +30,7 @@ function Members() {
         return (
           <span className="flex min-w-0 items-center gap-2">
             <Avatar name={name} size={24} decorative />
-            <span className="truncate font-medium text-fg">{name}</span>
+            <span className={m.status === "ACTIVE" ? "truncate font-medium text-fg" : "truncate font-medium text-fg-muted"}>{name}</span>
             {m.user_id === me.user_id ? <Badge>{t("org.you")}</Badge> : null}
           </span>
         );
@@ -65,7 +65,7 @@ function Members() {
         <h2 id="org-members" className="text-title text-fg">
           {t("org.members")}
         </h2>
-        {members.data ? <span className="num text-small text-fg-muted">{t("org.memberTotal", { count: rows.length })}</span> : null}
+        {total != null ? <span className="num text-small text-fg-muted">{t("org.memberTotal", { count: total })}</span> : null}
       </div>
       {members.isPending ? (
         <DelayedSkeleton lines={5} />
@@ -100,9 +100,9 @@ export function OrganizationScreen() {
             <span aria-hidden="true">·</span>
             <span>{t(`enums.OrganizationType.${org.data.type}`)}</span>
             <span aria-hidden="true">·</span>
-            <span className="num">{t("org.memberCountValue", { count: org.data.member_count ?? 0 })}</span>
+            <span className="num">{org.data.member_count != null ? t("org.memberCountValue", { count: org.data.member_count }) : t("org.memberCountUnknown")}</span>
             <span aria-hidden="true">·</span>
-            <span className="num">{t("org.datasetCountValue", { count: org.data.dataset_count ?? 0 })}</span>
+            <span className="num">{org.data.dataset_count != null ? t("org.datasetCountValue", { count: org.data.dataset_count }) : t("org.datasetCountUnknown")}</span>
           </>
         ) : null
       }
@@ -112,7 +112,7 @@ export function OrganizationScreen() {
     <SettingsLayout page="organization" header={header}>
       {orgAdmin || !platformAdmin ? (
         <RequireRole anyOf={["ORG_ADMIN"]}>
-          <Members />
+          <Members total={org.data?.member_count} />
         </RequireRole>
       ) : null}
       {platformAdmin ? <TransferCard /> : null}

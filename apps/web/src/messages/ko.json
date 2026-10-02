@@ -805,7 +805,9 @@
       "status": "상태",
       "updated": "최근 변경",
       "actions": "관리"
-    }
+    },
+    "memberCountUnknown": "멤버 —",
+    "datasetCountUnknown": "데이터셋 —"
   },
   "reserved": {
     "marketplace": "AI Marketplace",

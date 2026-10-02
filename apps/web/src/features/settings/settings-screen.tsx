@@ -25,7 +25,7 @@ const icon = { "aria-hidden": true, strokeWidth: 1.75 } as const;
 
 /** Option tile for a RadioGroup: the whole tile is the label; the chosen one gets the primary border. */
 const tileClass =
-  "h-10 rounded-sm border border-border bg-bg-panel px-3 hover:bg-bg-hover has-[[data-checked]]:border-primary [&_svg]:size-4 [&_svg]:text-fg-muted";
+  "h-10 rounded-sm border border-border bg-bg-panel px-3 hover:bg-bg-hover has-[[data-checked]]:border-border-strong has-[[data-checked]]:bg-bg-active has-[[data-checked]]:hover:bg-bg-active [&_svg]:size-4 [&_svg]:text-fg-muted";
 
 function ProfileSection() {
   const t = useTranslations();
@@ -233,7 +233,7 @@ function LanguageSection() {
         orientation="horizontal"
         value={locale}
         onValueChange={setLocale}
-        className="grid grid-cols-1 gap-2 sm:grid-cols-3"
+        className="grid grid-cols-2 gap-2"
       >
         <Radio value="ko" label={<span lang="ko">한국어</span>} className={tileClass} />
         <Radio value="en" label={<span lang="en">English</span>} className={tileClass} />

@@ -65,8 +65,16 @@ export function SettingsLayout({ page, header, children }: { page: "account" | "
     <>
       {header}
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_minmax(0,48rem)] lg:items-start lg:gap-12">
-        <nav ref={navRef} aria-label={t("settings.nav.label")} className="relative -mx-1 overflow-x-auto px-1 pb-1 lg:sticky lg:top-16 lg:mx-0 lg:overflow-visible lg:p-0">
-          <ul className="flex gap-1 border-b border-border pb-2 lg:flex-col lg:gap-0.5 lg:border-0 lg:pb-0">
+        <nav
+          ref={navRef}
+          aria-label={t("settings.nav.label")}
+          className={cn(
+            "relative border-b border-border pb-2 lg:sticky lg:top-16 lg:border-0 lg:pb-0",
+            // Phones: the row scrolls sideways inside itself; the right edge fades so cut-off items read as "more".
+            "overflow-x-auto [mask-image:linear-gradient(to_left,transparent,black_2rem)] lg:overflow-visible lg:[mask-image:none]",
+          )}
+        >
+          <ul className="flex w-max gap-1 pr-8 lg:w-auto lg:flex-col lg:gap-0.5 lg:pr-0">
             {SETTINGS_SECTIONS.map((s) => {
               const isActive = active === s;
               const label = t(SECTION_LABEL[s]);

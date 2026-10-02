@@ -379,11 +379,11 @@
     "enableDescription": "This member can use their institute roles again.",
     "you": "You",
     "noRoles": "No roles",
-    "memberTotal": "{count}",
+    "memberTotal": "{count, plural, one {# member} other {# members}}",
     "memberTable": "Institute members",
     "noMembers": "No members.",
-    "memberCountValue": "{count} members",
-    "datasetCountValue": "{count} datasets",
+    "memberCountValue": "{count, plural, one {# member} other {# members}}",
+    "datasetCountValue": "{count, plural, one {# dataset} other {# datasets}}",
     "columns": {
       "member": "Member",
       "email": "Email",
@@ -404,6 +404,8 @@
       "warning": "Roles and access at the previous institute end and the user must sign in again. Past records keep the affiliation at the time.",
       "confirm": "Confirm move",
       "done": "Moved {name} to {org}."
-    }
+    },
+    "memberCountUnknown": "Members —",
+    "datasetCountUnknown": "Datasets —"
   }
 }

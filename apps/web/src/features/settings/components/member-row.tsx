@@ -64,6 +64,7 @@ export function MemberActions({ member, isSelf, organizationId }: { member: Orga
   const update = useUpdateOrganizationMember();
   const me = useMeData();
   const hintId = useId();
+  const statusHintId = useId();
   const [step, setStep] = useState<Step>(null);
   const [roles, setRoles] = useState<OrgRole[]>(member.roles);
   const name = member.display_name ?? member.user_id;
@@ -108,15 +109,15 @@ export function MemberActions({ member, isSelf, organizationId }: { member: Orga
           </Menu.Item>
           <Menu.Separator />
           {active ? (
-            <Menu.Item icon={<UserX {...icon} />} tone="danger" disabled={statusLocked} onClick={() => setStep("status")}>
+            <Menu.Item icon={<UserX {...icon} />} tone="danger" disabled={statusLocked} aria-describedby={statusLocked ? statusHintId : undefined} onClick={() => setStep("status")}>
               {t("org.disable")}
             </Menu.Item>
           ) : (
-            <Menu.Item icon={<UserCheck {...icon} />} disabled={statusLocked} onClick={() => setStep("status")}>
+            <Menu.Item icon={<UserCheck {...icon} />} disabled={statusLocked} aria-describedby={statusLocked ? statusHintId : undefined} onClick={() => setStep("status")}>
               {t("org.enable")}
             </Menu.Item>
           )}
-          {statusLocked ? <p className="px-2 pb-1.5 pt-1 text-caption text-fg-muted">{t(selfLocked ? "org.selfLocked" : "org.selfStatusLocked")}</p> : null}
+          {statusLocked ? <p id={statusHintId} className="px-2 pb-1.5 pt-1 text-caption text-fg-muted">{t(selfLocked ? "org.selfLocked" : "org.selfStatusLocked")}</p> : null}
         </Menu.Content>
       </Menu.Root>
 

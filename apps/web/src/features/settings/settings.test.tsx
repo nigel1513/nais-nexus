@@ -158,7 +158,7 @@ describe("OrganizationScreen", () => {
     renderScreen(<OrganizationScreen />, { user: USER.aAdmin, path: "/settings/organization" });
     const menu = await openMemberMenu("A Admin");
     expect(within(menu).getByRole("menuitem", { name: "비활성화" })).toHaveAttribute("aria-disabled", "true");
-    expect(within(menu).getByText("본인의 기관 관리자 역할과 상태는 직접 변경할 수 없습니다.")).toBeInTheDocument();
+    expect(within(menu).getByRole("menuitem", { name: "비활성화" })).toHaveAccessibleDescription("본인의 기관 관리자 역할과 상태는 직접 변경할 수 없습니다.");
     await userEvent.click(within(menu).getByRole("menuitem", { name: "역할 변경" }));
     const dialog = await screen.findByRole("dialog", { name: "A Admin 역할 변경" });
     expect(within(dialog).getByRole("checkbox", { name: "기관 관리자" })).toBeDisabled();
