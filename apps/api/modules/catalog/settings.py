@@ -24,6 +24,12 @@ class CatalogSettings(BaseSettings):
     malware_scanner: str = "noop"
     catalog_index_batch_size: int = Field(200, gt=0)
     catalog_opensearch_timeout_seconds: float = Field(5.0, gt=0)
+    catalog_preview_max_rows: int = Field(10_000, gt=0)
+    catalog_preview_max_bytes: int = Field(64 * MIB, gt=0)
+    catalog_preview_timeout_seconds: float = Field(30.0, gt=0)
+    catalog_preview_lease_seconds: int = Field(600, gt=0)
+    # RLIMIT_AS of the profiling child process (controller ruling P24)
+    catalog_preview_memory_limit_bytes: int = Field(1536 * MIB, ge=256 * MIB)
 
     @property
     def storage_org_code_list(self) -> list[str]:

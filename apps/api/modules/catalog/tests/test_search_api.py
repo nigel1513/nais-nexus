@@ -4,6 +4,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -13,7 +14,7 @@ from api.modules.catalog.search.drain import drain_index_queue
 from api.modules.catalog.search.opensearch import OpenSearchIndex
 from api.modules.catalog.search.query import SearchParams, map_search_response
 from api.modules.catalog.service.search import search_datasets
-from api.modules.catalog.tests.support import ORG_A, ORG_B, SHA_A, execute, insert_version
+from api.modules.catalog.tests.support import ORG_A, ORG_B, SHA_A, execute, insert_version, seed_user_id
 from api.modules.catalog.tests.support_api import USERS, CatalogApi, assert_error, create_dataset
 from api.platform.pagination import encode_cursor
 from api.platform.testing.contracts import assert_matches_response
@@ -232,7 +233,7 @@ def test_documents_use_only_mapped_fields_and_cover_the_query_fields(
 ) -> None:
     from api.modules.catalog.search.documents import build_documents
     from api.modules.catalog.search.index_body import MAPPINGS
-    from api.modules.catalog.search.query import AGGREGATIONS, SORTS
+    from api.modules.catalog.search.query import AGGREGATIONS, HIT_FIELDS, SEARCH_FIELDS, SORTS
 
     dataset_id = published(search_api, db, keywords=["x"])
     with search_api.deps.session_factory() as session:
@@ -242,6 +243,7 @@ def test_documents_use_only_mapped_fields_and_cover_the_query_fields(
     body = build_search_body_for_keys()
     used = {agg["terms"]["field"] for agg in AGGREGATIONS.values()} | {"status", "has_published_version"}
     used |= {field for clause in body for field in clause}
+    used |= {field.split("^")[0] for field in SEARCH_FIELDS} | set(HIT_FIELDS)
     assert {
         field.split(".")[0]
         for field in used | {key for s in SORTS.values() for d in s for key in d} - {"_score"}
@@ -258,6 +260,13 @@ def build_search_body_for_keys() -> list[set[str]]:
         purpose=("EDUCATION",),
         keyword=("k",),
         readiness_status=("FAIL",),
+        subject=("MATERIALS",),
+        material=("CATHODE",),
+        method=("XRD",),
+        collecting_organization_id=(ORG_B,),
+        principal_investigator_id=ORG_A,
+        temporal_from=date(2025, 1, 1),
+        temporal_to=date(2025, 12, 31),
     )
     body = build_search_body(USERS["a.researcher"], params, "relevance", None)
     fields: set[str] = set()
@@ -265,8 +274,10 @@ def build_search_body_for_keys() -> list[set[str]]:
     def walk(node: Any) -> None:
         if isinstance(node, dict):
             for key, value in node.items():
-                if key in ("term", "terms") and isinstance(value, dict):
+                if key in ("term", "terms", "range") and isinstance(value, dict):
                     fields.update(value)
+                if key == "exists":
+                    fields.add(value["field"])
                 walk(value)
         elif isinstance(node, list):
             for item in node:
@@ -378,3 +389,98 @@ def test_filters_cannot_widen_visibility(search_api: CatalogApi, db: PgUrls) -> 
         body = search(search_api, "a.researcher", **params)
         assert body["total"] == 0 and body["items"] == []
         assert all(buckets == [] for buckets in body["facets"].values()), params
+
+
+def test_temporal_overlap_includes_open_ended(search_api: CatalogApi, db: PgUrls) -> None:  # Review Focus 4
+    old = published(
+        search_api, db, title="Old period", temporal_start="2024-01-01", temporal_end="2025-12-31"
+    )
+    ongoing = published(search_api, db, title="Ongoing", temporal_start="2025-07-01")
+    undated = published(search_api, db, title="Undated")
+    future = published(search_api, db, title="Future", temporal_start="2025-09-01")
+    index_now(search_api)
+    found = ids(search(search_api, "b.researcher", temporal_from="2026-01-01"))
+    assert ongoing in found and future in found and old not in found and undated not in found
+    window = ids(search(search_api, "b.researcher", temporal_from="2025-01-01", temporal_to="2025-08-01"))
+    assert window == {old, ongoing}
+    assert ids(search(search_api, "b.researcher", temporal_to="2024-06-30")) == {old}
+
+
+def test_inverted_temporal_range_is_422(search_api: CatalogApi) -> None:  # Review Focus 4
+    response = search_api.get(
+        "b.researcher", "/datasets", params={"temporal_from": "2026-01-02", "temporal_to": "2026-01-01"}
+    )
+    error = assert_error("searchDatasets", response, 422, "VALIDATION_FAILED")
+    assert error["details"]["fields"] == [{"field": "temporal_to", "reason": "TEMPORAL_RANGE"}]
+
+
+def test_subject_and_collecting_org_filters_and_facets(search_api: CatalogApi, db: PgUrls) -> None:
+    mat = published(
+        search_api,
+        db,
+        title="Mat",
+        subtitle="Cathode study",
+        subject_codes=["MATERIALS"],
+        collecting_organization_id=str(ORG_B),
+    )
+    published(search_api, db, title="Energy", subject_codes=["ENERGY"])
+    index_now(search_api)
+    result = search(search_api, "b.researcher", subject=["MATERIALS"])
+    assert [h["dataset_id"] for h in result["items"]] == [mat]
+    hit = result["items"][0]
+    assert hit["subject_codes"] == ["MATERIALS"]
+    assert hit["principal_investigator_name"] == "B Researcher"
+    assert hit["subtitle"] == "Cathode study" and hit["collecting_organization_name"] == "Institute B"
+    assert ids(search(search_api, "b.researcher", collecting_organization_id=[str(ORG_B)])) == {mat}
+    assert ids(search(search_api, "b.researcher", collecting_organization_id=[str(ORG_A)])) == set()
+    facets = search(search_api, "b.researcher")["facets"]
+    assert {"value": "MATERIALS", "count": 1, "label": "재료"} in facets["subject"]
+    assert {"value": "ENERGY", "count": 1, "label": "에너지"} in facets["subject"]
+    assert {"value": str(ORG_B), "count": 1, "label": "Institute B"} in facets["collecting_organization_id"]
+
+
+def test_material_and_method_filters_and_facets(search_api: CatalogApi, db: PgUrls) -> None:  # Ruling P13
+    both = published(search_api, db, material_codes=["CATHODE", "ELECTROLYTE"], method_codes=["XRD"])
+    cathode = published(search_api, db, material_codes=["CATHODE"], method_codes=["SEM"])
+    published(search_api, db)
+    index_now(search_api)
+    assert ids(search(search_api, "b.researcher", material=["CATHODE"])) == {both, cathode}
+    assert ids(search(search_api, "b.researcher", material=["ELECTROLYTE", "ANODE"])) == {both}
+    assert ids(search(search_api, "b.researcher", method=["SEM"])) == {cathode}
+    assert ids(search(search_api, "b.researcher", material=["CATHODE"], method=["XRD"])) == {both}
+    facets = search(search_api, "b.researcher")["facets"]
+    assert {"value": "CATHODE", "count": 2, "label": "양극재"} in facets["material"]
+    assert {"value": "XRD", "count": 1, "label": "X선 회절(XRD)"} in facets["method"]
+    assert ids(search(search_api, "b.researcher", q="양극재")) == {both, cathode}
+
+
+def test_pi_filter_and_korean_label_query(search_api: CatalogApi, db: PgUrls) -> None:
+    mine = published(search_api, db, title="PI dataset", subject_codes=["MATERIALS"])
+    published(search_api, db, title="Other PI", principal_investigator_id=str(seed_user_id("0b03")))
+    index_now(search_api)
+    by_pi = search(search_api, "b.researcher", principal_investigator_id=str(seed_user_id("0b02")))
+    assert [h["dataset_id"] for h in by_pi["items"]] == [mine]
+    assert mine in ids(search(search_api, "b.researcher", q="재료"))
+    assert mine in ids(search(search_api, "b.researcher", q="B Researcher"))
+
+
+def test_search_hits_never_contain_person_emails(search_api: CatalogApi, db: PgUrls) -> None:  # Focus 5
+    published(search_api, db, contact_email="lab@example.org", contact_email_public=True)
+    index_now(search_api)
+    response = search_api.get("b.researcher", "/datasets")
+    assert response.status_code == 200 and response.json()["items"]
+    assert "@" not in response.text
+
+
+def test_facet_filters_cannot_widen_visibility(search_api: CatalogApi, db: PgUrls) -> None:  # D-012
+    published(
+        search_api, db, access_level="INTERNAL", subject_codes=["MATERIALS"], temporal_start="2025-01-01"
+    )
+    index_now(search_api)
+    for params in (
+        {"subject": ["MATERIALS"]},
+        {"temporal_from": "2024-01-01"},
+        {"principal_investigator_id": str(seed_user_id("0b02"))},
+    ):
+        body = search(search_api, "a.researcher", **params)
+        assert body["total"] == 0 and all(buckets == [] for buckets in body["facets"].values()), params

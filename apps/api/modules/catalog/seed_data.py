@@ -2,6 +2,7 @@
 
 import uuid
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 from uuid import UUID
 
@@ -128,3 +129,62 @@ def metadata_for(fixture: str | None) -> dict[str, Any]:
 
 def file_id(version_id: UUID, path: str) -> UUID:
     return uuid.uuid5(SEED_NAMESPACE, f"{version_id}/{path}")
+
+
+PEOPLE = {ORG_A: (sid("0a02"), sid("0a03")), ORG_B: (sid("0b02"), sid("0b03"))}  # (PI, steward contact)
+
+RESEARCH: dict[UUID, dict[str, Any]] = {
+    sid("2001"): {
+        "subtitle": "연료전지 고분자 막 시편 1,000개의 온도·압력 측정",
+        "subject_codes": ["ENERGY", "MATERIALS"],
+        "material_codes": ["POLYMER_MEMBRANE", "ELECTROLYTE"],
+        "method_codes": ["SENSOR_LOGGING"],
+        "method_detail": "환경 챔버 EC-200, 1분 간격 자동 계측",
+        "temporal_start": date(2026, 1, 1),
+        "temporal_end": date(2026, 1, 1),
+        "collecting_organization_id": ORG_B,
+        "project_title": "연료전지 막 내구성 평가",
+        "project_code": "NST-2026-0001",
+        "funding_agency": "국가과학기술연구회",
+        "update_frequency": "ONCE",
+        "contact_email_public": True,
+    },
+    sid("2002"): {
+        "subtitle": "공개 재료 물성 측정값 (2024–2025)",
+        "subject_codes": ["MATERIALS"],
+        "material_codes": ["METAL_ALLOY", "CERAMIC"],
+        "method_codes": ["XRD"],
+        "temporal_start": date(2024, 1, 1),
+        "temporal_end": date(2025, 12, 31),
+        "collecting_organization_id": ORG_B,
+        "update_frequency": "YEARLY",
+    },
+    sid("2003"): {
+        "subject_codes": ["MATERIALS"],
+        "method_codes": ["SENSOR_LOGGING"],
+        "temporal_start": date(2025, 7, 1),
+        "collecting_organization_id": ORG_B,
+        "update_frequency": "MONTHLY",
+    },
+    sid("2004"): {},  # the missing_metadata fixture stays sparse on purpose
+    sid("2005"): {
+        "subject_codes": ["ENERGY", "CHEMISTRY"],
+        "material_codes": ["ELECTROLYTE"],
+        "method_codes": ["ELECTROCHEM_CYCLING"],
+        "temporal_start": date(2026, 3, 1),
+        "temporal_end": date(2026, 6, 30),
+        "collecting_organization_name": "외부 위탁분석기관 K-Lab",
+        "update_frequency": "IRREGULAR",
+    },
+}
+
+
+def research_for(item: SeedDataset) -> dict[str, Any]:
+    pi, steward = PEOPLE[item.owner]
+    return {
+        "principal_investigator_id": pi,
+        "principal_investigator_org_id": item.owner,
+        "data_steward_contact_id": steward,
+        "data_steward_contact_org_id": item.owner,
+        **RESEARCH[item.dataset_id],
+    }
