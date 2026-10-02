@@ -256,6 +256,8 @@ describe("scoped invalidation", () => {
       JSON.stringify(["getDataset", { datasetId: DATASET.electrolyte }]),
       JSON.stringify(["getReadiness", { versionId: VERSION.electrolyte }]),
       JSON.stringify(["searchDatasets"]),
+      JSON.stringify(["compareVersions"]),
+      JSON.stringify(["fileHistory", { datasetId: DATASET.electrolyte }]),
     ]);
   });
 

@@ -52,7 +52,7 @@ describe("seed fidelity (10_SEED_DATA / seed_ids.json)", () => {
       ["2105", "DRAFT", 0],
       ["2111", "PUBLISHED", 2], // battery history: v1.0, v1.1 and the owner-only draft
       ["2112", "PUBLISHED", 3],
-      ["2113", "DRAFT", 1],
+      ["2113", "DRAFT", 5],
     ]);
     expect(VERSION.battery.slice(-4)).toBe("2101");
     expect(DATASET.electrolyte.slice(-4)).toBe("2005");

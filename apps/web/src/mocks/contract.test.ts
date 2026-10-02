@@ -9,8 +9,6 @@ type Doc = { paths: Record<string, Record<string, { operationId: string }>> };
 const doc = YAML.parse(readFileSync(path.resolve(process.cwd(), "../../NAIS_PRD/contracts/openapi.yaml"), "utf8")) as Doc;
 
 const exercised = new Set<string>();
-// Wave 1.5 Stage 2 operations: mock/handlers land in later tasks.
-const PENDING_W15_S2 = new Set(["updateDatasetVersion", "discardDatasetVersion", "rebaseDatasetVersion", "compareDatasetVersions", "getFileHistory", "getDatasetCitation"]);
 
 async function call(user: string | null, method: string, pathKey: string, opts: { path?: Record<string, string>; query?: string; body?: unknown; status: number }) {
   const url = pathKey.replace(/\{(\w+)\}/g, (_, k: string) => opts.path![k]!) + (opts.query ? `?${opts.query}` : "");
@@ -101,12 +99,15 @@ describe("mock API ↔ openapi.yaml", () => {
     await call(AS, "get", "/upload-sessions/{upload_session_id}", { path: S, status: 200 });
     await call(AS, "post", "/upload-sessions/{upload_session_id}/complete", { path: S, body: {}, status: 200 });
     await call(AS, "delete", "/dataset-versions/{version_id}/files/{file_id}", { path: { ...V, file_id: s.files[1].file_id }, status: 204 });
+    // Publishing needs a change note (3..2000 characters).
+    await call(AS, "post", "/dataset-versions/{version_id}/publish", { path: V, status: 409 });
+    await call(AS, "patch", "/dataset-versions/{version_id}", { path: V, body: { change_note: "첫 게시" }, status: 200 });
     await call(AS, "post", "/dataset-versions/{version_id}/publish", { path: V, status: 200 });
 
     await call(A, "get", "/readiness-profiles", { status: 200 });
     await call(BS, "post", "/dataset-versions/{version_id}/readiness-validations", { path: { version_id: VERSION.battery }, body: { profile_id: "GENERIC_BASIC" }, status: 200 });
     // A markdown-only version auto-runs GENERIC_BASIC only (M05 §5), so the manual TABULAR run is queued (202).
-    const v2 = await call(AS, "post", "/datasets/{dataset_id}/versions", { path: D, body: { version_label: "v2" }, status: 201 });
+    const v2 = await call(AS, "post", "/datasets/{dataset_id}/versions", { path: D, body: { version_label: "v2", change_note: "노트 추가", empty: true }, status: 201 });
     const V2 = { version_id: v2.dataset_version_id as string };
     const s2 = await call(AS, "post", "/dataset-versions/{version_id}/upload-session", {
       path: V2,
@@ -116,6 +117,21 @@ describe("mock API ↔ openapi.yaml", () => {
     await call(AS, "post", "/upload-sessions/{upload_session_id}/complete", { path: { upload_session_id: s2.upload_session_id }, body: {}, status: 200 });
     await call(AS, "post", "/dataset-versions/{version_id}/publish", { path: V2, status: 200 });
     await call(AS, "post", "/dataset-versions/{version_id}/readiness-validations", { path: V2, body: { profile_id: "TABULAR_ML_BASIC" }, status: 202 });
+
+    // lakeFS-style drafts: two drafts branch from v2; the first to publish makes the other stale.
+    const a = await call(AS, "post", "/datasets/{dataset_id}/versions", { path: D, body: { version_label: "v3", change_note: "다음 게시" }, status: 201 });
+    const b = await call(AS, "post", "/datasets/{dataset_id}/versions", { path: D, body: { version_label: "v4", from_version_id: V2.version_id }, status: 201 });
+    const VA = { version_id: a.dataset_version_id as string };
+    const VB = { version_id: b.dataset_version_id as string };
+    await call(AS, "post", "/dataset-versions/{version_id}/publish", { path: VA, status: 200 });
+    await call(AS, "patch", "/dataset-versions/{version_id}", { path: VB, body: { change_note: "기준이 낡은 초안" }, status: 200 });
+    await call(AS, "post", "/dataset-versions/{version_id}/publish", { path: VB, status: 409 });
+    await call(AS, "get", "/dataset-versions/{version_id}/diff", { path: VB, status: 200 });
+    await call(AS, "post", "/dataset-versions/{version_id}/rebase", { path: VB, body: { resolutions: {} }, status: 200 });
+    await call(AS, "delete", "/dataset-versions/{version_id}", { path: VB, status: 204 });
+    await call(A, "get", "/dataset-versions/{version_id}/diff", { path: VA, query: `against=${V.version_id}`, status: 200 });
+    await call(A, "get", "/datasets/{dataset_id}/file-history", { path: D, query: "path=notes.md", status: 200 });
+    await call(A, "get", "/dataset-versions/{version_id}/citation", { path: VA, query: "style=bibtex", status: 200 });
     await call(A, "get", "/dataset-versions/{version_id}/readiness", { path: V, status: 200 });
 
     await call(A, "get", "/access-requests", { query: "role=requester", status: 200 });
@@ -161,6 +177,6 @@ describe("mock API ↔ openapi.yaml", () => {
     const METHODS = ["get", "post", "put", "patch", "delete"];
     const all = Object.values(doc.paths).flatMap((item) => Object.entries(item).filter(([m]) => METHODS.includes(m)).map(([, op]) => op.operationId));
     expect(all).toHaveLength(64);
-    expect(all.filter((id) => !exercised.has(id) && !PENDING_W15_S2.has(id))).toEqual([]);
+    expect(all.filter((id) => !exercised.has(id))).toEqual([]);
   });
 });

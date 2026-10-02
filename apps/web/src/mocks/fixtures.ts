@@ -334,6 +334,10 @@ export function createSeed(now: Date): MockDb {
       total_bytes: files.reduce((n, f) => n + f.size_bytes, 0),
       manifest_sha256: published ? (seeded?.manifest_sha256 ?? null) : null,
       created_at: seedTime,
+      created_by: STEWARD[d.owner]!,
+      base_version_id: null,
+      source_version_id: null,
+      previous_version_id: null,
     };
   });
 
@@ -361,6 +365,10 @@ export function createSeed(now: Date): MockDb {
     total_bytes: files.reduce((n, f) => n + f.size_bytes, 0),
     manifest_sha256: status === "PUBLISHED" ? hex(files.reduce((n, f) => n + f.size_bytes, id.length)) : null,
     created_at: at(-daysAgo * 86_400 - 3600),
+    created_by: STEWARD[ORG.b]!,
+    base_version_id: null,
+    source_version_id: null,
+    previous_version_id: null,
   });
   const csvV10 = tables.batteryCycles(200);
   const csvV11 = tables.batteryCycles(500);
@@ -387,6 +395,20 @@ export function createSeed(now: Date): MockDb {
   v20.total_bytes = v20.files.reduce((n, f) => n + f.size_bytes, 0);
   v20.published_at = seedTime;
   versions.push(...batteryHistory);
+
+  // Lineage (spec §3.3b): v1.0 -> v1.1 -> v2.0 on the published line; the draft branches from v2.0 and inherits its files
+  // (same objects, new row ids) except the measurements series it replaces.
+  const lineage = (id: string, from: string) => Object.assign(versions.find((v) => v.dataset_version_id === id)!, { base_version_id: from, source_version_id: from, previous_version_id: from });
+  lineage(VERSION.batteryV11, VERSION.batteryV10);
+  lineage(VERSION.battery, VERSION.batteryV11);
+  const draftV = versions.find((v) => v.dataset_version_id === VERSION.batteryDraft)!;
+  Object.assign(draftV, { base_version_id: VERSION.battery, source_version_id: VERSION.battery });
+  const inheritedRows = v20.files
+    .filter((f) => f.path !== "data/measurements.csv")
+    .map((f, i) => ({ ...f, file_id: sid(`ab${i + 1}`), inherited_from: f.file_id }));
+  draftV.files.push(...inheritedRows);
+  draftV.file_count = draftV.files.length;
+  draftV.total_bytes = draftV.files.reduce((n, f) => n + f.size_bytes, 0);
 
   // Each tabular file gets a profile/preview built from a topic-specific CSV (not the shared README/codebook files, which start with "_" or are markdown).
   const tableFor = (v: StoredVersion, path: string): { text: string; hints: Record<string, Hint> } | null => {

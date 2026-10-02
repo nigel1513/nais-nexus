@@ -27,7 +27,13 @@ export type StoredDataset = Omit<Schemas["Dataset"], "latest_published_version" 
   collecting_organization_name: string | null;
 };
 export type StoredContributor = { dataset_id: string; user_id: string; role: Schemas["ContributorRole"]; affiliation_organization_id: string; position: number };
-export type StoredVersion = Omit<Schemas["DatasetVersion"], "readiness_overall">;
+/** `inherited_from` is the source row's file_id (zero-copy inheritance); the API only exposes `inherited`. */
+export type StoredFile = Omit<Schemas["DatasetFile"], "inherited"> & { inherited_from?: string };
+/** Derived per request by versionView: readiness_overall, base_is_latest, change_summary. `metadata_snapshot` is frozen at publish. */
+export type StoredVersion = Omit<Schemas["DatasetVersion"], "readiness_overall" | "files" | "base_is_latest" | "change_summary"> & {
+  files: StoredFile[];
+  metadata_snapshot?: Record<string, unknown>;
+};
 export type ReadinessOutcome = Pick<Schemas["ReadinessValidation"], "overall_status" | "summary" | "checks">;
 export type StoredValidation = Schemas["ReadinessValidation"] & { polls: number; outcome: ReadinessOutcome };
 /** `created_by` is bookkeeping (who may complete the session); it never leaves the mock. */

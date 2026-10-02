@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 import { getDb } from "../db";
 import { API, currentUser, fail } from "../http";
 import type { MockDb, MockUser, StoredDataset } from "../types";
-import { isTabular, visibleVersion } from "./catalog";
+import { isTabular, previewOf, visibleVersion } from "./catalog";
 
 /**
  * Preview permission (ruling P6, mirrors backend NoGrants until M04): PLATFORM_ADMIN, a current member of the owner
@@ -21,7 +21,8 @@ function load(request: Request, fileId: string) {
   if (!version) fail("NOT_FOUND");
   const { ds } = visibleVersion(db, version.dataset_version_id, user);
   const file = version.files.find((f) => f.file_id === fileId)!;
-  const row = isTabular(file.path) ? db.previews[fileId] : undefined;
+  // Inherited rows share their source file's profile and preview (inherit_previews), so resolve through inherited_from.
+  const row = isTabular(file.path) ? previewOf(db, file) : undefined;
   // service/previews._status: no preview row (or a non-tabular file) is UNSUPPORTED.
   return { user, ds, file, row, status: row?.status ?? ("UNSUPPORTED" as const) };
 }

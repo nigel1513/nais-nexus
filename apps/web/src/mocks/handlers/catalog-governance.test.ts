@@ -610,7 +610,7 @@ describe("Data Explorer mocks (web Task 2)", () => {
 
   it("captures uploaded CSVs on publish; unparseable and parquet files FAIL", async () => {
     const created = await (await send(USER.aSteward, "POST", "/datasets", datasetCreate(ORG.a))).json();
-    const v = await (await send(USER.aSteward, "POST", `/datasets/${created.dataset_id}/versions`, { version_label: "v1" })).json();
+    const v = await (await send(USER.aSteward, "POST", `/datasets/${created.dataset_id}/versions`, { version_label: "v1", change_note: "첫 게시" })).json();
     const csv = "x,y\n1,a\n2,b\n";
     const long = `x\n${"z".repeat(MiB + 10)}\n`;
     const files = [

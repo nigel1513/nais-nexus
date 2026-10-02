@@ -496,6 +496,10 @@ export function enrichSeed(db: MockDb, now: Date): MockDb {
       total_bytes: files.reduce((n, f) => n + f.size_bytes, 0),
       manifest_sha256: hex(files.reduce((n, f) => n + f.size_bytes, i + 11)),
       created_at: at(s.publishedDaysAgo + 1, 17, 0),
+      created_by: STEWARD[owner]!,
+      base_version_id: null,
+      source_version_id: null,
+      previous_version_id: null,
     };
     db.versions.push(version);
     const dataFile = files[1]!;

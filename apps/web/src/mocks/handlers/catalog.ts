@@ -5,7 +5,8 @@ import { API, body, currentUser, fail, newestFirst, newId, notify, nowIso, orgNa
 import { buildResult } from "../readiness-results";
 import { emptyResearch } from "../fixtures";
 import { profileCsv, UnparseableError } from "../previews";
-import type { MockDb, MockUser, StoredDataset, StoredUploadSession, StoredValidation, StoredVersion } from "../types";
+import type { MockDb, MockUser, StoredDataset, StoredFile, StoredUploadSession, StoredValidation, StoredVersion } from "../types";
+import { creatorsFromSnapshot, diffFiles, diffMetadata, diffSchema, fileHistory, renderCitation, summarize, threeWay, type ProfileLite } from "../versioning";
 
 /**
  * Mirrors apps/api/modules/catalog (access.py, service/*, domain.py): visibility D-012/D-040, steward-only writes,
@@ -69,9 +70,61 @@ export function readinessOverallFor(db: MockDb, versionId: string): Schemas["Rea
 
 const byPath = (a: { path: string }, b: { path: string }) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
 
+const latestPublishedVersion = (db: MockDb, datasetId: string) => db.versions.filter((x) => x.dataset_id === datasetId && x.status === "PUBLISHED").sort(newestFirst("published_at"))[0];
+const filesOf = (db: MockDb, versionId: string | null | undefined): StoredFile[] => (versionId ? (db.versions.find((x) => x.dataset_version_id === versionId)?.files ?? []) : []);
+
+/** service.diff.default_target: a DRAFT compares with its base, a published version with its predecessor. */
+const defaultTarget = (v: StoredVersion) => (v.status === "DRAFT" ? v.base_version_id : v.previous_version_id) ?? null;
+
 export function versionView(db: MockDb, v: StoredVersion): Schemas["DatasetVersion"] {
-  return { ...v, files: [...v.files].sort(byPath), readiness_overall: v.status === "PUBLISHED" ? readinessOverallFor(db, v.dataset_version_id) : null };
+  const { files, metadata_snapshot: _snapshot, ...rest } = v;
+  void _snapshot;
+  const target = defaultTarget(v);
+  return {
+    ...rest,
+    files: files.map(({ inherited_from, ...f }): Schemas["DatasetFile"] => ({ ...f, inherited: inherited_from !== undefined })).sort(byPath),
+    readiness_overall: v.status === "PUBLISHED" ? readinessOverallFor(db, v.dataset_version_id) : null,
+    base_is_latest: v.status === "DRAFT" ? (v.base_version_id ?? null) === (latestPublishedVersion(db, v.dataset_id)?.dataset_version_id ?? null) : null,
+    change_summary: summarize(diffFiles(filesOf(db, target), files)),
+  };
 }
+
+/** The file whose Data Explorer rows an inherited row shares (mirror of inherit_previews / inherited_from_file_id). */
+export function previewOf(db: MockDb, file: StoredFile) {
+  const all = new Map(db.versions.flatMap((x) => x.files.map((f) => [f.file_id, f] as const)));
+  for (let cur: StoredFile | undefined = file, hops = 0; cur && hops < 100; cur = cur.inherited_from ? all.get(cur.inherited_from) : undefined, hops += 1) {
+    const row = db.previews[cur.file_id];
+    if (row) return row;
+  }
+  return undefined;
+}
+
+/** Fields frozen into `metadata_snapshot` at publish (same keys the diff metadata layer and the citation read). */
+const SNAPSHOT_KEYS = ["title", "subtitle", "description", "keywords", "license", "contact_email_public", "project_title", "project_code", "funding_agency", "subject_codes", "method_codes", "material_codes", "method_detail", "temporal_start", "temporal_end", "collecting_organization", "update_frequency", "related_publications"] as const;
+
+function liveSnapshot(db: MockDb, ds: StoredDataset): Record<string, unknown> {
+  const view = datasetView(db, ds) as unknown as Record<string, unknown>;
+  const people = view.people as Schemas["DatasetPeople"];
+  const out: Record<string, unknown> = {};
+  for (const k of SNAPSHOT_KEYS) if (view[k] !== undefined) out[k] = view[k];
+  out.people = { principal_investigator: people.principal_investigator, steward_contact: people.steward_contact, contributors: people.contributors };
+  return out;
+}
+
+/**
+ * Seed versions carry no frozen snapshot: they read as the dataset's current metadata (no spurious metadata changes)
+ * until the metadata is edited; `freezeSnapshots` then pins them first so the edit shows up in later diffs.
+ */
+function freezeSnapshots(db: MockDb, datasetId: string) {
+  const ds = db.datasets.find((d) => d.dataset_id === datasetId);
+  if (!ds) return;
+  for (const v of db.versions) if (v.dataset_id === datasetId && v.status !== "DRAFT" && !v.metadata_snapshot) v.metadata_snapshot = structuredClone(liveSnapshot(db, ds));
+}
+
+const snapshotOf = (db: MockDb, v: StoredVersion, ds: StoredDataset) => (v.status === "DRAFT" ? liveSnapshot(db, ds) : (v.metadata_snapshot ?? liveSnapshot(db, ds)));
+const canSeeVersionRow = (user: MockUser, ds: StoredDataset, v: StoredVersion) => v.status === "PUBLISHED" || canSeeAllVersions(user, ds.owner_organization_id);
+const sideOf = (f: StoredFile | undefined) => (f ? { sha256: f.sha256, size_bytes: f.size_bytes } : null);
+const inheritedCopy = (f: StoredFile): StoredFile => ({ file_id: newId(), path: f.path, size_bytes: f.size_bytes, sha256: f.sha256, media_type: f.media_type, status: "VERIFIED", inherited_from: f.file_id });
 
 function latestPublished(db: MockDb, datasetId: string): Schemas["DatasetVersionSummary"] | null {
   const v = db.versions.filter((x) => x.dataset_id === datasetId && x.status === "PUBLISHED").sort(newestFirst("published_at"))[0];
@@ -346,6 +399,12 @@ export const isTabular = (path: string) => /\.(csv|tsv|parquet)$/i.test(path) &&
 function generatePreviews(db: MockDb, v: StoredVersion) {
   const generated_at = nowIso();
   for (const f of v.files.filter((x) => isTabular(x.path))) {
+    if (f.inherited_from) {
+      // inherit_previews: the same object keeps its finished profile (PENDING sources are not copied).
+      const source = previewOf(db, f);
+      if (source && source.status !== "PENDING") db.previews[f.file_id] = structuredClone(source);
+      continue;
+    }
     const text = db.objects[f.file_id];
     if (/\.parquet$/i.test(f.path) || text === undefined) {
       db.previews[f.file_id] = { status: "FAILED", failure_code: "GENERATION_FAILED", generated_at };
@@ -707,6 +766,7 @@ export const catalogHandlers = [
   http.patch(`${API}/datasets/:dataset_id`, async ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
+    freezeSnapshots(db, String(params.dataset_id));
     const raw = await body<Schemas["DatasetUpdate"]>(request);
     if (!Object.keys(raw).length) invalid([{ field: "body", reason: "EMPTY" }]);
     // Only DatasetUpdate keys are accepted (no mass assignment of owner/ids/timestamps).
@@ -795,6 +855,7 @@ export const catalogHandlers = [
   http.put(`${API}/datasets/:dataset_id/contributors`, async ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
+    freezeSnapshots(db, String(params.dataset_id));
     const input = await body<Schemas["DatasetContributorsPut"]>(request);
     const shape: Field[] = [];
     if (!Array.isArray(input.contributors)) shape.push({ field: "contributors", reason: "Field required" });
@@ -863,12 +924,21 @@ export const catalogHandlers = [
   http.post(`${API}/datasets/:dataset_id/versions`, async ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
-    const input = await body<{ version_label: string; change_note?: string }>(request);
+    const input = await body<{ version_label: string; change_note?: string; from_version_id?: string; empty?: boolean }>(request);
     if (!/^[A-Za-z0-9._-]{1,32}$/.test(input.version_label ?? "")) invalid([{ field: "version_label", reason: "PATTERN" }]);
     const ds = visibleDataset(db, String(params.dataset_id), user);
     requireSteward(user, ds);
     if (ds.status !== "ACTIVE") fail("CONFLICT", "WITHDRAWN datasets cannot get new versions.");
     if (db.versions.some((v) => v.dataset_id === ds.dataset_id && v.version_label === input.version_label)) fail("DATASET_VERSION_LABEL_EXISTS");
+    if (input.empty && input.from_version_id) invalid([{ field: "empty", reason: "MUTUALLY_EXCLUSIVE" }], "Choose either empty or from_version_id.");
+    const latest = latestPublishedVersion(db, ds.dataset_id);
+    let source: StoredVersion | undefined = input.empty ? undefined : latest;
+    if (input.from_version_id) {
+      source = db.versions.find((x) => x.dataset_version_id === input.from_version_id);
+      if (!source || source.dataset_id !== ds.dataset_id || source.status !== "PUBLISHED") invalid([{ field: "from_version_id", reason: "VERSION_NOT_PUBLISHED" }], "from_version_id must be a PUBLISHED version of this dataset.");
+    }
+    // Zero-copy: the draft's rows point at the source's stored objects (new row ids, status VERIFIED).
+    const files = (source?.files ?? []).map(inheritedCopy);
     const v: StoredVersion = {
       dataset_version_id: newId(),
       dataset_id: ds.dataset_id,
@@ -876,12 +946,17 @@ export const catalogHandlers = [
       status: "DRAFT",
       published_at: null,
       change_note: input.change_note ?? null,
-      files: [],
+      files,
       file_count: 0,
       total_bytes: 0,
       manifest_sha256: null,
       created_at: nowIso(),
+      created_by: user.user_id,
+      base_version_id: latest?.dataset_version_id ?? null,
+      source_version_id: source?.dataset_version_id ?? null,
+      previous_version_id: null,
     };
+    recompute(v);
     db.versions.push(v);
     return HttpResponse.json(versionView(db, v), { status: 201 });
   }),
@@ -912,7 +987,7 @@ export const catalogHandlers = [
     validateUploadFiles(input.files);
     const conflicts = input.files
       .map((f) => v.files.find((x) => x.path === f.path))
-      .filter((x): x is Schemas["DatasetFile"] => !!x && (x.status === "UPLOADED" || x.status === "VERIFIED" || pendingInOpenSession(db, x.file_id)))
+      .filter((x): x is StoredFile => !!x && !x.inherited_from && (x.status === "UPLOADED" || x.status === "VERIFIED" || pendingInOpenSession(db, x.file_id)))
       .map((x) => x.path)
       .sort();
     if (conflicts.length) fail("CONFLICT", "These paths already exist in the version.", { paths: conflicts });
@@ -922,9 +997,14 @@ export const catalogHandlers = [
     const origin = publicOrigin(request);
     const bucket = bucketOf(db, ds.owner_organization_id);
     const files: StoredUploadSession["files"] = input.files.map((f) => {
-      const existing = v.files.find((x) => x.path === f.path);
+      let existing = v.files.find((x) => x.path === f.path);
+      // An inherited row is replaced (new id, new object); the shared source object is never touched (D-039).
+      if (existing?.inherited_from) {
+        v.files.splice(v.files.indexOf(existing), 1);
+        existing = undefined;
+      }
       const file_id = existing?.file_id ?? newId();
-      const row: Schemas["DatasetFile"] = { file_id, path: f.path, size_bytes: f.size_bytes, sha256: f.sha256, media_type: f.media_type.trim().toLowerCase(), status: "PENDING" };
+      const row: StoredFile = { file_id, path: f.path, size_bytes: f.size_bytes, sha256: f.sha256, media_type: f.media_type.trim().toLowerCase(), status: "PENDING" };
       if (existing) Object.assign(existing, row);
       else v.files.push(row);
       const upload =
@@ -1027,11 +1107,19 @@ export const catalogHandlers = [
     const { v, ds } = stewardVersion(db, String(params.version_id), user);
     requireDraft(v);
     if (ds.status === "WITHDRAWN") fail("CONFLICT", "WITHDRAWN datasets cannot publish versions.");
+    // publish.require_publishable: a change note first, then a current base.
+    if ((v.change_note ?? "").trim().length < 3) fail("DATASET_VERSION_INCOMPLETE", "A change note (3-2000 characters) is required to publish.", { reasons: ["CHANGE_NOTE_REQUIRED"] });
+    const latest = latestPublishedVersion(db, ds.dataset_id);
+    if ((v.base_version_id ?? null) !== (latest?.dataset_version_id ?? null)) {
+      fail("DATASET_VERSION_STALE_BASE", "A newer version was published after this draft was created; update the draft first.", { base_version_id: v.base_version_id ?? null, latest_version_id: latest?.dataset_version_id ?? null });
+    }
     const notReady = v.files.filter((f) => f.status !== "VERIFIED");
     if (!v.files.length || notReady.length) {
       fail("DATASET_VERSION_INCOMPLETE", "Publishing needs at least one file and every file VERIFIED.", { files: notReady.map((f) => ({ file_id: f.file_id, path: f.path, status: f.status })) });
     }
     v.manifest_sha256 = await manifestSha256(v.files);
+    v.previous_version_id = latest?.dataset_version_id ?? null;
+    v.metadata_snapshot = structuredClone(liveSnapshot(db, ds));
     v.status = "PUBLISHED";
     v.published_at = nowIso();
     ds.updated_at = v.published_at;
@@ -1043,5 +1131,144 @@ export const catalogHandlers = [
     const holders = db.grants.filter((g) => g.dataset_id === ds.dataset_id && g.status === "ACTIVE" && Date.parse(g.expires_at) > Date.now()).map((g) => g.subject_user_id);
     notify(db, holders, "DATASET_PUBLISHED", `"${ds.title}" 새 버전 ${v.version_label}이(가) 게시되었습니다`, `/commons/data/${ds.dataset_id}`);
     return HttpResponse.json(versionView(db, v));
+  }),
+
+  http.patch(`${API}/dataset-versions/:version_id`, async ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const input = await body<{ change_note?: unknown }>(request);
+    const note = typeof input.change_note === "string" ? input.change_note.trim() : null;
+    if (note === null) invalid([{ field: "change_note", reason: "Field required" }]);
+    else if (note.length < 3) invalid([{ field: "change_note", reason: "String should have at least 3 characters" }]);
+    else if (note.length > 2000) invalid([{ field: "change_note", reason: TOO_LONG(2000) }]);
+    const { v } = stewardVersion(db, String(params.version_id), user);
+    requireDraft(v);
+    v.change_note = note;
+    return HttpResponse.json(versionView(db, v));
+  }),
+
+  http.delete(`${API}/dataset-versions/:version_id`, ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const { v } = stewardVersion(db, String(params.version_id), user);
+    requireDraft(v);
+    // Own rows release their objects; inherited rows only drop the reference, so published versions keep theirs.
+    for (const f of v.files) {
+      if (f.inherited_from) continue;
+      delete db.objects[f.file_id];
+      delete db.previews[f.file_id];
+    }
+    db.uploadSessions = db.uploadSessions.filter((s) => s.dataset_version_id !== v.dataset_version_id);
+    db.versions = db.versions.filter((x) => x !== v);
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post(`${API}/dataset-versions/:version_id/rebase`, async ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const raw = await request.text();
+    const input = (raw ? JSON.parse(raw) : {}) as { resolutions?: Record<string, string> };
+    const resolutions = input.resolutions ?? {};
+    const bad = Object.entries(resolutions).filter(([path, choice]) => !/^[A-Za-z0-9._/-]{1,512}$/.test(path) || (choice !== "MINE" && choice !== "THEIRS"));
+    if (bad.length) invalid([{ field: "resolutions", reason: "INVALID" }]);
+    const { v } = stewardVersion(db, String(params.version_id), user);
+    requireDraft(v);
+    const latest = latestPublishedVersion(db, v.dataset_id);
+    if ((v.base_version_id ?? null) === (latest?.dataset_version_id ?? null)) return HttpResponse.json(versionView(db, v));
+    if (db.uploadSessions.some((s) => s.dataset_version_id === v.dataset_version_id && s.status === "OPEN" && !sessionExpired(s) && s.files.some((f) => f.status === "PENDING"))) {
+      fail("CONFLICT", "Finish or cancel the open upload before updating the draft.");
+    }
+    const shaMap = (files: StoredFile[]) => Object.fromEntries(files.map((f) => [f.path, f.sha256]));
+    const baseRows = filesOf(db, v.base_version_id);
+    const theirsRows = latest?.files ?? [];
+    let plan;
+    try {
+      plan = threeWay(shaMap(baseRows), shaMap(v.files), shaMap(theirsRows), resolutions);
+    } catch (e) {
+      const paths = String((e as Error).message).replace("UNKNOWN_PATH: ", "").split(", ");
+      return invalid([{ field: "resolutions", reason: "UNKNOWN_PATH", paths }], "Resolutions name paths that are not in conflict.");
+    }
+    if (plan.conflicts.length) {
+      const find = (rows: StoredFile[], path: string) => sideOf(rows.find((f) => f.path === path));
+      fail("CONFLICT", "Some files changed in both the draft and the latest version.", {
+        latest_version_id: latest?.dataset_version_id ?? null,
+        conflicts: plan.conflicts.map((c) => ({ path: c.path, base: find(baseRows, c.path), mine: find(v.files, c.path), theirs: find(theirsRows, c.path) })),
+      });
+    }
+    // In place: paths taken from the latest version become inherited copies (or disappear); draft-owned uploads stay.
+    const take = new Set(plan.takeTheirs);
+    v.files = [...v.files.filter((f) => !take.has(f.path)), ...theirsRows.filter((f) => take.has(f.path)).map(inheritedCopy)];
+    v.base_version_id = latest?.dataset_version_id ?? null;
+    recompute(v);
+    return HttpResponse.json(versionView(db, v));
+  }),
+
+  http.get(`${API}/dataset-versions/:version_id/diff`, ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const { v, ds } = visibleVersion(db, String(params.version_id), user);
+    const against = new URL(request.url).searchParams.get("against");
+    let target: StoredVersion | undefined;
+    if (against) {
+      // A missing or invisible target is a 404 (never reveal it); a visible version of another dataset is a 422.
+      target = visibleVersion(db, against, user).v;
+      if (target.dataset_id !== v.dataset_id) invalid([{ field: "against", reason: "DIFFERENT_DATASET" }], "Both versions must belong to the same dataset.");
+    } else {
+      const id = defaultTarget(v);
+      target = id ? db.versions.find((x) => x.dataset_version_id === id) : undefined;
+    }
+    const before = target?.files ?? [];
+    const changes = diffFiles(before, v.files);
+    const profile = (f: StoredFile | undefined): ProfileLite | null => {
+      const row = f ? previewOf(db, f) : undefined;
+      const cp = row?.status === "READY" ? row.column_profile : undefined;
+      return cp ? { total_rows: cp.truncated ? null : cp.rows_sampled, columns: cp.columns } : null;
+    };
+    const schema = changes
+      .filter((c) => c.status === "CHANGED" && /\.(csv|tsv|parquet)$/i.test(c.path))
+      .map((c) => diffSchema(c.path, profile(before.find((f) => f.path === c.path)), profile(v.files.find((f) => f.path === c.path))));
+    return HttpResponse.json({
+      from_version_id: target?.dataset_version_id ?? null,
+      to_version_id: v.dataset_version_id,
+      summary: summarize(changes),
+      files: changes,
+      schema,
+      metadata: diffMetadata(target ? snapshotOf(db, target, ds) : null, snapshotOf(db, v, ds)),
+    });
+  }),
+
+  http.get(`${API}/datasets/:dataset_id/file-history`, ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const path = new URL(request.url).searchParams.get("path");
+    if (path === null) invalid([{ field: "path", reason: "Field required" }]);
+    else if (!/^[A-Za-z0-9._/-]{1,512}$/.test(path)) invalid([{ field: "path", reason: NO_MATCH("^[A-Za-z0-9._/-]{1,512}$") }]);
+    const ds = visibleDataset(db, String(params.dataset_id), user);
+    const versions = db.versions
+      .filter((x) => x.dataset_id === ds.dataset_id && x.status !== "DRAFT" && canSeeVersionRow(user, ds, x))
+      .map((x) => ({ dataset_version_id: x.dataset_version_id, version_label: x.version_label, published_at: x.published_at ?? x.created_at, files: x.files }));
+    return HttpResponse.json({ dataset_id: ds.dataset_id, path, items: fileHistory(versions, path!) });
+  }),
+
+  http.get(`${API}/dataset-versions/:version_id/citation`, ({ request, params }) => {
+    const user = currentUser(request);
+    const db = getDb();
+    const style = new URL(request.url).searchParams.get("style") ?? "text";
+    if (!["text", "bibtex", "datacite-json"].includes(style)) invalid([{ field: "style", reason: "Input should be 'text', 'bibtex' or 'datacite-json'" }]);
+    const { v, ds } = visibleVersion(db, String(params.version_id), user);
+    if (v.status === "DRAFT") fail("DATASET_VERSION_NOT_PUBLISHED", "Only a published version can be cited.");
+    const snapshot = snapshotOf(db, v, ds);
+    const publisher = orgName(db, ds.owner_organization_id);
+    const content = renderCitation(style as Schemas["CitationStyle"], {
+      title: String(snapshot.title ?? ds.title),
+      version_label: v.version_label,
+      year: new Date(v.published_at ?? v.created_at).getUTCFullYear(),
+      publisher,
+      uri: `${publicOrigin(request)}/id/dataset-version/${v.dataset_version_id}`,
+      doi: (ds as { doi?: string | null }).doi ?? null,
+      license: typeof snapshot.license === "string" ? snapshot.license : null,
+      creators: creatorsFromSnapshot(snapshot, publisher),
+    });
+    return HttpResponse.json({ dataset_version_id: v.dataset_version_id, style, content });
   }),
 ];

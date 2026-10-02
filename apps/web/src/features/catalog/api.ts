@@ -91,7 +91,8 @@ export function useUpdateDataset(datasetId: string) {
 export function useCreateDatasetVersion(datasetId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { version_label: string; change_note?: string }) =>
+    /** `from_version_id`: a PUBLISHED version whose files the draft inherits (revert); `empty`: start without files. Default: inherit the latest. */
+    mutationFn: async (body: { version_label: string; change_note?: string; from_version_id?: string; empty?: boolean }) =>
       (await unwrap(api.POST("/datasets/{dataset_id}/versions", { params: { path: { dataset_id: datasetId } }, body }))) as DatasetVersion,
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["listDatasetVersions", { datasetId }] });
@@ -111,6 +112,9 @@ export function usePublishDatasetVersion(versionId: string) {
       void qc.invalidateQueries({ queryKey: ["getDataset", { datasetId }] });
       void qc.invalidateQueries({ queryKey: ["getReadiness", { versionId }] });
       void qc.invalidateQueries({ queryKey: ["searchDatasets"] });
+      // Publishing moves every other draft's `base_is_latest` and adds a history entry.
+      void qc.invalidateQueries({ queryKey: ["compareVersions"] });
+      void qc.invalidateQueries({ queryKey: ["fileHistory", { datasetId }] });
     },
   });
 }
