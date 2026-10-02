@@ -2,8 +2,8 @@ import { cn } from "@nais/ui";
 import { Fragment, type CSSProperties, type ReactNode } from "react";
 import "./screen-v2.css";
 
-/** Joins context parts with a muted "·" (decorative, hidden from screen readers). */
-function Context({ parts }: { parts: ReactNode[] }) {
+/** Joins context parts with a muted "·" (decorative, hidden from screen readers). Every v2 head and band uses it. */
+export function Context({ parts }: { parts: ReactNode[] }) {
   const items = parts.filter((p) => p !== null && p !== undefined && p !== false && p !== "");
   return (
     <p className="sv-ctx">

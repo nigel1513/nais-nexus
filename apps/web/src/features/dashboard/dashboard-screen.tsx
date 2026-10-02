@@ -14,6 +14,7 @@ import { flattenPages } from "@/shared/api/pagination";
 import type { AccessGrant, AccessRequest, AuditEvent, ReadinessOverall, Schemas } from "@/shared/api/types";
 import { hasOrgRole, useMeData } from "@/shared/hooks/use-me";
 import { ReadinessBadge, RequestStatusBadge } from "@/shared/ui/badges";
+import { ScreenTitle } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { ActivityChart, FieldBars, KIND_COLOR, RemainingBar, SegmentBar, Sparkline } from "./charts";
 import { useAuditWindow, useHealthRows, type HealthRow } from "./dashboard-data";
@@ -60,12 +61,13 @@ function Panel({ eyebrow, title, count, href, className, children }: { eyebrow: 
     <section aria-labelledby={id} className={cn("flex min-w-0 flex-col overflow-hidden rounded-md border border-border bg-bg-panel", className)}>
       <header className="flex min-h-11 items-center justify-between gap-3 border-b border-border px-4 py-2">
         <div className="flex min-w-0 items-baseline gap-2">
-          <span aria-hidden="true" className="shrink-0 text-caption font-semibold text-accent-fg">
+          {/* The shared crumb's type (screen-v2: sv-kicker / sv-h2 / sv-count), laid inline to fit the panel's head bar. */}
+          <span aria-hidden="true" className="sv-kicker shrink-0">
             {eyebrow}
           </span>
-          <h2 id={id} className="truncate text-[15px] font-[680] leading-6 tracking-[-0.02em] text-fg">
+          <h2 id={id} className="sv-h2 truncate">
             {title}
-            {count !== undefined && count !== null ? <span className="num ml-1.5 text-small font-normal text-fg-muted">{count}</span> : null}
+            {count !== undefined && count !== null ? <span className="sv-count ml-1.5">{count}</span> : null}
           </h2>
         </div>
         {href ? (
@@ -771,35 +773,33 @@ export function DashboardScreen() {
 
   return (
     <div className={cn(entrance && "dash-enter")}>
-      <header className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0">
-          <p className="truncate text-[15px] font-medium leading-6 text-fg-muted">
-            {orgName} · {roleLabel}
-          </p>
-          <h1 className="text-[32px] font-[760] leading-[40px] tracking-[-0.04em] text-fg">{t("dashboard.title")}</h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="num mr-1 hidden items-center gap-1.5 rounded-sm border border-border px-2 py-1 text-small text-fg-muted md:flex">
-            <span className="size-1.5 rounded-full bg-success-solid" aria-hidden="true" />
-            {t("dashboard.window")}
-            <span className="font-mono text-mono">
-              {shortDay(keys[0]!)}–{shortDay(keys.at(-1)!)}
+      <ScreenTitle
+        context={[orgName, roleLabel]}
+        title={t("dashboard.title")}
+        actions={
+          <>
+            <span className="num mr-1 hidden items-center gap-1.5 rounded-sm border border-border px-2 py-1 text-small text-fg-muted md:flex">
+              <span className="size-1.5 rounded-full bg-success-solid" aria-hidden="true" />
+              {t("dashboard.window")}
+              <span className="font-mono text-mono">
+                {shortDay(keys[0]!)}–{shortDay(keys.at(-1)!)}
+              </span>
             </span>
-          </span>
-          <Link href="/commons/data" className={buttonClass("secondary", "md")}>
-            {t("dashboard.findData")}
-          </Link>
-          {steward ? (
-            <Link href="/commons/data/new" className={buttonClass("primary", "md")}>
-              {t("dashboard.newDataset")}
+            <Link href="/commons/data" className={buttonClass("secondary", "md")}>
+              {t("dashboard.findData")}
             </Link>
-          ) : (
-            <Link href="/commons/projects/new" className={buttonClass("primary", "md")}>
-              {t("dashboard.newProject")}
-            </Link>
-          )}
-        </div>
-      </header>
+            {steward ? (
+              <Link href="/commons/data/new" className={buttonClass("primary", "md")}>
+                {t("dashboard.newDataset")}
+              </Link>
+            ) : (
+              <Link href="/commons/projects/new" className={buttonClass("primary", "md")}>
+                {t("dashboard.newProject")}
+              </Link>
+            )}
+          </>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <KpiStrip tiles={tiles} label={t("dashboard.summary")} />

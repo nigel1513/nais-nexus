@@ -11,6 +11,8 @@ import { DashboardScreen } from "./dashboard-screen";
 /** A panel by its heading (headings carry a count after the title). */
 const panel = async (name: string) => (await screen.findAllByRole("region", { name: new RegExp(`^${name}`) }))[0]!;
 const tiles = () => within(screen.getByRole("region", { name: "최근 30일 요약" })).getAllByRole("link");
+/** The two-step title's context line ("기관 · 역할"), which the shared ScreenTitle splits into parts. */
+const contextLine = (org: string, role: string) => (_: string, el: Element | null) => !!el?.classList.contains("sv-ctx") && el.textContent === `${org}·${role}`;
 const tileValue = (link: HTMLElement) => link.querySelector("[data-kpi-value]")!;
 
 describe("DashboardScreen (portal-volume mock seed)", () => {
@@ -19,7 +21,7 @@ describe("DashboardScreen (portal-volume mock seed)", () => {
   it("steward: two-step title, five linked figures with trends, review queue with age and next action", async () => {
     renderScreen(<DashboardScreen />, { user: USER.bSteward });
     expect(await screen.findByRole("heading", { level: 1, name: "대시보드" })).toBeInTheDocument();
-    expect(screen.getByText("한국재료연구원 · 데이터 관리자")).toBeInTheDocument();
+    expect(screen.getByText(contextLine("한국재료연구원", "데이터 관리자"))).toBeInTheDocument();
     expect(document.body.textContent).not.toMatch(/님,|환영|Welcome/);
     const links = tiles();
     expect(links.map((l) => l.querySelector("span")?.textContent)).toEqual(["우리 기관 데이터셋", "발행 · 30일", "검토 대기", "우리 데이터 활성 권한", "우리 데이터 다운로드 · 30일"]);
@@ -74,7 +76,7 @@ describe("DashboardScreen (portal-volume mock seed)", () => {
 
   it("researcher: own requests with their next step, grants by expiry, recent decisions", async () => {
     renderScreen(<DashboardScreen />, { user: USER.aResearcher });
-    expect(await screen.findByText("한국에너지기술연구원 · 연구자")).toBeInTheDocument();
+    expect(await screen.findByText(contextLine("한국에너지기술연구원", "연구자"))).toBeInTheDocument();
     const links = tiles();
     expect(links.map((l) => l.querySelector("span")?.textContent)).toEqual(["우리 기관 데이터셋", "진행 중인 내 요청", "내 활성 권한", "내 다운로드 · 30일", "참여 프로젝트"]);
     const queue = await panel("내 요청 진행");
@@ -89,7 +91,7 @@ describe("DashboardScreen (portal-volume mock seed)", () => {
 
   it("first day: zero personal activity still shows the institute and the council, with next steps", async () => {
     renderScreen(<DashboardScreen />, { user: PORTAL_USER.dNewcomer });
-    expect(await screen.findByText("한국화학연구원 · 연구자")).toBeInTheDocument();
+    expect(await screen.findByText(contextLine("한국화학연구원", "연구자"))).toBeInTheDocument();
     expect(await within(await panel("내 요청 진행")).findByText("진행 중인 요청이 없습니다.")).toBeInTheDocument();
     expect(await within(await panel("내 활동")).findByText("최근 30일 동안 기록된 활동이 없습니다")).toBeInTheDocument();
     const recent = await panel("최근 활동");

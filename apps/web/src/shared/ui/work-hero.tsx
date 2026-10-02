@@ -1,8 +1,8 @@
 import { cn, focusRing } from "@nais/ui";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { Fragment, type ReactNode } from "react";
-import { Crumb } from "./screen-v2";
+import type { ReactNode } from "react";
+import { Context, Crumb } from "./screen-v2";
 
 /**
  * UI v2 page header for work screens (the landing's language inside the app): a dark `--color-hero` band holding a
@@ -19,7 +19,7 @@ export function WorkHero({
   statsLabel,
   className,
 }: {
-  /** Crumb line items; the first reads brighter (where you are), the rest muted. */
+  /** Context line items, joined by a muted "·" like every other v2 head. */
   context: ReactNode[];
   title: ReactNode;
   description?: ReactNode;
@@ -30,20 +30,12 @@ export function WorkHero({
   statsLabel?: string;
   className?: string;
 }) {
-  // Shares the summary band's classes (screen-v2.css, Track B) so every v2 header reads the same.
-  const parts = context.filter((c) => c !== null && c !== undefined && c !== "");
+  // Shares the summary band's classes and context line (screen-v2, Track B) so every v2 header reads the same.
   return (
     <header className={cn("sv-band", className)}>
       <div className="sv-band-in pb-0">
         <div className="min-w-0 flex-1">
-          <p className="sv-ctx">
-            {parts.map((c, i) => (
-              <Fragment key={i}>
-                {i > 0 ? <span aria-hidden="true">·</span> : null}
-                <span className={i === 0 ? "font-semibold text-hero-fg" : undefined}>{c}</span>
-              </Fragment>
-            ))}
-          </p>
+          <Context parts={context} />
           <h1 className="sv-h1">{title}</h1>
           {description ? <p className="mt-2 max-w-[46em] text-body text-hero-fg-muted [text-wrap:pretty]">{description}</p> : null}
           {meta ? <div className="sv-tags items-center gap-x-3 text-small text-hero-fg-muted">{meta}</div> : null}
@@ -69,7 +61,7 @@ function HeroFigure({ label, value, unit, hint, href, highlight }: HeroStat) {
   const body = (
     <>
       <span className="truncate text-[12.5px] text-hero-fg-muted">{label}</span>
-      <span className="flex items-baseline gap-1">
+      <span className="flex items-baseline gap-0.5">
         <span className={cn("num text-[19px] font-bold leading-[1.25] tracking-[-0.03em] sm:text-[22px]", highlight ? "text-hero-accent" : "text-hero-fg")}>{value ?? "—"}</span>
         {unit && value !== null ? <span className="text-small text-hero-fg-muted">{unit}</span> : null}
       </span>
