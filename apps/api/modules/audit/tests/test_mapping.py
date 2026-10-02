@@ -163,7 +163,7 @@ EXPECTED = {
 }
 
 
-# Contract 1.4.0 events (hub / workspace / research notes) whose audit rules are implemented in Task 8 of the
+# Contract 1.6.0 events (hub / workspace / research notes) whose audit rules are implemented in Task 8 of the
 # 2026-10-02 data-hub plan. Task 8 maps each one (AUDIT_RULES or NOT_AUDITED) and empties this set.
 PENDING_AUDIT_RULES: frozenset[str] = frozenset(
     {

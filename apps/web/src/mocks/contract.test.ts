@@ -10,7 +10,7 @@ const doc = YAML.parse(readFileSync(path.resolve(process.cwd(), "../../NAIS_PRD/
 
 const exercised = new Set<string>();
 
-// Contract 1.4.0 operations (hub, workspace, research notes) whose mock handlers do not exist yet — implemented in Task 12.
+// Contract 1.6.0 operations (hub, workspace, research notes) whose mock handlers do not exist yet — implemented in Task 12.
 // Task 12 must exercise each of them below and empty this list; an operation listed here that is exercised fails the test.
 const PENDING_MOCK_OPERATIONS: ReadonlySet<string> = new Set([
   "getHubOverview", "listDatasetProjects", "listDatasetActivity",

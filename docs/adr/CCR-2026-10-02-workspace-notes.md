@@ -1,4 +1,4 @@
-# 계약 변경 요청: 데이터 허브 · 프로젝트 작업 공간 · 연구노트 (계약 1.4.0)
+# 계약 변경 요청: 데이터 허브 · 프로젝트 작업 공간 · 연구노트 (계약 1.6.0)
 
 - 요청 모듈: M13 Workspace(신규, `workspace` 스키마), M14 Research Notes(신규, `notes` 스키마), M10 Web
 - 승인: Agent 0 (Platform) — 2026-10-02
@@ -15,7 +15,9 @@
 
 ## 변경 목록
 
-### openapi.yaml 1.3.0 → 1.4.0
+### openapi.yaml 1.3.0 → 1.6.0
+
+버전 1.4.0(Wave 1.5 Stage 2 버전 관리 계획)과 1.5.0(M07 노트북 계획)은 다른 계획이 이미 예약해 이 변경은 1.6.0을 쓴다.
 
 태그 `hub`, `workspace`, `notes` 추가. 새 operation 43개(전체 58 → 101). 모든 operation은 전역 `bearerAuth`를 상속하고
 `401` 공통 오류 응답, 성공 응답마다 `components/examples` 예제 1개를 둔다.

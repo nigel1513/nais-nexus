@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: NAIS AI-OS / Research Commons API
-  version: 1.4.0
+  version: 1.6.0
   description: |
     P0 contract. Owner: Agent 0 (Platform). Changes only via CONTRACT_CHANGE_REQUEST.md.
 
@@ -915,7 +915,7 @@ paths:
         "204": { description: All marked read }
         "401": { $ref: "#/components/responses/Error" }
 
-  # ---------------------------------------------------------------- hub (M13, contract 1.4.0)
+  # ---------------------------------------------------------------- hub (M13, contract 1.6.0)
   /hub/overview:
     get:
       tags: [hub]
@@ -971,7 +971,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
-  # ---------------------------------------------------------------- workspace (M13, contract 1.4.0)
+  # ---------------------------------------------------------------- workspace (M13, contract 1.6.0)
   /projects/{project_id}/inputs:
     parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
     get:
@@ -1489,7 +1489,7 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
 
-  # ---------------------------------------------------------------- notes (M14, contract 1.4.0)
+  # ---------------------------------------------------------------- notes (M14, contract 1.6.0)
   /notes:
     get:
       tags: [notes]
@@ -1803,7 +1803,7 @@ components:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
 
   examples:
-    # 1.4.0 hub / workspace / notes. Every example validates against its response schema (test_contract_v1_4.py).
+    # 1.6.0 hub / workspace / notes. Every example validates against its response schema (test_contract_v1_6.py).
     HubOverview:
       value:
         rails:
@@ -2881,7 +2881,7 @@ components:
         read: { type: boolean }
         created_at: { $ref: "#/components/schemas/Timestamp" }
 
-    # ---------- hub (1.4.0)
+    # ---------- hub (1.6.0)
     DatasetActivityType: { type: string, enum: [VERSION_PUBLISHED, METADATA_CHANGED, POLICY_CHANGED, READINESS_COMPLETED, USED_IN_PROJECT, OUTPUT_PUBLISHED, DISCUSSION_STARTED] }
     HubCard:
       type: object
@@ -2944,7 +2944,7 @@ components:
         project_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ], description: "Set only when the caller is a member of that project" }
         occurred_at: { $ref: "#/components/schemas/Timestamp" }
 
-    # ---------- workspace (1.4.0)
+    # ---------- workspace (1.6.0)
     RunStatus: { type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED] }
     OutputKind: { type: string, enum: [DERIVED_DATASET, FILE] }
     OutputPublishStatus: { type: string, enum: [NONE, PENDING, APPROVED, REJECTED, PUBLISHED] }
@@ -3347,7 +3347,7 @@ components:
       properties:
         body: { type: string, minLength: 1, maxLength: 10000, description: "Markdown" }
 
-    # ---------- notes (1.4.0)
+    # ---------- notes (1.6.0)
     NoteStatus: { type: string, enum: [DRAFT, SUBMITTED, SIGNED] }
     NoteDraftStatus: { type: string, enum: [NONE, QUEUED, RUNNING, FAILED, DONE] }
     NoteSection: { type: string, enum: [DIRECTION, STEPS, RESULTS, NEXT, MEMO] }

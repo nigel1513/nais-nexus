@@ -1,4 +1,4 @@
-"""Contract 1.4.0: Data-Hub, project workspace and research notes (spec 2026-10-02-data-hub-workspace-notes-design)."""
+"""Contract 1.6.0: Data-Hub, project workspace and research notes (spec 2026-10-02-data-hub-workspace-notes-design)."""
 
 import json
 from typing import Any
@@ -233,7 +233,7 @@ def _envelope(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
 
 def test_version_tags_and_new_operations() -> None:
     spec = _spec()
-    assert spec["info"]["version"] == "1.4.0"
+    assert spec["info"]["version"] == "1.6.0"
     assert {"hub", "workspace", "notes"} <= {t["name"] for t in spec["tags"]}
     assert len(NEW_OPS) == 43
     for op_id, (method, path, tag) in NEW_OPS.items():

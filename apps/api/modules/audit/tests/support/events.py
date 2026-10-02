@@ -226,7 +226,7 @@ PAYLOADS: dict[str, dict[str, Any]] = {
 }
 
 
-# Contract 1.4.0 (hub / workspace / research notes). Audit rules for these arrive in Task 8 of the
+# Contract 1.6.0 (hub / workspace / research notes). Audit rules for these arrive in Task 8 of the
 # 2026-10-02 data-hub plan; until then they are listed in test_mapping.PENDING_AUDIT_RULES.
 INPUT_ID, RECIPE_ID, RUN_ID, OUTPUT_ID = seed_id("b001"), seed_id("c001"), seed_id("d001"), seed_id("e001")
 PUBLISH_REQUEST_ID, THREAD_ID, COMMENT_ID, NOTE_ID = (
