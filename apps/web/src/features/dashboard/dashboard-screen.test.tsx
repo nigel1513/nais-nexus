@@ -30,19 +30,18 @@ async function seedPendingSensorRequest() {
 }
 
 describe("DashboardScreen", () => {
-  it("leads with a summary band: today's work in one line (no greeting) and four linked figures", async () => {
+  it("is a plain work screen: title, institute and role, four linked figures, no greeting", async () => {
     renderScreen(<DashboardScreen />, { user: USER.aResearcher });
     expect(await screen.findByRole("heading", { level: 1, name: "대시보드" })).toBeInTheDocument();
-    expect(document.body.textContent).not.toMatch(/님,|환영|Welcome/);
-    await waitFor(() => expect(document.querySelector(".db-headline")).toHaveTextContent(/진행 중인 요청 \d+건, 지금 쓸 수 있는 데이터 1개/));
+    expect(screen.getByText("Institute A · 연구자")).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/님,|환영|Welcome|이 순서로 시작/);
     const stats = within(screen.getByRole("list", { name: "요약" })).getAllByRole("link");
-    expect(stats.map((l) => l.querySelector(".db-stat-l")?.textContent)).toEqual(["진행 중인 내 요청", "활성 권한", "7일 안에 만료", "내 프로젝트"]);
-    await waitFor(() => expect(stats[1]!.querySelector(".db-stat-v")).toHaveTextContent("1개"));
-    expect(stats[2]!.querySelector(".db-stat-v")).toHaveTextContent("1개");
-    expect(stats[2]).toHaveAttribute("data-warn");
-    expect(stats[2]).toHaveAttribute("href", "/commons/access?tab=grants");
-    const band = screen.getByRole("region", { name: "대시보드" });
-    expect(within(band).getByRole("link", { name: /데이터 찾기/ })).toHaveAttribute("href", "/commons/data");
+    expect(stats.map((l) => l.querySelector(".text-small")?.textContent)).toEqual(["내 프로젝트", "진행 중인 내 요청", "활성 권한", "7일 안에 만료"]);
+    for (const s of stats) expect(s.querySelector(".num")).not.toBeNull();
+    await waitFor(() => expect(stats[2]!.querySelector(".num")).toHaveTextContent("1"));
+    expect(stats[3]!.querySelector(".num")).toHaveTextContent("1");
+    expect(stats[3]!.querySelector(".num")).toHaveClass("text-warning");
+    expect(stats[3]).toHaveAttribute("href", "/commons/access?tab=grants");
   });
 
   it("shows projects, open requests, grants, activity and the institute's datasets for a researcher (no review queue)", async () => {
@@ -60,8 +59,6 @@ describe("DashboardScreen", () => {
     expect(await block("최근 활동")).toBeInTheDocument();
     const datasets = await block("Institute A 데이터셋 최근 버전");
     expect((await within(datasets).findAllByRole("link", { name: "Facility Sensor Streams" }))[0]).toBeInTheDocument();
-    expect(within(datasets).getByText("AI-ready 검증")).toBeInTheDocument();
-    expect(within(datasets).getByText(/^통과 \d+ · 주의 \d+ · 실패 \d+ · 미검증 \d+$/)).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: /검토할 요청/ })).not.toBeInTheDocument();
   });
 
@@ -71,19 +68,13 @@ describe("DashboardScreen", () => {
     const review = await block("검토할 요청");
     expect((await within(review).findAllByText("Facility Sensor Streams"))[0]).toBeInTheDocument();
     expect(within(review).getAllByText("B Researcher 요청")[0]).toBeInTheDocument();
-    expect(within(review).getAllByRole("link", { name: "검토: Facility Sensor Streams" })[0]).toHaveAttribute("href", expect.stringMatching(/^\/commons\/access\//));
-    await waitFor(() => expect(document.querySelector(".db-headline")).toHaveTextContent("검토할 요청 1건"));
-    expect(screen.getByRole("link", { name: /검토하러 가기/ })).toHaveAttribute("href", "/commons/access?tab=review");
+    const stats = within(screen.getByRole("list", { name: "요약" })).getAllByRole("link");
+    expect(stats[0]).toHaveAttribute("href", "/commons/access?tab=review");
+    await waitFor(() => expect(stats[0]!.querySelector(".num")).toHaveTextContent("1"));
     const projects = await block("내 프로젝트");
     expect(await within(projects).findByRole("link", { name: "첫 공동 프로젝트 만들기" })).toHaveAttribute("href", "/commons/projects/new");
     const grants = await block("내 권한");
     expect(await within(grants).findByRole("link", { name: "데이터 찾기" })).toHaveAttribute("href", "/commons/data");
-  });
-
-  it("shows a start sequence instead of empty boxes when nothing is in progress yet", async () => {
-    renderScreen(<DashboardScreen />, { user: USER.aAdmin });
-    expect(await screen.findByRole("heading", { level: 2, name: "이 순서로 시작합니다" })).toBeInTheDocument();
-    expect(document.querySelector(".db-headline")).toHaveTextContent("아직 진행 중인 일이 없습니다");
   });
 
   it("isolates a failing block: projects show an error with retry while the others still render", async () => {

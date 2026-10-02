@@ -487,21 +487,6 @@
     "openAccess": "Open access management",
     "openActivity": "Open activity",
     "days": "{count, plural, one {# day} other {# days}}",
-    "factReview": "{count} to review",
-    "factRequests": "{count} open requests",
-    "factExpiring": "{count} grants expire within 7 days",
-    "factLatest": "Latest release",
-    "stat": {
-      "projects": "My projects",
-      "projectsHint": "Joint projects you are in",
-      "review": "Awaiting review",
-      "reviewHint": "Requests you sent",
-      "reviewHintSteward": "Requests you review",
-      "grants": "Active access",
-      "grantsHint": "Data you can use now",
-      "expiring": "Expiring in 7 days",
-      "expiringHint": "Access to renew"
-    },
     "columns": {
       "dataset": "Dataset",
       "requester": "Requester",
@@ -519,7 +504,8 @@
       "expires": "Expires"
     },
     "summary": "Summary",
-    "repeat": "×{count}"
+    "repeat": "×{count}",
+    "s": {}
   },
   "notFound": {
     "title": "Page not found",
