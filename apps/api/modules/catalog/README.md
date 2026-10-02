@@ -41,7 +41,11 @@ Dramatiq actor `catalog.verify_file` (queue `catalog`). Full rebuild: `python -m
   clock (`CATALOG_PREVIEW_TIMEOUT_SECONDS` + 15 s). It reads the object only through byte-range requests the worker
   serves (request and byte budgets), gets an environment without secrets, and its output is re-validated against
   the contract shapes and size ceilings before it is stored.
-- Residual risk (accepted): the child runs as the worker's uid with the network available. The worker marks itself
+- **The api/worker container runs as root:** `apps/api/Dockerfile` has no `USER` directive, so the preview child
+  inherits uid 0 inside the container. Mitigations: the worker is non-dumpable (`PR_SET_DUMPABLE 0`), compose does
+  not add `SYS_PTRACE` (default capabilities only, so the child cannot ptrace the worker), the child has RLIMITs and
+  an environment without secrets, and the container has its own PID namespace.
+- Residual risk (accepted): the child runs as the worker's uid (root in the container) with the network available. The worker marks itself
   non-dumpable (`PR_SET_DUMPABLE 0`) so the child cannot read its `/proc/<pid>/environ` or memory, but the child
   could still read any file that uid can read (e.g. a mounted `.env`) and open network connections. Only a code-
   execution bug in pyarrow/CPython parsing would expose that; a separate uid, seccomp or a network namespace would
@@ -55,8 +59,13 @@ Dramatiq actor `catalog.verify_file` (queue `catalog`). Full rebuild: `python -m
 - People block: principal investigator and data steward contact are registered users stored with the organization they
   belonged to at the time (at-the-time affiliation); later moves of the user do not rewrite the dataset.
   `steward_contact_absent` is reported when the steward contact is not set or no longer resolvable.
-- Vocabulary is seeded by the migration; IRIs stay NULL until curated. Published snapshots fall back to `contact_email`
-  and `domain` for datasets published before Wave 1.5.
+- Vocabulary is seeded by the migration; IRIs stay NULL until curated. Fallbacks are applied at publish time, to NEW
+  snapshots only (existing snapshots are frozen and never rewritten): `domain` falls back to the first subject code,
+  and `contact_email` falls back to the data steward contact's email only when `contact_email_public` is true and the
+  steward is still an ACTIVE owner-organization member (Ruling P23); otherwise it stays empty.
+- **Known gap (no contract event):** `createVocabularyTerm` writes no outbox/audit event. Contract 1.3.0 has no
+  vocabulary event type (only `catalog.dataset.*`), and the contract is not edited in this wave, so term creation is
+  not audited beyond the request log. Add an event type in a later contract revision.
 - JSON-LD: `GET /datasets/{id}/metadata.jsonld` (`application/ld+json`). Search v2 adds subject/material/method/PI/period
   filters and facets; the period filter uses overlap semantics (a dataset matches when its range intersects the query).
 - **Deploy order:** run `python -m api.modules.catalog.reindex` once, so the index `nais-datasets-v2` is built BEFORE the
