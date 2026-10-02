@@ -2,7 +2,7 @@
 import { useTranslations } from "next-intl";
 import { useRef, useState } from "react";
 
-type Decision = "approve" | "change" | "reject";
+export type Decision = "approve" | "change" | "reject";
 
 const TONE = { approve: "ok", change: "warn", reject: "bad" } as const;
 const CHIP = { approve: "approved", change: "changed", reject: "rejected" } as const;
@@ -13,7 +13,7 @@ const STEP = { approve: "logApproved", change: "logChanged", reject: "logRejecte
  * leaves in the request history. New history rows rise in (260ms), the status chip's
  * colour cross-fades; focus moves to "처음으로" and back so keyboard users never lose their place.
  */
-export function AccessDemo() {
+export function AccessDemo({ onDecide }: { onDecide?: (d: Decision | null) => void }) {
   const t = useTranslations("landing");
   const [decision, setDecision] = useState<Decision | null>(null);
   const resetRef = useRef<HTMLButtonElement>(null);
@@ -21,6 +21,7 @@ export function AccessDemo() {
 
   const decide = (d: Decision | null) => {
     setDecision(d);
+    onDecide?.(d);
     requestAnimationFrame(() => (d ? resetRef.current : approveRef.current)?.focus({ preventScroll: true }));
   };
 

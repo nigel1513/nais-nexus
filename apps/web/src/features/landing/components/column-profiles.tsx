@@ -82,11 +82,17 @@ function Column({ column, grow, interactive }: { column: SampleColumn; grow: num
 /**
  * Column profile grid, as a data card shows it. `grow` replays the bars growing once: on mount (the hero window,
  * after it has risen) or when first scrolled into view. A grid already on screen at load never re-animates.
+ * `replay` grows them again when the hero window comes back into focus.
  * Hover is instant: it is read many times and must not lag the pointer.
  */
-export function ColumnProfiles({ grow, interactive = false, label }: { grow: "mount" | "view"; interactive?: boolean; label: string }) {
+export function ColumnProfiles({ grow, replay = 0, interactive = false, label }: { grow: "mount" | "view"; replay?: number; interactive?: boolean; label: string }) {
   const root = useRef<HTMLDivElement>(null);
   const [base, setBase] = useState<number | null>(grow === "mount" ? 900 : null);
+
+  // A new `replay` value grows the bars again (remounting the columns restarts the CSS animation).
+  useEffect(() => {
+    if (replay > 0) setBase(120);
+  }, [replay]);
 
   useEffect(() => {
     if (grow !== "view") return;
@@ -107,7 +113,7 @@ export function ColumnProfiles({ grow, interactive = false, label }: { grow: "mo
   return (
     <div ref={root} className="lp-cols" role="img" aria-label={label}>
       {SAMPLE_COLUMNS.map((c, k) => (
-        <Column key={c.name} column={c} grow={base === null ? null : base + k * 70} interactive={interactive} />
+        <Column key={`${c.name}-${replay}`} column={c} grow={base === null ? null : base + k * 70} interactive={interactive} />
       ))}
     </div>
   );

@@ -7,9 +7,23 @@ const KEYS = ["access", "data", "project"] as const;
 const ADVANCE_MS = 6000;
 /** How far each window drifts toward the pointer, in px; the centre one moves least so it reads as nearest. */
 const DEPTH = [10, 5, 10];
+/** Max tilt in degrees toward the pointer: enough to read as depth, small enough to keep text crisp. */
+const TILT = 2.5;
 
-function AccessWindow() {
+type BodyProps = { active: boolean; cycle: number };
+
+/** When this window comes forward it plays the decision it explains: 검토 대기 → 승인됨 (state indication). */
+function AccessWindow({ active }: BodyProps) {
   const t = useTranslations("landing");
+  const [approved, setApproved] = useState(false);
+  useEffect(() => {
+    if (!active || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return setApproved(false);
+    const id = window.setTimeout(() => setApproved(true), 1400);
+    return () => {
+      window.clearTimeout(id);
+      setApproved(false);
+    };
+  }, [active]);
   return (
     <>
       <div className="lp-ui-head">
@@ -26,15 +40,16 @@ function AccessWindow() {
         <dd>{t("sample.scopeShort")}</dd>
       </dl>
       <div className="lp-actions">
-        <span className="lp-chip" data-tone="warn">
-          {t("ui.pending")}
+        <span key={String(approved)} className="lp-chip" data-tone={approved ? "ok" : "warn"} data-enter={approved ? "" : undefined}>
+          {t(approved ? "ui.approved" : "ui.pending")}
         </span>
       </div>
     </>
   );
 }
 
-function DataWindow() {
+/** Coming forward again replays the bars growing, so the profile reads as computed from the data. */
+function DataWindow({ cycle }: BodyProps) {
   const t = useTranslations("landing");
   return (
     <>
@@ -49,12 +64,13 @@ function DataWindow() {
           </span>
         </div>
       </div>
-      <ColumnProfiles grow="mount" label={t("data.profiles")} />
+      <ColumnProfiles grow="mount" replay={cycle} label={t("data.profiles")} />
     </>
   );
 }
 
-function ProjectWindow() {
+/** Coming forward lists the members one by one (70ms stagger), as people joining from two institutes. */
+function ProjectWindow({ cycle }: BodyProps) {
   const t = useTranslations("landing");
   const people: Array<[string, "a" | "b" | undefined, string]> = [
     ["이소재", "a", t("sample.orgA")],
@@ -70,8 +86,8 @@ function ProjectWindow() {
       </div>
       <table className="lp-rows">
         <tbody>
-          {people.map(([name, org, inst]) => (
-            <tr key={name}>
+          {people.map(([name, org, inst], i) => (
+            <tr key={`${name}-${cycle}`} data-enter={cycle > 0 ? "" : undefined} style={cycle > 0 ? { animationDelay: `${120 + i * 70}ms` } : undefined}>
               <td>
                 <span className="lp-who">
                   <span className="lp-av" data-org={org} aria-hidden>
@@ -93,8 +109,9 @@ const BODIES = { access: AccessWindow, data: DataWindow, project: ProjectWindow 
 
 /**
  * Three product windows hanging over the hero's edge (Observable home). One is in focus: tabs and dots pick it,
- * and it advances every 6s unless the pointer or keyboard focus is in the stage or the tab is hidden. On desktop
- * the windows drift a few px toward the pointer. Reduced motion: no auto-advance, no drift.
+ * and it advances every 6s unless the pointer or keyboard focus is in the stage or the tab is hidden. The window that
+ * comes forward plays a short demo of what it shows. On desktop the windows drift and tilt slightly toward the pointer
+ * (critically damped follow). Reduced motion: no auto-advance, no demo, no drift.
  */
 export function HeroWindows() {
   const t = useTranslations("landing.windows");
@@ -131,7 +148,7 @@ export function HeroWindows() {
       x += (tx - x) * 0.08;
       y += (ty - y) * 0.08;
       wins.current.forEach((w, k) => {
-        if (w) w.style.transform = `translate3d(${(x * DEPTH[k]!).toFixed(2)}px, ${(y * DEPTH[k]! * 0.6).toFixed(2)}px, 0)`;
+        if (w) w.style.transform = `translate3d(${(x * DEPTH[k]!).toFixed(2)}px, ${(y * DEPTH[k]! * 0.6).toFixed(2)}px, 0) rotateY(${(x * TILT).toFixed(3)}deg) rotateX(${(-y * TILT * 0.7).toFixed(3)}deg)`;
       });
       raf = Math.abs(tx - x) + Math.abs(ty - y) > 0.001 ? requestAnimationFrame(step) : 0;
     };
@@ -184,7 +201,7 @@ export function HeroWindows() {
                     {t(key)}
                   </button>
                   <div className="lp-win-body lp-ui">
-                    <Body />
+                    <Body active={focus === i} cycle={focus === i ? swap : 0} />
                   </div>
                 </div>
               </div>

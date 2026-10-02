@@ -1,8 +1,9 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { getTranslations } from "next-intl/server";
-import { AccessDemo } from "@/features/landing/components/access-demo";
+import { AccessShowcase } from "@/features/landing/components/access-showcase";
 import { ColumnProfiles } from "@/features/landing/components/column-profiles";
+import { CountUp } from "@/features/landing/components/count-up";
 import { HeroWindows } from "@/features/landing/components/hero-windows";
 import { OperatorLink, PublicFooter, PublicHeader } from "@/features/landing/components/public-frame";
 import { ScrollReveal } from "@/features/landing/components/scroll-reveal";
@@ -78,7 +79,9 @@ export default async function LandingPage() {
                 <span>{t("titleLine1")}</span>
               </span>{" "}
               <span className="lp-line">
-                <span>{t("titleLine2")}</span>
+                <span>
+                  <span className="lp-mark">{t("titleLine2")}</span>
+                </span>
               </span>
             </h1>
             <p className="lp-prose">{t.rich("prose", rich)}</p>
@@ -133,21 +136,10 @@ export default async function LandingPage() {
               <p className="lp-intro lp-reveal" data-delay="100">
                 {t("access.intro")}
               </p>
-              <div className="lp-grid" data-flip="">
-                <div className="lp-panel-wrap lp-reveal" data-delay="160">
-                  <AccessDemo />
-                  <p className="lp-cap">{t("access.caption")}</p>
-                </div>
-                <div className="lp-notes">
-                  <ol className="lp-steps">
-                    {(["request", "review", "use", "end"] as const).map((k, i) => (
-                      <li key={k} className="lp-reveal" data-delay={200 + i * 60}>
-                        <span>{t.rich(`access.steps.${k}`, rich)}</span>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              </div>
+              <AccessShowcase
+                caption={t("access.caption")}
+                steps={(["request", "review", "use", "end"] as const).map((k) => t.rich(`access.steps.${k}`, rich))}
+              />
             </div>
           </section>
 
@@ -236,7 +228,9 @@ export default async function LandingPage() {
                       <div className="lp-ui-title sm">{t("sample.dataset")}</div>
                     </div>
                     <div className="lp-score">
-                      <b>8/10</b>
+                      <b>
+                        <CountUp to={8} suffix="/10" />
+                      </b>
                       <div className="lp-meter" aria-hidden>
                         <i />
                       </div>

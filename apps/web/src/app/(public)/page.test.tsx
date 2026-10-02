@@ -52,14 +52,17 @@ describe("public landing", () => {
     expect(screen.getAllByRole("img", { name: /예시 열 분포/ }).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("the access demo shows what each decision leaves in the history", async () => {
+  it("the access demo shows what each decision leaves in the history and lights the step it moves to", async () => {
     await renderPage();
     const panel = screen.getByText("접근 요청 #2026-0142").closest(".lp-panel") as HTMLElement;
     act(() => within(panel).getByRole("button", { name: "승인" }).click());
     expect(await within(panel).findByRole("status")).toHaveTextContent("승인됨 · 2027-03-31까지");
     expect(within(panel).getByText("기간 종료 시 자동으로 닫힘")).toBeInTheDocument();
+    // The step list follows the demo: an approved request is in "이용".
+    expect(document.querySelector('[aria-current="step"]')).toHaveTextContent(/^이용\./);
     act(() => within(panel).getByRole("button", { name: "처음으로" }).click());
     expect(await within(panel).findByRole("button", { name: "승인" })).toBeInTheDocument();
+    expect(document.querySelector('[aria-current="step"]')).toHaveTextContent(/^검토\./);
   });
 
   it("links the operator only when NAIS_OPERATOR_URL is a valid http(s) URL", async () => {

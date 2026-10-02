@@ -2,6 +2,7 @@
    Motion: one orchestrated entrance (headline lines rise out of their masks, then the product windows), then quiet
    once-only reveals on scroll. All of it is CSS except the scroll trigger, window focus and pointer drift. */
 
+html:has(.lp) { scroll-behavior: smooth; }
 .lp { --lp-gutter: 32px; font-family: var(--font-sans); letter-spacing: -0.01em; }
 .lp-wrap { max-width: 1152px; margin: 0 auto; padding-inline: var(--lp-gutter); }
 .lp-ext::after { content: "↗"; font-family: var(--font-mono); font-size: 0.85em; margin-left: 3px; display: inline-block; transition: transform var(--dur-fast) var(--ease-out); }
@@ -60,6 +61,12 @@
 /* Each line rises out of its own mask; translateY(%) is relative to the line, whatever the font size. */
 .lp-line { display: block; overflow: hidden; padding-bottom: 0.06em; margin-bottom: -0.06em; }
 .lp-line > span { display: block; }
+/* After the lines have risen, an accent rule draws under the second line, left to right (on-screen motion: ease-in-out). */
+.lp-mark { position: relative; display: inline-block; }
+.lp-mark::after {
+  content: ""; position: absolute; left: 0.02em; right: 0.02em; bottom: 0.04em; height: 0.07em; border-radius: 0.04em;
+  background: var(--color-hero-accent); transform-origin: left center; animation: lp-fill 800ms var(--ease-in-out) 1050ms both;
+}
 .lp-prose { margin: 40px 0 0; max-width: 36em; font-size: 18px; line-height: 1.75; letter-spacing: -0.015em; color: var(--color-hero-fg-muted); text-wrap: pretty; }
 .lp-prose b { color: var(--color-hero-fg); font-weight: 650; }
 .lp-cta { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; margin-top: 36px; }
@@ -81,6 +88,8 @@
 .lp-win-tab i { width: 6px; height: 6px; border-radius: 50%; background: var(--color-border-strong); transition: background-color var(--dur-base) ease; }
 .lp-win[data-focus] .lp-win-tab i { background: var(--color-accent); }
 .lp-win-body { overflow: hidden; border: 1px solid var(--color-border); border-radius: 0 var(--radius-md) var(--radius-md) var(--radius-md); background: var(--color-bg-panel); box-shadow: var(--shadow-dialog); }
+.lp-win [data-enter] { animation: lp-enter 260ms var(--ease-out) both; }
+.lp-shelf { perspective: 1600px; }
 .lp-dots { position: relative; z-index: 1; display: flex; justify-content: center; gap: 4px; padding-top: 22px; }
 .lp-dots button { display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; }
 .lp-dots button span { display: block; width: 6px; height: 6px; border-radius: 3px; background: var(--color-border-strong); transition: transform 300ms var(--ease-out), background-color var(--dur-base) ease; }
@@ -189,7 +198,14 @@
 .lp-notes code { padding: 1px 5px; border-radius: var(--radius-xs); background: var(--color-bg-hover); font-family: var(--font-mono); font-size: 12.5px; letter-spacing: 0; color: var(--color-fg); }
 .lp-steps { display: grid; list-style: none; counter-reset: lp-step; margin: 0; padding: 0; }
 .lp-steps li { counter-increment: lp-step; display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 12px; padding: 12px 0; border-top: 1px solid var(--color-border); font-size: 15px; line-height: 1.7; color: var(--color-fg-muted); }
-.lp-steps li::before { content: counter(lp-step); padding-top: 3px; font-family: var(--font-mono); font-size: 12px; color: var(--color-accent-fg); }
+.lp-steps li::before {
+  content: counter(lp-step); display: grid; place-items: center; width: 22px; height: 22px; margin-top: 2px; border-radius: 50%;
+  border: 1px solid var(--color-border); font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0; color: var(--color-fg-muted);
+  transition: background-color var(--dur-base) ease, border-color var(--dur-base) ease, color var(--dur-base) ease;
+}
+/* The step the demo request is in (state indication); colour only, so it never moves text the reader is on. */
+.lp-steps li[data-active]::before { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-primary-fg); }
+.lp-steps li[data-active] b { color: var(--color-accent-fg); }
 
 /* ---------- closing band + footer ---------- */
 .lp-close { margin-top: 144px; border-top: 1px solid var(--color-border); background: var(--color-bg-subtle); }
@@ -233,7 +249,8 @@
 
 /* Reduced motion: no movement; short opacity changes that explain state stay. */
 @media (prefers-reduced-motion: reduce) {
-  .lp-line > span, .lp-grow, .lp-reveal[data-shown] .lp-meter i { animation: none !important; }
+  html:has(.lp) { scroll-behavior: auto; }
+  .lp-line > span, .lp-grow, .lp-reveal[data-shown] .lp-meter i, .lp-mark::after, .lp-win [data-enter] { animation: none !important; }
   .lp-over, .lp-prose, .lp-cta, .lp-shelf .lp-win-card, .lp-dots, .lp-timeline li[data-enter], .lp-shelf .lp-win[data-swap] .lp-win-card { animation: lp-fade 160ms ease both !important; }
   .lp-reveal { transition: opacity 160ms ease; }
   .lp-reveal[data-pre] { transform: none; }
