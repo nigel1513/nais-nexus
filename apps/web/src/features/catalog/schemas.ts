@@ -7,10 +7,17 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const DOI = /^10\.\d{4,9}\/\S+$/;
 const URL_RE = /^https?:\/\/\S+$/;
 
-const person = z.object({ user_id: z.string(), label: z.string() });
+/** `ntis` is display-only (the picked-person chip); it is never sent. */
+const person = z.object({ user_id: z.string(), label: z.string(), ntis: z.string().nullish() });
 export type PersonValue = z.infer<typeof person>;
 
-const date = z.union([z.literal(""), z.string().regex(DATE, "validation.date")]);
+/** A calendar date that exists: 2025-02-31 matches the pattern but is rejected. */
+const realDate = (s: string) => {
+  const [y, m, d] = s.split("-").map(Number) as [number, number, number];
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+};
+const date = z.union([z.literal(""), z.string().regex(DATE, "validation.date").refine(realDate, "validation.date")]);
 
 const baseObject = z.object({
   title: z.string().trim().min(3, "validation.datasetTitle").max(300, "validation.datasetTitle"),
@@ -189,7 +196,8 @@ export function contributorsChanged(before: DatasetFormValues, after: DatasetFor
 }
 
 /** Same format the user picker shows, so a loaded value looks like a freshly picked one. */
-const personValue = (p: DatasetPerson | null | undefined): PersonValue | null => (p ? { user_id: p.user_id, label: `${p.display_name} (${p.affiliation.name})` } : null);
+const personValue = (p: DatasetPerson | null | undefined): PersonValue | null =>
+  p ? { user_id: p.user_id, label: `${p.display_name} (${p.affiliation.name})`, ntis: p.national_researcher_number ?? null } : null;
 
 export function fromDataset(d: Dataset): DatasetFormValues {
   const people = d.people;

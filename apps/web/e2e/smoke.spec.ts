@@ -50,14 +50,14 @@ test("mock login → dashboard → data search show mock data", async ({ page })
   await page.getByRole("button", { name: "로그인" }).click();
 
   await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "알림 1개 읽지 않음" })).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 
   await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "데이터" }).click();
   await expect(page).toHaveURL(/\/commons\/data$/);
-  await expect(page.getByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
-  await expect(page.getByText("총 4건")).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
+  await expect(page.getByText("총 12건")).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 });
 
@@ -78,7 +78,7 @@ test("no secure-context-only APIs needed: dashboard renders without a service-un
   await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
   await page.goto("/commons");
   await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" }).first()).toBeVisible();
   await expect(page.getByText(/서비스를 사용할 수 없|service unavailable/i)).toHaveCount(0);
   await expect(page.getByText("DEPENDENCY_UNAVAILABLE")).toHaveCount(0);
 });
@@ -97,7 +97,7 @@ test("Data Card: explorer, gated preview and JSON-LD download work on any origin
   await page.goto(`/commons/data/${BATTERY}`);
   await expect(page.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
   await expect(page.getByRole("button", { name: /AI-ready/ })).toBeVisible();
-  await page.getByRole("radio", { name: "Compact" }).check();
+  await page.getByRole("button", { name: "Compact" }).click();
   await expect(page.getByRole("table", { name: /미리보기/ })).toBeVisible();
   const download = page.waitForEvent("download");
   await page.getByRole("region", { name: "메타데이터" }).getByRole("button", { name: "JSON-LD" }).click();
@@ -109,7 +109,7 @@ test("Data Card: explorer, gated preview and JSON-LD download work on any origin
 test("Data Card: a visitor without permission sees the gated notice", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000a01", url: baseURL! }]); // 박지훈, no grant
   await page.goto(`/commons/data/${BATTERY}`);
-  await page.getByRole("radio", { name: "Detail" }).check();
+  await page.getByRole("button", { name: "Detail" }).click();
   await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
 });
 
@@ -223,6 +223,187 @@ test("shell: ⌘K, notifications, user menu and the phone sheet pass axe in both
   }
 });
 
+test("dataset form: sections, pickers and the edit sheet pass axe in both themes and work by keyboard", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b03", url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/data/new");
+    await expect(page.getByRole("heading", { level: 1, name: "데이터셋 등록" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    const pi = page.getByRole("combobox", { name: /연구책임자/ });
+    await pi.fill("최유진");
+    await expect(page.getByRole("option", { name: /최유진/ })).toBeVisible();
+    // Base UI's combobox marks everything outside the input and list aria-hidden while the list is open (its
+    // FloatingFocusManager runs modal when the input sits outside the popup), which axe reports as aria-hidden-focus
+    // on the page behind; it is lifted on close. Check the open list itself.
+    expect(await seriousViolations(page, "[role=listbox]")).toEqual([]);
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("group", { name: /연구책임자/ })).toContainText("최유진");
+
+    await page.getByRole("button", { name: "연구 분야 선택" }).click();
+    const vocab = page.getByRole("dialog", { name: "연구 분야" });
+    await expect(vocab).toBeVisible();
+    // Scoped to the popover: axe's target-size rule flags whatever input the popover half covers on the page behind.
+    expect(await seriousViolations(page, "[role=dialog]")).toEqual([]);
+    await vocab.getByRole("checkbox", { name: "재료" }).check();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("group", { name: "연구 분야" })).toContainText("재료");
+
+    await page.getByRole("button", { name: "달력에서 기간 고르기" }).click();
+    await expect(page.getByRole("grid")).toBeVisible();
+    expect(await seriousViolations(page, "[role=dialog]")).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/data/00000000-0000-7000-8000-000000002001");
+    await page.getByRole("button", { name: "편집" }).click();
+    const sheet = page.getByRole("dialog", { name: "데이터셋 편집" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByLabel(/^제목/)).toHaveValue("리튬이온 배터리 셀 사이클 시험 데이터");
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+  }
+});
+
+test("projects: list, detail members and the actions menu pass axe in both themes; no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/projects");
+    await expect(page.getByRole("table", { name: "내 프로젝트" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.goto("/commons/projects/00000000-0000-7000-8000-000000001001?tab=members");
+    await expect(page.getByRole("form", { name: "구성원 초대" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "프로젝트 작업 더 보기" }).click();
+    await expect(page.getByRole("menuitem", { name: "보관…" })).toBeVisible();
+    expect(await seriousViolations(page, "[role=menu]")).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("data search: rail, table view, empty result and the phone filter sheet pass axe in both themes", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons/data");
+    const rail = page.getByRole("complementary", { name: "필터" });
+    await expect(rail.getByRole("checkbox", { name: /^이차전지 \(/ })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.getByRole("button", { name: "표" }).click();
+    await expect(page).toHaveURL(/view=table/);
+    await expect(page.getByRole("table", { name: "검색 결과" })).toBeVisible();
+    // A client-side URL update can momentarily drop <title> while Next re-applies metadata; axe would flag that.
+    await expect(page).toHaveTitle(/\S/);
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.goto("/commons/data?q=zzzz");
+    await expect(page.getByRole("button", { name: "필터 초기화" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/commons/data");
+    await page.getByRole("button", { name: "필터", exact: true }).click();
+    const sheet = page.getByRole("dialog", { name: "필터" });
+    await expect(sheet.getByRole("checkbox", { name: /^이차전지 \(/ })).toBeVisible();
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
+    await sheet.getByRole("checkbox", { name: /^이차전지 \(/ }).click();
+    await expect(page).toHaveURL(/subject=BATTERY/);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("access: review queue and request detail pass axe in both themes, rows open by keyboard, no sideways scroll on a phone", async ({ page, context, baseURL }) => {
+  const B_STEWARD = "00000000-0000-7000-8000-000000000b03";
+  const A_STEWARD = "00000000-0000-7000-8000-000000000a03";
+  // Seed from inside the page: the request context does not see the insecure project's host mapping.
+  await page.goto("/");
+  const id = await page.evaluate(async (user) => {
+    const post = (path: string, body: unknown) =>
+      fetch(`/mock-api/v1${path}`, { method: "POST", headers: { "x-mock-user": user, "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+    const project = await post("/projects", { name: "Axe 접근 검토", description: "e2e" });
+    const request = await post("/access-requests", {
+      dataset_id: "00000000-0000-7000-8000-000000002001",
+      project_id: project.project_id,
+      purpose: "ACADEMIC_RESEARCH",
+      purpose_detail: "접근성 점검을 위한 충분히 긴 목적 상세 설명입니다.",
+      operations: ["READ"],
+      requested_days: 30,
+    });
+    return request.access_request_id as string;
+  }, A_STEWARD);
+  expect(id).toMatch(/^[0-9a-f-]{36}$/);
+  await context.addCookies([{ name: "nais_mock_user", value: B_STEWARD, url: baseURL! }]);
+
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons/access");
+    await expect(page.getByRole("tab", { name: /검토할 요청/ })).toHaveAttribute("aria-selected", "true");
+    const table = page.getByRole("table", { name: "검토할 요청" });
+    await expect(table).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("tab", { name: "내 권한" }).click();
+    await expect(page).toHaveURL(/\?tab=grants$/);
+    // A soft navigation re-renders the metadata; wait for <title> to come back before axe looks at it.
+    await expect(page).toHaveTitle(/.+/);
+    expect(await seriousViolations(page)).toEqual([]);
+
+    await page.goto(`/commons/access/${id}`);
+    await expect(page.getByRole("region", { name: "검토" }).getByRole("button", { name: "승인" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+
+  await page.goto("/commons/access");
+  const row = page.getByRole("table", { name: "검토할 요청" }).getByRole("row").filter({ hasText: "이서연" }).first();
+  await row.focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/commons\/access\/[0-9a-f-]+$/);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const path of ["/commons/access", `/commons/access/${id}`]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("activity: the timeline and its action filter pass axe in both themes; no sideways scroll on a phone", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000101", url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons/activity");
+    const timeline = page.getByRole("region", { name: "활동 목록" });
+    await expect(timeline.getByRole("heading", { level: 2 }).first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "행동 종류" }).click();
+    await expect(page.getByRole("checkbox", { name: "프로젝트 생성" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await timeline.getByRole("button", { name: "상세 보기" }).first().click();
+    await expect(timeline.getByText("추적 ID").first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/commons/activity");
+  await expect(page.getByRole("region", { name: "활동 목록" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
+
 test("Settings and organization: axe clean in both themes, the theme choice persists, no sideways scroll at 390", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b01", url: baseURL! }]); // 한유나 (ORG_ADMIN)
   await page.goto("/settings");
@@ -248,6 +429,37 @@ test("Settings and organization: axe clean in both themes, the theme choice pers
   for (const path of ["/settings", "/settings/organization"]) {
     await page.goto(path);
     await expect(page.getByRole("navigation", { name: "설정 메뉴" })).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("Dashboard: steward and first-day views pass axe in both themes, the chart works by keyboard, no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  for (const [user, queue] of [
+    ["00000000-0000-7000-8000-000000000b03", "검토할 요청"], // 정현우 (DATA_STEWARD)
+    ["00000000-0000-7000-8000-000000009d03", "내 요청 진행"], // 문가영 (no requests, grants or downloads yet)
+  ] as const) {
+    await context.clearCookies();
+    await context.addCookies([{ name: "nais_mock_user", value: user, url: baseURL! }]);
+    for (const scheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto("/commons");
+      await expect(page.getByRole("heading", { level: 1, name: "대시보드" })).toBeVisible();
+      await expect(page.getByRole("region", { name: new RegExp(`^${queue}`) })).toBeVisible();
+      const chart = page.getByRole("slider", { name: /최근 30일 일별 건수/ });
+      await expect(chart).toBeVisible();
+      await expect(page.getByRole("region", { name: /데이터 상태/ }).getByRole("table")).toBeVisible();
+      await page.waitForLoadState("networkidle");
+      expect(await seriousViolations(page)).toEqual([]);
+      await chart.focus();
+      await page.keyboard.press("ArrowLeft");
+      await expect(chart).toHaveAttribute("aria-valuenow", "28");
+      expect(await seriousViolations(page)).toEqual([]);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/commons");
+    await expect(page.getByRole("region", { name: new RegExp(`^${queue}`) })).toBeVisible();
+    await page.waitForLoadState("networkidle");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });

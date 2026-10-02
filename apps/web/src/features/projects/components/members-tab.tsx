@@ -1,5 +1,6 @@
 "use client";
-import { Button, ConfirmDialog, DataTable, FormField, Select } from "@nais/ui";
+import { Avatar, Badge, Button, ConfirmDialog, DataTable, Label, Select } from "@nais/ui";
+import { LogOut, Plus, UserMinus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
@@ -8,9 +9,11 @@ import { useErrorText } from "@/shared/api/use-error-text";
 import type { IdentityPublicProfile, Project, ProjectMember, ProjectRole } from "@/shared/api/types";
 import { useMeData } from "@/shared/hooks/use-me";
 import { DateTime } from "@/shared/ui/date-text";
+import { Crumb } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
 import { useAddProjectMember, useListProjectMembers, useRemoveProjectMember, useUpdateProjectMemberRole } from "../api";
+import { ProjectRoleBadge } from "./project-role-badge";
 import { UserCombobox } from "./user-combobox";
 
 const ROLES = ENUMS.ProjectRole as readonly ProjectRole[];
@@ -50,7 +53,8 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
     <div className="flex flex-col gap-4">
       {manager ? (
         <form
-          className="flex flex-wrap items-end gap-3 rounded-md border border-border p-3"
+          aria-labelledby="invite-title"
+          className="flex flex-col gap-3 rounded-md border border-border bg-bg-panel p-4"
           onSubmit={(e) => {
             e.preventDefault();
             if (!picked) return;
@@ -67,33 +71,54 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
             );
           }}
         >
-          <UserCombobox key={comboKey} value={picked} onChange={setPicked} />
-          <FormField id="add-member-role" label={t("projects.members.newRole")}>
-            {(a11y) => (
-              <Select {...a11y} value={newRole} onChange={(e) => setNewRole(e.target.value as ProjectRole)}>
+          <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+            <Crumb id="invite-title" kicker={t("projects.members.kicker.invite")} title={t("projects.members.inviteTitle")} className="[&_h2]:text-[15px]" />
+            <span className="break-keep text-small text-fg-muted">{t("projects.members.inviteHint")}</span>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+            <UserCombobox key={comboKey} value={picked} onChange={setPicked} />
+            <div className="flex flex-col gap-1.5 sm:w-40">
+              <Label htmlFor="add-member-role">{t("projects.members.newRole")}</Label>
+              <Select id="add-member-role" value={newRole} onChange={(e) => setNewRole(e.target.value as ProjectRole)}>
                 {addable.map((r) => (
                   <option key={r} value={r}>
                     {t(`enums.ProjectRole.${r}`)}
                   </option>
                 ))}
               </Select>
-            )}
-          </FormField>
-          <Button variant="primary" type="submit" disabled={!picked || add.isPending}>
-            {t("projects.members.add")}
-          </Button>
+            </div>
+            <Button variant="primary" type="submit" disabled={!picked || add.isPending}>
+              <Plus aria-hidden="true" />
+              {t("projects.members.add")}
+            </Button>
+          </div>
         </form>
       ) : null}
+      <Crumb kicker={t("projects.members.kicker.list")} title={t("projects.members.listTitle")} count={members.data.items.length} className="mt-4" />
       <DataTable<ProjectMember>
         caption={t("projects.members.caption")}
         rows={members.data.items}
         rowKey={(m) => m.user_id}
         columns={[
-          { key: "name", header: t("projects.members.name"), cell: (m) => m.display_name ?? m.user_id },
-          { key: "org", header: t("projects.members.organization"), cell: (m) => m.organization_name ?? "—" },
+          {
+            key: "name",
+            header: t("projects.members.name"),
+            cell: (m) => {
+              const name = m.display_name ?? m.user_id;
+              return (
+                <span className="flex min-w-0 items-center gap-2">
+                  <Avatar name={name} size={24} decorative />
+                  <span className="truncate font-medium text-fg">{name}</span>
+                  {m.user_id === me.user_id ? <Badge>{t("projects.members.you")}</Badge> : null}
+                </span>
+              );
+            },
+          },
+          { key: "org", header: t("projects.members.organization"), cell: (m) => <span className="text-fg-muted">{m.organization_name ?? "—"}</span> },
           {
             key: "role",
             header: t("projects.members.role"),
+            className: "w-40",
             cell: (m) =>
               manager && canManageMember(myRole, m.role) ? (
                 <Select
@@ -114,20 +139,23 @@ export function MembersTab({ project, manager }: { project: Project; manager: bo
                   ))}
                 </Select>
               ) : (
-                t(`enums.ProjectRole.${m.role}`)
+                <ProjectRoleBadge role={m.role} />
               ),
           },
-          { key: "joined", header: t("projects.members.joined"), cell: (m) => <DateTime value={m.joined_at} dateOnly /> },
+          { key: "joined", header: t("projects.members.joined"), numeric: true, cell: (m) => <DateTime value={m.joined_at} dateOnly /> },
           {
             key: "actions",
             header: t("common.actions"),
+            className: "w-36 text-right",
             cell: (m) =>
               m.user_id === me.user_id ? (
-                <Button size="sm" variant="outline" onClick={() => setRemoving(m)}>
+                <Button size="sm" variant="ghost" onClick={() => setRemoving(m)}>
+                  <LogOut aria-hidden="true" />
                   {t("projects.members.leave")}
                 </Button>
               ) : manager && canManageMember(myRole, m.role) ? (
-                <Button size="sm" variant="outline" onClick={() => setRemoving(m)}>
+                <Button size="sm" variant="ghost" onClick={() => setRemoving(m)}>
+                  <UserMinus aria-hidden="true" />
                   {t("projects.members.remove")}
                 </Button>
               ) : null,

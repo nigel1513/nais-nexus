@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, configure, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -11,10 +11,12 @@ import { DataSearchScreen } from "./data-search-screen";
 import { DatasetDetailScreen } from "./dataset-detail-screen";
 import { DatasetNewScreen } from "./dataset-new-screen";
 
+configure({ asyncUtilTimeout: 5000 }); // the full suite loads the machine; the 1 s default flakes
+
 describe("DataSearchScreen", () => {
   it("lists visible datasets with badges and filters via facets synced to the URL", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
-    expect(await screen.findByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "소결 공정 배치별 품질관리 로그" })).not.toBeInTheDocument();
     expect(screen.getByText("총 4건")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: "통제 (2)" }));
@@ -23,20 +25,54 @@ describe("DataSearchScreen", () => {
     expect(screen.queryByRole("link", { name: /Dataset 등록|데이터셋 등록/ })).not.toBeInTheDocument();
   });
 
-  it("filters by subject facet and shows PI, period and subtitle on cards", async () => {
+  it("filters by subject facet and shows a row with subtitle, meta line and badges", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
-    const card = (await screen.findByRole("heading", { level: 2, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).closest("article")!;
-    expect(within(card as HTMLElement).getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
-    expect(within(card as HTMLElement).getByText(/최유진/)).toBeInTheDocument();
-    expect(within(card as HTMLElement).getByText(/2026-01-12 – 2026-06-30/)).toBeInTheDocument();
+    const row = (await screen.findByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).closest("article")! as HTMLElement;
+    expect(within(row).getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
+    const meta = within(row).getByRole("list", { name: "데이터 정보" });
+    expect(within(meta).getByText("한국재료연구원")).toBeInTheDocument();
+    expect(within(meta).getByText(/최유진/)).toBeInTheDocument();
+    expect(within(meta).getByText(/2026-01-12 – 2026-06-30/)).toBeInTheDocument();
+    expect(within(meta).getByText("v2.0")).toHaveClass("font-mono");
+    expect(within(row).getByText("통제")).toBeInTheDocument();
+    expect(within(row).getByText("통과")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("checkbox", { name: /^재료 \(/ }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith("/commons/data?subject=MATERIALS", { scroll: false }));
+  });
+
+  it("puts the filters in a complementary landmark with vocabulary trees and tabular counts", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    const rail = await screen.findByRole("complementary", { name: "필터" });
+    const subject = await within(rail).findByRole("group", { name: "연구 분야" });
+    const parent = (await within(subject).findByRole("checkbox", { name: /^에너지 \(/ })).closest("li")!;
+    // A narrower term sits under its broader term.
+    expect(within(parent).getByRole("checkbox", { name: /^이차전지 \(/ })).toBeInTheDocument();
+    expect(within(parent).getAllByText("1")[0]).toHaveClass("num");
+  });
+
+  it("switches between list and table views and keeps the choice in the URL", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
+    await screen.findByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" });
+    expect(screen.getByRole("button", { name: "목록" })).toHaveAttribute("aria-pressed", "true");
+    await userEvent.click(screen.getByRole("button", { name: "표" }));
+    expect(router.replace).toHaveBeenLastCalledWith("/commons/data?view=table", { scroll: false });
+  });
+
+  it("table view lists title, organization, period, updated and AI-ready columns", async () => {
+    renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?view=table" });
+    const table = await screen.findByRole("table", { name: "검색 결과" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["제목", "기관", "기간", "수정일", "AI-Ready"]);
+    expect(within(table).getByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toHaveAttribute("href", expect.stringMatching(/^\/commons\/data\//));
+    expect(screen.getByRole("button", { name: "표" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("offers material and method facets with vocabulary labels", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
     expect(await screen.findByRole("group", { name: "소재" })).toBeInTheDocument();
     expect(screen.getByRole("group", { name: "수집·분석 방법" })).toBeInTheDocument();
+    // Secondary vocabularies start closed when nothing is selected in them.
+    expect(screen.getByRole("button", { name: "소재" })).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(screen.getByRole("button", { name: "소재" }));
     const box = within(screen.getByRole("group", { name: "소재" })).getAllByRole("checkbox")[0]!;
     await userEvent.click(box);
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\?material=/), { scroll: false }));
@@ -64,11 +100,16 @@ describe("DataSearchScreen", () => {
     await userEvent.type(await screen.findByRole("combobox", { name: "사용자 검색" }), "최유진");
     await userEvent.click(await screen.findByRole("option", { name: /최유진/ }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith(expect.stringMatching(/^\/commons\/data\?principal_investigator_id=/), { scroll: false }));
+    const chips = await screen.findByRole("list", { name: "적용된 필터" });
+    expect(within(chips).getByText("연구책임자 필터: 최유진")).toBeInTheDocument();
+    await userEvent.click(within(chips).getByRole("button", { name: "연구책임자 해제" }));
+    expect(router.replace).toHaveBeenLastCalledWith("/commons/data", { scroll: false });
   });
 
   it("empty result offers a filter reset", async () => {
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data?q=zzzz" });
     expect(await screen.findByText("조건에 맞는 데이터가 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("검색어를 바꾸거나 필터를 줄여 보세요.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "필터 초기화" }));
     expect(router.replace).toHaveBeenLastCalledWith("/commons/data", { scroll: false });
     expect(await screen.findByText("총 4건")).toBeInTheDocument();
@@ -95,10 +136,10 @@ describe("DataSearchScreen", () => {
       }),
     );
     renderScreen(<DataSearchScreen />, { user: USER.aResearcher, path: "/commons/data" });
-    expect(await screen.findByRole("heading", { level: 2, name: "Hit 1" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "Hit 1" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "더 보기" }));
-    expect(await screen.findByRole("heading", { level: 2, name: "Hit 2" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Hit 1" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "Hit 2" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "Hit 1" })).toBeInTheDocument();
   });
 
   it("keeps a selected facet value visible and toggleable with 0 hits", async () => {
@@ -123,7 +164,8 @@ describe("DatasetNewScreen", () => {
 
   it("caps SENSITIVE at 30 days and creates the dataset for the steward's organization", async () => {
     renderScreen(<DatasetNewScreen />, { user: USER.aSteward, path: "/commons/data/new" });
-    expect(await screen.findByText("한국에너지기술연구원")).toBeInTheDocument();
+    // Owner shown in the action bar (the steward chip also says "한국에너지기술연구원").
+    expect(await screen.findByText((_, el) => el?.tagName === "P" && el.textContent === "소유 기관 한국에너지기술연구원")).toBeInTheDocument();
     await userEvent.type(screen.getByLabelText(/^제목/), "Pilot Line Vibration");
     await userEvent.type(screen.getByLabelText(/^라이선스/), "NAIS-CONTROLLED-1.0");
     await userEvent.click(screen.getByRole("radio", { name: /민감/ }));
@@ -186,7 +228,7 @@ describe("DatasetDetailScreen", () => {
     open(USER.bResearcher, DATASET.sensors);
     expect(await screen.findByRole("link", { name: "요청 상태 보기" })).toHaveAttribute("href", `/commons/access/${request.access_request_id}`);
     // Scoped to the header CTA: the explorer's gated notice carries its own "접근 요청" button (P10).
-    const header = screen.getByRole("heading", { level: 1 }).closest("header")!;
+    const header = screen.getByRole("heading", { level: 1 }).closest("section")!;
     expect(within(header).queryByRole("button", { name: "접근 요청" })).not.toBeInTheDocument();
   });
 
@@ -264,15 +306,54 @@ describe("DatasetDetailScreen", () => {
     expect(within(dialog).getByLabelText(/^목적 상세/)).toHaveAttribute("aria-invalid", "true");
   });
 
+  it("편집 opens the form in a 640px right sheet over the data card, and 취소 closes it", async () => {
+    open(USER.bSteward, DATASET.battery);
+    await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    const sheet = await screen.findByRole("dialog", { name: "데이터셋 편집" });
+    expect(sheet.className).toMatch(/max-w-\[640px\]/);
+    expect(sheet).toHaveAccessibleDescription("리튬이온 배터리 셀 사이클 시험 데이터");
+    expect(within(sheet).getByLabelText(/^제목/)).toHaveValue("리튬이온 배터리 셀 사이클 시험 데이터");
+    expect(within(sheet).getByRole("button", { name: "저장" }).closest(".sticky")).not.toBeNull();
+    // The data card stays rendered behind the (modal) sheet.
+    expect(screen.getByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터", hidden: true })).toBeInTheDocument();
+    await userEvent.click(within(sheet).getByRole("button", { name: "취소" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "데이터셋 편집" })).not.toBeInTheDocument());
+  });
+
+  it("closing the edit sheet with unsaved changes asks first (Esc, 취소); a clean sheet closes at once", async () => {
+    open(USER.bSteward, DATASET.battery);
+    await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    let sheet = await screen.findByRole("dialog", { name: "데이터셋 편집" });
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "데이터셋 편집" })).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "편집" }));
+    sheet = await screen.findByRole("dialog", { name: "데이터셋 편집" });
+    await userEvent.type(within(sheet).getByLabelText(/^제목/), " v2");
+    await userEvent.click(within(sheet).getByRole("button", { name: "취소" }));
+    let confirm = await screen.findByRole("dialog", { name: "저장하지 않은 변경 사항을 버릴까요?" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "계속 편집" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "저장하지 않은 변경 사항을 버릴까요?" })).not.toBeInTheDocument());
+    expect(within(sheet).getByLabelText(/^제목/)).toHaveValue("리튬이온 배터리 셀 사이클 시험 데이터 v2");
+
+    await userEvent.keyboard("{Escape}");
+    confirm = await screen.findByRole("dialog", { name: "저장하지 않은 변경 사항을 버릴까요?" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "버리기" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "데이터셋 편집" })).not.toBeInTheDocument());
+    expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.title).toBe("리튬이온 배터리 셀 사이클 시험 데이터");
+  });
+
   it("editing cannot silently clear a previously set optional field", async () => {
     let patches = 0;
     server.use(http.patch("*/mock-api/v1/datasets/:id", () => { patches += 1; return HttpResponse.json({}); }));
     open(USER.bSteward, DATASET.battery);
     await userEvent.click(await screen.findByRole("button", { name: "편집" }));
-    await userEvent.clear(screen.getByLabelText(/^이용 정책/));
-    await userEvent.click(screen.getByRole("button", { name: "저장" }));
-    expect((await screen.findAllByText(/이 항목은 비울 수 없습니다/)).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText(/^이용 정책/)).toHaveAttribute("aria-invalid", "true");
+    // Scoped to the sheet: the Data Card's rail behind it has its own "이용 정책" section.
+    const sheet = await screen.findByRole("dialog", { name: "데이터셋 편집" });
+    await userEvent.clear(within(sheet).getByLabelText(/^이용 정책/));
+    await userEvent.click(within(sheet).getByRole("button", { name: "저장" }));
+    expect((await within(sheet).findAllByText(/이 항목은 비울 수 없습니다/)).length).toBeGreaterThan(0);
+    expect(within(sheet).getByLabelText(/^이용 정책/)).toHaveAttribute("aria-invalid", "true");
     expect(patches).toBe(0);
   });
 
@@ -283,7 +364,7 @@ describe("DatasetDetailScreen", () => {
     await userEvent.clear(days);
     await userEvent.type(days, "90");
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("dialog", { name: "이용 정책 변경" });
     expect(dialog).toHaveTextContent("기존 권한에는 소급 적용되지 않습니다");
     await userEvent.click(within(dialog).getByRole("button", { name: "변경" }));
     await waitFor(() => expect(getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.policy.max_grant_days).toBe(90));
@@ -293,13 +374,15 @@ describe("DatasetDetailScreen", () => {
     const piBefore = getDb().datasets.find((d) => d.dataset_id === DATASET.battery)?.principal_investigator_id;
     open(USER.bSteward, DATASET.battery);
     await userEvent.click(await screen.findByRole("button", { name: "편집" }));
+    const chip = screen.getByRole("group", { name: /연구책임자/ });
+    const original = chip.textContent;
+    expect(original).toMatch(/최유진/);
+    await userEvent.click(within(chip).getByRole("button", { name: "연구책임자 변경" }));
     const pi = screen.getByRole("combobox", { name: /연구책임자/ });
-    const original = (pi as HTMLInputElement).value;
-    expect(original).not.toBe("");
     await userEvent.type(pi, "zz");
-    expect(pi).toHaveValue(`${original}zz`);
+    expect(pi).toHaveValue("zz");
     await userEvent.tab();
-    expect(pi).toHaveValue(original);
+    expect(screen.getByRole("group", { name: /연구책임자/ })).toHaveTextContent(original!);
     await userEvent.clear(screen.getByLabelText(/^제목/));
     await userEvent.type(screen.getByLabelText(/^제목/), "Renamed Battery");
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
@@ -320,11 +403,13 @@ describe("DatasetDetailScreen", () => {
     await userEvent.click(await screen.findByRole("option", { name: /이서연/ }));
     await userEvent.click(screen.getByRole("button", { name: "추가" }));
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
-    await userEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "변경" }));
+    await userEvent.click(within(await screen.findByRole("dialog", { name: "이용 정책 변경" })).getByRole("button", { name: "변경" }));
     await waitFor(() => expect(puts).toBe(1));
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "이용 정책 변경" })).not.toBeInTheDocument());
+    // The edit sheet stays open with the unsaved contributors.
+    expect(screen.getByRole("dialog", { name: "데이터셋 편집" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(puts).toBe(2));
-    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "이용 정책 변경" })).not.toBeInTheDocument();
   });
 });

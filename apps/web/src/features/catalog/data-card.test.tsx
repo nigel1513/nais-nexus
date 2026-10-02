@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { configure, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { getDb } from "@/mocks/db";
@@ -8,6 +8,8 @@ import { renderScreen } from "../../../tests/render";
 import { DatasetDetailScreen } from "./dataset-detail-screen";
 import { pickVersion } from "./data-card/pick-version";
 
+configure({ asyncUtilTimeout: 5000 }); // the detail screen loads several queries; the 1 s default flakes under load
+
 describe("Data Card", () => {
   it("renders header, subtitle, tags, AI-ready badge and the metadata block", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
@@ -15,11 +17,18 @@ describe("Data Card", () => {
     expect(screen.getByText("리튬이온 18650 셀 12개의 1,000 사이클 충방전 용량·전압·온도 이력")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "데이터 카드" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("button", { name: /AI-ready/ })).toBeInTheDocument();
+    // Header meta line: PI with NTIS, data period and the latest version.
+    const summary = screen.getByRole("region", { name: "데이터셋 요약" }); // the shared v2 SummaryBand
+    expect(within(summary).getByText("NTIS 10000002")).toBeInTheDocument();
+    expect(within(summary).getByText("2026-01-12 – 2026-06-30")).toBeInTheDocument();
+    expect(within(summary).getByText("v2.0")).toHaveClass("font-mono");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveClass("sv-h1"); // v2 two-step title inside the summary band
+    expect(screen.getByRole("heading", { level: 1 }).closest(".sv-band")).toBe(summary);
     const meta = screen.getByRole("region", { name: "메타데이터" });
     expect(within(meta).getByText("2026-01-12 – 2026-06-30")).toBeInTheDocument();
     expect(within(meta).getByText("에너지")).toBeInTheDocument();
     expect(within(meta).getAllByText(/NTIS 10000002/).length).toBeGreaterThan(0); // PI and contributor
-    expect((screen.getByRole("combobox", { name: "버전" }) as HTMLSelectElement).value).toMatch(/\S/);
+    expect(screen.getByRole("combobox", { name: "버전" })).toHaveTextContent(/v\d/);
   });
 
   it("shows at-the-time and current affiliation and the steward-absent notice", async () => {
@@ -27,7 +36,7 @@ describe("Data Card", () => {
     const steward = db.users.find((u) => u.user_id === USER.bSteward)!;
     steward.organization_id = ORG.a; // moved institutes
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
-    const card = await screen.findByRole("complementary", { name: "담당자" });
+    const card = await screen.findByRole("region", { name: "담당자" });
     expect(within(card).getByText("담당자 재지정 필요")).toBeInTheDocument();
     expect(within(card).getByText(/당시 소속/)).toBeInTheDocument();
     expect(within(card).getByText(/현재 한국에너지기술연구원/)).toBeInTheDocument();
@@ -35,7 +44,7 @@ describe("Data Card", () => {
 
   it("shows the steward email only when public and the inquiry button focuses the contact card", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
-    const card = await screen.findByRole("complementary", { name: "담당자" });
+    const card = await screen.findByRole("region", { name: "담당자" });
     expect(within(card).getByRole("link", { name: "b.steward@inst-b.local" })).toHaveAttribute("href", "mailto:b.steward@inst-b.local");
     await userEvent.click(screen.getByRole("button", { name: "문의" }));
     expect(card).toHaveFocus();
@@ -55,27 +64,45 @@ describe("Data Card", () => {
   });
 });
 
+describe("Data Card layout", () => {
+  it("orders the actions 문의 · 새 노트북 (예정, disabled) · access CTA, and has a rail with four panels", async () => {
+    renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
+    const header = (await screen.findByRole("heading", { level: 1, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).closest("section")!;
+    await within(header).findByRole("button", { name: "접근 요청" });
+    const actions = within(header).getAllByRole("button").filter((b) => /^(문의|새 노트북|접근 요청)/.test(b.textContent ?? ""));
+    expect(actions.map((b) => b.textContent)).toEqual(["문의", "새 노트북예정", "접근 요청"]);
+    expect(actions[1]).toBeDisabled();
+    expect(actions[2]).toHaveClass("bg-primary");
+    const rail = screen.getByRole("complementary", { name: "데이터셋 정보" });
+    for (const name of ["담당자", "연구책임자", "이용 정책", "활동"]) expect(within(rail).getByRole("region", { name })).toBeInTheDocument();
+  });
+});
+
 describe("Data Card extras", () => {
   it("lists the three seeded published versions, defaults to the latest and switches via the select", async () => {
     const ds = DATASET.battery;
     renderScreen(<DatasetDetailScreen datasetId={ds} />, { user: USER.bResearcher, path: `/commons/data/${ds}` });
-    const select = (await screen.findByRole("combobox", { name: "버전" })) as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(3)); // the DRAFT is hidden from researchers
-    expect([...select.options].map((o) => o.textContent)).toEqual([expect.stringContaining("v2.0"), expect.stringContaining("v1.1"), expect.stringContaining("v1.0")]);
-    expect(select.value).toBe(VERSION.battery);
-    expect(screen.getByText("파일 5개")).toBeInTheDocument();
-    await userEvent.selectOptions(select, VERSION.batteryV10);
+    const select = await screen.findByRole("combobox", { name: "버전" });
+    expect(select).toHaveTextContent("v2.0");
+    expect(await screen.findByText("파일 5개")).toBeInTheDocument();
+    await userEvent.click(select);
+    const options = await screen.findAllByRole("option");
+    expect(options).toHaveLength(3); // the DRAFT is hidden from researchers
+    expect(options.map((o) => o.textContent)).toEqual([expect.stringContaining("v2.0"), expect.stringContaining("v1.1"), expect.stringContaining("v1.0")]);
+    await userEvent.click(options[2]!);
     expect(router.replace).toHaveBeenLastCalledWith(expect.stringContaining(`v=${VERSION.batteryV10}`), { scroll: false });
-    await waitFor(() => expect(select.value).toBe(VERSION.batteryV10));
-    expect(screen.getByText("파일 2개")).toBeInTheDocument();
+    await waitFor(() => expect(select).toHaveTextContent("v1.0"));
+    expect(await screen.findByText("파일 2개")).toBeInTheDocument();
   });
   it("shows the DRAFT version only to the owner steward", async () => {
     const ds = DATASET.battery;
     renderScreen(<DatasetDetailScreen datasetId={ds} />, { user: USER.bSteward, path: `/commons/data/${ds}` });
-    const select = (await screen.findByRole("combobox", { name: "버전" })) as HTMLSelectElement;
-    await waitFor(() => expect(select.options.length).toBe(4));
-    expect(select.value).toBe(VERSION.battery); // latest published, not the draft
-    expect([...select.options].some((o) => o.value === VERSION.batteryDraft)).toBe(true);
+    const select = await screen.findByRole("combobox", { name: "버전" });
+    expect(select).toHaveTextContent("v2.0"); // latest published, not the draft
+    await userEvent.click(select);
+    const options = await screen.findAllByRole("option");
+    expect(options).toHaveLength(4);
+    expect(options.some((o) => /초안/.test(o.textContent ?? ""))).toBe(true);
   });
   it("has the Metadata JSON-LD button and the column table slot", async () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });

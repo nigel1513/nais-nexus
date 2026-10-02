@@ -257,68 +257,150 @@
   },
   "dashboard": {
     "title": "대시보드",
-    "myProjects": "내 프로젝트",
-    "openRequests": "진행 중인 내 요청",
-    "myGrants": "내 권한",
-    "reviewQueue": "검토할 요청",
-    "noProjects": "아직 참여한 프로젝트가 없습니다.",
-    "createFirstProject": "첫 공동 프로젝트 만들기",
-    "noRequests": "진행 중인 요청이 없습니다.",
-    "noGrants": "유효한 접근 권한이 없습니다.",
-    "noReview": "검토할 요청이 없습니다.",
-    "viewAll": "전체 보기",
-    "requestedBy": "{name} 요청",
-    "recentActivity": "최근 활동",
-    "activityList": "최근 활동 목록",
-    "orgDatasets": "{org} 데이터셋 최근 버전",
-    "noDatasets": "아직 등록된 데이터셋이 없습니다.",
-    "newDataset": "새 데이터셋 등록",
-    "findData": "데이터 찾기",
-    "openAccess": "접근 관리 열기",
-    "openActivity": "활동 열기",
-    "days": "{count}일",
-    "columns": {
-      "dataset": "데이터셋",
-      "requester": "요청자",
-      "project": "프로젝트",
-      "purpose": "목적",
-      "days": "기간",
-      "status": "상태",
-      "submitted": "제출일",
-      "version": "버전",
-      "access": "공개 수준",
-      "readiness": "AI-Ready",
-      "updated": "수정일",
-      "myRole": "내 역할",
-      "members": "구성원",
-      "expires": "만료",
-      "waiting": "대기",
-      "owner": "소유 기관",
-      "lead": "주관 기관"
-    },
-    "summary": "요약",
-    "repeat": "×{count}",
     "researcher": "연구자",
+    "window": "최근 30일",
+    "findData": "데이터 찾기",
+    "newDataset": "새 데이터셋 등록",
     "newProject": "새 프로젝트",
-    "s": {
-      "review": "검토 대기",
-      "reviewOldest": "가장 오래된 요청 {days}일째",
-      "reviewToday": "오늘 들어온 요청",
-      "reviewNone": "기다리는 요청 없음",
-      "requests": "진행 중인 내 요청",
-      "requestsChange": "{count}건은 변경 요청 받음",
-      "grants": "활성 권한",
-      "grantsHint": "지금 쓸 수 있는 데이터",
-      "expiring": "7일 안에 만료",
-      "expiringHint": "연장이 필요한 권한",
-      "projects": "내 프로젝트",
-      "projectsHint": "참여 중인 공동 연구",
-      "requestsHint": "내가 보낸 접근 요청"
+    "viewAll": "전체 보기",
+    "summary": "최근 30일 요약",
+    "kpi": {
+      "orgDatasets": "우리 기관 데이터셋",
+      "orgDatasetsFoot": "공개 {open} · 승인 필요 {controlled}",
+      "orgReadyFoot": "AI-Ready 통과 {count}",
+      "published": "발행 · 30일",
+      "publishedFoot": "지난 7일 {count}건",
+      "pending": "검토 대기",
+      "pendingFoot": "30일 처리 {count}건 · 평균 {days}일",
+      "pendingFootNone": "최근 30일 처리 없음",
+      "ownerGrants": "우리 데이터 활성 권한",
+      "grants": "내 활성 권한",
+      "expiringFoot": "7일 안에 만료 {count}",
+      "expiringNone": "7일 안에 만료 없음",
+      "downloadsOrg": "우리 데이터 다운로드 · 30일",
+      "downloadsMine": "내 다운로드 · 30일",
+      "downloadsAll": "다운로드 · 30일",
+      "wow": "지난주 대비 {pct}",
+      "lastWeek": "지난 7일 {count}건",
+      "projects": "참여 프로젝트",
+      "projectsFoot": "주관 {lead} · 참여 {member}",
+      "openRequests": "진행 중인 내 요청",
+      "changeFoot": "보완 요청 {count}건",
+      "changeNone": "보완할 요청 없음",
+      "added": "30일 +{count}"
     },
-    "waitToday": "오늘",
-    "waitDays": "{days}일째",
-    "dday": "D-{days}",
-    "ddayToday": "오늘 만료"
+    "activity": {
+      "eyebrow": "최근 30일",
+      "org": "기관 활동",
+      "mine": "내 활동",
+      "portal": "포털 활동",
+      "events": "{count}건",
+      "kinds": {
+        "download": "다운로드",
+        "access": "접근 요청·결정",
+        "publish": "등록·발행",
+        "readiness": "AI-Ready 검증",
+        "other": "기타"
+      },
+      "total": "합계",
+      "today": "오늘",
+      "date": "날짜",
+      "chartLabel": "{title}: 최근 30일 일별 건수. 화살표 키로 날짜를 고릅니다.",
+      "empty": "최근 30일 동안 기록된 활동이 없습니다",
+      "emptyHint": "데이터를 내려받거나 접근을 요청하면 여기에 쌓입니다."
+    },
+    "readiness": {
+      "eyebrow": "AI-Ready",
+      "title": "데이터 준비 상태",
+      "org": "{org}",
+      "portal": "연구회 전체",
+      "count": "{count}건",
+      "notValidated": "미검증",
+      "emptyOrg": "{org}에 등록된 데이터셋이 아직 없습니다.",
+      "label": "{scope}: 통과 {pass}, 경고 {warning}, 실패 {fail}, 미검증 {none}"
+    },
+    "fields": {
+      "eyebrow": "연구회 전체",
+      "title": "연구 분야별 데이터",
+      "mine": "우리 기관",
+      "others": "다른 기관",
+      "datasets": "데이터셋 {count}건"
+    },
+    "queue": {
+      "eyebrow": "할 일",
+      "review": "검토할 요청",
+      "mine": "내 요청 진행",
+      "reviewAction": "검토",
+      "openAction": "열기",
+      "fixAction": "보완하기",
+      "waited": "{days}일째",
+      "today": "오늘",
+      "next": {
+        "SUBMITTED": "소유 기관 검토 대기",
+        "UNDER_REVIEW": "검토 중",
+        "CHANGE_REQUESTED": "보완해서 다시 제출"
+      },
+      "steps": "진행 단계: {step}/3",
+      "emptyReview": "검토할 요청이 없습니다.",
+      "emptyReviewDone": "최근 30일 동안 {count}건을 처리했습니다.",
+      "emptyMine": "진행 중인 요청이 없습니다.",
+      "emptyMineHint": "필요한 데이터를 찾아 접근을 요청해 보세요.",
+      "requester": "{name} · {org}",
+      "days": "{count}일",
+      "decided": "최근 결정"
+    },
+    "grants": {
+      "eyebrow": "만료 일정",
+      "titleOwner": "우리 데이터 권한",
+      "titleMine": "내 권한",
+      "dday": "D-{days}",
+      "today": "오늘 만료",
+      "remaining": "남은 기간 {pct}",
+      "empty": "유효한 접근 권한이 없습니다.",
+      "emptyHint": "승인되면 만료일까지 남은 기간이 여기에 표시됩니다."
+    },
+    "health": {
+      "eyebrow": "우리 기관",
+      "title": "{org} 데이터 상태",
+      "columns": {
+        "dataset": "데이터셋",
+        "version": "버전",
+        "readiness": "AI-Ready 점검",
+        "preview": "미리보기",
+        "published": "마지막 발행"
+      },
+      "score": "{pass}/{total} 통과",
+      "draftOnly": "초안",
+      "empty": "{org}에 등록된 데이터셋이 아직 없습니다.",
+      "emptyHint": "데이터셋을 등록하면 버전, AI-Ready 점검, 미리보기 상태를 여기서 한눈에 봅니다.",
+      "noPreview": "표 파일 없음"
+    },
+    "feed": {
+      "eyebrow": "연구회 전체",
+      "title": "최근 갱신된 데이터",
+      "total": "전체 {count}건"
+    },
+    "recent": {
+      "eyebrow": "기록",
+      "title": "최근 활동",
+      "list": "최근 활동 목록",
+      "repeat": "×{count}",
+      "empty": "아직 기록된 활동이 없습니다. 이렇게 시작합니다.",
+      "steps": {
+        "find": "데이터 찾기",
+        "findHint": "분야·기관·AI-Ready 상태로 연구회 데이터를 찾습니다",
+        "project": "공동 프로젝트 참여",
+        "projectHint": "요청은 프로젝트 단위로 승인됩니다",
+        "request": "접근 요청",
+        "requestHint": "목적과 기간을 적어 소유 기관에 요청합니다"
+      }
+    },
+    "ago": {
+      "now": "방금",
+      "minutes": "{count}분 전",
+      "hours": "{count}시간 전",
+      "days": "{count}일 전"
+    }
   },
   "projects": {
     "list": {
@@ -332,12 +414,16 @@
       "name": "이름",
       "lead": "주관 기관",
       "myRole": "내 역할",
-      "members": "멤버 수",
+      "members": "구성원",
       "status": "상태",
       "updated": "수정일",
       "noMatch": "조건에 맞는 프로젝트가 없습니다.",
       "emptyMine": "아직 참여한 프로젝트가 없습니다.",
-      "emptyDiscover": "공개된 프로젝트가 없습니다."
+      "emptyDiscover": "공개된 프로젝트가 없습니다.",
+      "description": "참여 중인 공동연구와 연구회에 공개된 프로젝트입니다.",
+      "emptyMineHint": "프로젝트를 만들면 데이터 접근 요청과 구성원 관리를 한곳에서 할 수 있습니다.",
+      "count": "{more, select, more {{count}개 이상} other {{count}개}}",
+      "context": "공동 연구"
     },
     "new": {
       "title": "새 프로젝트",
@@ -358,14 +444,23 @@
         "PRIVATE": "멤버만 프로젝트를 볼 수 있습니다. (기본값)",
         "PUBLIC": "모든 인증 사용자가 요약을 볼 수 있고, 상세는 멤버만 볼 수 있습니다."
       },
-      "visibilityOwnerOnly": "공개 범위는 소유자만 변경할 수 있습니다."
+      "visibilityOwnerOnly": "공개 범위는 소유자만 변경할 수 있습니다.",
+      "sectionBasic": "기본 정보",
+      "sectionBasicHint": "이름과 소개는 구성원 화면과 공개 목록에 보입니다.",
+      "sectionVisibilityHint": "공개 프로젝트는 요약만 공개되고 상세는 구성원만 봅니다.",
+      "sectionPeriodHint": "연구 수행 기간입니다. 비워 둘 수 있습니다.",
+      "kicker": {
+        "basic": "식별",
+        "visibility": "공개",
+        "period": "일정"
+      }
     },
     "detail": {
       "title": "프로젝트",
       "tabsLabel": "프로젝트 정보",
       "tabs": {
         "overview": "개요",
-        "members": "멤버",
+        "members": "구성원",
         "data": "데이터",
         "activity": "활동"
       },
@@ -382,6 +477,30 @@
       "orgRole": {
         "LEAD": "주관",
         "PARTNER": "참여"
+      },
+      "about": "소개",
+      "noDescription": "설명이 없습니다.",
+      "noKeywords": "키워드가 없습니다.",
+      "info": "프로젝트 정보",
+      "roleSplit": "역할 분포",
+      "leadBy": "주관 {org}",
+      "orgCount": "참여 기관 {count}곳",
+      "updatedAt": "수정",
+      "more": "프로젝트 작업 더 보기",
+      "archiveEllipsis": "보관…",
+      "context": "프로젝트",
+      "summary": "프로젝트 요약",
+      "myRole": "내 역할 {role}",
+      "factMembers": "구성원",
+      "factOrgs": "참여 기관",
+      "unitPeople": "명",
+      "unitOrgs": "곳",
+      "noPeriod": "기간 미정",
+      "kicker": {
+        "about": "개요",
+        "keywords": "검색",
+        "info": "기관",
+        "roles": "구성원"
       }
     },
     "members": {
@@ -404,19 +523,34 @@
       "searchUser": "사용자 검색",
       "searchPlaceholder": "이름 또는 이메일 앞부분 (2자 이상)",
       "searchHint": "2자 이상 입력하세요.",
-      "resultCount": "{count}명 검색됨"
+      "resultCount": "{count}명 검색됨",
+      "inviteTitle": "구성원 초대",
+      "inviteHint": "연구회 소속 누구나 초대할 수 있습니다.",
+      "you": "나",
+      "listTitle": "구성원",
+      "kicker": {
+        "invite": "초대",
+        "list": "명단"
+      }
     },
     "data": {
       "grants": "이 프로젝트로 받은 권한",
       "requests": "이 프로젝트의 접근 요청",
       "noGrants": "받은 권한이 없습니다.",
-      "noRequests": "접근 요청이 없습니다."
+      "noRequests": "접근 요청이 없습니다.",
+      "noGrantsHint": "접근 요청이 승인되면 여기에 표시됩니다.",
+      "noRequestsHint": "데이터 화면에서 이 프로젝트로 접근을 요청하세요.",
+      "findData": "데이터 찾기",
+      "kicker": {
+        "grants": "승인",
+        "requests": "요청"
+      }
     }
   },
   "data": {
     "search": {
       "title": "데이터 검색",
-      "filters": "검색 필터",
+      "filters": "필터",
       "results": "검색 결과",
       "total": "총 {count}건",
       "sort": "정렬",
@@ -448,7 +582,9 @@
         "from": "기간 시작",
         "to": "기간 끝",
         "apply": "기간 적용",
-        "clear": "초기화"
+        "clear": "초기화",
+        "fromShort": "시작",
+        "toShort": "끝"
       },
       "pi": {
         "label": "연구책임자",
@@ -460,14 +596,60 @@
         "pi": "연구책임자",
         "period": "기간",
         "collecting": "수집",
-        "ongoing": "진행 중"
+        "ongoing": "진행 중",
+        "owner": "소유 기관",
+        "version": "최신 버전",
+        "updated": "수정"
+      },
+      "description": "연구회 기관이 공유한 데이터셋을 분야·기간·기관으로 찾습니다.",
+      "facetOption": "{label} ({count})",
+      "showMore": "{count}개 더 보기",
+      "showLess": "접기",
+      "clearAll": "모두 지우기",
+      "activeFilters": "적용된 필터",
+      "removeFilter": "{label} 필터 해제",
+      "periodChip": "기간 {from} – {to}",
+      "emptyHint": "검색어를 바꾸거나 필터를 줄여 보세요.",
+      "view": "보기",
+      "viewList": "목록",
+      "viewTable": "표",
+      "metaLabel": "데이터 정보",
+      "openFilters": "필터",
+      "column": {
+        "title": "제목",
+        "organization": "기관",
+        "period": "기간",
+        "updated": "수정일",
+        "aiReady": "AI-Ready"
+      },
+      "hero": {
+        "crumb": "연구 데이터",
+        "context": "출연연이 함께 쓰는 연구 데이터",
+        "summary": "검색 요약",
+        "results": "검색 결과",
+        "institutes": "보유 기관",
+        "aiReady": "AI-ready 통과",
+        "resultsCrumb": "데이터셋",
+        "railCrumb": "검색 조건"
       }
     },
     "new": {
       "title": "데이터셋 등록",
       "description": "데이터셋은 내 기관 소유로 등록됩니다. 등록 후 첫 버전을 만들어 파일을 올리세요.",
       "submit": "데이터셋 등록",
-      "created": "데이터셋을 등록했습니다."
+      "created": "데이터셋을 등록했습니다.",
+      "stepsLabel": "등록 단계",
+      "stepInfo": "데이터셋 정보",
+      "stepUpload": "파일 업로드",
+      "stepProcessing": "정제 기록",
+      "stepPublish": "발행",
+      "stepPlanned": "예정",
+      "stepCurrent": "현재 단계",
+      "context": "데이터",
+      "stepInfoHint": "지금 작성하는 단계",
+      "stepUploadHint": "등록 후 버전 화면에서",
+      "stepProcessingHint": "정제 과정 기록",
+      "stepPublishHint": "검증을 거쳐 공개"
     },
     "form": {
       "owner": "소유 기관",
@@ -530,7 +712,63 @@
       "publicationUrl": "URL",
       "publicationAdd": "논문 추가",
       "publicationRemove": "논문 제거",
-      "contributorsSaveFailed": "공동연구자 저장 실패 — 편집에서 다시 시도하세요"
+      "contributorsSaveFailed": "공동연구자 저장 실패 — 편집에서 다시 시도하세요",
+      "sectionBasicHint": "검색 결과와 데이터 카드 머리에 그대로 쓰입니다.",
+      "titleHint": "3–300자. 인용 문구에도 쓰입니다.",
+      "descriptionView": "설명 보기",
+      "descriptionWrite": "작성",
+      "descriptionPreview": "미리보기",
+      "descriptionEmpty": "아직 설명이 없습니다.",
+      "ownerMembersOnly": "소유 기관({org})의 현재 구성원만 선택할 수 있습니다.",
+      "contributorName": "이름 · 소속",
+      "contributorRemoveNamed": "{name} ({role}) 제거",
+      "contributorScope": "연구회 소속 누구나 추가할 수 있습니다.",
+      "contributorsHint": "연구회 소속 누구나 · 최대 50명",
+      "sectionContextHint": "데이터를 만든 연구과제입니다. 메타데이터와 인용 정보에 들어갑니다.",
+      "sectionDataHint": "기간과 수집 기관은 검색 필터로 쓰입니다.",
+      "period": "데이터 기간",
+      "periodCalendar": "달력에서 기간 고르기",
+      "periodDays": "{count}일",
+      "methodDetailHint": "장비, 조건, 절차를 적어 주세요.",
+      "sectionClassify": "분류",
+      "sectionClassifyHint": "연구회 공통 어휘에서 고릅니다. 검색 패싯이 됩니다.",
+      "sectionTerms": "이용 조건",
+      "sectionTermsHint": "접근 요청 심사와 권한 기간의 기준이 됩니다.",
+      "sectionTermsEditHint": "바꾼 조건은 새 요청부터 적용됩니다.",
+      "usagePolicyHint": "인용 의무, 재배포 금지 같은 추가 조건",
+      "sectionPublicationsHint": "이 데이터로 쓴 논문이나 데이터를 설명하는 논문. 최대 20편.",
+      "publicationRemoveNumbered": "{n}번째 논문 제거",
+      "publicationsEmpty": "등록된 논문이 없습니다.",
+      "unsaved": "저장하지 않은 변경 사항",
+      "previewTitle": "카드 미리보기",
+      "previewUntitled": "제목 없음",
+      "guideTitle": "작성 안내",
+      "guideAccess": "통제·민감 데이터는 메타데이터만 연구회에 공개되고, 파일과 미리보기는 승인받은 사용자에게만 보입니다.",
+      "guideNext": "등록하면 데이터셋 화면에서 첫 버전을 만들고 파일을 올립니다.",
+      "vocabRemove": "{name} 제거",
+      "vocabOpen": "{legend} 선택",
+      "vocabEdit": "편집",
+      "vocabChoose": "선택",
+      "vocabSearch": "{legend} 검색",
+      "vocabSearchPlaceholder": "이름으로 찾기",
+      "vocabNoMatch": "맞는 항목이 없습니다.",
+      "vocabCount": "{count} / {max} 선택",
+      "vocabFull": "최대 {max}개까지 고를 수 있습니다",
+      "personChange": "{field} 변경",
+      "previewAccess": "공개 수준",
+      "previewLicense": "라이선스",
+      "outline": "작성 순서",
+      "outlineDone": "작성됨",
+      "outlineRequired": "필수",
+      "kicker": {
+        "basic": "식별",
+        "people": "책임",
+        "context": "출처",
+        "data": "범위",
+        "classify": "검색",
+        "terms": "접근",
+        "publications": "인용"
+      }
     },
     "detail": {
       "metadata": "메타데이터",
@@ -565,7 +803,7 @@
       "tabCard": "데이터 카드",
       "tabVersions": "버전",
       "aiReadyLoading": "AI-ready 확인 중",
-      "about": "About Dataset",
+      "about": "About",
       "noDescription": "설명이 없습니다.",
       "inquiry": "문의",
       "inquirySoon": "플랫폼 내 문의 기능은 곧 제공됩니다.",
@@ -581,7 +819,35 @@
       "explorerFiles": "파일 {count}개",
       "explorerTitle": "Data Explorer",
       "columnsTitle": "컬럼 설명",
-      "aiReadyError": "AI-ready 확인 실패"
+      "aiReadyError": "AI-ready 확인 실패",
+      "railLabel": "데이터셋 정보",
+      "piTitle": "연구책임자",
+      "activityTitle": "활동",
+      "actVersions": "발행 버전",
+      "actLastPublished": "최근 발행",
+      "actFiles": "파일",
+      "actSize": "용량",
+      "newNotebook": "새 노트북",
+      "soon": "예정",
+      "metaLabel": "데이터셋 요약",
+      "versionPicker": "버전",
+      "draftSuffix": "(초안)",
+      "aiReadyChecks": "AI-Ready 검사 결과",
+      "published": "발행",
+      "hero": {
+        "crumb": "연구 데이터",
+        "pi": "연구책임자",
+        "period": "데이터 기간",
+        "version": "버전",
+        "aiReady": "AI-ready",
+        "outOf": "/ 10",
+        "checks": "검사 결과",
+        "ongoing": "진행 중",
+        "aboutCrumb": "개요",
+        "explorerCrumb": "파일·분포",
+        "columnsCrumb": "스키마",
+        "metaCrumb": "출처·이용"
+      }
     },
     "people": {
       "atTheTime": " (당시 소속)",
@@ -652,7 +918,25 @@
       },
       "columnsTruncated": "일부 열만 표시",
       "showMore": "더 보기",
-      "empty": "표 형식 파일이 없습니다"
+      "empty": "표 형식 파일이 없습니다",
+      "otherGroup": "파일",
+      "missing": "결측 {pct}%",
+      "topValues": "상위 값",
+      "gatedHint": "열 이름·타입·단위는 Column 보기에서 볼 수 있습니다. 값과 분포는 접근 승인 후 열립니다.",
+      "previewHead": "앞 {count}행",
+      "stat": {
+        "min": "최소",
+        "max": "최대",
+        "mean": "평균"
+      }
+    },
+    "edit": {
+      "title": "데이터셋 편집",
+      "description": "{title}",
+      "discardTitle": "저장하지 않은 변경 사항을 버릴까요?",
+      "discardDescription": "편집한 내용이 저장되지 않고 사라집니다.",
+      "discard": "버리기",
+      "keepEditing": "계속 편집"
     }
   },
   "version": {
@@ -770,16 +1054,21 @@
     "description": "접근 요청과 권한을 한곳에서 관리합니다.",
     "tabsLabel": "접근 관리 보기",
     "tabs": {
+      "review": "검토할 요청",
+      "reviewLabel": "검토할 요청 ({count}건)",
       "requests": "내 요청",
-      "review": "검토 대기",
-      "reviewWithCount": "검토 대기 ({count})",
       "grants": "내 권한",
       "orgGrants": "기관 권한"
     },
     "allStatuses": "모든 상태",
+    "count": "{count}건",
+    "countMore": "{count}건 이상",
     "emptyRequests": "보낸 접근 요청이 없습니다.",
+    "emptyRequestsHint": "데이터 카드에서 접근을 요청하면 여기에 표시됩니다.",
     "emptyReview": "검토할 요청이 없습니다.",
+    "emptyReviewHint": "새 요청이 들어오면 알림으로 알려 드립니다.",
     "emptyGrants": "받은 접근 권한이 없습니다.",
+    "emptyGrantsHint": "요청이 승인되면 받은 권한이 여기에 표시됩니다.",
     "emptyOrgGrants": "우리 기관 데이터에 부여된 유효 권한이 없습니다.",
     "columns": {
       "dataset": "데이터셋",
@@ -788,9 +1077,12 @@
       "purpose": "목적",
       "days": "기간",
       "status": "상태",
+      "submitted": "제출일",
       "updated": "최근 변경",
       "expires": "만료",
-      "subject": "대상 사용자"
+      "subject": "대상 사용자",
+      "waiting": "대기",
+      "remaining": "남은 기간"
     },
     "revoke": "회수",
     "revokeTitle": "{dataset} 권한 회수",
@@ -816,10 +1108,18 @@
       "viewExisting": "기존 요청 보기"
     },
     "detail": {
-      "title": "접근 요청: {dataset}",
+      "copyId": "요청 ID 복사",
       "summary": "요청 내용",
       "history": "진행 이력",
-      "createdAt": "요청일",
+      "reviewPanel": "검토",
+      "maxGrant": "승인 가능 기간",
+      "accessLevel": "공개 수준",
+      "policyPanel": "이용 정책",
+      "policyMax": "최대 이용 기간",
+      "allowedPurposes": "허용 목적",
+      "minePanel": "내 요청",
+      "mineWaiting": "검토가 끝나면 알림으로 알려 드립니다. 결정 전에는 요청을 철회할 수 있습니다.",
+      "mineChanges": "검토자의 수정 요청을 반영해 본문 아래에서 다시 제출하세요.",
       "byRequester": "요청자",
       "byReviewer": "검토자",
       "approve": "승인",
@@ -838,6 +1138,7 @@
       "changesComment": "수정 요청 내용",
       "changesRequested": "수정을 요청했습니다.",
       "resubmitTitle": "요청 수정 후 다시 제출",
+      "resubmitHint": "목적과 기간을 고쳐 다시 제출하면 검토 대기열로 돌아갑니다.",
       "resubmit": "다시 제출",
       "resubmitted": "요청을 다시 제출했습니다.",
       "withdraw": "요청 철회",
@@ -846,8 +1147,67 @@
       "withdrawn": "요청을 철회했습니다.",
       "handledElsewhere": "다른 사용자가 먼저 처리했습니다. 최신 상태를 불러옵니다.",
       "grantTitle": "승인된 권한",
-      "grantExpires": "만료:"
-    }
+      "context": "접근 요청",
+      "steps": "{count}단계"
+    },
+    "context": "거버넌스",
+    "stats": {
+      "label": "접근 현황",
+      "review": "검토 대기",
+      "reviewOldest": "가장 오래된 요청 {days}일째",
+      "reviewToday": "오늘 들어온 요청",
+      "reviewNone": "기다리는 요청 없음",
+      "open": "진행 중인 내 요청",
+      "openChanges": "수정 요청 {count}건",
+      "openHint": "검토를 기다리는 요청",
+      "openNone": "보낸 요청 없음",
+      "grants": "활성 권한",
+      "grantsHint": "지금 쓸 수 있는 데이터",
+      "expiring": "7일 안에 만료",
+      "expiringHint": "연장하려면 새로 요청하세요",
+      "expiringNone": "곧 끝나는 권한 없음",
+      "unitCount": "건",
+      "unitItems": "개",
+      "unitDays": "일",
+      "requested": "요청 기간",
+      "grantable": "승인 가능",
+      "policyMax": "정책 최대",
+      "waiting": "기다린 날",
+      "decidedIn": "결정까지",
+      "waitingHint": "제출 {date}",
+      "maxHint": "요청 기간과 정책 중 짧은 값",
+      "policyHint": "데이터 이용 정책",
+      "requestedHint": "요청자가 적은 기간"
+    },
+    "panel": {
+      "review": {
+        "crumb": "처리할 일",
+        "title": "검토를 기다리는 요청"
+      },
+      "requests": {
+        "crumb": "보낸 요청",
+        "title": "내가 보낸 접근 요청"
+      },
+      "grants": {
+        "crumb": "이용 중",
+        "title": "내 접근 권한"
+      },
+      "orgGrants": {
+        "crumb": "우리 기관",
+        "title": "우리 기관 데이터에 부여한 권한"
+      },
+      "summaryCrumb": "요청",
+      "historyCrumb": "기록",
+      "reviewCrumb": "결정",
+      "grantCrumb": "권한",
+      "mineCrumb": "요청자",
+      "policyCrumb": "정책"
+    },
+    "waitDays": "{days}일째",
+    "waitToday": "오늘",
+    "dday": "D-{days}",
+    "ddayToday": "D-day",
+    "termOf": "{date}까지 · 총 {total}일"
   },
   "activity": {
     "title": "활동 · 감사 로그",
@@ -861,28 +1221,123 @@
       "self": "본인이 수행한 활동만 표시됩니다."
     },
     "filter": {
-      "actions": "행위 선택",
+      "actions": "행동 종류",
       "project": "프로젝트",
       "allProjects": "모든 프로젝트",
       "resourceType": "대상 종류",
       "allResources": "모든 대상",
       "from": "시작일",
-      "to": "종료일"
-    },
-    "columns": {
-      "time": "시각",
-      "actor": "행위자",
-      "action": "행위",
-      "target": "대상",
-      "result": "결과",
-      "reason": "사유",
-      "details": "상세"
+      "to": "종료일",
+      "label": "활동 필터",
+      "period": "기간",
+      "actionsCount": "행동 종류 ({count}개 선택)",
+      "clearActions": "선택 해제",
+      "search": "행위자·대상 검색",
+      "searchPlaceholder": "행위자·대상 검색",
+      "reset": "필터 초기화"
     },
     "result": {
       "SUCCESS": "성공",
       "DENIED": "거부"
     },
-    "count": "{count}건 표시 중"
+    "count": "{count}건 표시 중",
+    "timelineLabel": "활동 목록",
+    "today": "오늘",
+    "yesterday": "어제",
+    "dayCount": "{count}건",
+    "countFiltered": "{count}건 표시 중 · 불러온 {total}건에서 검색",
+    "emptyFiltered": "조건에 맞는 활동이 없습니다.",
+    "period": {
+      "all": "전체 기간",
+      "today": "오늘",
+      "7d": "최근 7일",
+      "30d": "최근 30일",
+      "custom": "직접 지정"
+    },
+    "actionGroup": {
+      "access": "접근",
+      "download": "다운로드",
+      "data": "데이터",
+      "project": "프로젝트",
+      "account": "계정·기관",
+      "other": "기타"
+    },
+    "verb": {
+      "LOGIN": "로그인했습니다",
+      "USER_CREATED": "사용자를 만들었습니다",
+      "ORGANIZATION_CREATED": "기관을 만들었습니다",
+      "ADMIN_ROLE_CHANGED": "관리 역할을 바꿨습니다",
+      "PROJECT_CREATED": "프로젝트를 만들었습니다",
+      "PROJECT_ARCHIVED": "프로젝트를 보관했습니다",
+      "PROJECT_MEMBER_ADDED": "구성원을 추가했습니다",
+      "PROJECT_MEMBER_REMOVED": "구성원을 내보냈습니다",
+      "PROJECT_MEMBER_ROLE_CHANGED": "구성원 역할을 바꿨습니다",
+      "DATASET_CREATED": "데이터셋을 등록했습니다",
+      "DATASET_VERSION_PUBLISHED": "버전을 게시했습니다",
+      "DATASET_UPDATED": "데이터셋 정보를 고쳤습니다",
+      "POLICY_CHANGED": "이용 정책을 바꿨습니다",
+      "ACCESS_REQUESTED": "접근을 요청했습니다",
+      "ACCESS_REVIEW_STARTED": "요청 검토를 시작했습니다",
+      "ACCESS_APPROVED": "접근 요청을 승인했습니다",
+      "ACCESS_REJECTED": "접근 요청을 거절했습니다",
+      "ACCESS_CHANGES_REQUESTED": "요청 수정을 요청했습니다",
+      "ACCESS_WITHDRAWN": "접근 요청을 철회했습니다",
+      "ACCESS_REVOKED": "접근 권한을 회수했습니다",
+      "ACCESS_EXPIRED": "접근 권한이 만료되었습니다",
+      "FILE_DOWNLOADED": "파일을 내려받았습니다",
+      "DOWNLOAD_DENIED": "다운로드가 거부되었습니다",
+      "READINESS_VALIDATION_COMPLETED": "AI-Ready 검증을 마쳤습니다"
+    },
+    "reason": "사유",
+    "expandRun": "{count}건 펼치기",
+    "emptyLoaded": "불러온 활동 중 일치하는 항목이 없습니다.",
+    "loadMoreToSearch": "더 불러오기",
+    "verbMany": {
+      "LOGIN": "{count}번 로그인했습니다",
+      "USER_CREATED": "사용자 {count}명을 만들었습니다",
+      "ORGANIZATION_CREATED": "기관 {count}곳을 만들었습니다",
+      "ADMIN_ROLE_CHANGED": "관리 역할을 {count}번 바꿨습니다",
+      "PROJECT_CREATED": "프로젝트 {count}개를 만들었습니다",
+      "PROJECT_ARCHIVED": "프로젝트 {count}개를 보관했습니다",
+      "PROJECT_MEMBER_ADDED": "구성원 {count}명을 추가했습니다",
+      "PROJECT_MEMBER_REMOVED": "구성원 {count}명을 내보냈습니다",
+      "PROJECT_MEMBER_ROLE_CHANGED": "구성원 역할을 {count}번 바꿨습니다",
+      "DATASET_CREATED": "데이터셋 {count}개를 등록했습니다",
+      "DATASET_VERSION_PUBLISHED": "버전 {count}개를 게시했습니다",
+      "DATASET_UPDATED": "데이터셋 정보를 {count}번 고쳤습니다",
+      "POLICY_CHANGED": "이용 정책을 {count}번 바꿨습니다",
+      "ACCESS_REQUESTED": "접근을 {count}건 요청했습니다",
+      "ACCESS_REVIEW_STARTED": "요청 {count}건의 검토를 시작했습니다",
+      "ACCESS_APPROVED": "접근 요청 {count}건을 승인했습니다",
+      "ACCESS_REJECTED": "접근 요청 {count}건을 거절했습니다",
+      "ACCESS_CHANGES_REQUESTED": "요청 {count}건에 수정을 요청했습니다",
+      "ACCESS_WITHDRAWN": "접근 요청 {count}건을 철회했습니다",
+      "ACCESS_REVOKED": "접근 권한 {count}건을 회수했습니다",
+      "ACCESS_EXPIRED": "접근 권한 {count}건이 만료되었습니다",
+      "FILE_DOWNLOADED": "파일을 {count}번 내려받았습니다",
+      "DOWNLOAD_DENIED": "다운로드가 {count}번 거부되었습니다",
+      "READINESS_VALIDATION_COMPLETED": "AI-Ready 검증 {count}건을 마쳤습니다"
+    },
+    "context": "거버넌스",
+    "stats": {
+      "label": "불러온 활동 요약",
+      "loaded": "불러온 활동",
+      "loadedHint": "필터 기준",
+      "today": "오늘",
+      "todayHint": "서울 시각 기준",
+      "denied": "거부",
+      "deniedHint": "권한 없이 시도된 작업",
+      "deniedNone": "거부된 작업 없음",
+      "actors": "참여자",
+      "actorsHint": "사람과 시스템",
+      "unitCount": "건",
+      "unitPeople": "명"
+    },
+    "panel": {
+      "crumb": "감사 로그",
+      "title": "타임라인",
+      "crumbList": "기록"
+    }
   },
   "settings": {
     "title": "설정",

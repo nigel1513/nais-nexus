@@ -1,0 +1,87 @@
+/* UI v2 screen pieces in the start page's language (landing.css): two-step titles, crumb labels, the dark summary band,
+   a step track like the start page's numbered steps. Colours, fonts, curves and durations come from globals.css tokens. */
+
+/* ---------- two-step title: muted context line over a heavy name ---------- */
+.sv-head { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
+@media (min-width: 640px) { .sv-head { flex-direction: row; align-items: flex-end; justify-content: space-between; } }
+.sv-ctx { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin: 0; font-size: 15px; line-height: 1.4; font-weight: 500; letter-spacing: -0.02em; color: var(--color-fg-muted); }
+.sv-ctx > [aria-hidden="true"] { color: var(--color-border-strong); }
+.sv-h1 { margin: 4px 0 0; font-size: clamp(26px, 2.6vw, 32px); line-height: 1.2; font-weight: 760; letter-spacing: -0.04em; color: var(--color-fg); overflow-wrap: anywhere; word-break: keep-all; }
+.sv-desc { max-width: 44em; margin: 10px 0 0; font-size: 14.5px; line-height: 1.65; letter-spacing: -0.012em; color: var(--color-fg-muted); text-wrap: pretty; word-break: keep-all; }
+.sv-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* ---------- crumb label: accent eyebrow + heavy title + mono count ---------- */
+.sv-kicker { display: inline-flex; align-items: baseline; gap: 6px; font-size: 12.5px; font-weight: 650; letter-spacing: -0.005em; color: var(--color-accent-fg); white-space: nowrap; }
+.sv-kicker b { font-family: var(--font-mono); font-size: 11.5px; font-weight: 500; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.sv-h2 { margin: 0; font-size: 17px; line-height: 1.35; font-weight: 720; letter-spacing: -0.03em; color: var(--color-fg); }
+.sv-count { font-family: var(--font-mono); font-size: 12.5px; font-weight: 400; letter-spacing: 0; font-variant-numeric: tabular-nums; color: var(--color-fg-muted); }
+
+/* ---------- summary band (hero tokens in both themes) ---------- */
+.sv-band { position: relative; overflow: hidden; margin-bottom: 28px; border-radius: var(--radius-lg); background: var(--color-hero); color: var(--color-hero-fg); word-break: keep-all; }
+:root.dark .sv-band { box-shadow: inset 0 0 0 1px var(--color-border); }
+.sv-band-in { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; padding: 22px 24px 0; }
+.sv-band .sv-ctx { font-size: 13.5px; color: var(--color-hero-fg-muted); }
+.sv-band .sv-ctx > [aria-hidden="true"] { color: color-mix(in srgb, var(--color-hero-fg) 30%, transparent); }
+.sv-band .sv-h1 { margin-top: 6px; font-size: clamp(24px, 2.6vw, 32px); color: var(--color-hero-fg); }
+.sv-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.sv-tag { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 7px; border: 1px solid color-mix(in srgb, var(--color-hero-fg) 22%, transparent); border-radius: var(--radius-xs); font-size: 12px; font-weight: 600; white-space: nowrap; color: var(--color-hero-fg-muted); }
+.sv-tag svg { width: 12px; height: 12px; }
+.sv-tag[data-tone="accent"] { border-color: color-mix(in srgb, var(--color-hero-accent) 45%, transparent); color: var(--color-hero-accent); }
+.sv-tag[data-tone="ok"]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-success-solid); }
+.sv-tag[data-tone="warn"]::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-warning-solid); }
+.sv-hb {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 13px; border: 1px solid transparent; border-radius: var(--radius-sm);
+  font-size: 13.5px; font-weight: 600; white-space: nowrap; color: var(--color-hero-fg); cursor: pointer;
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-fast) ease;
+}
+.sv-hb svg { width: 15px; height: 15px; flex: none; }
+.sv-hb:active { transform: scale(0.97); }
+.sv-hb-w { background: var(--color-hero-fg); color: var(--color-hero); }
+.sv-hb-g { border-color: color-mix(in srgb, var(--color-hero-fg) 22%, transparent); }
+.sv-hb-i { width: 34px; padding: 0; }
+@media (hover: hover) and (pointer: fine) {
+  .sv-hb-w:hover { background: var(--color-bg-panel); }
+  .sv-hb-g:hover { background: color-mix(in srgb, var(--color-hero-fg) 8%, transparent); }
+}
+.sv-facts { display: grid; grid-template-columns: repeat(var(--sv-cols, 4), minmax(0, 1fr)); margin: 22px 0 0; border-top: 1px solid color-mix(in srgb, var(--color-hero-fg) 12%, transparent); }
+.sv-facts > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 14px 24px 16px; border-left: 1px solid color-mix(in srgb, var(--color-hero-fg) 12%, transparent); }
+.sv-facts > div:first-child { border-left: 0; }
+.sv-facts dt { font-size: 12.5px; color: var(--color-hero-fg-muted); }
+.sv-facts dd { margin: 0; min-width: 0; overflow: hidden; font-size: 22px; line-height: 1.25; font-weight: 700; letter-spacing: -0.03em; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.sv-facts dd small { margin-left: 2px; font-size: 13px; font-weight: 500; letter-spacing: 0; color: var(--color-hero-fg-muted); }
+.sv-facts dd[data-mono] { font-family: var(--font-mono); font-size: 16px; font-weight: 500; letter-spacing: -0.01em; line-height: 1.75; }
+.sv-facts dd[data-text] { font-size: 16px; font-weight: 650; letter-spacing: -0.02em; line-height: 1.75; }
+.sv-facts dd[data-accent] { color: var(--color-hero-accent); }
+
+/* ---------- step track: the start page's numbered steps laid out across ---------- */
+.sv-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0 20px; margin: 0 0 36px; padding: 0; list-style: none; counter-reset: sv-step; }
+.sv-steps li { counter-increment: sv-step; position: relative; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 2px 10px; padding-top: 14px; border-top: 1px solid var(--color-border); font-size: 13px; line-height: 1.5; color: var(--color-fg-muted); }
+.sv-steps li::before {
+  content: counter(sv-step); grid-row: span 2; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  border: 1px solid var(--color-border-strong); font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0; color: var(--color-fg-muted); background: var(--color-bg);
+}
+.sv-steps li::after { content: ""; position: absolute; top: -1px; left: 0; height: 2px; width: 100%; background: var(--color-accent); transform: scaleX(0); transform-origin: left center; }
+.sv-steps b { font-size: 14px; font-weight: 650; letter-spacing: -0.015em; color: var(--color-fg); }
+.sv-steps small { font-size: 12.5px; color: var(--color-fg-muted); }
+.sv-steps li[data-state="now"]::before { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-primary-fg); }
+.sv-steps li[data-state="now"]::after { transform: scaleX(1); animation: sv-fill 700ms var(--ease-out) 120ms both; }
+.sv-steps li[data-state="now"] b { color: var(--color-accent-fg); }
+.sv-steps li[data-state="planned"] b { color: var(--color-fg-muted); }
+.sv-steps li[data-state="planned"]::before { border-style: dashed; }
+.sv-plan { display: inline-flex; align-items: center; height: 18px; margin-left: 6px; padding: 0 6px; border-radius: var(--radius-xs); background: var(--color-bg-hover); font-size: 11px; font-weight: 600; color: var(--color-fg-muted); vertical-align: 1px; }
+
+@keyframes sv-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+@media (max-width: 767px) {
+  .sv-band-in { flex-direction: column; padding: 18px 16px 0; }
+  .sv-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sv-facts > div { padding: 12px 16px; }
+  .sv-facts > div:nth-child(odd) { border-left: 0; }
+  .sv-facts > div:nth-child(n + 3) { border-top: 1px solid color-mix(in srgb, var(--color-hero-fg) 12%, transparent); }
+  .sv-facts dd { font-size: 19px; }
+  .sv-steps { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sv-steps li[data-state="now"]::after { animation: none; }
+  .sv-hb:active { transform: none; }
+}

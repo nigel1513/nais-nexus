@@ -15,6 +15,7 @@ export { MiniHistogram } from "./mini-histogram";
 export { Checkbox, FormField, Input, Label, Select, Textarea, type FieldA11y } from "./form";
 export { SelectMenu, type SelectMenuProps, type SelectOption } from "./select";
 export { Combobox, type ComboboxProps } from "./combobox";
+export { SearchCombobox, type SearchComboboxProps } from "./search-combobox";
 export { SegmentedControl, type SegmentedItem } from "./segmented";
 export { Switch } from "./switch";
 export { Radio, RadioGroup } from "./radio";
@@ -27,6 +28,7 @@ export { Sheet, SheetBody, SheetClose, SheetContent, SheetDescription, SheetHead
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
 export { Table, TBody, Td, Th, THead, Tr } from "./table";
 export { DataTable, VIRTUALIZE_AFTER, type DataColumn } from "./data-table";
+export { GroupedList, type ListGroup } from "./grouped-list";
 export { Skeleton } from "./skeleton";
 export { EmptyState } from "./empty-state";
 export { ErrorState } from "./error-state";

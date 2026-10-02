@@ -7,12 +7,13 @@ import { notify } from "@/shared/ui/toast";
 import { downloadJsonLd } from "../api";
 import { PersonLine } from "../components/person-line";
 import { VocabularyTags } from "../components/vocabulary-tags";
+import { PanelHead } from "@/shared/ui/work-hero";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 whitespace-pre-wrap break-words">{children}</dd>
+      <dt className="text-fg-muted">{label}</dt>
+      <dd className="min-w-0 whitespace-pre-wrap break-words text-fg max-sm:mb-2">{children}</dd>
     </>
   );
 }
@@ -21,7 +22,7 @@ export function JsonLdButton({ dataset }: { dataset: Pick<Dataset, "dataset_id" 
   const t = useTranslations();
   return (
     <Button
-      variant="outline"
+      variant="ghost"
       size="sm"
       onClick={() => {
         downloadJsonLd(dataset.dataset_id, dataset.title).catch(() => notify.error(t("data.card.jsonldFailed")));
@@ -42,12 +43,13 @@ export function MetadataBlock({ dataset: d }: { dataset: Dataset }) {
   const papers = d.related_publications ?? [];
   const period = d.temporal_start ? `${d.temporal_start} – ${d.temporal_end ?? t("data.meta.ongoing")}` : null;
   return (
-    <section aria-label={t("data.meta.title")}>
-      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-lg font-semibold">{t("data.meta.title")}</h2>
+    <section aria-label={t("data.meta.title")} className="flex flex-col gap-4">
+      <div className="flex items-end justify-between gap-2 border-b border-border pb-3">
+        <PanelHead crumb={t("data.card.hero.metaCrumb")} title={t("data.meta.title")} />
         <JsonLdButton dataset={d} />
       </div>
-      <dl className="grid grid-cols-1 gap-x-6 gap-y-3 text-sm sm:grid-cols-[10rem_1fr]">
+      {/* Spec §6: 140px label column. */}
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-2.5 text-small sm:grid-cols-[140px_minmax(0,1fr)]">
         {pi ? (
           <Row label={t("data.meta.pi")}>
             <PersonLine person={pi} />
@@ -59,7 +61,11 @@ export function MetadataBlock({ dataset: d }: { dataset: Dataset }) {
           </Row>
         ))}
         {d.collecting_organization?.name ? <Row label={t("data.meta.collectingOrg")}>{d.collecting_organization.name}</Row> : null}
-        {period ? <Row label={t("data.meta.period")}>{period}</Row> : null}
+        {period ? (
+          <Row label={t("data.meta.period")}>
+            <span className="num">{period}</span>
+          </Row>
+        ) : null}
         {subjects.length ? (
           <Row label={t("data.meta.subjects")}>
             <VocabularyTags scheme="SUBJECT" codes={subjects} />
@@ -79,7 +85,9 @@ export function MetadataBlock({ dataset: d }: { dataset: Dataset }) {
         {d.funding_agency ? <Row label={t("data.meta.funding")}>{d.funding_agency}</Row> : null}
         {d.method_detail ? <Row label={t("data.meta.methodDetail")}>{d.method_detail}</Row> : null}
         {d.provenance ? <Row label={t("data.meta.provenance")}>{d.provenance}</Row> : null}
-        <Row label={t("data.meta.license")}>{d.license}</Row>
+        <Row label={t("data.meta.license")}>
+          <span className="font-mono text-mono">{d.license}</span>
+        </Row>
         {d.usage_policy ? <Row label={t("data.meta.usagePolicy")}>{d.usage_policy}</Row> : null}
         {d.update_frequency ? <Row label={t("data.meta.updateFrequency")}>{t(`enums.UpdateFrequency.${d.update_frequency}`)}</Row> : null}
         {papers.length ? (
@@ -90,7 +98,7 @@ export function MetadataBlock({ dataset: d }: { dataset: Dataset }) {
                 return (
                   <li key={`${p.title}-${p.doi ?? p.url ?? ""}`}>
                     {href ? (
-                      <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">
+                      <a href={href} target="_blank" rel="noopener noreferrer" className="text-accent-fg underline-offset-4 hover:underline">
                         {p.title}
                       </a>
                     ) : (

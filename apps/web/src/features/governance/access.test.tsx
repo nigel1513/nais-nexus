@@ -38,7 +38,7 @@ describe("AccessScreen", () => {
   it("researcher: my requests and my grants, no reviewer tabs", async () => {
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access" });
     expect((await screen.findAllByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" })).length).toBeGreaterThan(0);
-    expect(screen.queryByRole("tab", { name: /검토 대기/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /검토할 요청/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "기관 권한" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("tab", { name: "내 권한" }));
     expect(router.replace).toHaveBeenCalledWith("/commons/access?tab=grants", { scroll: false });
@@ -51,7 +51,7 @@ describe("AccessScreen", () => {
     unmount();
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access?tab=review" });
     expect(await screen.findByRole("tab", { name: "내 요청" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.queryByRole("tab", { name: /검토 대기/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /검토할 요청/ })).not.toBeInTheDocument();
   });
 
   it("follows the URL on Back/Forward", async () => {
@@ -65,22 +65,56 @@ describe("AccessScreen", () => {
 
   it("highlights grants that expire within 7 days", async () => {
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access?tab=grants" });
-    const expiry = await screen.findAllByText(/일 후 만료/);
-    for (const e of expiry) expect(e).toHaveClass("text-warning");
+    // Remaining term as a D-day bar: within a week the D-day turns amber.
+    const dday = await screen.findAllByText(/^D-(\d+|day)$/);
+    const soon = dday.filter((e) => /^D-([0-7]|day)$/.test(e.textContent!));
+    expect(soon.length).toBeGreaterThan(0);
+    for (const e of soon) expect(e).toHaveClass("text-warning");
+    expect(screen.getAllByText(/까지 · 총 \d+일$/).length).toBe(dday.length);
   });
 
   it("steward: review tab shows the pending count", async () => {
     await seedPending();
     renderScreen(<AccessScreen />, { user: USER.aSteward, path: "/commons/access?tab=review" });
-    expect(await screen.findByRole("tab", { name: "검토 대기 (1)" })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("tab", { name: "검토할 요청 (1건)" })).toHaveAttribute("aria-selected", "true");
     expect((await screen.findAllByText("시험동 공조 설비 센서 스트림")).length).toBeGreaterThan(0);
+  });
+
+  it("steward: the review queue is the first and default tab; rows show requester and organization and open the detail", async () => {
+    const id = await seedPending();
+    renderScreen(<AccessScreen />, { user: USER.aSteward, path: "/commons/access" });
+    await screen.findByRole("tab", { name: "검토할 요청 (1건)" });
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["검토할 요청1", "내 요청", "내 권한", "기관 권한"]);
+    expect(tabs[0]).toHaveAttribute("aria-selected", "true");
+    const table = await screen.findByRole("table", { name: "검토할 요청" });
+    const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(headers).toEqual(["데이터셋", "요청자", "목적", "기간", "상태", "제출일", "대기"]);
+    const row = within(table).getByText("최유진").closest("tr")!;
+    expect(row).toHaveTextContent("한국재료연구원");
+    expect(row).toHaveTextContent("14일");
+    await userEvent.click(within(row).getByText("학술 연구"));
+    expect(router.push).toHaveBeenCalledWith(`/commons/access/${id}`);
+    // Clicking the default tab clears ?tab= instead of pinning it.
+    act(() => setLocation("/commons/access"));
+    await userEvent.click(screen.getByRole("tab", { name: "내 요청" }));
+    expect(router.replace).toHaveBeenLastCalledWith("/commons/access?tab=requests", { scroll: false });
+    await userEvent.click(screen.getByRole("tab", { name: /검토할 요청/ }));
+    expect(router.replace).toHaveBeenLastCalledWith("/commons/access", { scroll: false });
+  });
+
+  it("my requests: the status filter is a listbox, not a native select", async () => {
+    renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access" });
+    const filter = await screen.findByRole("combobox", { name: "상태" });
+    expect(filter.tagName).not.toBe("SELECT");
+    expect((await screen.findByRole("heading", { name: "내가 보낸 접근 요청" })).parentElement).toHaveTextContent(/요청1$/);
   });
 
   it("revoked grants show no expiry countdown or warning colour", async () => {
     getDb().grants.find((g) => g.access_grant_id === GRANT.seed)!.status = "REVOKED";
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access?tab=grants" });
     expect((await screen.findAllByText("회수됨")).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/후 만료|만료됨/, { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^D-/)).not.toBeInTheDocument();
   });
 
   it("steward revokes an org grant only after giving a reason", async () => {
@@ -280,6 +314,28 @@ describe("AccessRequestDetailScreen", () => {
     await waitFor(() => expect(screen.getByLabelText("목적 상세")).toHaveValue("다른 검토자가 반영한 새 상세 설명입니다 충분히 길게."));
   });
 
+  it("reviewer: decisions sit in the right-rail review panel; the history names who acted", async () => {
+    const id = await seedPending(14);
+    open(USER.aSteward, id);
+    const panel = await screen.findByRole("region", { name: "검토" });
+    expect(within(panel).getByRole("button", { name: "승인" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "수정 요청" })).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "거절" })).toBeInTheDocument();
+    expect(panel).toHaveTextContent("14일");
+    const history = screen.getByRole("region", { name: "진행 이력" });
+    expect(await within(history).findByText("최유진")).toBeInTheDocument();
+    expect(await within(history).findByText("검토자")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("시험동 공조 설비 센서 스트림");
+  });
+
+  it("requester: withdrawing lives in the rail panel, not next to reviewer actions", async () => {
+    const id = await seedPending();
+    open(USER.bResearcher, id);
+    const panel = await screen.findByRole("region", { name: "내 요청" });
+    expect(within(panel).getByRole("button", { name: "요청 철회" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "검토" })).not.toBeInTheDocument();
+  });
+
   it("shows a dash for an empty purpose detail", async () => {
     const id = await seedPending();
     request(id).purpose_detail = "";
@@ -301,7 +357,7 @@ describe("AccessRequestDetailScreen", () => {
   it("approved request shows the grant expiry and a download shortcut", async () => {
     open(USER.aResearcher, REQUEST.seedApproved);
     expect(await screen.findByRole("link", { name: "다운로드" })).toHaveAttribute("href", "/commons/data/00000000-0000-7000-8000-000000002001");
-    expect((await screen.findAllByText(/후 만료/)).length).toBeGreaterThan(0);
+    expect(await within(screen.getByRole("region", { name: "승인된 권한" })).findByText(/^D-(\d+|day)$/)).toBeInTheDocument();
   });
 
   it("an approved request whose grant was revoked offers no download", async () => {

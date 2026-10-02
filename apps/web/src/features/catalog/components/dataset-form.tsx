@@ -1,17 +1,25 @@
 "use client";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, Checkbox, ConfirmDialog, FormField, Input, Textarea } from "@nais/ui";
+import {
+  Button, Checkbox, ConfirmDialog, FormField, IconButton, Input, Label, Radio, RadioGroup, SegmentedControl, SelectMenu, Textarea, cn,
+} from "@nais/ui";
+import { Check, CircleAlert, Plus, X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useRef, useState } from "react";
-import { useFieldArray, useForm, type FieldErrors } from "react-hook-form";
+import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { Controller, useFieldArray, useForm, useWatch, type Control, type FieldErrors } from "react-hook-form";
 import { ENUMS } from "@/generated/contracts";
 import { asApiError, fieldErrors } from "@/shared/api/errors";
+import type { IdentityPublicProfile } from "@/shared/api/types";
 import { useValidationText } from "@/shared/hooks/use-validation-text";
+import { AccessLevelBadge } from "@/shared/ui/badges";
+import { DateRangePicker } from "@/shared/ui/date-range-picker";
+import { FormSection } from "@/shared/ui/form-section";
 import { FormErrorSummary } from "@/shared/ui/form-error-summary";
 import { ErrorView } from "@/shared/ui/state-views";
 import { useListOrganizations } from "@/features/organizations/api";
 import { datasetFormSchemaFor, policyChanged, type DatasetFormValues } from "../schemas";
 import { ContributorsEditor } from "./contributors-editor";
+import { Markdown } from "./markdown";
 import { UserPicker, userLabel } from "./user-picker";
 import { VocabularyPicker } from "./vocabulary-picker";
 
@@ -20,7 +28,107 @@ const CLEARABLE = ["usage_policy"] as const;
 /** Server field names that differ from the form's. */
 const SERVER_FIELD: Record<string, Field> = { principal_investigator_id: "principal_investigator", data_steward_contact_id: "steward_contact" };
 
-const selectClass = "h-10 rounded-md border border-border bg-background px-2";
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} className="flex items-start gap-1.5 text-small text-danger">
+      <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" strokeWidth={2} />
+      {message}
+    </p>
+  );
+}
+
+function SubtitleCount({ control }: { control: Control<DatasetFormValues> }) {
+  const subtitle = useWatch({ control, name: "subtitle" });
+  return <span className={cn("num block text-right", subtitle.length > 160 && "font-medium text-danger")}>{`${subtitle.length} / 160`}</span>;
+}
+
+function DescriptionPreview({ control, emptyText }: { control: Control<DatasetFormValues>; emptyText: string }) {
+  const description = useWatch({ control, name: "description" });
+  return (
+    <div className="min-h-24 rounded-sm border border-border bg-bg-subtle px-3 py-2">
+      {description.trim() ? <Markdown source={description} /> : <p className="text-small text-fg-muted">{emptyText}</p>}
+    </div>
+  );
+}
+
+function PeriodField({ control, ...props }: Omit<ComponentProps<typeof DateRangePicker>, "start" | "end"> & { control: Control<DatasetFormValues> }) {
+  const [start, end] = useWatch({ control, name: ["temporal_start", "temporal_end"] });
+  return <DateRangePicker start={start} end={end} {...props} />;
+}
+
+const SECTION_KEYS = ["basic", "people", "context", "data", "classify", "terms", "publications"] as const;
+
+/**
+ * Right rail of the register page (canvas A1): how the data card will read (the start page's product panel), the
+ * sections in order with the required ones ticked as they are filled, and two short notes.
+ */
+function CardPreview({ control, ownerName }: { control: Control<DatasetFormValues>; ownerName: string }) {
+  const t = useTranslations();
+  const [title, subtitle, level, license, pi, steward, purposes] = useWatch({
+    control,
+    name: ["title", "subtitle", "access_level", "license", "principal_investigator", "steward_contact", "allowed_purposes"],
+  });
+  const required: Partial<Record<(typeof SECTION_KEYS)[number], boolean>> = {
+    basic: title.trim().length >= 3,
+    people: !!pi && !!steward,
+    terms: purposes.length > 0,
+  };
+  const sectionTitle = (k: (typeof SECTION_KEYS)[number]) => (k === "publications" ? t("data.form.relatedPublications") : t(`data.form.section${k[0]!.toUpperCase()}${k.slice(1)}` as "data.form.sectionBasic"));
+  return (
+    <aside aria-label={t("data.form.previewTitle")} className="hidden min-[1360px]:block">
+      <div className="sticky top-18 flex flex-col gap-6">
+        <section aria-labelledby="dataset-preview-title" className="overflow-hidden rounded-md border border-border bg-bg-panel">
+          <div className="border-b border-border px-4 pt-3.5 pb-3">
+            <h2 id="dataset-preview-title" className="sv-kicker">
+              {t("data.form.previewTitle")}
+            </h2>
+            <p className={cn("mt-1 break-words text-[19px] leading-[1.3] font-bold tracking-[-0.03em]", title.trim() ? "text-fg" : "text-fg-muted")}>{title.trim() || t("data.form.previewUntitled")}</p>
+            {subtitle.trim() ? <p className="mt-1 break-words text-small text-fg-muted">{subtitle}</p> : null}
+          </div>
+          <dl className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 px-4 py-3 text-small">
+            <dt className="text-fg-muted">{t("data.form.owner")}</dt>
+            <dd className="min-w-0 truncate text-fg">{ownerName}</dd>
+            <dt className="text-fg-muted">{t("data.form.previewAccess")}</dt>
+            <dd>
+              <AccessLevelBadge level={level} />
+            </dd>
+            <dt className="text-fg-muted">{t("data.form.previewLicense")}</dt>
+            <dd className="min-w-0 truncate font-mono text-mono text-fg">{license.trim() || <span className="font-sans text-fg-muted">—</span>}</dd>
+          </dl>
+        </section>
+        <nav aria-label={t("data.form.outline")}>
+          <p className="sv-kicker mb-1.5">{t("data.form.outline")}</p>
+          <ol className="flex flex-col">
+            {SECTION_KEYS.map((k, i) => (
+              <li key={k} className="border-t border-border first:border-t-0">
+                <a
+                  href={`#dataset-section-${k}`}
+                  className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-center gap-2 rounded-xs py-1.5 text-small text-fg-muted transition-colors hover:text-fg focus-visible:outline-2 focus-visible:outline-focus"
+                >
+                  <span className="font-mono text-caption font-normal tabular-nums">{String(i + 1).padStart(2, "0")}</span>
+                  <span className="truncate text-fg">{sectionTitle(k)}</span>
+                  {k in required ? (
+                    required[k] ? (
+                      <Check aria-label={t("data.form.outlineDone")} className="size-3.5 text-success" strokeWidth={2.25} />
+                    ) : (
+                      <span className="text-caption font-normal text-fg-muted">{t("data.form.outlineRequired")}</span>
+                    )
+                  ) : null}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </nav>
+        <section className="flex flex-col gap-2 break-keep border-t border-border pt-4 text-small leading-relaxed text-fg-muted">
+          <h2 className="text-small font-semibold text-fg">{t("data.form.guideTitle")}</h2>
+          <p>{t("data.form.guideAccess")}</p>
+          <p>{t("data.form.guideNext")}</p>
+        </section>
+      </div>
+    </aside>
+  );
+}
 
 export function DatasetForm({
   mode,
@@ -29,6 +137,8 @@ export function DatasetForm({
   ownerOrganizationId,
   onSubmit,
   onCancel,
+  layout = "page",
+  onDirtyChange,
 }: {
   mode: "create" | "edit";
   defaultValues: DatasetFormValues;
@@ -36,6 +146,10 @@ export function DatasetForm({
   ownerOrganizationId: string;
   onSubmit: (values: DatasetFormValues) => Promise<unknown>;
   onCancel?: () => void;
+  /** "page": sections + preview rail + action bar pinned to the viewport bottom. "sheet": single column, bar pinned to the sheet bottom. */
+  layout?: "page" | "sheet";
+  /** Reports unsaved changes (the edit sheet asks before discarding them). */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const t = useTranslations();
   const tv = useValidationText();
@@ -45,16 +159,17 @@ export function DatasetForm({
   const [summary, setSummary] = useState<{ id: string; message: string }[]>([]);
   const [submitError, setSubmitError] = useState<unknown>(null);
   const [pendingPolicy, setPendingPolicy] = useState<DatasetFormValues | null>(null);
-  const { errors, isSubmitting } = form.formState;
+  const [descriptionView, setDescriptionView] = useState<"write" | "preview">("write");
+  const { errors, isSubmitting, isDirty } = form.formState;
   // Latest props/picks, read from async handlers whose closures predate the re-render a successful PATCH causes.
   const defaultsRef = useRef(defaultValues);
   defaultsRef.current = defaultValues;
   const lastPerson = useRef({ principal_investigator: defaultValues.principal_investigator, steward_contact: defaultValues.steward_contact });
   const personProps = (field: "principal_investigator" | "steward_contact") => ({
-    onChange: (u: { user_id: string } | null) => {
-      const value = u ? { user_id: u.user_id, label: userLabel(u as Parameters<typeof userLabel>[0]) } : null;
+    onChange: (u: IdentityPublicProfile | null) => {
+      const value = u ? { user_id: u.user_id, label: userLabel(u), ntis: u.national_researcher_number ?? null } : null;
       if (value) lastPerson.current[field] = value;
-      form.setValue(field, value, { shouldValidate: form.formState.isSubmitted });
+      form.setValue(field, value, { shouldValidate: form.formState.isSubmitted, shouldDirty: true });
     },
     // Edit only: typed-over text without a pick goes back to the current person.
     onRevert:
@@ -62,15 +177,25 @@ export function DatasetForm({
         ? () => {
             const p = lastPerson.current[field];
             if (!p) return null;
-            form.setValue(field, p, { shouldValidate: form.formState.isSubmitted });
+            form.setValue(field, p, { shouldValidate: form.formState.isSubmitted, shouldDirty: true });
             return p.label;
           }
         : undefined,
   });
-  const level = form.watch("access_level");
-  const collectingMode = form.watch("collecting_mode");
+  // useWatch per field: typing in a text field re-renders only the small parts that show it, not the whole form.
+  const level = useWatch({ control: form.control, name: "access_level" });
+  const collectingMode = useWatch({ control: form.control, name: "collecting_mode" });
+  const [contributors, subjectCodes, methodCodes, materialCodes] = useWatch({ control: form.control, name: ["contributors", "subject_codes", "method_codes", "material_codes"] });
   const maxDays = level === "SENSITIVE" ? 30 : 365;
   const err = (k: Field) => tv(errors[k]?.message as string | undefined);
+  const setList =
+    <K extends "subject_codes" | "method_codes" | "material_codes" | "contributors">(k: K) =>
+    (v: DatasetFormValues[K]) =>
+      form.setValue(k, v as never, { shouldValidate: form.formState.isSubmitted, shouldDirty: true });
+
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
 
   useEffect(() => {
     // M10 §7.5: SENSITIVE caps max_grant_days at 30 before the server has to say INVALID_POLICY.
@@ -130,10 +255,353 @@ export function DatasetForm({
   const toSummary = (errs: FieldErrors<DatasetFormValues>) =>
     (Object.keys(errs) as Field[]).map((k) => ({ id: `dataset-${k}`, message: `${labels[k]}: ${tv((errs[k] as { message?: string } | undefined)?.message) ?? ""}` }));
 
+  const sheet = layout === "sheet";
+  const purposesError = err("allowed_purposes");
+
+  const fields = (
+    <>
+      <FormSection id="dataset-section-basic" index={1} kicker={t("data.form.kicker.basic")} title={t("data.form.sectionBasic")} description={t("data.form.sectionBasicHint")}>
+        <FormField id="dataset-title" label={labels.title} required requiredLabel={t("common.required")} hint={t("data.form.titleHint")} error={err("title")}>
+          {(a11y) => <Input {...a11y} {...form.register("title")} />}
+        </FormField>
+        <FormField
+          id="dataset-subtitle"
+          label={labels.subtitle}
+          hint={<SubtitleCount control={form.control} />}
+          error={err("subtitle")}
+        >
+          {(a11y) => <Input {...a11y} {...form.register("subtitle")} />}
+        </FormField>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-end justify-between gap-2">
+            <Label htmlFor="dataset-description">{labels.description}</Label>
+            <SegmentedControl
+              aria-label={t("data.form.descriptionView")}
+              value={descriptionView}
+              onValueChange={(v) => setDescriptionView(v as "write" | "preview")}
+              items={[
+                { value: "write", label: t("data.form.descriptionWrite") },
+                { value: "preview", label: t("data.form.descriptionPreview") },
+              ]}
+            />
+          </div>
+          <Textarea
+            id="dataset-description"
+            rows={8}
+            aria-describedby={errors.description ? "dataset-description-error dataset-description-hint" : "dataset-description-hint"}
+            aria-invalid={errors.description ? true : undefined}
+            className={cn(descriptionView === "preview" && "hidden")}
+            {...form.register("description")}
+          />
+          {descriptionView === "preview" ? <DescriptionPreview control={form.control} emptyText={t("data.form.descriptionEmpty")} /> : null}
+          <p id="dataset-description-hint" className="text-small text-fg-muted">
+            {t("data.form.descriptionHint")}
+          </p>
+          <FieldError id="dataset-description-error" message={err("description")} />
+        </div>
+      </FormSection>
+
+      <FormSection id="dataset-section-people" index={2} kicker={t("data.form.kicker.people")} title={t("data.form.sectionPeople")} description={t("data.form.peopleHint")}>
+        <div className="grid grid-cols-1 gap-4 @xl/form:grid-cols-2">
+          <UserPicker
+            id="dataset-principal_investigator"
+            label={labels.principal_investigator}
+            organizationId={ownerOrganizationId}
+            required
+            chip
+            initialPerson={defaultValues.principal_investigator}
+            error={err("principal_investigator")}
+            footer={<span className="break-keep">{t("data.form.ownerMembersOnly", { org: ownerName })}</span>}
+            {...personProps("principal_investigator")}
+          />
+          <div className="flex flex-col gap-2">
+            <UserPicker
+              id="dataset-steward_contact"
+              label={labels.steward_contact}
+              organizationId={ownerOrganizationId}
+              required
+              chip
+              initialPerson={defaultValues.steward_contact}
+              error={err("steward_contact")}
+              footer={<span className="break-keep">{t("data.form.ownerMembersOnly", { org: ownerName })}</span>}
+              {...personProps("steward_contact")}
+            />
+            <label className="flex cursor-pointer items-start gap-2 text-small text-fg">
+              <Checkbox id="dataset-contact_email_public" className="mt-0.5" {...form.register("contact_email_public")} />
+              <span>
+                {labels.contact_email_public}
+                <span className="block text-fg-muted">{t("data.form.contactEmailPublicHint")}</span>
+              </span>
+            </label>
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-small font-medium text-fg">{labels.contributors}</span>
+          <ContributorsEditor id="dataset-contributors" value={contributors} onChange={setList("contributors")} error={err("contributors")} />
+        </div>
+      </FormSection>
+
+      <FormSection id="dataset-section-context" index={3} kicker={t("data.form.kicker.context")} title={t("data.form.sectionContext")} description={t("data.form.sectionContextHint")}>
+        <FormField id="dataset-project_title" label={labels.project_title} error={err("project_title")}>
+          {(a11y) => <Input {...a11y} {...form.register("project_title")} />}
+        </FormField>
+        <div className="grid grid-cols-1 gap-4 @xl/form:grid-cols-2">
+          <FormField id="dataset-project_code" label={labels.project_code} error={err("project_code")}>
+            {(a11y) => <Input {...a11y} className="font-mono text-mono" {...form.register("project_code")} />}
+          </FormField>
+          <FormField id="dataset-funding_agency" label={labels.funding_agency} error={err("funding_agency")}>
+            {(a11y) => <Input {...a11y} {...form.register("funding_agency")} />}
+          </FormField>
+        </div>
+      </FormSection>
+
+      <FormSection id="dataset-section-data" index={4} kicker={t("data.form.kicker.data")} title={t("data.form.sectionData")} description={t("data.form.sectionDataHint")}>
+        <div className="grid grid-cols-1 gap-4 @xl/form:grid-cols-[minmax(0,1fr)_12rem]">
+          <PeriodField
+            control={form.control}
+            id="dataset-temporal"
+            startId="dataset-temporal_start"
+            endId="dataset-temporal_end"
+            label={t("data.form.period")}
+            startLabel={labels.temporal_start}
+            endLabel={labels.temporal_end}
+            startProps={form.register("temporal_start")}
+            endProps={form.register("temporal_end")}
+            startError={err("temporal_start")}
+            endError={err("temporal_end")}
+            onPick={(s, e) => {
+              const opts = { shouldValidate: form.formState.isSubmitted, shouldDirty: true };
+              form.setValue("temporal_start", s, opts);
+              form.setValue("temporal_end", e, opts);
+            }}
+          />
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="dataset-update_frequency">{labels.update_frequency}</Label>
+            <Controller
+              control={form.control}
+              name="update_frequency"
+              render={({ field }) => (
+                <SelectMenu
+                  id="dataset-update_frequency"
+                  value={field.value || null}
+                  onValueChange={(v) => field.onChange(v ?? "")}
+                  placeholder={<span className="text-fg-muted">{t("data.form.selectPlaceholder")}</span>}
+                  options={ENUMS.UpdateFrequency.map((f) => ({ value: f, label: t(`enums.UpdateFrequency.${f}`) }))}
+                />
+              )}
+            />
+            <FieldError id="dataset-update_frequency-error" message={err("update_frequency")} />
+          </div>
+        </div>
+        <div id="dataset-collecting_mode" className="flex flex-col gap-2">
+          <span id="dataset-collecting_mode-label" className="text-small font-medium text-fg">
+            {labels.collecting_mode}
+          </span>
+          <Controller
+            control={form.control}
+            name="collecting_mode"
+            render={({ field }) => (
+              <RadioGroup orientation="horizontal" aria-labelledby="dataset-collecting_mode-label" value={field.value} onValueChange={field.onChange}>
+                {(["none", "council", "external"] as const).map((m) => (
+                  <Radio key={m} value={m} label={t(`data.form.collecting${m === "council" ? "Council" : m === "external" ? "External" : "None"}`)} />
+                ))}
+              </RadioGroup>
+            )}
+          />
+          {collectingMode === "council" ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="dataset-collecting_organization_id" className="sr-only">
+                {t("data.form.collectingCouncilSelect")}
+              </Label>
+              <Controller
+                control={form.control}
+                name="collecting_organization_id"
+                render={({ field }) => (
+                  <SelectMenu
+                    id="dataset-collecting_organization_id"
+                    value={field.value || null}
+                    onValueChange={(v) => field.onChange(v ?? "")}
+                    placeholder={<span className="text-fg-muted">{t("data.form.collectingCouncilSelect")}</span>}
+                    aria-invalid={errors.collecting_organization_id ? true : undefined}
+                    aria-describedby={errors.collecting_organization_id ? "dataset-collecting_organization_id-error" : undefined}
+                    options={(orgs.data?.items ?? []).map((o) => ({ value: o.organization_id, label: o.name }))}
+                  />
+                )}
+              />
+              <FieldError id="dataset-collecting_organization_id-error" message={err("collecting_organization_id")} />
+            </div>
+          ) : null}
+          {collectingMode === "external" ? (
+            <FormField id="dataset-collecting_organization_name" label={labels.collecting_organization_name} error={err("collecting_organization_name")}>
+              {(a11y) => <Input {...a11y} {...form.register("collecting_organization_name")} />}
+            </FormField>
+          ) : null}
+        </div>
+        <FormField id="dataset-method_detail" label={labels.method_detail} hint={t("data.form.methodDetailHint")} error={err("method_detail")}>
+          {(a11y) => <Textarea {...a11y} rows={3} {...form.register("method_detail")} />}
+        </FormField>
+      </FormSection>
+
+      <FormSection id="dataset-section-classify" index={5} kicker={t("data.form.kicker.classify")} title={t("data.form.sectionClassify")} description={t("data.form.sectionClassifyHint")}>
+        <VocabularyPicker id="dataset-subject_codes" scheme="SUBJECT" legend={labels.subject_codes} max={5} value={subjectCodes} onChange={setList("subject_codes")} error={err("subject_codes")} />
+        <VocabularyPicker id="dataset-method_codes" scheme="METHOD" legend={labels.method_codes} max={10} value={methodCodes} onChange={setList("method_codes")} error={err("method_codes")} />
+        <VocabularyPicker id="dataset-material_codes" scheme="MATERIAL" legend={labels.material_codes} max={20} value={materialCodes} onChange={setList("material_codes")} error={err("material_codes")} />
+        <FormField id="dataset-keywords" label={labels.keywords} hint={t("projects.form.keywordsHint")} error={err("keywords")}>
+          {(a11y) => <Input {...a11y} {...form.register("keywords")} />}
+        </FormField>
+      </FormSection>
+
+      <FormSection id="dataset-section-terms" index={6} kicker={t("data.form.kicker.terms")} title={t("data.form.sectionTerms")} description={mode === "edit" ? t("data.form.sectionTermsEditHint") : t("data.form.sectionTermsHint")}>
+        <div id="dataset-access_level" className="flex flex-col gap-2">
+          <span id="dataset-access_level-label" className="text-small font-medium text-fg">
+            {labels.access_level}
+          </span>
+          <Controller
+            control={form.control}
+            name="access_level"
+            render={({ field }) => (
+              <RadioGroup aria-labelledby="dataset-access_level-label" value={field.value} onValueChange={field.onChange} className="grid grid-cols-1 gap-2 @lg/form:grid-cols-2">
+                {ENUMS.AccessLevel.map((v) => (
+                  <Radio
+                    key={v}
+                    value={v}
+                    className={cn(
+                      "items-start rounded-md border border-border bg-bg-panel p-3 [&>[role=radio]]:mt-0.5",
+                      "[&>[role=radio][data-checked]]:border-accent [&>[role=radio][data-checked]]:bg-accent",
+                      "hover:border-border-strong has-[[data-checked]]:border-accent has-[[data-checked]]:bg-accent-soft",
+                    )}
+                    label={
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="text-body font-medium">{t(`enums.AccessLevel.${v}`)}</span>
+                        <span className="break-keep text-small text-fg-muted">{t(`data.form.accessLevelHelp.${v}`)}</span>
+                      </span>
+                    }
+                  />
+                ))}
+              </RadioGroup>
+            )}
+          />
+        </div>
+        <div id="dataset-allowed_purposes" role="group" aria-labelledby="dataset-allowed_purposes-label" aria-describedby={purposesError ? "dataset-allowed_purposes-error" : undefined} className="flex flex-col gap-2">
+          <span id="dataset-allowed_purposes-label" className="text-small font-medium text-fg">
+            {labels.allowed_purposes} <span className="font-normal text-fg-muted">{t("common.required")}</span>
+          </span>
+          <div className="flex flex-wrap gap-2">
+            {ENUMS.Purpose.map((p) => (
+              <label
+                key={p}
+                className={cn(
+                  "press flex h-8 cursor-pointer select-none items-center gap-2 rounded-sm border border-border bg-bg-panel px-2.5 text-small text-fg",
+                  "hover:border-border-strong has-[:checked]:border-accent has-[:checked]:bg-accent-soft",
+                )}
+              >
+                <Checkbox value={p} aria-invalid={purposesError ? true : undefined} {...form.register("allowed_purposes")} />
+                {t(`enums.Purpose.${p}`)}
+              </label>
+            ))}
+          </div>
+          <FieldError id="dataset-allowed_purposes-error" message={purposesError} />
+        </div>
+        <div className="grid grid-cols-1 gap-4 @xl/form:grid-cols-[10rem_minmax(0,1fr)]">
+          <FormField
+            id="dataset-max_grant_days"
+            label={labels.max_grant_days}
+            required
+            requiredLabel={t("common.required")}
+            hint={level === "SENSITIVE" ? t("data.form.sensitiveHint") : t("data.form.maxGrantDaysHint")}
+            error={err("max_grant_days")}
+          >
+            {(a11y) => <Input {...a11y} type="number" min={1} max={maxDays} className="num" {...form.register("max_grant_days", { valueAsNumber: true })} />}
+          </FormField>
+          <FormField id="dataset-license" label={labels.license} required requiredLabel={t("common.required")} hint={t("data.form.licenseHint")} error={err("license")}>
+            {(a11y) => <Input {...a11y} {...form.register("license")} />}
+          </FormField>
+        </div>
+        <FormField id="dataset-usage_policy" label={labels.usage_policy} hint={t("data.form.usagePolicyHint")} error={err("usage_policy")}>
+          {(a11y) => <Textarea {...a11y} rows={3} {...form.register("usage_policy")} />}
+        </FormField>
+      </FormSection>
+
+      <FormSection id="dataset-section-publications" index={7} kicker={t("data.form.kicker.publications")} title={t("data.form.relatedPublications")} description={t("data.form.sectionPublicationsHint")}>
+        <div id="dataset-related_publications" className="flex flex-col gap-2">
+          {publications.fields.length ? (
+            <ul aria-label={labels.related_publications} className="overflow-hidden rounded-md border border-border bg-bg-panel">
+              {publications.fields.map((f, i) => {
+                const rowErr = errors.related_publications?.[i];
+                return (
+                  <li key={f.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-3 border-b border-border p-3 last:border-b-0">
+                    <FormField id={`dataset-pub-${i}-title`} label={t("data.form.publicationTitle")} required requiredLabel={t("common.required")} error={tv(rowErr?.title?.message)}>
+                      {(a11y) => <Input {...a11y} {...form.register(`related_publications.${i}.title`)} />}
+                    </FormField>
+                    <IconButton size="sm" className="mt-6" label={t("data.form.publicationRemoveNumbered", { n: i + 1 })} onClick={() => publications.remove(i)}>
+                      <X aria-hidden="true" />
+                    </IconButton>
+                    <div className="col-span-2 grid grid-cols-1 gap-3 @xl/form:grid-cols-2">
+                      <FormField id={`dataset-pub-${i}-doi`} label={t("data.form.publicationDoi")} error={tv(rowErr?.doi?.message)}>
+                        {(a11y) => <Input {...a11y} placeholder="10.xxxx/…" className="font-mono text-mono" {...form.register(`related_publications.${i}.doi`)} />}
+                      </FormField>
+                      <FormField id={`dataset-pub-${i}-url`} label={t("data.form.publicationUrl")} error={tv(rowErr?.url?.message)}>
+                        {(a11y) => <Input {...a11y} placeholder="https://" className="font-mono text-mono" {...form.register(`related_publications.${i}.url`)} />}
+                      </FormField>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-small text-fg-muted">{t("data.form.publicationsEmpty")}</p>
+          )}
+          <FieldError id="dataset-related_publications-error" message={typeof errors.related_publications?.message === "string" ? tv(errors.related_publications.message) : undefined} />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="self-start border border-dashed border-border-strong"
+            disabled={publications.fields.length >= 20}
+            onClick={() => publications.append({ title: "", doi: "", url: "" })}
+          >
+            <Plus aria-hidden="true" />
+            {t("data.form.publicationAdd")}
+          </Button>
+        </div>
+      </FormSection>
+    </>
+  );
+
+  const actionBar = (
+    <div
+      className={cn(
+        "sticky bottom-0 z-[var(--z-sticky)] flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-border py-3",
+        sheet ? "-mx-5 bg-bg-panel px-5" : "bg-bg",
+      )}
+    >
+      <p className="min-w-0 text-small text-fg-muted">
+        {t("data.form.owner")} <span className="font-medium text-fg">{ownerName}</span>
+        {mode === "edit" && isDirty ? (
+          <span className="ml-3 inline-flex items-center gap-1.5">
+            <span aria-hidden="true" className="size-1.5 rounded-full bg-warning-solid" />
+            {t("data.form.unsaved")}
+          </span>
+        ) : null}
+      </p>
+      <div className="flex items-center gap-2">
+        {onCancel ? (
+          <Button variant="ghost" onClick={onCancel}>
+            {t("common.cancel")}
+          </Button>
+        ) : null}
+        <Button variant="primary" type="submit" disabled={isSubmitting}>
+          {mode === "create" ? t("data.new.submit") : t("common.save")}
+        </Button>
+      </div>
+    </div>
+  );
+
+  const preview = <CardPreview control={form.control} ownerName={ownerName} />;
+
   return (
     <form
       noValidate
-      className="flex max-w-3xl flex-col gap-4"
+      className={cn(sheet ? "@container/form flex flex-col px-5 pt-4" : "grid grid-cols-1 gap-10 min-[1360px]:grid-cols-[minmax(0,1fr)_18rem]")}
       onSubmit={form.handleSubmit(async (values) => {
         // The API has no way to clear an optional field (null is rejected), so block it instead of silently keeping the old value.
         if (mode === "edit") {
@@ -148,248 +616,17 @@ export function DatasetForm({
         else await submit(values);
       }, (errs) => setSummary(toSummary(errs)))}
     >
-      <FormErrorSummary errors={summary} />
-      {submitError ? <ErrorView error={submitError} /> : null}
-      <p className="text-sm">
-        <span className="text-muted-foreground">{t("data.form.owner")}: </span>
-        <span className="font-medium">{ownerName}</span>
-      </p>
-
-      <fieldset className="flex flex-col gap-4">
-        <legend className="mb-2 text-base font-semibold">{t("data.form.sectionBasic")}</legend>
-        <FormField id="dataset-title" label={labels.title} required requiredLabel={t("common.required")} error={err("title")}>
-          {(a11y) => <Input {...a11y} {...form.register("title")} />}
-        </FormField>
-        <FormField id="dataset-subtitle" label={labels.subtitle} error={err("subtitle")}>
-          {(a11y) => <Input {...a11y} {...form.register("subtitle")} />}
-        </FormField>
-        <FormField id="dataset-description" label={labels.description} hint={t("data.form.descriptionHint")} error={err("description")}>
-          {(a11y) => <Textarea {...a11y} rows={5} {...form.register("description")} />}
-        </FormField>
-        <FormField id="dataset-keywords" label={labels.keywords} hint={t("projects.form.keywordsHint")} error={err("keywords")}>
-          {(a11y) => <Input {...a11y} {...form.register("keywords")} />}
-        </FormField>
-      </fieldset>
-
-      <fieldset className="flex flex-col gap-4">
-        <legend className="mb-2 text-base font-semibold">{t("data.form.sectionPeople")}</legend>
-        <p className="text-xs text-muted-foreground">{t("data.form.peopleHint")}</p>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <UserPicker
-            id="dataset-principal_investigator"
-            label={labels.principal_investigator}
-            organizationId={ownerOrganizationId}
-            required
-            initialText={defaultValues.principal_investigator?.label}
-            error={err("principal_investigator")}
-            {...personProps("principal_investigator")}
-          />
-          <UserPicker
-            id="dataset-steward_contact"
-            label={labels.steward_contact}
-            organizationId={ownerOrganizationId}
-            required
-            initialText={defaultValues.steward_contact?.label}
-            error={err("steward_contact")}
-            {...personProps("steward_contact")}
-          />
-        </div>
-        <label className="flex items-start gap-2">
-          <Checkbox id="dataset-contact_email_public" {...form.register("contact_email_public")} />
-          <span>
-            {labels.contact_email_public}
-            <span className="block text-xs text-muted-foreground">{t("data.form.contactEmailPublicHint")}</span>
-          </span>
-        </label>
-        <div className="flex flex-col gap-1">
-          <p className="text-sm font-medium">{labels.contributors}</p>
-          <ContributorsEditor id="dataset-contributors" value={form.watch("contributors")} onChange={(v) => form.setValue("contributors", v, { shouldValidate: form.formState.isSubmitted })} error={err("contributors")} />
-        </div>
-      </fieldset>
-
-      <fieldset className="flex flex-col gap-4">
-        <legend className="mb-2 text-base font-semibold">{t("data.form.sectionContext")}</legend>
-        <FormField id="dataset-project_title" label={labels.project_title} error={err("project_title")}>
-          {(a11y) => <Input {...a11y} {...form.register("project_title")} />}
-        </FormField>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField id="dataset-project_code" label={labels.project_code} error={err("project_code")}>
-            {(a11y) => <Input {...a11y} {...form.register("project_code")} />}
-          </FormField>
-          <FormField id="dataset-funding_agency" label={labels.funding_agency} error={err("funding_agency")}>
-            {(a11y) => <Input {...a11y} {...form.register("funding_agency")} />}
-          </FormField>
-        </div>
-      </fieldset>
-
-      <fieldset className="flex flex-col gap-4">
-        <legend className="mb-2 text-base font-semibold">{t("data.form.sectionData")}</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField id="dataset-temporal_start" label={labels.temporal_start} error={err("temporal_start")}>
-            {(a11y) => <Input {...a11y} type="date" {...form.register("temporal_start")} />}
-          </FormField>
-          <FormField id="dataset-temporal_end" label={labels.temporal_end} error={err("temporal_end")}>
-            {(a11y) => <Input {...a11y} type="date" {...form.register("temporal_end")} />}
-          </FormField>
-        </div>
-        <fieldset id="dataset-collecting_mode" className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">{labels.collecting_mode}</legend>
-          {(["council", "external", "none"] as const).map((m) => (
-            <label key={m} className="flex items-center gap-2">
-              <input type="radio" value={m} className="h-5 w-5" {...form.register("collecting_mode")} />
-              {t(`data.form.collecting${m === "council" ? "Council" : m === "external" ? "External" : "None"}`)}
-            </label>
-          ))}
-          {collectingMode === "council" ? (
-            <FormField id="dataset-collecting_organization_id" label={t("data.form.collectingCouncilSelect")} error={err("collecting_organization_id")}>
-              {(a11y) => (
-                <select {...a11y} className={selectClass} {...form.register("collecting_organization_id")}>
-                  <option value="">{t("data.form.selectPlaceholder")}</option>
-                  {(orgs.data?.items ?? []).map((o) => (
-                    <option key={o.organization_id} value={o.organization_id}>
-                      {o.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-          ) : null}
-          {collectingMode === "external" ? (
-            <FormField id="dataset-collecting_organization_name" label={labels.collecting_organization_name} error={err("collecting_organization_name")}>
-              {(a11y) => <Input {...a11y} {...form.register("collecting_organization_name")} />}
-            </FormField>
-          ) : null}
-        </fieldset>
-        <VocabularyPicker
-          id="dataset-method_codes"
-          scheme="METHOD"
-          legend={labels.method_codes}
-          max={10}
-          value={form.watch("method_codes")}
-          onChange={(v) => form.setValue("method_codes", v, { shouldValidate: form.formState.isSubmitted })}
-          error={err("method_codes")}
-        />
-        <FormField id="dataset-method_detail" label={labels.method_detail} error={err("method_detail")}>
-          {(a11y) => <Textarea {...a11y} rows={3} {...form.register("method_detail")} />}
-        </FormField>
-        <VocabularyPicker
-          id="dataset-material_codes"
-          scheme="MATERIAL"
-          legend={labels.material_codes}
-          max={20}
-          value={form.watch("material_codes")}
-          onChange={(v) => form.setValue("material_codes", v, { shouldValidate: form.formState.isSubmitted })}
-          error={err("material_codes")}
-        />
-        <VocabularyPicker
-          id="dataset-subject_codes"
-          scheme="SUBJECT"
-          legend={labels.subject_codes}
-          max={5}
-          value={form.watch("subject_codes")}
-          onChange={(v) => form.setValue("subject_codes", v, { shouldValidate: form.formState.isSubmitted })}
-          error={err("subject_codes")}
-        />
-      </fieldset>
-
-      <fieldset className="flex flex-col gap-4">
-        <legend className="mb-2 text-base font-semibold">{t("data.form.sectionUsage")}</legend>
-        <fieldset id="dataset-access_level" className="flex flex-col gap-2">
-          <legend className="mb-1 text-sm font-medium">{labels.access_level}</legend>
-          {ENUMS.AccessLevel.map((v) => (
-            <label key={v} className="flex items-start gap-2">
-              <input type="radio" value={v} className="mt-1 h-5 w-5" {...form.register("access_level")} />
-              <span>
-                <span className="font-medium">{t(`enums.AccessLevel.${v}`)}</span>
-                <span className="block text-sm text-muted-foreground">{t(`data.form.accessLevelHelp.${v}`)}</span>
-              </span>
-            </label>
-          ))}
-        </fieldset>
-        <fieldset id="dataset-allowed_purposes" className="flex flex-col gap-2" aria-describedby={errors.allowed_purposes ? "dataset-allowed_purposes-error" : undefined}>
-          <legend className="mb-1 text-sm font-medium">
-            {labels.allowed_purposes} <span className="text-muted-foreground">{t("common.required")}</span>
-          </legend>
-          {ENUMS.Purpose.map((p) => (
-            <label key={p} className="flex items-center gap-2">
-              <Checkbox value={p} {...form.register("allowed_purposes")} />
-              {t(`enums.Purpose.${p}`)}
-            </label>
-          ))}
-          {errors.allowed_purposes ? (
-            <p id="dataset-allowed_purposes-error" className="text-sm text-danger">
-              {err("allowed_purposes")}
-            </p>
-          ) : null}
-        </fieldset>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            id="dataset-max_grant_days"
-            label={labels.max_grant_days}
-            required
-            requiredLabel={t("common.required")}
-            hint={level === "SENSITIVE" ? t("data.form.sensitiveHint") : t("data.form.maxGrantDaysHint")}
-            error={err("max_grant_days")}
-          >
-            {(a11y) => <Input {...a11y} type="number" min={1} max={maxDays} {...form.register("max_grant_days", { valueAsNumber: true })} />}
-          </FormField>
-          <FormField id="dataset-license" label={labels.license} required requiredLabel={t("common.required")} hint={t("data.form.licenseHint")} error={err("license")}>
-            {(a11y) => <Input {...a11y} {...form.register("license")} />}
-          </FormField>
-        </div>
-        <FormField id="dataset-usage_policy" label={labels.usage_policy} error={err("usage_policy")}>
-          {(a11y) => <Textarea {...a11y} rows={3} {...form.register("usage_policy")} />}
-        </FormField>
-        <FormField id="dataset-update_frequency" label={labels.update_frequency} error={err("update_frequency")}>
-          {(a11y) => (
-            <select {...a11y} className={selectClass} {...form.register("update_frequency")}>
-              {/* The contract cannot clear an existing frequency (not nullable on update). */}
-              {defaultValues.update_frequency ? null : <option value="">{t("data.form.selectPlaceholder")}</option>}
-              {ENUMS.UpdateFrequency.map((f) => (
-                <option key={f} value={f}>
-                  {t(`enums.UpdateFrequency.${f}`)}
-                </option>
-              ))}
-            </select>
-          )}
-        </FormField>
-        <fieldset id="dataset-related_publications" className="flex flex-col gap-3">
-          <legend className="mb-1 text-sm font-medium">{labels.related_publications}</legend>
-          {publications.fields.map((f, i) => {
-            const rowErr = errors.related_publications?.[i];
-            return (
-              <div key={f.id} className="grid gap-2 rounded-md border border-border p-3 sm:grid-cols-3">
-                <FormField id={`dataset-pub-${i}-title`} label={t("data.form.publicationTitle")} required requiredLabel={t("common.required")} error={tv(rowErr?.title?.message)}>
-                  {(a11y) => <Input {...a11y} {...form.register(`related_publications.${i}.title`)} />}
-                </FormField>
-                <FormField id={`dataset-pub-${i}-doi`} label={t("data.form.publicationDoi")} error={tv(rowErr?.doi?.message)}>
-                  {(a11y) => <Input {...a11y} {...form.register(`related_publications.${i}.doi`)} />}
-                </FormField>
-                <FormField id={`dataset-pub-${i}-url`} label={t("data.form.publicationUrl")} error={tv(rowErr?.url?.message)}>
-                  {(a11y) => <Input {...a11y} {...form.register(`related_publications.${i}.url`)} />}
-                </FormField>
-                <Button variant="outline" size="sm" className="sm:col-span-3 sm:justify-self-start" onClick={() => publications.remove(i)}>
-                  {t("data.form.publicationRemove")}
-                </Button>
-              </div>
-            );
-          })}
-          {typeof errors.related_publications?.message === "string" ? <p className="text-sm text-danger">{tv(errors.related_publications.message)}</p> : null}
-          <Button variant="outline" className="self-start" disabled={publications.fields.length >= 20} onClick={() => publications.append({ title: "", doi: "", url: "" })}>
-            {t("data.form.publicationAdd")}
-          </Button>
-        </fieldset>
-      </fieldset>
-      <div className="flex gap-2">
-        <Button variant="primary" type="submit" disabled={isSubmitting}>
-          {mode === "create" ? t("data.new.submit") : t("common.save")}
-        </Button>
-        {onCancel ? (
-          <Button variant="outline" onClick={onCancel}>
-            {t("common.cancel")}
-          </Button>
+      <div className={cn("flex min-w-0 flex-col", !sheet && "@container/form max-w-[52rem]")}>
+        {summary.length || submitError ? (
+          <div className="mb-6 flex flex-col gap-3">
+            <FormErrorSummary errors={summary} onNavigate={(id) => id === "dataset-description" && setDescriptionView("write")} />
+            {submitError ? <ErrorView error={submitError} /> : null}
+          </div>
         ) : null}
+        {fields}
+        {actionBar}
       </div>
+      {sheet ? null : preview}
       <ConfirmDialog
         open={!!pendingPolicy}
         onOpenChange={(o) => !o && setPendingPolicy(null)}

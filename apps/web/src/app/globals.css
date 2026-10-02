@@ -35,6 +35,9 @@
   --color-danger-fill: #ce2c31; --color-danger-fill-hover: #b8262b; --color-danger-fill-fg: #ffffff;
   --color-info-soft: #e0f8f3;    --color-info-line: #a1ded2;    --color-info-solid: #12a594;    --color-info: #007c6b; /* teal-11 #008573 darkened: 4.45:1 on bg fails AA */
   --color-chart-1: #3e63dd; --color-chart-2: #12a594; --color-chart-muted: #b9bbc6;
+  /* Categorical series in fixed order (dashboard activity). Validated with the dataviz validator on #ffffff / #18191b:
+     lightness band, chroma floor, adjacent CVD ΔE ≥ 13.9, normal-vision ΔE ≥ 20.6, ≥ 3:1 on the panel. */
+  --color-series-1: #3e63dd; --color-series-2: #12a594; --color-series-3: #ef5f00; --color-series-4: #8e4ec6;
   --color-bg-raised: #ffffff;   /* selected segment of a SegmentedControl */
   --color-switch-thumb: #ffffff; /* thumb of an off Switch (an on Switch uses primary-fg) */
   --color-scrim: rgb(0 0 0 / 0.4); /* behind dialogs and sheets */
@@ -66,6 +69,7 @@
   --text-small: 13px; --text-small--line-height: 20px;
   --text-caption: 12px; --text-caption--line-height: 16px; --text-caption--letter-spacing: 0.01em; --text-caption--font-weight: 500;
   --text-mono: 12.5px; --text-mono--line-height: 20px;
+  --text-long: 15px; --text-long--line-height: 26px; /* long-form description (About), max 72ch */
   --text-micro: 11px; --text-micro--line-height: 14px; --text-micro--font-weight: 500; /* Kbd, 20/24px avatar initials */
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -92,6 +96,7 @@
   --color-danger-solid: #e5484d; --color-danger: #ce2c31; --color-danger-fill: #ce2c31; --color-danger-fill-hover: #b8262b;
   --color-danger-fill-fg: #ffffff; --color-info-soft: #e0f8f3; --color-info-line: #a1ded2; --color-info-solid: #12a594;
   --color-info: #007c6b; --color-chart-1: #3e63dd; --color-chart-2: #12a594; --color-chart-muted: #b9bbc6;
+  --color-series-1: #3e63dd; --color-series-2: #12a594; --color-series-3: #ef5f00; --color-series-4: #8e4ec6;
   --color-bg-raised: #ffffff; --color-switch-thumb: #ffffff; --color-scrim: rgb(0 0 0 / 0.4);
   --color-hero: #111113; --color-hero-fg: #edeef0; --color-hero-fg-muted: #b0b4ba; --color-hero-accent: #9eb1ff;
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
@@ -111,6 +116,7 @@
   --color-danger-soft: #3b1219;  --color-danger-line: #72232d;  --color-danger-solid: #e5484d;  --color-danger: #ff9592;
   --color-info-soft: #0d2d2a;    --color-info-line: #145750;    --color-info-solid: #12a594;    --color-info: #0bd8b6;
   --color-chart-1: #5472e4; --color-chart-2: #0eb39e; --color-chart-muted: #5a6169;
+  --color-series-1: #5472e4; --color-series-2: #0d9b8a; --color-series-3: #e2620f; --color-series-4: #9a5cd0;
   --color-hero: #18191b; --color-hero-fg: #edeef0; --color-hero-fg-muted: #b0b4ba; --color-hero-accent: #9eb1ff;
   --color-bg-raised: #2e3135; --color-switch-thumb: #b0b4ba; --color-scrim: rgb(0 0 0 / 0.6); /* slate-5: lighter than the slate-3 track */
   --shadow-raised: 0 0 0 1px #43484e;
@@ -143,3 +149,7 @@
   *, *::before, *::after { transition-property: opacity !important; transition-duration: 120ms !important; animation: none !important; }
   .press:active, [data-starting-style], [data-ending-style] { transform: none !important; scale: none !important; translate: none !important; }
 }
+
+/* A bar that fills once on first paint (grant D-day bars). Transform only; without motion it is simply drawn. */
+@keyframes nais-grow-x { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: no-preference) { .grow-x { animation: nais-grow-x 650ms var(--ease-out) both; } }
