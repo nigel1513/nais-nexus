@@ -12,7 +12,7 @@ import { ColumnView } from "./column-view";
 import { CompactView } from "./compact-view";
 import { DetailView } from "./detail-view";
 import { FileTree } from "./file-tree";
-import { SectionHead } from "../components/section-head";
+import { PanelHead } from "@/shared/ui/work-hero";
 
 type View = "detail" | "compact" | "column";
 
@@ -61,7 +61,7 @@ export function DataExplorer({ dataset, versionId, fileCount }: { dataset: Datas
   return (
     <section aria-labelledby="explorer-title" className="overflow-hidden rounded-md border border-border bg-bg-panel">
       <div className="flex flex-wrap items-end justify-between gap-2 border-b border-border px-4 py-3">
-        <SectionHead id="explorer-title" eyebrow={t("data.card.hero.explorerCrumb")} title={t("data.card.explorerTitle")} count={t("data.card.explorerFiles", { count: fileCount })} />
+        <PanelHead id="explorer-title" crumb={t("data.card.hero.explorerCrumb")} title={t("data.card.explorerTitle")} count={t("data.card.explorerFiles", { count: fileCount })} />
         <SegmentedControl
           aria-label={t("data.explorer.view")}
           value={view}

@@ -7,7 +7,7 @@ import { notify } from "@/shared/ui/toast";
 import { downloadJsonLd } from "../api";
 import { PersonLine } from "../components/person-line";
 import { VocabularyTags } from "../components/vocabulary-tags";
-import { SectionHead } from "../components/section-head";
+import { PanelHead } from "@/shared/ui/work-hero";
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -45,7 +45,7 @@ export function MetadataBlock({ dataset: d }: { dataset: Dataset }) {
   return (
     <section aria-label={t("data.meta.title")} className="flex flex-col gap-4">
       <div className="flex items-end justify-between gap-2 border-b border-border pb-3">
-        <SectionHead eyebrow={t("data.card.hero.metaCrumb")} title={t("data.meta.title")} />
+        <PanelHead crumb={t("data.card.hero.metaCrumb")} title={t("data.meta.title")} />
         <JsonLdButton dataset={d} />
       </div>
       {/* Spec §6: 140px label column. */}

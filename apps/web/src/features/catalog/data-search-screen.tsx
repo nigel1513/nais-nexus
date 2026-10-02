@@ -20,7 +20,7 @@ import { PeriodFilter } from "./components/period-filter";
 import { PrincipalInvestigatorFilter } from "./components/principal-investigator-filter";
 import { bucketsOf, FACETS, FacetGroup, useFacetLabel, type FacetKey } from "./components/facet-panel";
 import { ListReadinessBadge, periodText, SearchResultCard } from "./components/search-result-card";
-import { SectionHead } from "./components/section-head";
+import { PanelHead } from "@/shared/ui/work-hero";
 import { SummaryBand } from "@/shared/ui/screen-v2";
 
 type Sort = "relevance" | "updated_desc" | "title_asc";
@@ -147,9 +147,9 @@ export function DataSearchScreen() {
         </aside>
 
         <section aria-label={t("data.search.results")} className="flex min-w-0 flex-col">
-          <SectionHead
+          <PanelHead
             id="results-title"
-            eyebrow={t("data.search.hero.resultsCrumb")}
+            crumb={t("data.search.hero.resultsCrumb")}
             title={t("data.search.results")}
             count={<span aria-live="polite">{first ? t("data.search.total", { count: first.total }) : ""}</span>}
             right={

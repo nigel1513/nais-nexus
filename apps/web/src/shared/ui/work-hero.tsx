@@ -88,7 +88,8 @@ function HeroFigure({ label, value, unit, hint, href, highlight }: HeroStat) {
 
 /**
  * Panel head: the shared Crumb (accent eyebrow, heavy title, mono count) and, on the right, either "전체 보기 →" or the
- * panel's own controls. `id` names the title only, so a section labelled by it reads "검토", not "결정 검토".
+ * panel's own controls (a filter, a sort, a view switch). Used for every crumb head with controls on work and data
+ * screens. `id` names the title only, so a section labelled by it reads "검토", not "결정 검토".
  */
 export function PanelHead({
   id,
@@ -103,7 +104,7 @@ export function PanelHead({
   id?: string;
   crumb: string;
   title: ReactNode;
-  count?: string | number | null;
+  count?: ReactNode;
   more?: { href: string; label: string };
   right?: ReactNode;
   as?: "h2" | "h3";
@@ -117,7 +118,7 @@ export function PanelHead({
         title={id ? <span id={id}>{title}</span> : title}
         after={count !== undefined && count !== null ? <span className="sv-count">{count}</span> : undefined}
       />
-      {right ?? null}
+      {right ? <div className="flex shrink-0 items-center gap-2">{right}</div> : null}
       {more ? (
         <Link href={more.href} className={cn("flex shrink-0 items-center gap-1 whitespace-nowrap rounded-sm text-small text-fg-muted hover:text-fg", focusRing)}>
           {more.label}

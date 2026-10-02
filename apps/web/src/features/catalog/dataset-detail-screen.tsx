@@ -20,7 +20,7 @@ import { SideCard } from "./data-card/side-card";
 import { ColumnTable } from "./explorer/column-table";
 import { DataExplorer } from "./explorer/data-explorer";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
-import { SectionHead } from "./components/section-head";
+import { PanelHead } from "@/shared/ui/work-hero";
 
 export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const t = useTranslations();
@@ -82,7 +82,7 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
                 <DataExplorer key={selected.dataset_version_id} dataset={d} versionId={selected.dataset_version_id} fileCount={selected.file_count ?? d.stats?.file_count ?? 0} />
               ) : null}
               <section aria-labelledby="columns-title" data-testid="column-table-slot" id="column-table-slot" className="flex flex-col gap-4">
-                <SectionHead id="columns-title" eyebrow={t("data.card.hero.columnsCrumb")} title={t("data.card.columnsTitle")} />
+                <PanelHead id="columns-title" crumb={t("data.card.hero.columnsCrumb")} title={t("data.card.columnsTitle")} />
                 {selected ? <ColumnTable versionId={selected.dataset_version_id} /> : null}
               </section>
               <MetadataBlock dataset={d} />
