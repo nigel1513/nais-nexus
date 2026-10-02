@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from api.modules.catalog.access import require_draft, steward_version
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.domain import SNAPSHOT_FIELDS, manifest_sha256
+from api.modules.catalog.previews.store import queue_previews
 from api.modules.catalog.repo import enqueue_index, load_dataset, load_version, must
 from api.modules.catalog.research import people_block
 from api.modules.catalog.service.versions import version_response
@@ -119,6 +120,7 @@ def finalize_publish(
             updated_at=now,
         )
     )
+    queue_previews(session, version_id)
     outbox.write(
         session,
         "catalog.dataset.version_published.v1",

@@ -8,6 +8,7 @@ from api.platform.migrate import upgrade_all
 from api.platform.testing.fixtures import PgUrls
 
 TRUNCATE = (
+    "catalog.file_previews",
     "catalog.dataset_contributors",
     "catalog.dataset_files",
     "catalog.upload_sessions",

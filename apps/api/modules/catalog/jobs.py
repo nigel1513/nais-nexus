@@ -1,4 +1,4 @@
-"""Catalog background work (M03 §10). The verify actor is declared at import time (D-036)."""
+"""Catalog background work (M03 §10). The verify and preview actors are declared at import time (D-036)."""
 
 import logging
 from collections.abc import Mapping
@@ -11,6 +11,7 @@ from sqlalchemy import select, update
 
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.objects import StorageUnavailable
+from api.modules.catalog.previews.jobs import DISPATCH_INTERVAL_S, dispatch_previews
 from api.modules.catalog.search.drain import drain_index_queue
 from api.modules.catalog.service.uploads import abort_quietly
 from api.modules.catalog.tables import dataset_files, dataset_versions, upload_sessions
@@ -236,6 +237,14 @@ def _sweep() -> None:
         logger.exception("requeue_stale_uploads failed")
 
 
+def _dispatch_previews() -> None:
+    try:
+        dispatch_previews(_deps())
+    except Exception:
+        logger.exception("dispatch_previews failed")
+
+
 def register_worker(broker: dramatiq.Broker, scheduler: Scheduler) -> None:
     scheduler.every(DRAIN_INTERVAL_S, "catalog.index_drain", _drain)
     scheduler.every(SWEEP_INTERVAL_S, "catalog.expire_upload_sessions", _sweep)
+    scheduler.every(DISPATCH_INTERVAL_S, "catalog.preview_dispatch", _dispatch_previews)
