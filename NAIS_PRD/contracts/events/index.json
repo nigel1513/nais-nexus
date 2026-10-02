@@ -189,7 +189,7 @@
     {
       "event_type": "workspace.comment.added.v1",
       "producer": "workspace",
-      "description": "Comment added (first comment of a new thread included). project_id is null for DATASET threads (Audit COMMENT_ADDED; DATASET threads notify the owner organization's DATA_STEWARDs)."
+      "description": "Comment added (first comment of a new thread included). project_id is null for DATASET threads and required (non-null) for PROJECT/OUTPUT/RECIPE threads (Audit COMMENT_ADDED; DATASET threads notify the owner organization's DATA_STEWARDs)."
     },
     {
       "event_type": "notes.note.submitted.v1",

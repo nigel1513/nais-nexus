@@ -2220,7 +2220,7 @@
     },
     {
       "title": "workspace.comment.added.v1",
-      "description": "Comment added (first comment of a new thread included). project_id is null for DATASET threads (Audit COMMENT_ADDED; DATASET threads notify the owner organization's DATA_STEWARDs).",
+      "description": "Comment added (first comment of a new thread included). project_id is null for DATASET threads and required (non-null) for PROJECT/OUTPUT/RECIPE threads (Audit COMMENT_ADDED; DATASET threads notify the owner organization's DATA_STEWARDs).",
       "type": "object",
       "properties": {
         "event_type": {
@@ -2293,6 +2293,31 @@
                 "null"
               ],
               "format": "uuid"
+            }
+          },
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "DATASET"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "project_id": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "project_id": {
+                "type": "string",
+                "format": "uuid"
+              }
             }
           }
         }

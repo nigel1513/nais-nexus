@@ -1340,8 +1340,10 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description ZIP of the caller's notes in the project (or, for an ORG_ADMIN, every note of their organization in the project):
-         *     notes/*.json, notes/*.html (human readable) and hashes.csv. Streamed. from/to are inclusive Asia/Seoul dates.
+         * @description ZIP of the caller's own notes in the project (every status). An ORG_ADMIN additionally gets the SUBMITTED/SIGNED notes of other
+         *     recorders of their organization in the project — never other recorders' DRAFTs (DRAFT is recorder-only) — and each exported note
+         *     of another recorder emits notes.note.viewed.v1 (열람 관리대장), as getNote does.
+         *     Contents: notes/*.json, notes/*.html (human readable) and hashes.csv. Streamed. from/to are inclusive Asia/Seoul dates.
          */
         get: operations["exportNotes"];
         put?: never;
@@ -1404,7 +1406,11 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** @description PROJECT_OWNER / PROJECT_ADMIN. witness_user_ids must be ACTIVE project members (422). Applies to notes submitted afterwards. */
+        /**
+         * @description PROJECT_OWNER / PROJECT_ADMIN. witness_user_ids must be ACTIVE project members (422). Applies only to notes submitted (or signed
+         *     from DRAFT) afterwards: each note keeps the witness_required / witness_user_ids snapshot taken at its submit, and signNote, rejectNote
+         *     and witness visibility use that snapshot, never the current setting.
+         */
         patch: operations["updateNoteSettings"];
         trace?: never;
     };
@@ -1418,14 +1424,20 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Recorder always; SUBMITTED/SIGNED also the project's configured witnesses who are ACTIVE members. Other ACTIVE members of the
+         * @description Recorder always; SUBMITTED/SIGNED also the witnesses in the note's witness_user_ids snapshot who are ACTIVE members. Other ACTIVE members of the
          *     project get 403 FORBIDDEN; non-members, and anyone but the recorder for a DRAFT, get 404.
          *     A read by anyone other than the recorder emits notes.note.viewed.v1 (열람 관리대장).
          */
         get: operations["getNote"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * @description Recorder only, DRAFT only (409 NOTE_LOCKED for SUBMITTED/SIGNED; signed notes are never deleted). Deleting a revision DRAFT
+         *     leaves the signed previous version untouched.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+         */
+        delete: operations["deleteNote"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1444,6 +1456,8 @@ export interface paths {
         /**
          * @description Recorder only, DRAFT only (409 NOTE_LOCKED). If-Match must carry the current revision (409 CONFLICT). Replaces the block list in order:
          *     listed block_ids keep their origin and evidence, new blocks (no block_id) are HUMAN/accepted, unlisted blocks are deleted.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
          */
         put: operations["updateNoteBlocks"];
         post?: never;
@@ -1467,6 +1481,8 @@ export interface paths {
         /**
          * @description Recorder only, DRAFT only (409 NOTE_LOCKED). Queues a local-LLM draft from the day's activity; new AI blocks are appended with accepted=false.
          *     Once per minute per note (429 RATE_LIMITED); 503 LLM_UNAVAILABLE when NAIS_LLM_ENABLED is false.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
          */
         post: operations["draftNote"];
         delete?: never;
@@ -1486,7 +1502,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Recorder only, DRAFT -> SUBMITTED (locked, visible to witnesses). Unaccepted AI blocks -> 409 NOTE_HAS_UNACCEPTED_AI; other states -> 409 NOTE_LOCKED. Fixes content_hash. Emits notes.note.submitted.v1. */
+        /**
+         * @description Recorder only, DRAFT -> SUBMITTED (locked). Unaccepted AI blocks -> 409 NOTE_HAS_UNACCEPTED_AI; other states -> 409 NOTE_LOCKED.
+         *     Fixes content_hash and snapshots the project's witness_required / witness_user_ids onto the note (visible to those witnesses from now on).
+         *     Emits notes.note.submitted.v1.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+         */
         post: operations["submitNote"];
         delete?: never;
         options?: never;
@@ -1505,7 +1527,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Configured witness only (403 NOTE_NOT_WITNESS), SUBMITTED -> DRAFT with a reason (409 otherwise). Emits notes.note.rejected.v1. */
+        /** @description A witness in the note's witness_user_ids snapshot only (403 NOTE_NOT_WITNESS), SUBMITTED -> DRAFT with a reason (409 otherwise); the next submit takes a new snapshot. Emits notes.note.rejected.v1. */
         post: operations["rejectNote"];
         delete?: never;
         options?: never;
@@ -1525,9 +1547,14 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * @description Requires a token whose auth_time is within 5 minutes (401 NOTE_SIGNATURE_EXPIRED -> re-authenticate). The recorder signs as RECORDER
-         *     (from DRAFT when witness_required is false, which includes the submit checks; from SUBMITTED otherwise); a configured witness signs a SUBMITTED note
-         *     as WITNESS (403 NOTE_NOT_WITNESS for anyone else). When every required signature is present the note becomes SIGNED and chain_hash is fixed.
+         * @description Requires a token whose auth_time is within 5 minutes (401 NOTE_SIGNATURE_EXPIRED -> re-authenticate).
+         *     Recorder (RECORDER signature): from SUBMITTED in every case; from DRAFT only when the project currently requires no witness — that
+         *     sign runs the submit checks (409 NOTE_HAS_UNACCEPTED_AI) and takes the witness snapshot (witness_required=false) in the same step.
+         *     From DRAFT while the project requires witnesses -> 409 CONFLICT (submit first).
+         *     Witness (WITNESS signature): a user in the note's witness_user_ids snapshot, SUBMITTED only, and only when the snapshot has
+         *     witness_required=true; anyone else 403 NOTE_NOT_WITNESS.
+         *     The note becomes SIGNED (chain_hash fixed) when it has the RECORDER signature and, if the snapshot requires witnesses, one WITNESS signature.
+         *     Only the snapshot on the note is consulted, never the current project setting, so a SUBMITTED note can always be completed.
          *     Emits notes.note.signed.v1 per signature.
          */
         post: operations["signNote"];
@@ -1548,7 +1575,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description Recorder only, SIGNED only (409 NOTE_LOCKED otherwise). Creates a new DRAFT version (version + 1, previous_version_id set, blocks copied); the signed version is unchanged. */
+        /**
+         * @description Recorder only, SIGNED only (409 NOTE_LOCKED otherwise). Creates a new DRAFT version (version + 1, previous_version_id set, blocks copied);
+         *     the signed version is unchanged.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+         */
         post: operations["reviseNote"];
         delete?: never;
         options?: never;
@@ -2800,13 +2832,17 @@ export interface components {
             draft_status: components["schemas"]["NoteDraftStatus"];
             draft_error: string | null;
             signatures: components["schemas"]["NoteSignature"][];
-            /** @description sha256 of the canonical JSON of content + metadata; set on submit/sign */
+            /** @description sha256 of the canonical JSON of content + metadata; set on submit/sign, cleared when a witness rejects the note back to DRAFT */
             content_hash: string | null;
             /** @description sha256(previous chain_hash + content_hash) per project × organization; set when SIGNED */
             chain_hash: string | null;
             /** Format: date-time */
             submitted_at: string | null;
             rejected_reason: string | null;
+            /** @description Snapshot of the project setting taken at submit (or at a sign from DRAFT). signNote/rejectNote use this, never the current setting. While DRAFT it mirrors the current setting for display and is re-taken at the next submit. */
+            readonly witness_required: boolean;
+            /** @description Witness snapshot taken together with witness_required; these users may read, reject and sign the SUBMITTED/SIGNED note */
+            readonly witness_user_ids: components["schemas"]["Id"][];
             created_at: components["schemas"]["Timestamp"];
             updated_at: components["schemas"]["Timestamp"];
         };
@@ -5609,6 +5645,30 @@ export interface operations {
             404: components["responses"]["Error"];
         };
     };
+    deleteNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
     updateNoteBlocks: {
         parameters: {
             query?: never;
@@ -5637,6 +5697,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             422: components["responses"]["Error"];
@@ -5663,6 +5724,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
             429: components["responses"]["Error"];
@@ -5690,6 +5752,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };
@@ -5774,6 +5837,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
         };

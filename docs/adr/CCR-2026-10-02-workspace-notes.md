@@ -19,7 +19,7 @@
 
 버전 1.4.0(Wave 1.5 Stage 2 버전 관리 계획)과 1.5.0(M07 노트북 계획)은 다른 계획이 이미 예약해 이 변경은 1.6.0을 쓴다.
 
-태그 `hub`, `workspace`, `notes` 추가. 새 operation 43개(전체 58 → 101). 모든 operation은 전역 `bearerAuth`를 상속하고
+태그 `hub`, `workspace`, `notes` 추가. 새 operation 44개(전체 58 → 102). 모든 operation은 전역 `bearerAuth`를 상속하고
 `401` 공통 오류 응답, 성공 응답마다 `components/examples` 예제 1개를 둔다.
 
 | 영역 | operationId |
@@ -29,7 +29,7 @@
 | 레시피·실행 | `listRecipes`, `createRecipe`, `getRecipe`, `updateRecipe`, `deleteRecipe`, `previewRecipe`, `startRun`, `listRuns`, `getRun` |
 | 산출물·공개 | `listOutputs`, `createOutputUpload`, `completeOutputUpload`, `getOutput`, `getOutputDownload`, `requestOutputPublish`, `listPublishRequests`, `decidePublishRequest` |
 | 토론 | `listThreads`, `createThread`, `updateThread`, `listComments`, `addComment` |
-| 연구노트 | `listNotes`, `getOrCreateTodayNote`, `getNote`, `updateNoteBlocks`, `draftNote`, `submitNote`, `rejectNote`, `signNote`, `reviseNote`, `verifyNote`, `exportNotes`, `searchNotes`, `getNoteSettings`, `updateNoteSettings` |
+| 연구노트 | `listNotes`, `getOrCreateTodayNote`, `getNote`, `deleteNote`, `updateNoteBlocks`, `draftNote`, `submitNote`, `rejectNote`, `signNote`, `reviseNote`, `verifyNote`, `exportNotes`, `searchNotes`, `getNoteSettings`, `updateNoteSettings` |
 
 목록 응답 규칙(기존 관례 유지):
 - 프로젝트 설정 성격의 작은 목록은 `{ items }` 비페이지: 입력, 레시피, 데이터셋 사용 프로젝트(`hidden_count` 포함), 노트 검색(상위 20).
@@ -99,9 +99,10 @@
 - 신규 백엔드 모듈 workspace(Task 3–7), notes(Task 9–11): 라우터 `operation_id`가 위 operationId와 같아야 한다.
 - audit(Task 8): `mapping.py`/`notification_rules.py`에 새 이벤트 규칙. **`audit_0001_tables.py`의 CHECK 제약
   (`ck_audit_events_action`, `ck_audit_events_resource_type`, `ck_notifications_type`)이 값을 하드코딩하므로 새 마이그레이션으로 넓혀야 한다.**
-  `test_mapping.py`/`test_audit_writer.py`의 이벤트 수(28) 단언과 `support/events.py` 페이로드 픽스처도 Task 8에서 갱신한다.
+  이벤트 수 단언(42)과 `support/events.py` 페이로드 픽스처는 이 변경에서 이미 갱신했다. Task 8에는 `test_mapping.py`의
+  `PENDING_AUDIT_RULES`를 비우는 일(새 이벤트마다 `AUDIT_RULES` 또는 `NOT_AUDITED`에 배정)만 남는다.
 - web(Task 12–15): 생성 타입(`openapi.d.ts`, `contracts.ts`), `ko.json` 라벨 추가 완료. mock 계약 테스트의
-  `PENDING_MOCK_OPERATIONS`(새 operation 43개)는 Task 12에서 비운다.
+  `PENDING_MOCK_OPERATIONS`(새 operation 44개)는 Task 12에서 비운다.
 
 ## 하위 호환성
 
@@ -126,10 +127,19 @@ ALTER DEFAULT PRIVILEGES FOR ROLE nais_migrator IN SCHEMA notes GRANT USAGE, SEL
   불일치는 `409 CONFLICT`(412 아님). 헤더 누락은 `422`.
 - 블록 저장(`NoteBlocksPut`): 목록 순서대로 교체. 기존 `block_id`는 `origin`·`evidence`를 서버가 보존, 새 블록은 HUMAN·수락됨,
   빠진 블록은 삭제. 클라이언트는 근거를 쓸 수 없다.
-- 노트 열람: 기록자 항상, SUBMITTED/SIGNED는 확인자도. 같은 프로젝트의 다른 활성 구성원은 `403 FORBIDDEN`, 비구성원과
-  남의 DRAFT는 `404`. 기록자 외 열람은 `notes.note.viewed.v1`.
-- 서명: 기록자 서명(RECORDER) + `witness_required`일 때 확인자 서명(WITNESS)이 모두 모이면 SIGNED. `witness_required=false`면
-  DRAFT에서 바로 서명(제출 검사 포함).
-- `exportNotes`는 `application/zip`(binary) 스트림, `getOutputDownload`는 다운로드 세션과 같은 presigned URL 객체(TTL 300초).
+- 노트 열람: 기록자 항상, SUBMITTED/SIGNED는 노트의 확인자 스냅숏(`witness_user_ids`)에 든 사용자도. 같은 프로젝트의 다른 활성
+  구성원은 `403 FORBIDDEN`, 비구성원과 남의 DRAFT는 `404`. 기록자 외 열람은 `notes.note.viewed.v1`.
+- 기록자 전용 동작(`deleteNote`, `updateNoteBlocks`, `draftNote`, `submitNote`, `reviseNote`)도 같은 구분을 쓴다: 노트를 볼 수 없는
+  사람은 `404`, 볼 수 있지만 기록자가 아닌 사람은 `403`.
+- 삭제(`deleteNote`): 기록자·DRAFT만, `204`. SUBMITTED/SIGNED는 `409 NOTE_LOCKED`(서명된 노트는 삭제 API가 없다).
+- 확인자 스냅숏: 제출(또는 DRAFT에서 바로 서명) 시 프로젝트 설정 `witness_required`·`witness_user_ids`를 노트에 복사한다(읽기 전용
+  필드). 서명·반려·확인자 열람은 이 스냅숏만 본다. 설정을 나중에 바꿔도 이미 제출된 노트에는 영향이 없다.
+- 서명: 기록자는 SUBMITTED에서 언제나 서명할 수 있고, DRAFT에서는 지금 확인자가 필요 없을 때만 서명한다(제출 검사 + 스냅숏 포함;
+  확인자가 필요하면 `409 CONFLICT`). 확인자는 스냅숏이 확인자를 요구하는 SUBMITTED 노트에만 서명한다. RECORDER 서명과
+  (스냅숏이 요구하면) WITNESS 서명이 모이면 SIGNED. 그래서 SUBMITTED 노트가 멈춰 있는 경우가 없다.
+- `exportNotes`는 `application/zip`(binary) 스트림. 본인 노트는 모든 상태, ORG_ADMIN은 같은 기관 다른 기록자의 SUBMITTED/SIGNED
+  노트만(남의 DRAFT 제외) 받으며, 그렇게 내보낸 남의 노트마다 `notes.note.viewed.v1`을 남긴다.
+- `getOutputDownload`는 다운로드 세션과 같은 presigned URL 객체(TTL 300초).
+- `workspace.comment.added.v1`: `scope=DATASET`이면 `project_id`는 `null`, 그 밖의 범위는 `project_id` 필수(스키마 if/then).
 - 산출물 업로드는 단일 presigned PUT이므로 파일당 5 GiB 이하.
 - 레시피 필터 값은 정수·실수·문자열·불리언·null·배열(`in`)을 받는다. 정수는 정수로 유지된다.

@@ -21,7 +21,7 @@ const PENDING_MOCK_OPERATIONS: ReadonlySet<string> = new Set([
   "requestOutputPublish", "listPublishRequests", "decidePublishRequest",
   "listThreads", "createThread", "updateThread", "listComments", "addComment",
   "listNotes", "exportNotes", "searchNotes", "getOrCreateTodayNote", "getNoteSettings", "updateNoteSettings",
-  "getNote", "updateNoteBlocks", "draftNote", "submitNote", "rejectNote", "signNote", "reviseNote", "verifyNote",
+  "getNote", "deleteNote", "updateNoteBlocks", "draftNote", "submitNote", "rejectNote", "signNote", "reviseNote", "verifyNote",
 ]);
 
 async function call(user: string | null, method: string, pathKey: string, opts: { path?: Record<string, string>; query?: string; body?: unknown; status: number }) {
@@ -172,7 +172,7 @@ describe("mock API ↔ openapi.yaml", () => {
 
     const METHODS = ["get", "post", "put", "patch", "delete"];
     const all = Object.values(doc.paths).flatMap((item) => Object.entries(item).filter(([m]) => METHODS.includes(m)).map(([, op]) => op.operationId));
-    expect(all).toHaveLength(101);
+    expect(all).toHaveLength(102);
     expect([...PENDING_MOCK_OPERATIONS].filter((id) => !all.includes(id) || exercised.has(id))).toEqual([]);
     expect(all.filter((id) => !exercised.has(id) && !PENDING_MOCK_OPERATIONS.has(id))).toEqual([]);
   });

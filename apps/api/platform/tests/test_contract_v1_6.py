@@ -1,6 +1,7 @@
 """Contract 1.6.0: Data-Hub, project workspace and research notes (spec 2026-10-02-data-hub-workspace-notes-design)."""
 
 import json
+import re
 from typing import Any
 
 import pytest
@@ -55,6 +56,7 @@ NEW_OPS: dict[str, tuple[str, str, str]] = {
     "listNotes": ("get", "/notes", "notes"),
     "getOrCreateTodayNote": ("post", "/projects/{project_id}/notes/today", "notes"),
     "getNote": ("get", "/notes/{note_id}", "notes"),
+    "deleteNote": ("delete", "/notes/{note_id}", "notes"),
     "updateNoteBlocks": ("put", "/notes/{note_id}/blocks", "notes"),
     "draftNote": ("post", "/notes/{note_id}/draft", "notes"),
     "submitNote": ("post", "/notes/{note_id}/submit", "notes"),
@@ -94,6 +96,7 @@ ERROR_STATUS_DECLARED = {
     "signNote": "401",  # NOTE_SIGNATURE_EXPIRED
     "rejectNote": "403",  # NOTE_NOT_WITNESS
     "draftNote": "503",  # LLM_UNAVAILABLE
+    "deleteNote": "409",  # NOTE_LOCKED
 }
 ID = "00000000-0000-7000-8000-00000000{:04x}"
 COMMON = {"project_id": ID.format(1), "actor_id": ID.format(2), "occurred_at": "2026-10-02T01:00:00Z"}
@@ -235,7 +238,7 @@ def test_version_tags_and_new_operations() -> None:
     spec = _spec()
     assert spec["info"]["version"] == "1.6.0"
     assert {"hub", "workspace", "notes"} <= {t["name"] for t in spec["tags"]}
-    assert len(NEW_OPS) == 43
+    assert len(NEW_OPS) == 44
     for op_id, (method, path, tag) in NEW_OPS.items():
         op = spec["paths"][path][method]
         assert op["operationId"] == op_id
@@ -402,4 +405,64 @@ def test_module_ownership_and_db_schemas() -> None:
     assert ownership["M14"]["db_schema"] == "notes"
     assert ownership["M14"]["path"] == ["apps/api/modules/notes"]
     init_sql = (CONTRACTS.parents[1] / "infra" / "docker" / "postgres" / "init.sql").read_text("utf-8")
-    assert "'workspace','notes'" in init_sql
+    match = re.search(r"FOREACH\s+s\s+IN\s+ARRAY\s+ARRAY\[(.*?)\]\s+LOOP", init_sql, re.S)
+    assert match is not None
+    schemas = set(re.findall(r"'([a-z_]+)'", match.group(1)))
+    assert {"workspace", "notes"} <= schemas
+    owned = {
+        spec["db_schema"] for spec in ownership.values() if isinstance(spec, dict) and spec.get("db_schema")
+    }
+    assert owned <= schemas
+
+
+RECORDER_ONLY_NOTE_OPS = ("deleteNote", "updateNoteBlocks", "draftNote", "submitNote", "reviseNote")
+
+
+@pytest.mark.parametrize("op_id", RECORDER_ONLY_NOTE_OPS)
+def test_recorder_only_note_operations_split_403_and_404(op_id: str) -> None:
+    method, path, _ = NEW_OPS[op_id]
+    op = _spec()["paths"][path][method]
+    for status in ("403", "404", "409"):
+        assert op["responses"][status] == {"$ref": "#/components/responses/Error"}, (op_id, status)
+    assert "403 FORBIDDEN otherwise" in op["description"], op_id
+
+
+def test_delete_note_is_draft_only_and_returns_204() -> None:
+    op = _spec()["paths"]["/notes/{note_id}"]["delete"]
+    assert op["responses"]["204"] == {"description": "Deleted"}
+    assert "DRAFT only" in op["description"] and "NOTE_LOCKED" in op["description"]
+
+
+def test_witness_rules_use_the_snapshot_taken_at_submit() -> None:
+    spec = _spec()
+    note = spec["components"]["schemas"]["ResearchNote"]
+    for field in ("witness_required", "witness_user_ids"):
+        assert field in note["required"], field
+        assert note["properties"][field]["readOnly"] is True, field
+    sign = spec["paths"]["/notes/{note_id}/sign"]["post"]["description"]
+    assert "from SUBMITTED in every case" in sign
+    assert "never the current project setting" in sign
+    assert "snapshot" in spec["paths"]["/notes/{note_id}/submit"]["post"]["description"]
+    assert "snapshot" in spec["paths"]["/projects/{project_id}/note-settings"]["patch"]["description"]
+
+
+def test_export_excludes_other_drafts_and_records_views() -> None:
+    description = _spec()["paths"]["/notes/export"]["get"]["description"]
+    assert "never other recorders' DRAFTs" in description
+    assert "notes.note.viewed.v1" in description
+
+
+def test_reject_example_carries_the_reason() -> None:
+    example = _spec()["components"]["examples"]["ResearchNoteRejected"]["value"]
+    assert example["status"] == "DRAFT" and example["rejected_reason"]
+    assert_matches_response("rejectNote", 200, example)
+
+
+def test_comment_added_project_id_depends_on_scope() -> None:
+    dataset = EVENTS["workspace.comment.added.v1"]
+    project = {**dataset, "scope": "PROJECT", "target_id": ID.format(1), "project_id": ID.format(1)}
+    assert_valid_event(_envelope("workspace.comment.added.v1", project))
+    with pytest.raises(AssertionError):
+        assert_valid_event(_envelope("workspace.comment.added.v1", {**project, "project_id": None}))
+    with pytest.raises(AssertionError):
+        assert_valid_event(_envelope("workspace.comment.added.v1", {**dataset, "project_id": ID.format(1)}))

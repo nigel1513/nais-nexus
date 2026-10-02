@@ -1789,7 +1789,7 @@ class ResearchNote(BaseModel):
     signatures: list[NoteSignature]
     content_hash: constr(pattern=r'^[a-f0-9]{64}$') | None = Field(
         ...,
-        description='sha256 of the canonical JSON of content + metadata; set on submit/sign',
+        description='sha256 of the canonical JSON of content + metadata; set on submit/sign, cleared when a witness rejects the note back to DRAFT',
     )
     chain_hash: constr(pattern=r'^[a-f0-9]{64}$') | None = Field(
         ...,
@@ -1797,6 +1797,14 @@ class ResearchNote(BaseModel):
     )
     submitted_at: AwareDatetime | None
     rejected_reason: str | None
+    witness_required: bool = Field(
+        ...,
+        description='Snapshot of the project setting taken at submit (or at a sign from DRAFT). signNote/rejectNote use this, never the current setting. While DRAFT it mirrors the current setting for display and is re-taken at the next submit.',
+    )
+    witness_user_ids: list[Id] = Field(
+        ...,
+        description='Witness snapshot taken together with witness_required; these users may read, reject and sign the SUBMITTED/SIGNED note',
+    )
     created_at: Timestamp
     updated_at: Timestamp
 
