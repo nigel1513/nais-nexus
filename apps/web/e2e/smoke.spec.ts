@@ -4,6 +4,8 @@ import { expect, test } from "@playwright/test";
 const A_RESEARCHER = "00000000-0000-7000-8000-000000000a02";
 
 async function seriousViolations(page: import("@playwright/test").Page) {
+  // Entrance animations fade content in; checking contrast mid-fade reports text that is about to be fully opaque.
+  await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity));
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
   return results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.help}`);
 }

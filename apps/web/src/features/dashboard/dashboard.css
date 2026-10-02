@@ -1,0 +1,78 @@
+/* Dashboard (storyboard https://claude.ai/artifact/2bt58HP5pKjKXxhrKNAWoJ). The summary band reuses the start page's
+   hero tokens. Motion is for the first visit of a session only (`[data-intro]` on the root); a daily screen must not
+   replay a sequence every time it opens, and hover/keyboard paths stay instant. */
+
+.db-band { position: relative; overflow: hidden; border-radius: var(--radius-lg); background: var(--color-hero); color: var(--color-hero-fg); }
+:root.dark .db-band { box-shadow: inset 0 0 0 1px var(--color-border); }
+.db-band-in { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px 24px; padding: 22px 24px 0; }
+/* Without the figures row (first-time view) the band needs its own bottom padding. */
+.db-band[data-fresh] .db-band-in { padding-bottom: 22px; }
+.db-ctx { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 13px; color: var(--color-hero-fg-muted); }
+.db-ctx h1 { margin: 0; font-size: 13px; font-weight: 650; color: var(--color-hero-fg); }
+.db-role { padding: 1px 6px; border: 1px solid color-mix(in srgb, var(--color-hero-accent) 40%, transparent); border-radius: var(--radius-xs); font-size: 11.5px; font-weight: 600; color: var(--color-hero-accent); }
+.db-headline { margin: 6px 0 0; font-size: clamp(22px, 2.6vw, 30px); line-height: 1.3; font-weight: 760; letter-spacing: -0.04em; text-wrap: balance; }
+.db-headline em { font-style: normal; color: var(--color-hero-accent); }
+.db-fresh { margin: 6px 0 0; max-width: 40em; font-size: 14px; line-height: 1.7; color: var(--color-hero-fg-muted); }
+.db-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.db-hb {
+  display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border: 1px solid transparent; border-radius: var(--radius-sm);
+  font-size: 13.5px; font-weight: 600; white-space: nowrap; transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-fast) ease;
+}
+.db-hb:active { transform: scale(0.97); }
+.db-hb-w { background: var(--color-hero-fg); color: var(--color-hero); }
+.db-hb-g { border-color: color-mix(in srgb, var(--color-hero-fg) 22%, transparent); color: var(--color-hero-fg); }
+@media (hover: hover) and (pointer: fine) {
+  .db-hb-w:hover { background: var(--color-bg-panel); }
+  .db-hb-g:hover { background: color-mix(in srgb, var(--color-hero-fg) 8%, transparent); }
+  .db-stat:hover { background: color-mix(in srgb, var(--color-hero-fg) 5%, transparent); }
+}
+.db-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 20px 0 0; padding: 0; list-style: none; border-top: 1px solid color-mix(in srgb, var(--color-hero-fg) 12%, transparent); }
+.db-stats li { display: flex; border-left: 1px solid color-mix(in srgb, var(--color-hero-fg) 12%, transparent); }
+.db-stats li:first-child { border-left: 0; }
+.db-stat { display: flex; flex: 1; flex-direction: column; gap: 2px; min-width: 0; padding: 14px 24px 16px; color: inherit; transition: background-color var(--dur-fast) ease; }
+.db-stat-l { font-size: 12.5px; color: var(--color-hero-fg-muted); }
+.db-stat-v { margin-top: 2px; font-size: 30px; line-height: 1.1; font-weight: 700; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.db-stat-v small { margin-left: 2px; font-size: 14px; font-weight: 500; letter-spacing: 0; color: var(--color-hero-fg-muted); }
+.db-stat[data-warn] .db-stat-v { color: var(--color-warning-solid); }
+.db-stat-h { overflow: hidden; font-size: 12px; color: var(--color-hero-fg-muted); text-overflow: ellipsis; white-space: nowrap; }
+
+/* blocks */
+.db-kicker { font-size: 12.5px; font-weight: 650; color: var(--color-accent-fg); }
+.db-h2 { margin: 0; font-size: 17px; font-weight: 720; letter-spacing: -0.03em; }
+
+/* step tracker (요청 · 검토 · 이용 · 종료), same steps as the start page */
+.db-steps { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; padding: 0; list-style: none; }
+.db-steps li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--color-fg-muted); }
+.db-steps li::before { content: ""; z-index: 1; width: 9px; height: 9px; border-radius: 50%; background: var(--color-border-strong); }
+.db-steps li::after { content: ""; position: absolute; top: 4px; left: 50%; width: 100%; height: 1px; background: var(--color-border-strong); }
+.db-steps li:last-child::after { display: none; }
+.db-steps li[data-state="done"]::before, .db-steps li[data-state="done"]::after { background: var(--color-success-solid); }
+.db-steps li[data-state="now"] { font-weight: 600; color: var(--color-accent-fg); }
+.db-steps li[data-state="now"]::before { background: var(--color-accent); box-shadow: 0 0 0 3px var(--color-accent-soft); }
+
+/* bars that encode remaining time / readiness share */
+.db-track { height: 5px; overflow: hidden; border-radius: 3px; background: var(--color-bg-hover); }
+.db-track i { display: block; height: 100%; border-radius: 3px; background: var(--color-accent); transform-origin: left center; }
+.db-track i[data-warn] { background: var(--color-warning-solid); }
+.db-seg { display: flex; gap: 2px; width: 200px; max-width: 100%; height: 8px; overflow: hidden; border-radius: 4px; }
+.db-seg i { display: block; transform-origin: left center; }
+
+/* first visit of a session: band, then blocks 40ms apart, then bars fill (spec: 300ms ease-out, 8px) */
+@keyframes db-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes db-fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+[data-intro] .db-band { animation: db-rise 300ms var(--ease-out) both; }
+[data-intro] .db-block { animation: db-rise 300ms var(--ease-out) both; animation-delay: calc(80ms + var(--i, 0) * 40ms); }
+[data-intro] .db-track i, [data-intro] .db-seg i { animation: db-fill 600ms var(--ease-out) 300ms both; }
+
+@media (max-width: 767px) {
+  .db-band-in { padding: 18px 16px 0; }
+  .db-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .db-stats li:nth-child(3) { border-left: 0; }
+  .db-stats li:nth-child(n + 3) { border-top: 1px solid color-mix(in srgb, var(--color-hero-fg) 12%, transparent); }
+  .db-stat { padding: 12px 16px; }
+  .db-stat-v { font-size: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-intro] .db-band, [data-intro] .db-block, [data-intro] .db-track i, [data-intro] .db-seg i { animation: none; }
+  .db-hb:active { transform: none; }
+}
