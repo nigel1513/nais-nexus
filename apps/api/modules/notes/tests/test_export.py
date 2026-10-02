@@ -160,3 +160,29 @@ def test_export_streams_notes_in_batches(api: NotesApi, world: World, db: PgUrls
     ):
         assert record["recorder_display_name"] and record["signatures"][0]["signer_display_name"]
         assert hashlib.sha256(canonical_json(record["content"])).hexdigest() == note["content_hash"]
+
+
+def test_note_rejected_after_selection_is_not_exported(
+    api: NotesApi, world: World, db: PgUrls, monkeypatch: Any
+) -> None:
+    """A witness rejects another recorder's note (SUBMITTED -> DRAFT) after the ORG_ADMIN's export selected it but
+    before the archive streams: its DRAFT content never reaches the archive or hashes.csv."""
+    from api.modules.notes.service import export as service
+
+    kept = api.signed(world)
+    api.witnessed(world)
+    rejected = api.submitted(world, user="a.colleague")
+    original = service.prepare
+
+    def prepare_then_reject(*args: Any, **kwargs: Any) -> Any:
+        archive = original(*args, **kwargs)
+        assert rejected["note_id"] in {str(i) for i in archive.note_ids}
+        response = api.post("b.witness", f"/notes/{rejected['note_id']}/reject", json={"reason": "보완"})
+        assert response.status_code == 200, response.text
+        return archive
+
+    monkeypatch.setattr(service, "prepare", prepare_then_reject)
+    zf = archive(export(api, "a.admin", world))
+    assert set(notes_in(zf)) == {kept["note_id"]}
+    assert all(rejected["note_id"] not in name for name in zf.namelist())
+    assert rejected["note_id"] not in zf.read("hashes.csv").decode()

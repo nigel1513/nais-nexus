@@ -26,13 +26,16 @@ def load_note(session: Session, note_id: UUID, *, for_update: bool = False) -> R
     return session.execute(stmt).mappings().first()
 
 
-def load_notes(session: Session, note_ids: Sequence[UUID]) -> dict[UUID, RowMapping]:
+def load_exportable(session: Session, note_ids: Sequence[UUID], viewer_id: UUID) -> dict[UUID, RowMapping]:
+    """Of the given notes, those the viewer may still export: their own (any status) or another recorder's
+    SUBMITTED/SIGNED note. A note rejected back to DRAFT since it was selected is never loaded."""
     if not note_ids:
         return {}
-    return {
-        r["note_id"]: r
-        for r in session.execute(select(notes).where(notes.c.note_id.in_(note_ids))).mappings()
-    }
+    stmt = select(notes).where(
+        notes.c.note_id.in_(note_ids),
+        or_(notes.c.recorder_id == viewer_id, notes.c.status.in_(("SUBMITTED", "SIGNED"))),
+    )
+    return {r["note_id"]: r for r in session.execute(stmt).mappings()}
 
 
 def latest_version(

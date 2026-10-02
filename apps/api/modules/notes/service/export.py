@@ -77,6 +77,7 @@ class Archive:
 
     filename: str
     project_name: str
+    viewer_id: UUID
     note_ids: list[UUID]
     created_at: datetime
 
@@ -117,19 +118,22 @@ def prepare(
     return Archive(
         filename=f"research-notes-{project_id}-{span}.zip",
         project_name=project_name(deps, project_id),
+        viewer_id=user.user_id,
         note_ids=[r["note_id"] for r in rows],
         created_at=clock.now(),
     )
 
 
 def _batches(
-    session: Session, deps: NotesDeps, note_ids: Sequence[UUID]
+    session: Session, deps: NotesDeps, viewer_id: UUID, note_ids: Sequence[UUID]
 ) -> Iterator[tuple[ExportedNote, dict[UUID, str]]]:
-    """Notes with their blocks and signatures, BATCH_SIZE at a time, in archive order. A note deleted since
-    prepare() (a DRAFT) is skipped."""
+    """Notes with their blocks and signatures, BATCH_SIZE at a time, in archive order. The export scope is applied
+    again in the query: a note deleted since prepare() (a DRAFT), or another recorder's note rejected back to DRAFT
+    since then, is never loaded and stays out of the archive and hashes.csv."""
     for start in range(0, len(note_ids), BATCH_SIZE):
         ids = list(note_ids[start : start + BATCH_SIZE])
-        notes = repo.load_notes(session, ids)
+        notes = repo.load_exportable(session, ids, viewer_id)
+        ids = [i for i in ids if i in notes]
         blocks = repo.load_blocks(session, ids)
         signatures = repo.load_signatures(session, ids)
         people = [n["recorder_id"] for n in notes.values()] + [
@@ -284,7 +288,7 @@ def stream(archive: Archive, deps: NotesDeps, database_url: str) -> Iterator[byt
         session.connection(
             execution_options={"isolation_level": "REPEATABLE READ", "postgresql_readonly": True}
         )
-        yield from _zip(archive, _batches(session, deps, archive.note_ids))
+        yield from _zip(archive, _batches(session, deps, archive.viewer_id, archive.note_ids))
     finally:
         session.rollback()
         session.close()
