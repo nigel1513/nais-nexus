@@ -1,5 +1,5 @@
 import type { Schemas } from "@/shared/api/types";
-import { DATASET, VERSION } from "./fixtures";
+import { DATASET, VERSION } from "./seed-ids";
 import * as tables from "./seed-tables";
 import type { MockDb, StoredVersion } from "./types";
 

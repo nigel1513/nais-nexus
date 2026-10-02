@@ -1,7 +1,7 @@
 import { http, HttpResponse } from "msw";
 import type { Schemas } from "@/shared/api/types";
 import { getDb } from "../db";
-import { API, body, currentUser, fail, newId, notify, nowIso, orgName, paginate, recordAudit, validationFailed } from "../http";
+import { API, body, currentUser, displayName, fail, ifMatch, mockAuthTime, newId, notify, nowIso, only, orgName, paginate, projectName, recordAudit, UUID_PATTERN as UUID, validationFailed } from "../http";
 import { contentHash, inTemplateOrder, nextChainHash, noteDocument, canonicalJson, SECTION_LABELS, SECTIONS, seoulDate } from "../note-hash";
 import { appendDraftBlocks, draftSentences, listNotebookActivity } from "../notebook-activity";
 import type { MockDb, MockUser, StoredNote } from "../types";
@@ -13,21 +13,25 @@ import { isActiveMember, memberProjectIds, roleOf } from "./workspace";
  * DRAFT is recorder-only (404 for everyone else); SUBMITTED/SIGNED are readable by the recorder and the witnesses of the
  * snapshot taken at submit; other project members get 403. A SIGNED note never changes (NOTE_LOCKED) — revising creates
  * a new DRAFT version. Hashes follow hashing.py (canonical JSON, sha256, project × organization chain).
- * Signing needs a fresh login in the backend (auth_time ≤ 5 min); a mock session always counts as fresh.
+ * Signing needs a fresh login (auth_time within 5 minutes, 60 s clock skew): the mock reads the login time mock-login
+ * stores in a cookie; a caller without that cookie (header-only test clients) counts as freshly signed in.
  * Drafting reads only the recorder's Jupyter notebooks of the note's day (notebook-activity.ts, empty until M07):
  * no notebook → 422 NO_NOTEBOOK_ACTIVITY. A queued draft advances on reads (QUEUED → RUNNING → DONE) and appends
  * deterministic AI blocks with NOTEBOOK evidence; the mock never calls a model.
+ *
+ * Backend outcomes the mock never produces: exportNotes 422 TOO_MANY_NOTES (more than 5,000 notes), draftNote 503
+ * DEPENDENCY_UNAVAILABLE (notebook source failing), a draft ending FAILED with draft_error (LLM timeout or invalid
+ * output), semantic search scores (the mock searches by keyword with score null, as when the embedder is off).
  */
 type Relation = "RECORDER" | "WITNESS" | "MEMBER" | "HIDDEN";
 
 const MIN_DRAFT_INTERVAL_MS = 60_000;
 const NO_NOTEBOOK_MESSAGE = "오늘 저장한 노트북이 없습니다.";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES: Schemas["NoteStatus"][] = ["DRAFT", "SUBMITTED", "SIGNED"];
 
-const projectName = (db: MockDb, projectId: string) => db.projects.find((p) => p.project_id === projectId)?.name ?? "";
-const displayName = (db: MockDb, userId: string) => db.users.find((u) => u.user_id === userId)?.display_name ?? "";
+const SIGNATURE_MAX_AGE_MS = 5 * 60_000;
+const CLOCK_SKEW_MS = 60_000;
 
 // ---------------------------------------------------------------- access (access.py)
 
@@ -214,13 +218,6 @@ function chainIsIntact(db: MockDb, projectId: string, organizationId: string): b
 
 // ---------------------------------------------------------------- request checks
 
-function only(raw: unknown, allowed: string[]): Record<string, unknown> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) validationFailed("body", "INVALID_TYPE");
-  const extra = Object.keys(raw as object).find((k) => !allowed.includes(k));
-  if (extra) validationFailed(extra, "EXTRA_FORBIDDEN");
-  return raw as Record<string, unknown>;
-}
-
 function dateParam(url: URL, name: "from" | "to"): string | null {
   const v = url.searchParams.get(name);
   if (v !== null && (!ISO_DATE.test(v) || Number.isNaN(Date.parse(`${v}T00:00:00Z`)))) validationFailed(name, "INVALID_DATE");
@@ -236,11 +233,12 @@ function range(url: URL): [string | null, string | null] {
 
 const inRange = (n: StoredNote, [from, to]: [string | null, string | null]) => (!from || n.note_date >= from) && (!to || n.note_date <= to);
 
-function ifMatch(request: Request): number {
-  const raw = request.headers.get("if-match");
-  const m = raw ? /^"?([1-9][0-9]*)"?$/.exec(raw.trim()) : null;
-  if (!m) validationFailed("If-Match", raw ? "INVALID" : "MISSING");
-  return Number(m[1]);
+/** signing.require_fresh_login against the mock login time (no cookie: a header-only caller, treated as fresh). */
+function requireFreshLogin(request: Request) {
+  const at = mockAuthTime(request);
+  if (at === null) return;
+  const now = Date.now();
+  if (!(now - SIGNATURE_MAX_AGE_MS <= at && at <= now + CLOCK_SKEW_MS)) fail("NOTE_SIGNATURE_EXPIRED", "Sign in again (within the last 5 minutes) to sign.");
 }
 
 // ---------------------------------------------------------------- search (search.py, keyword fallback)
@@ -385,7 +383,7 @@ export const noteHandlers = [
     const db = getDb();
     const url = new URL(request.url);
     const q = url.searchParams.get("q");
-    if (q === null || q.length < 1 || q.length > 500) validationFailed("q", q === null ? "MISSING" : "LENGTH");
+    if (q === null || !q.trim() || q.length > 500) validationFailed("q", q === null ? "MISSING" : "LENGTH");
     const projectId = url.searchParams.get("project_id");
     if (projectId !== null && !UUID.test(projectId)) validationFailed("project_id", "INVALID_UUID");
     const scope = [...latestVersions(db.notes.filter((n) => n.recorder_id === user.user_id)), ...witnessNotes(db, user)].filter((n) => !projectId || n.project_id === projectId);
@@ -576,7 +574,7 @@ export const noteHandlers = [
     const [found, relation] = load(db, user, String(params.note_id));
     let note = found;
     if (relation === "MEMBER") notWitness();
-    // require_fresh_login: a mock session always counts as a login within the last five minutes.
+    requireFreshLogin(request);
     if (note.status === "SIGNED") locked();
     let role: "RECORDER" | "WITNESS";
     if (relation === "RECORDER") {

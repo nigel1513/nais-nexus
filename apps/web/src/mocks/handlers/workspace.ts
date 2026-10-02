@@ -2,9 +2,9 @@ import { http, HttpResponse } from "msw";
 import type { Schemas } from "@/shared/api/types";
 import { getDb } from "../db";
 import { emptyResearch } from "../fixtures";
-import { API, body, currentUser, fail, newestFirst, newId, notify, nowIso, orgName, paginate, publicOrigin, recordAudit, validationFailed } from "../http";
+import { API, body, currentUser, displayName, fail, ifMatch, isUuid, newestFirst, newId, notify, nowIso, only, optionalBody, orgName, paginate, projectName, publicOrigin, recordAudit, validationFailed } from "../http";
 import { applySteps, InputProblem, neededInputs, PREVIEW_INPUT_ROWS, PREVIEW_RESULT_ROWS, previewRows, readInput, schemaOnly, StepError, type Table, toCsv } from "../recipes";
-import { sha256Hex } from "../sha256";
+import { sha256Bytes, sha256Hex } from "../sha256";
 import type { MockDb, MockUser, PinnedInput, StoredDataset, StoredInput, StoredOutput, StoredPublishRequest, StoredRecipe, StoredRun, StoredThread, StoredVersion } from "../types";
 import { ALLOWED_MEDIA, bucketOf, canSeeDataset } from "./catalog";
 import { memberOf } from "./projects";
@@ -16,6 +16,12 @@ import { memberOf } from "./projects";
  * organization, or an ACTIVE unexpired grant from the governance store (`db.grants`). Runs and hub publication are
  * asynchronous in the backend; here a run advances on reads (QUEUED → RUNNING → finished) and an approved publication
  * is carried out right after the decision response is built (the worker "after commit").
+ *
+ * Backend outcomes the mock never produces (no storage, timeouts or large files here):
+ * - previewRecipe / createRecipe 503 DEPENDENCY_UNAVAILABLE (20 s read budget, storage outage);
+ * - RECIPE_INVALID reasons INPUT_TOO_LARGE, TOO_MANY_ROWS and STEP_FAILED (integer overflow, join key widening);
+ * - createOutputUpload / completeOutputUpload / getOutputDownload 503 (lead organization without storage);
+ * - publication retries after storage outages (MAX_FAILURES); the only terminal failure is the "corrupt" file stand-in.
  */
 const STRICTNESS: Schemas["AccessLevel"][] = ["PUBLIC", "INTERNAL", "CONTROLLED", "SENSITIVE"];
 const NO_INPUTS_FLOOR: Schemas["AccessLevel"] = "INTERNAL";
@@ -23,7 +29,6 @@ const UPLOAD_TTL_MS = 15 * 60_000;
 const DOWNLOAD_TTL_MS = 300_000;
 const RESULT_NAME = "result.parquet";
 const RESULT_MEDIA_TYPE = "application/vnd.apache.parquet";
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SCOPES: Schemas["ThreadScope"][] = ["PROJECT", "DATASET", "OUTPUT", "RECIPE"];
 
 // ---------------------------------------------------------------- access (access.py)
@@ -85,20 +90,10 @@ function latestPublished(db: MockDb, datasetId: string): StoredVersion | undefin
   return db.versions.filter((v) => v.dataset_id === datasetId && v.status === "PUBLISHED").sort(newestFirst("published_at"))[0];
 }
 
-const displayName = (db: MockDb, userId: string) => db.users.find((u) => u.user_id === userId)?.display_name ?? "";
-const projectName = (db: MockDb, projectId: string) => db.projects.find((p) => p.project_id === projectId)?.name ?? "";
 const leadOrg = (db: MockDb, projectId: string) => db.projects.find((p) => p.project_id === projectId)!.lead_organization_id;
 
 // ---------------------------------------------------------------- request-body checks (pydantic models)
 
-function only(raw: unknown, allowed: string[], field = "body"): Record<string, unknown> {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) validationFailed(field, "INVALID_TYPE");
-  const extra = Object.keys(raw as object).find((k) => !allowed.includes(k));
-  if (extra) validationFailed(extra, "EXTRA_FORBIDDEN");
-  return raw as Record<string, unknown>;
-}
-
-const isUuid = (v: unknown): v is string => typeof v === "string" && UUID.test(v);
 const isText = (v: unknown, min: number, max: number): v is string => typeof v === "string" && v.length >= min && v.length <= max;
 
 function uuidList(v: unknown, field: string, max = 10) {
@@ -322,13 +317,6 @@ function recipeBody(raw: unknown) {
   return { name: b.name as string, input_ids: inputIds, steps };
 }
 
-function ifMatch(request: Request): number {
-  const raw = request.headers.get("if-match");
-  const m = raw ? /^"?([1-9][0-9]*)"?$/.exec(raw.trim()) : null;
-  if (!m) validationFailed("If-Match", raw ? "INVALID" : "MISSING");
-  return Number(m[1]);
-}
-
 // ---------------------------------------------------------------- runs (service/runs.py, jobs.run_recipe)
 
 const runView = (r: StoredRun): Schemas["Run"] => ({
@@ -388,8 +376,8 @@ function executeRun(db: MockDb, run: StoredRun) {
   const bucket = bucketOf(db, leadOrg(db, run.project_id));
   const key = `workspace/${run.project_id}/outputs/${outputId}/${RESULT_NAME}`;
   const bytes = new TextEncoder().encode(toCsv(result));
-  const sha256 = sha256Hex(toCsv(result));
-  db.blobs[`${bucket}/${key}`] = { size_bytes: bytes.length, sha256 };
+  const sha256 = sha256Bytes(bytes);
+  db.blobs[`${bucket}/${key}`] = { size_bytes: bytes.length, sha256, data: bytes };
   const level = run.pinned.length ? run.pinned.map((p) => datasetOf(db, p.dataset_id)!.access_level).reduce(stricter) : NO_INPUTS_FLOOR;
   db.outputs.push({
     output_id: outputId,
@@ -521,7 +509,7 @@ function publishApproved(db: MockDb, r: StoredPublishRequest) {
   const approver = db.users.find((u) => u.user_id === r.approved_by) ?? null;
   if (o.files.some((f) => f.name.toLowerCase().includes("corrupt"))) {
     r.status = "REJECTED";
-    r.failure_reason = "카탈로그 파일 검증에 실패했습니다(verification failed): 산출물 파일을 확인한 뒤 다시 요청하세요.";
+    r.failure_reason = "카탈로그 파일 검증에 실패했습니다. 산출물 파일을 확인한 뒤 다시 요청하세요.";
     o.publish_status = "REJECTED";
     recordAudit(db, { action: "OUTPUT_PUBLISH_DECIDED", actor: null, resource: { type: "PUBLISH_REQUEST", id: r.request_id }, project_id: r.project_id, details: { decision: "REJECT", failure_reason: r.failure_reason } });
     notify(db, [r.created_by], "OUTPUT_PUBLISH_DECIDED", `"${o.title}" 허브 공개에 실패했습니다`, `/commons/projects/${r.project_id}/outputs/${o.output_id}`, `사유: ${r.failure_reason}`);
@@ -655,11 +643,11 @@ export const workspaceHandlers = [
     const user = currentUser(request);
     const db = getDb();
     const projectId = String(params.project_id);
-    requireWriter(db, projectId, user);
     const b = only(await body(request), ["dataset_id", "dataset_version_id", "note"]);
     if (!isUuid(b.dataset_id)) validationFailed("dataset_id", b.dataset_id === undefined ? "MISSING" : "INVALID_UUID");
     if (b.dataset_version_id !== undefined && !isUuid(b.dataset_version_id)) validationFailed("dataset_version_id", "INVALID_UUID");
     if (b.note !== undefined && !isText(b.note, 0, 2000)) validationFailed("note", "LENGTH");
+    requireWriter(db, projectId, user);
     const ds = usableDataset(db, user, b.dataset_id);
     const version = publishedVersion(db, ds.dataset_id, b.dataset_version_id as string | undefined);
     requireAccess(db, user, ds);
@@ -675,11 +663,11 @@ export const workspaceHandlers = [
     const user = currentUser(request);
     const db = getDb();
     const projectId = String(params.project_id);
-    requireWriter(db, projectId, user);
     const b = only(await body(request), ["dataset_version_id", "note"]);
     if (!Object.keys(b).length) validationFailed("body", "EMPTY");
     if (b.dataset_version_id !== undefined && !isUuid(b.dataset_version_id)) validationFailed("dataset_version_id", "INVALID_UUID");
     if (b.note !== undefined && b.note !== null && !isText(b.note, 0, 2000)) validationFailed("note", "LENGTH");
+    requireWriter(db, projectId, user);
     const row = liveInput(db, projectId, String(params.input_id));
     const newVersion = b.dataset_version_id as string | undefined;
     if (newVersion !== undefined && newVersion !== row.dataset_version_id) {
@@ -724,8 +712,8 @@ export const workspaceHandlers = [
     const user = currentUser(request);
     const db = getDb();
     const projectId = String(params.project_id);
-    requireOpenWriter(db, projectId, user);
     const b = recipeBody(await body(request));
+    requireOpenWriter(db, projectId, user);
     validateRecipe(db, projectId, b.input_ids, b.steps);
     const now = nowIso();
     const row: StoredRecipe = { recipe_id: newId(), project_id: projectId, ...b, version: 1, updated_by: user.user_id, updated_at: now, deleted_at: null, history: [{ version: 1, ...b }] };
@@ -773,15 +761,7 @@ export const workspaceHandlers = [
     const user = currentUser(request);
     const db = getDb();
     const projectId = String(params.project_id);
-    const text = await request.text();
-    let raw: unknown = {};
-    if (text.trim()) {
-      try {
-        raw = JSON.parse(text);
-      } catch {
-        fail("VALIDATION_FAILED", "Invalid JSON body");
-      }
-    }
+    const raw = await optionalBody(request);
     const b = only(raw, ["input_ids", "steps"]);
     const bodyIds = b.input_ids === undefined ? undefined : uuidList(b.input_ids, "input_ids");
     const bodySteps = b.steps === undefined ? undefined : validateSteps(b.steps);
@@ -975,15 +955,7 @@ export const workspaceHandlers = [
     const user = currentUser(request);
     const db = getDb();
     const projectId = String(params.project_id);
-    const text = await request.text();
-    let raw: unknown = {};
-    if (text.trim()) {
-      try {
-        raw = JSON.parse(text);
-      } catch {
-        fail("VALIDATION_FAILED", "Invalid JSON body");
-      }
-    }
+    const raw = await optionalBody(request);
     const b = only(raw, ["title", "description"]);
     if (b.title !== undefined && !isText(b.title, 3, 300)) validationFailed("title", "LENGTH");
     if (b.description !== undefined && !isText(b.description, 0, 20_000)) validationFailed("description", "LENGTH");

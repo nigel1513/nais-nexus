@@ -118,8 +118,8 @@ export type MockDb = {
   recipes: StoredRecipe[];
   runs: StoredRun[];
   outputs: StoredOutput[];
-  /** Workspace objects PUT to mock storage: size and sha256 keyed by `<bucket>/<object key>` (completeOutputUpload re-checks them). */
-  blobs: Record<string, { size_bytes: number; sha256: string }>;
+  /** Workspace objects keyed by `<bucket>/<object key>`: size and sha256 (completeOutputUpload re-checks them) and the bytes (≤ 2 MiB) served to downloads. */
+  blobs: Record<string, { size_bytes: number; sha256: string; data?: Uint8Array }>;
   publishRequests: StoredPublishRequest[];
   threads: StoredThread[];
   comments: StoredComment[];

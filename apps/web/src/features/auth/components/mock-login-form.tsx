@@ -3,7 +3,7 @@ import { Button, FormField, Select } from "@nais/ui";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
-import { MOCK_USER_COOKIE } from "@/shared/config";
+import { MOCK_AUTH_TIME_COOKIE, MOCK_USER_COOKIE } from "@/shared/config";
 
 export function MockLoginForm({ callbackUrl, users }: { callbackUrl: string; users: { id: string; label: string; email: string; organization?: string }[] }) {
   const t = useTranslations();
@@ -15,6 +15,7 @@ export function MockLoginForm({ callbackUrl, users }: { callbackUrl: string; use
       onSubmit={(e) => {
         e.preventDefault();
         document.cookie = `${MOCK_USER_COOKIE}=${encodeURIComponent(userId)}; path=/; SameSite=Lax`;
+        document.cookie = `${MOCK_AUTH_TIME_COOKIE}=${Date.now()}; path=/; SameSite=Lax`;
         router.push(callbackUrl);
         router.refresh();
       }}

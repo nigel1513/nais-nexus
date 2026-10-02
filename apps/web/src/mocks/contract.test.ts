@@ -211,13 +211,13 @@ describe("mock API ↔ openapi.yaml", () => {
     exercised.add("exportNotes");
     expect(zipRes.status).toBe(200);
     expect(zipRes.headers.get("content-type")).toBe("application/zip");
-    await call(A, "get", "/notes/search", { query: "q=C07", status: 200 });
+    await call(A, "get", "/notes/search", { query: "q=temp_c", status: 200 });
     await call(A, "get", "/projects/{project_id}/note-settings", { path: SP, status: 200 });
     await call(A, "patch", "/projects/{project_id}/note-settings", { path: SP, body: { witness_required: false }, status: 200 });
     await call(A, "get", "/notes/{note_id}", { path: { note_id: NOTE.signed }, status: 200 });
     const today = await call(BR, "post", "/projects/{project_id}/notes/today", { path: SP, status: 201 });
     const N = { note_id: today.note_id as string };
-    await call(BR, "put", "/notes/{note_id}/blocks", { path: N, headers: { "if-match": "1" }, body: { blocks: [{ section: "OBJECTIVE", text: "C07 셀 온도 편차 원인 확인" }] }, status: 200 });
+    await call(BR, "put", "/notes/{note_id}/blocks", { path: N, headers: { "if-match": "1" }, body: { blocks: [{ section: "OBJECTIVE", text: "temp_c 주기적 상승 원인 확인" }] }, status: 200 });
     await call(BR, "post", "/notes/{note_id}/draft", { path: N, status: 422 });
     await call(BR, "post", "/notes/{note_id}/submit", { path: N, status: 200 });
     await call(A, "post", "/notes/{note_id}/reject", { path: N, body: { reason: "근거 보완" }, status: 403 });

@@ -109,12 +109,30 @@ describe("notes mocks: locking, hashes and the chain", () => {
     expect(stale.status).toBe(409);
     expect(stale.body.error).toMatchObject({ code: "CONFLICT", details: { revision: 2 } });
     const kept = blocksOf(note).slice(0, 2);
-    const saved = await minjun.put(`/notes/${NOTE.draft}/blocks`, { blocks: [...kept, { section: "NEXT", text: "C07 셀 제외 여부를 결정한다." }] }, { "if-match": '"2"' });
+    const saved = await minjun.put(`/notes/${NOTE.draft}/blocks`, { blocks: [...kept, { section: "NEXT", text: "온도 보정 단계 추가 여부를 결정한다." }] }, { "if-match": '"2"' });
     expect(saved.body.revision).toBe(3);
     expect(saved.body.blocks.map((b: { block_id: string }) => b.block_id).slice(0, 2)).toEqual(kept.map((b) => b.block_id));
     expect(saved.body.blocks[2]).toMatchObject({ origin: "HUMAN", accepted: true, evidence: [] });
     const unknown = await minjun.put(`/notes/${NOTE.draft}/blocks`, { blocks: [{ block_id: NOTE.signed, section: "NEXT", text: "x" }] }, { "if-match": "3" });
     expect(unknown.body.error.details).toEqual({ fields: [{ field: "blocks.0.block_id", reason: "UNKNOWN_BLOCK" }] });
+  });
+});
+
+describe("notes mocks: signing needs a fresh login", () => {
+  const withLogin = (minutesAgo: number) => ({ cookie: `nais_mock_auth_time=${Date.now() - minutesAgo * 60_000}` });
+
+  it("answers 401 NOTE_SIGNATURE_EXPIRED when the mock login is older than five minutes", async () => {
+    const stale = await minjun.post(`/notes/${NOTE.draft}/sign`, undefined, withLogin(6));
+    expect(stale.status).toBe(401);
+    expect(stale.body.error.code).toBe("NOTE_SIGNATURE_EXPIRED");
+    expect((await minjun.get(`/notes/${NOTE.draft}`)).body.status).toBe("DRAFT"); // nothing was fixed
+    const fresh = await minjun.post(`/notes/${NOTE.draft}/sign`, undefined, withLogin(1));
+    expect(fresh.body.status).toBe("SIGNED");
+  });
+
+  it("checks freshness only after the caller's relation to the note (others still get 404/403)", async () => {
+    expect((await yujin.post(`/notes/${NOTE.draft}/sign`, undefined, withLogin(30))).status).toBe(404);
+    expect((await yujin.post(`/notes/${NOTE.signed}/sign`, undefined, withLogin(30))).body.error.code).toBe("NOTE_NOT_WITNESS");
   });
 });
 
@@ -180,10 +198,10 @@ describe("notes mocks: drafting from the day's notebooks", () => {
       user_id: USER.aResearcher,
       project_id: PROJECT.seed,
       day: seoulDate(),
-      title: "C07 온도 분석",
+      title: "temp_c 주기 분석",
       saved_at: new Date().toISOString(),
       cells: [
-        { type: "markdown", source_head: "# C07 셀 온도 편차 확인", output_kinds: [], output_count: 0, has_error: false },
+        { type: "markdown", source_head: "# temp_c 9 사이클 주기 확인", output_kinds: [], output_count: 0, has_error: false },
         { type: "code", source_head: "df = load_input('battery')\ndf.groupby('cell_id').temp_c.mean()", output_kinds: ["table"], output_count: 1, has_error: false },
         { type: "markdown", source_head: "## 챔버 설정 온도와 대조", output_kinds: [], output_count: 0, has_error: false },
       ],
@@ -200,7 +218,7 @@ describe("notes mocks: drafting from the day's notebooks", () => {
     expect(ai.length).toBeGreaterThan(0);
     expect(ai.every((b: { accepted: boolean }) => !b.accepted)).toBe(true);
     const procedure = ai.find((b: { section: string }) => b.section === "PROCEDURE");
-    expect(procedure.evidence).toEqual([expect.objectContaining({ type: "NOTEBOOK", label: "C07 온도 분석 · 셀 2" })]);
+    expect(procedure.evidence).toEqual([expect.objectContaining({ type: "NOTEBOOK", label: "temp_c 주기 분석 · 셀 2" })]);
     expect((await minjun.get("/notes")).body.items[0].unaccepted_ai_count).toBe(ai.length);
 
     const blocked = await minjun.post(`/notes/${NOTE.draft}/submit`);
@@ -232,11 +250,13 @@ describe("notes mocks: drafting from the day's notebooks", () => {
 
 describe("notes mocks: search and export", () => {
   it("searches only the notes the caller may read, by keyword (score null)", async () => {
-    const mine = (await minjun.get("/notes/search?q=C07")).body.items;
+    const mine = (await minjun.get("/notes/search?q=열전대")).body.items;
     expect(mine).toEqual([expect.objectContaining({ note_id: NOTE.draft, score: null, project_name: "차세대 이차전지 소재 공동연구" })]);
-    expect(mine[0].snippet).toContain("C07");
-    expect((await yujin.get("/notes/search?q=C07")).body.items).toEqual([]);
+    expect(mine[0].snippet).toContain("열전대");
+    expect((await yujin.get("/notes/search?q=열전대")).body.items).toEqual([]);
     expect((await minjun.get("/notes/search?q=")).body.error.code).toBe("VALIDATION_FAILED");
+    expect((await minjun.get("/notes/search?q=%20%20")).body.error.code).toBe("VALIDATION_FAILED");
+    expect((await minjun.get("/notes/search?q=용량")).body.items.map((h: { note_id: string }) => h.note_id)).toEqual([NOTE.draft, NOTE.signed]);
   });
 
   it("exports the caller's notes; an ORG_ADMIN also gets submitted/signed notes of the organization, never DRAFTs", async () => {

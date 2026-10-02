@@ -1,7 +1,7 @@
 import { HttpResponse } from "msw";
 import { ERROR_HTTP } from "@/generated/contracts";
 import type { Schemas } from "@/shared/api/types";
-import { MOCK_USER_COOKIE } from "@/shared/config";
+import { MOCK_AUTH_TIME_COOKIE, MOCK_USER_COOKIE } from "@/shared/config";
 import { getDb } from "./db";
 import type { MockDb, MockUser } from "./types";
 
@@ -120,4 +120,44 @@ export function notify(db: MockDb, userIds: string[], type: Schemas["Notificatio
   for (const user_id of new Set(userIds)) {
     db.notifications.push({ notification_id: newId(), user_id, type, title, body: bodyText, link, read: false, created_at: nowIso() });
   }
+}
+
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const isUuid = (v: unknown): v is string => typeof v === "string" && UUID_PATTERN.test(v);
+
+/** A JSON object with only the model's keys (pydantic extra="forbid"): else 422 with the first offending field. */
+export function only(raw: unknown, allowed: string[], field = "body"): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) validationFailed(field, "INVALID_TYPE");
+  const extra = Object.keys(raw as object).find((k) => !allowed.includes(k));
+  if (extra) validationFailed(field === "body" ? extra : `${field}.${extra}`, "EXTRA_FORBIDDEN");
+  return raw as Record<string, unknown>;
+}
+
+/** An optional request body (`requestBody.required: false`): no body is `{}`, malformed JSON is 422. */
+export async function optionalBody(request: Request): Promise<unknown> {
+  const text = await request.text();
+  if (!text.trim()) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    fail("VALIDATION_FAILED", "Invalid JSON body");
+  }
+}
+
+/** If-Match: the current version / revision, optionally quoted; missing or malformed is 422. */
+export function ifMatch(request: Request): number {
+  const raw = request.headers.get("if-match");
+  const m = raw ? /^"?([1-9][0-9]*)"?$/.exec(raw.trim()) : null;
+  if (!m) validationFailed("If-Match", raw ? "INVALID" : "MISSING");
+  return Number(m[1]);
+}
+
+export const displayName = (db: MockDb, userId: string) => db.users.find((u) => u.user_id === userId)?.display_name ?? "";
+export const projectName = (db: MockDb, projectId: string) => db.projects.find((p) => p.project_id === projectId)?.name ?? "";
+
+/** Login time of the mock session (mock-login sets it); null when the caller sent none (header-only test clients). */
+export function mockAuthTime(request: Request): number | null {
+  const raw = cookie(request.headers.get("cookie"), MOCK_AUTH_TIME_COOKIE);
+  const ms = raw === undefined ? NaN : Number(raw);
+  return Number.isFinite(ms) ? ms : null;
 }

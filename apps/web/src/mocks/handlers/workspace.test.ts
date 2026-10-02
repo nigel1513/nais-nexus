@@ -84,6 +84,15 @@ describe("workspace mocks: inputs", () => {
   });
 });
 
+describe("workspace mocks: request validation order", () => {
+  it("rejects malformed bodies (422) before the membership check, as the API validates the request first", async () => {
+    expect((await seoyeon.post(`${P}/inputs`, {})).body.error).toMatchObject({ code: "VALIDATION_FAILED", details: { fields: [{ field: "dataset_id", reason: "MISSING" }] } });
+    expect((await seoyeon.patch(`${P}/inputs/${INPUT.battery}`, {})).body.error.code).toBe("VALIDATION_FAILED");
+    expect((await seoyeon.post(`${P}/recipes`, { name: "", input_ids: [INPUT.battery], steps: [] })).body.error.code).toBe("VALIDATION_FAILED");
+    expect((await seoyeon.post(`${P}/inputs`, { dataset_id: DATASET.sensors })).body.error.code).toBe("FORBIDDEN");
+  });
+});
+
 describe("workspace mocks: recipes and runs", () => {
   it("previews the seed recipe on the pinned CSV (first 100 rows of the result)", async () => {
     const res = await yujin.post(`${P}/recipes/${RECIPE.capacity}/preview`, {});
@@ -175,6 +184,26 @@ describe("workspace mocks: outputs and hub publication", () => {
     expect((await minjun.get(`${P}/outputs?kind=FILE`)).body.items.map((o: { output_id: string }) => o.output_id)).toEqual([session.output_id]);
   });
 
+  it("serves the stored bytes of an output, matching its size and sha256", async () => {
+    const check = async (outputId: string) => {
+      const download = await minjun.post(`${P}/outputs/${outputId}/download`);
+      expect(download.status).toBe(201);
+      const file = download.body.files[0];
+      const bytes = Buffer.from(await (await fetch(file.url)).arrayBuffer());
+      expect(bytes.length).toBe(file.size_bytes);
+      expect(createHash("sha256").update(bytes).digest("hex")).toBe(file.sha256);
+      return bytes.toString("utf8");
+    };
+    const seed = await check(OUTPUT.capacity);
+    expect(seed.split("\n")[0]).toBe("cycle,capacity_ah,temp_c");
+    expect(seed.split("\n")).toHaveLength(301);
+    expect(seed).not.toMatch(/mock/i);
+    const started = await minjun.post(`${P}/recipes/${RECIPE.capacity}/runs`);
+    await minjun.get(`${P}/runs/${started.body.run_id}`);
+    const run = (await minjun.get(`${P}/runs/${started.body.run_id}`)).body;
+    expect(await check(run.output_id)).toBe(seed);
+  });
+
   it("publishes through owner review: one slot per input owner plus the lead organization, no self-decision", async () => {
     const req = await minjun.post(`${P}/outputs/${OUTPUT.capacity}/publish-requests`, { title: "용량 유지율 추이 파생 데이터" });
     expect(req.status).toBe(201);
@@ -211,16 +240,16 @@ describe("workspace mocks: outputs and hub publication", () => {
   });
 
   it("turns a publication the catalog cannot verify into REJECTED with failure_reason; the output may be requested again", async () => {
-    const session = await upload(yujin, "corrupt-cells.csv", "cell,temp\nC07,27.1\n");
-    await fetch(session.files[0]!.upload.url, { method: "PUT", body: "cell,temp\nC07,27.1\n" });
+    const session = await upload(yujin, "corrupt-cells.csv", "cycle,temp_c\n296,26.45\n");
+    await fetch(session.files[0]!.upload.url, { method: "PUT", body: "cycle,temp_c\n296,26.45\n" });
     expect((await yujin.post(`${P}/outputs/${session.output_id}/complete`)).status).toBe(200);
-    const req = await yujin.post(`${P}/outputs/${session.output_id}/publish-requests`, { title: "C07 셀 온도" });
+    const req = await yujin.post(`${P}/outputs/${session.output_id}/publish-requests`, { title: "temp_c 상승 구간" });
     await seoyeon.post(`/publish-requests/${req.body.request_id}/decision`, { decision: "APPROVE" });
     // 최유진 (한국재료연구원) requested: 정현우 of the same organization may still decide the 한국재료연구원 slot.
     expect((await hyunwoo.post(`/publish-requests/${req.body.request_id}/decision`, { decision: "APPROVE" })).body.status).toBe("APPROVED");
     const after = (await yujin.get(`/publish-requests?status=REJECTED`)).body.items[0];
     expect(after).toMatchObject({ request_id: req.body.request_id, status: "REJECTED", published_dataset_id: null });
-    expect(after.failure_reason).toContain("verification failed");
+    expect(after.failure_reason).toBe("카탈로그 파일 검증에 실패했습니다. 산출물 파일을 확인한 뒤 다시 요청하세요.");
     expect((await yujin.get(`${P}/outputs/${session.output_id}`)).body.publish_status).toBe("REJECTED");
     expect((await yujin.post(`${P}/outputs/${session.output_id}/publish-requests`, {})).status).toBe(201);
   });
@@ -232,7 +261,7 @@ describe("workspace mocks: discussions", () => {
     expect((await minjun.get(`/threads?project_id=${PROJECT.seed}`)).body.items).toHaveLength(1);
     expect((await seoyeon.get(`/threads?project_id=${PROJECT.seed}`)).status).toBe(404);
     const datasetThreads = await seoyeon.get(`/threads?scope=DATASET&target_id=${DATASET.battery}`);
-    expect(datasetThreads.body.items[0]).toMatchObject({ title: "C07 셀 온도 기록 확인 요청", project_id: null, created_by_display_name: "김민준" });
+    expect(datasetThreads.body.items[0]).toMatchObject({ title: "temp_c 주기적 상승 구간 확인 요청", project_id: null, created_by_display_name: "김민준" });
 
     const created = await seoyeon.post("/threads", { scope: "DATASET", target_id: DATASET.battery, title: "단위 문의", body: "temp_c 단위가 섭씨인가요?" });
     expect(created.status).toBe(201);

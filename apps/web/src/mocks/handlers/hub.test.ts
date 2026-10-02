@@ -50,7 +50,7 @@ describe("hub mocks", () => {
     expect(member.find((a: { type: string }) => a.type === "USED_IN_PROJECT")).toMatchObject({ label: "차세대 이차전지 소재 공동연구", project_id: PROJECT.seed, actor_display_name: "김민준" });
     const outsider = (await hyunwoo.get(`/datasets/${DATASET.battery}/activity`)).body.items;
     expect(outsider.find((a: { type: string }) => a.type === "USED_IN_PROJECT")).toMatchObject({ label: null, project_id: null, ref_id: null, actor_display_name: null });
-    expect(outsider.find((a: { type: string }) => a.type === "DISCUSSION_STARTED")).toMatchObject({ label: "C07 셀 온도 기록 확인 요청", ref_id: THREAD.dataset });
+    expect(outsider.find((a: { type: string }) => a.type === "DISCUSSION_STARTED")).toMatchObject({ label: "temp_c 주기적 상승 구간 확인 요청", ref_id: THREAD.dataset });
     const dates = member.map((a: { occurred_at: string }) => a.occurred_at);
     expect(dates).toEqual([...dates].sort().reverse());
     expect((await minjun.get(`/datasets/${DATASET.battery}/activity?limit=2`)).body.page.has_more).toBe(true);
