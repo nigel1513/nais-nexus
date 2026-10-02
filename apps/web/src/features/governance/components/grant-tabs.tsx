@@ -10,12 +10,13 @@ import { flattenPages } from "@/shared/api/pagination";
 import { useErrorText } from "@/shared/api/use-error-text";
 import type { AccessGrant, AccessGrantStatus } from "@/shared/api/types";
 import { GrantStatusBadge } from "@/shared/ui/badges";
-import { DateTime, ExpiryText } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
 import { useListAccessGrants, useRevokeAccessGrant } from "../api";
 import { ReasonDialog, useServerFieldError } from "./reason-dialog";
-import { ListToolbar, Person, StatusFilter } from "./request-meta";
+import { PanelHead } from "@/shared/ui/work-hero";
+import { GrantTerm } from "./grant-term";
+import { Person, StatusFilter } from "./request-meta";
 
 const short = (id: string) => id.slice(-8);
 
@@ -27,10 +28,12 @@ export function MyGrantsTab() {
   const names = Object.fromEntries(flattenPages(projects.data).map((p) => [p.project_id, p.name]));
   return (
     <div>
-      <ListToolbar
-        count={q.isSuccess ? flattenPages(q.data).length : undefined}
-        more={q.hasNextPage}
-        filter={<StatusFilter value={status} onChange={setStatus} options={ENUMS.AccessGrantStatus.map((s) => ({ value: s, label: t(`enums.AccessGrantStatus.${s}`) }))} />}
+      <PanelHead
+        crumb={t("access.panel.grants.crumb")}
+        title={t("access.panel.grants.title")}
+        count={q.isSuccess ? `${flattenPages(q.data).length}${q.hasNextPage ? "+" : ""}` : null}
+        right={<StatusFilter value={status} onChange={setStatus} options={ENUMS.AccessGrantStatus.map((s) => ({ value: s, label: t(`enums.AccessGrantStatus.${s}`) }))} />}
+        className="mb-3"
       />
       {q.isPending ? (
         <DelayedSkeleton lines={4} />
@@ -47,7 +50,7 @@ export function MyGrantsTab() {
             { key: "project", header: t("access.columns.project"), cell: (g) => names[g.project_id] ?? short(g.project_id) },
             { key: "purpose", header: t("access.columns.purpose"), cell: (g) => t(`enums.Purpose.${g.purpose}`) },
             { key: "status", header: t("access.columns.status"), cell: (g) => <GrantStatusBadge status={g.status} /> },
-            { key: "expires", header: t("access.columns.expires"), numeric: true, cell: (g) => (g.status === "ACTIVE" ? <ExpiryText value={g.expires_at} /> : <DateTime value={g.expires_at} />) },
+            { key: "remaining", header: t("access.columns.remaining"), numeric: true, cell: (g) => <GrantTerm grant={g} /> },
             {
               key: "actions",
               header: t("common.actions"),
@@ -81,10 +84,19 @@ export function OrgGrantsTab() {
     setTarget(null);
     setReasonError(undefined);
   };
-  if (q.isPending) return <DelayedSkeleton lines={4} />;
-  if (q.isError) return <ErrorView error={q.error} onRetry={() => void q.refetch()} />;
+  const head = (
+    <PanelHead
+      crumb={t("access.panel.orgGrants.crumb")}
+      title={t("access.panel.orgGrants.title")}
+      count={q.isSuccess ? `${flattenPages(q.data).length}${q.hasNextPage ? "+" : ""}` : null}
+      className="mb-3"
+    />
+  );
+  if (q.isPending) return (<>{head}<DelayedSkeleton lines={4} /></>);
+  if (q.isError) return (<>{head}<ErrorView error={q.error} onRetry={() => void q.refetch()} /></>);
   return (
     <>
+      {head}
       <DataTable<AccessGrant>
         caption={t("access.tabs.orgGrants")}
         rows={flattenPages(q.data)}
@@ -99,7 +111,7 @@ export function OrgGrantsTab() {
           },
           { key: "project", header: t("access.columns.project"), cell: (g) => g.project_name ?? <code className="font-mono text-mono">{short(g.project_id)}</code> },
           { key: "purpose", header: t("access.columns.purpose"), cell: (g) => t(`enums.Purpose.${g.purpose}`) },
-          { key: "expires", header: t("access.columns.expires"), numeric: true, cell: (g) => <ExpiryText value={g.expires_at} /> },
+          { key: "remaining", header: t("access.columns.remaining"), numeric: true, cell: (g) => <GrantTerm grant={g} /> },
           {
             key: "actions",
             header: t("common.actions"),

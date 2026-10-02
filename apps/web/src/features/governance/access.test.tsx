@@ -65,8 +65,12 @@ describe("AccessScreen", () => {
 
   it("highlights grants that expire within 7 days", async () => {
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access?tab=grants" });
-    const expiry = await screen.findAllByText(/일 후 만료/);
-    for (const e of expiry) expect(e).toHaveClass("text-warning");
+    // Remaining term as a D-day bar: within a week the D-day turns amber.
+    const dday = await screen.findAllByText(/^D-(\d+|day)$/);
+    const soon = dday.filter((e) => /^D-([0-7]|day)$/.test(e.textContent!));
+    expect(soon.length).toBeGreaterThan(0);
+    for (const e of soon) expect(e).toHaveClass("text-warning");
+    expect(screen.getAllByText(/까지 · 총 \d+일$/).length).toBe(dday.length);
   });
 
   it("steward: review tab shows the pending count", async () => {
@@ -85,7 +89,7 @@ describe("AccessScreen", () => {
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
     const table = await screen.findByRole("table", { name: "검토할 요청" });
     const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(headers).toEqual(["데이터셋", "요청자", "목적", "기간", "상태", "제출일"]);
+    expect(headers).toEqual(["데이터셋", "요청자", "목적", "기간", "상태", "제출일", "대기"]);
     const row = within(table).getByText("최유진").closest("tr")!;
     expect(row).toHaveTextContent("한국재료연구원");
     expect(row).toHaveTextContent("14일");
@@ -103,14 +107,14 @@ describe("AccessScreen", () => {
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access" });
     const filter = await screen.findByRole("combobox", { name: "상태" });
     expect(filter.tagName).not.toBe("SELECT");
-    expect(await screen.findByText("1건")).toBeInTheDocument();
+    expect((await screen.findByRole("heading", { name: "내가 보낸 접근 요청" })).parentElement).toHaveTextContent(/요청1$/);
   });
 
   it("revoked grants show no expiry countdown or warning colour", async () => {
     getDb().grants.find((g) => g.access_grant_id === GRANT.seed)!.status = "REVOKED";
     renderScreen(<AccessScreen />, { user: USER.aResearcher, path: "/commons/access?tab=grants" });
     expect((await screen.findAllByText("회수됨")).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/후 만료|만료됨/, { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^D-/)).not.toBeInTheDocument();
   });
 
   it("steward revokes an org grant only after giving a reason", async () => {
@@ -353,7 +357,7 @@ describe("AccessRequestDetailScreen", () => {
   it("approved request shows the grant expiry and a download shortcut", async () => {
     open(USER.aResearcher, REQUEST.seedApproved);
     expect(await screen.findByRole("link", { name: "다운로드" })).toHaveAttribute("href", "/commons/data/00000000-0000-7000-8000-000000002001");
-    expect((await screen.findAllByText(/후 만료/)).length).toBeGreaterThan(0);
+    expect(await within(screen.getByRole("region", { name: "승인된 권한" })).findByText(/^D-(\d+|day)$/)).toBeInTheDocument();
   });
 
   it("an approved request whose grant was revoked offers no download", async () => {

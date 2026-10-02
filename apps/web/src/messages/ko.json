@@ -796,7 +796,9 @@
       "submitted": "제출일",
       "updated": "최근 변경",
       "expires": "만료",
-      "subject": "대상 사용자"
+      "subject": "대상 사용자",
+      "waiting": "대기",
+      "remaining": "남은 기간"
     },
     "revoke": "회수",
     "revokeTitle": "{dataset} 권한 회수",
@@ -822,7 +824,6 @@
       "viewExisting": "기존 요청 보기"
     },
     "detail": {
-      "subtitle": "{name}의 접근 요청",
       "copyId": "요청 ID 복사",
       "summary": "요청 내용",
       "history": "진행 이력",
@@ -861,8 +862,68 @@
       "withdrawWarning": "철회한 요청은 되돌릴 수 없습니다.",
       "withdrawn": "요청을 철회했습니다.",
       "handledElsewhere": "다른 사용자가 먼저 처리했습니다. 최신 상태를 불러옵니다.",
-      "grantTitle": "승인된 권한"
-    }
+      "grantTitle": "승인된 권한",
+      "context": "접근 요청",
+      "steps": "{count}단계"
+    },
+    "context": "거버넌스",
+    "stats": {
+      "label": "접근 현황",
+      "review": "검토 대기",
+      "reviewOldest": "가장 오래된 요청 {days}일째",
+      "reviewToday": "오늘 들어온 요청",
+      "reviewNone": "기다리는 요청 없음",
+      "open": "진행 중인 내 요청",
+      "openChanges": "수정 요청 {count}건",
+      "openHint": "검토를 기다리는 요청",
+      "openNone": "보낸 요청 없음",
+      "grants": "활성 권한",
+      "grantsHint": "지금 쓸 수 있는 데이터",
+      "expiring": "7일 안에 만료",
+      "expiringHint": "연장하려면 새로 요청하세요",
+      "expiringNone": "곧 끝나는 권한 없음",
+      "unitCount": "건",
+      "unitItems": "개",
+      "unitDays": "일",
+      "requested": "요청 기간",
+      "grantable": "승인 가능",
+      "policyMax": "정책 최대",
+      "waiting": "기다린 날",
+      "decidedIn": "결정까지",
+      "waitingHint": "제출 {date}",
+      "maxHint": "요청 기간과 정책 중 짧은 값",
+      "policyHint": "데이터 이용 정책",
+      "requestedHint": "요청자가 적은 기간"
+    },
+    "panel": {
+      "review": {
+        "crumb": "처리할 일",
+        "title": "검토를 기다리는 요청"
+      },
+      "requests": {
+        "crumb": "보낸 요청",
+        "title": "내가 보낸 접근 요청"
+      },
+      "grants": {
+        "crumb": "이용 중",
+        "title": "내 접근 권한"
+      },
+      "orgGrants": {
+        "crumb": "우리 기관",
+        "title": "우리 기관 데이터에 부여한 권한"
+      },
+      "summaryCrumb": "요청",
+      "historyCrumb": "기록",
+      "reviewCrumb": "결정",
+      "grantCrumb": "권한",
+      "mineCrumb": "요청자",
+      "policyCrumb": "정책"
+    },
+    "waitDays": "{days}일째",
+    "waitToday": "오늘",
+    "dday": "D-{days}",
+    "ddayToday": "D-day",
+    "termOf": "{date}까지 · 총 {total}일"
   },
   "activity": {
     "title": "활동 · 감사 로그",
@@ -972,6 +1033,26 @@
       "FILE_DOWNLOADED": "파일을 {count}번 내려받았습니다",
       "DOWNLOAD_DENIED": "다운로드가 {count}번 거부되었습니다",
       "READINESS_VALIDATION_COMPLETED": "AI-Ready 검증 {count}건을 마쳤습니다"
+    },
+    "context": "거버넌스",
+    "stats": {
+      "label": "불러온 활동 요약",
+      "loaded": "불러온 활동",
+      "loadedHint": "필터 기준",
+      "today": "오늘",
+      "todayHint": "서울 시각 기준",
+      "denied": "거부",
+      "deniedHint": "권한 없이 시도된 작업",
+      "deniedNone": "거부된 작업 없음",
+      "actors": "참여자",
+      "actorsHint": "사람과 시스템",
+      "unitCount": "건",
+      "unitPeople": "명"
+    },
+    "panel": {
+      "crumb": "감사 로그",
+      "title": "타임라인",
+      "crumbList": "기록"
     }
   },
   "settings": {

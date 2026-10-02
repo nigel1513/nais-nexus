@@ -116,7 +116,27 @@ function Disclosure({ open, onToggle, controls, label }: { open: boolean; onTogg
   );
 }
 
-const rowGrid = (compact: boolean) => cn("grid gap-x-3 border-b border-border py-2", compact ? "grid-cols-[minmax(0,1fr)_auto]" : "grid-cols-[3rem_minmax(0,1fr)_auto]");
+const rowGrid = (compact: boolean) => (compact ? "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 border-b border-border py-2" : "grid grid-cols-[3rem_minmax(0,1fr)_auto] gap-x-3 py-2 sm:grid-cols-[3rem_12px_minmax(0,1fr)_auto]");
+
+/**
+ * The timeline's spine: a 1px rule through every row of a day with a dot per entry — red when the action was denied,
+ * an outlined dot for a collapsed run, neutral otherwise. Decorative; the text says the same.
+ */
+function Rail({ tone }: { tone: "plain" | "denied" | "run" }) {
+  return (
+    <span aria-hidden="true" className="relative -my-2 hidden justify-center sm:flex">
+      <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-border" />
+      <span
+        className={cn(
+          "relative mt-[17px] size-[7px] rounded-full",
+          tone === "denied" && "bg-danger-solid ring-[3px] ring-danger-soft",
+          tone === "run" && "border border-fg-subtle bg-bg",
+          tone === "plain" && "bg-fg-subtle",
+        )}
+      />
+    </span>
+  );
+}
 
 /**
  * One audit event: Seoul time (mono, tabular), actor avatar + name + organization, a verb phrase, the target as a link
@@ -142,7 +162,12 @@ export function ActivityEntry({ event: e, names, compact = false, inRun = false 
 
   return (
     <div className={cn(rowGrid(compact), inRun && "border-b-0 py-1")}>
-      {compact ? null : <Time iso={e.occurred_at} />}
+      {compact ? null : (
+        <>
+          <Time iso={e.occurred_at} />
+          <Rail tone={denied ? "denied" : "plain"} />
+        </>
+      )}
       <div className="min-w-0">
         <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-body">
           {inRun ? null : (
@@ -212,7 +237,12 @@ export function ActivityRun({ events, names, compact = false }: { events: AuditE
   const last = events.at(-1)!;
   return (
     <div className={rowGrid(compact)}>
-      {compact ? null : <Time iso={first.occurred_at} />}
+      {compact ? null : (
+        <>
+          <Time iso={first.occurred_at} />
+          <Rail tone={first.result !== "SUCCESS" ? "denied" : "run"} />
+        </>
+      )}
       <div className="min-w-0">
         <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1 text-body">
           <ActorChip e={first} names={names} />

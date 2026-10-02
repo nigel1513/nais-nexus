@@ -1,7 +1,6 @@
 "use client";
 import { Avatar, cn, SelectMenu, type SelectOption } from "@nais/ui";
 import { useTranslations } from "next-intl";
-import type { ReactNode } from "react";
 import type { AccessRequest } from "@/shared/api/types";
 
 /** When the request last entered the queue: the latest SUBMITTED step (a resubmission restarts the wait), else creation. */
@@ -19,18 +18,6 @@ export function Person({ name, org, size = 20, className }: { name: string; org?
         {org ? <span className="text-fg-muted"> · {org}</span> : null}
       </span>
     </span>
-  );
-}
-
-/** One line above a filterable table: how many rows are loaded on the left, the filter on the right. Without a filter it renders nothing. */
-export function ListToolbar({ count, more, filter }: { count: number | undefined; more?: boolean; filter?: ReactNode }) {
-  const t = useTranslations();
-  if (!filter) return null;
-  return (
-    <div className="mb-3 flex min-h-8 flex-wrap items-center justify-between gap-3">
-      <p className="num text-small text-fg-muted">{!count ? null : t(more ? "access.countMore" : "access.count", { count })}</p>
-      {filter}
-    </div>
   );
 }
 

@@ -32,6 +32,7 @@ export function GroupedList<T>({
   virtualize = "auto",
   height = 640,
   className,
+  headerClassName,
 }: {
   groups: ListGroup<T>[];
   itemKey: (item: T) => string;
@@ -46,6 +47,8 @@ export function GroupedList<T>({
   /** Frame height in px when virtualized. */
   height?: number;
   className?: string;
+  /** Extra classes for the group headers (merged over the caption default). */
+  headerClassName?: string;
 }) {
   const baseId = React.useId();
   const total = groups.reduce((n, g) => n + g.items.length, 0);
@@ -65,7 +68,7 @@ export function GroupedList<T>({
             Item: VItem,
             Group: VGroup,
           }}
-          groupContent={(i) => <Heading className={cn(headerCls, "px-4")}>{groups[i]!.label}</Heading>}
+          groupContent={(i) => <Heading className={cn(headerCls, "px-4", headerClassName)}>{groups[i]!.label}</Heading>}
           itemContent={(index) => <div className="px-4">{renderItem(flat[index]!)}</div>}
         />
       </div>
@@ -76,7 +79,7 @@ export function GroupedList<T>({
     <div role="region" aria-label={label} className={className}>
       {groups.map((g, i) => (
         <section key={g.key} aria-labelledby={`${baseId}-${i}`}>
-          <Heading id={`${baseId}-${i}`} className={cn(headerCls, "sticky z-[var(--z-sticky)]", stickyTop)}>
+          <Heading id={`${baseId}-${i}`} className={cn(headerCls, "sticky z-[var(--z-sticky)]", stickyTop, headerClassName)}>
             {g.label}
           </Heading>
           <ol>

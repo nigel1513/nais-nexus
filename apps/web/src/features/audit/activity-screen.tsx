@@ -9,10 +9,10 @@ import type { AuditAction, Query, ResourceType } from "@/shared/api/types";
 import { hasOrgRole, useMeData } from "@/shared/hooks/use-me";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
 import { formatDate } from "@/shared/lib/format";
-import { PageHeader } from "@/shared/ui/page-header";
+import { PanelHead, WorkHero, type HeroStat } from "@/shared/ui/work-hero";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { useListAuditEvents } from "./api";
-import { searchText, useTargetNames } from "./components/activity-entry";
+import { eventDay, searchText, useTargetNames } from "./components/activity-entry";
 import { ActivityTimeline } from "./components/audit-timeline";
 
 const DAY_MS = 86_400_000;
@@ -96,9 +96,50 @@ export function ActivityScreen() {
   const filtered = actions.length > 0 || !!projectId || !!resourceType || fromMs !== null || toMs !== null || !!text;
   const reset = () => setParams({ action: null, project_id: null, resource_type: null, from: null, to: null, q: null, period: null });
 
+  // The figures describe what is loaded and shown (the API has no totals), and say so in their label.
+  const today = formatDate(new Date().toISOString());
+  const deniedCount = rows.filter((e) => e.result !== "SUCCESS").length;
+  const ready = q.isSuccess;
+  const stats: HeroStat[] = [
+    { label: t("activity.stats.loaded"), value: ready ? `${rows.length}${q.hasNextPage ? "+" : ""}` : null, unit: t("activity.stats.unitCount"), hint: t("activity.stats.loadedHint") },
+    { label: t("activity.stats.today"), value: ready ? String(rows.filter((e) => eventDay(e) === today).length) : null, unit: t("activity.stats.unitCount"), hint: t("activity.stats.todayHint") },
+    {
+      label: t("activity.stats.denied"),
+      value: ready ? String(deniedCount) : null,
+      unit: t("activity.stats.unitCount"),
+      hint: deniedCount ? t("activity.stats.deniedHint") : t("activity.stats.deniedNone"),
+      highlight: deniedCount > 0,
+    },
+    {
+      label: t("activity.stats.actors"),
+      value: ready ? String(new Set(rows.map((e) => (e.actor.type === "SYSTEM" ? "SYSTEM" : (e.actor.user_id ?? "?")))).size) : null,
+      unit: t("activity.stats.unitPeople"),
+      hint: t("activity.stats.actorsHint"),
+    },
+  ];
+
   return (
     <>
-      <PageHeader title={t("activity.title")} description={t(`activity.scope.${scope}`)} />
+      <WorkHero
+        context={[t("activity.context"), t("activity.panel.crumb")]}
+        title={t("activity.title")}
+        description={t(`activity.scope.${scope}`)}
+        stats={stats}
+        statsLabel={t("activity.stats.label")}
+      />
+      <PanelHead
+        crumb={t("activity.panel.crumbList")}
+        title={t("activity.panel.title")}
+        count={ready ? `${rows.length}${q.hasNextPage ? "+" : ""}` : null}
+        right={
+          filtered ? (
+            <Button variant="ghost" size="sm" onClick={reset}>
+              {t("activity.filter.reset")}
+            </Button>
+          ) : null
+        }
+        className="mb-3"
+      />
       <div role="search" aria-label={t("activity.filter.label")} className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
         <SelectMenu
           aria-label={t("activity.filter.period")}
@@ -182,16 +223,9 @@ export function ActivityScreen() {
           <Input type="search" className="pl-8" placeholder={t("activity.filter.searchPlaceholder")} value={text} onChange={(e) => setParams({ q: e.target.value || null })} />
         </label>
       </div>
-      <div className="mb-2 mt-3 flex min-h-7 items-center gap-3">
-        <p className="num text-small text-fg-muted" aria-live="polite">
-          {q.isSuccess ? t(needle ? "activity.countFiltered" : "activity.count", { count: rows.length, total: loaded.length }) : ""}
-        </p>
-        {filtered ? (
-          <Button variant="ghost" size="sm" onClick={reset}>
-            {t("activity.filter.reset")}
-          </Button>
-        ) : null}
-      </div>
+      <p className="num mb-1 mt-2.5 min-h-5 text-caption font-normal text-fg-muted" aria-live="polite">
+        {q.isSuccess ? t(needle ? "activity.countFiltered" : "activity.count", { count: rows.length, total: loaded.length }) : ""}
+      </p>
       {q.isPending ? (
         <DelayedSkeleton lines={6} />
       ) : q.isError ? (

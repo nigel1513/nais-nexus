@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { useOrgNames } from "@/features/organizations/api";
+import { PanelHead } from "@/shared/ui/work-hero";
 import { ENUMS } from "@/generated/contracts";
 import { flattenPages } from "@/shared/api/pagination";
 import type { AccessRequest, AccessRequestStatus } from "@/shared/api/types";
@@ -13,26 +14,33 @@ import { RequestStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { useListAccessRequests } from "../api";
-import { ListToolbar, Person, StatusFilter, submittedAt } from "./request-meta";
+import { Person, StatusFilter, submittedAt } from "./request-meta";
 
 const href = (r: AccessRequest) => `/commons/access/${r.access_request_id}`;
+
+const DAY_MS = 86_400_000;
 
 function RequestTable({
   perspective,
   statuses,
   caption,
+  head,
   filter,
 }: {
   perspective: "requester" | "reviewer";
   statuses: AccessRequestStatus[];
   caption: string;
+  head: { crumb: string; title: string };
   filter?: React.ReactNode;
 }) {
   const t = useTranslations();
   const router = useRouter();
   const orgNames = useOrgNames();
   const q = useListAccessRequests({ role: perspective, ...(statuses.length ? { status: statuses } : {}) });
-  const rows = flattenPages(q.data);
+  const loaded = flattenPages(q.data);
+  // A reviewer works oldest first: the request that has waited longest leads the queue.
+  const rows = perspective === "reviewer" ? [...loaded].sort((a, b) => Date.parse(submittedAt(a)) - Date.parse(submittedAt(b))) : loaded;
+  const now = Date.now();
 
   const dataset: DataColumn<AccessRequest> = {
     key: "dataset",
@@ -59,13 +67,27 @@ function RequestTable({
     { key: "purpose", header: t("access.columns.purpose"), cell: (r) => t(`enums.Purpose.${r.purpose}`) },
     { key: "days", header: t("access.columns.days"), numeric: true, cell: (r) => t("data.detail.days", { count: r.requested_days }) },
     { key: "status", header: t("access.columns.status"), className: "pl-6", cell: (r) => <RequestStatusBadge status={r.status} /> },
-    { key: "submitted", header: t("access.columns.submitted"), numeric: true, cell: (r) => <DateTime value={submittedAt(r)} /> },
+    { key: "submitted", header: t("access.columns.submitted"), numeric: true, cell: (r) => <span className="font-mono text-mono text-fg-muted"><DateTime value={submittedAt(r)} /></span> },
+    ...(perspective === "reviewer"
+      ? [
+          {
+            key: "waiting",
+            header: t("access.columns.waiting"),
+            numeric: true,
+            cell: (r: AccessRequest) => {
+              const d = Math.max(0, Math.floor((now - Date.parse(submittedAt(r))) / DAY_MS));
+              return <span className={d > 0 ? "font-medium text-warning" : "text-fg-muted"}>{d > 0 ? t("access.waitDays", { days: d }) : t("access.waitToday")}</span>;
+            },
+          } satisfies DataColumn<AccessRequest>,
+        ]
+      : []),
   ];
 
   // The toolbar stays mounted while a new filter loads, so the listbox keeps focus.
+  const count = q.isSuccess ? (q.hasNextPage ? `${rows.length}+` : rows.length) : null;
   return (
     <>
-      <ListToolbar count={q.isSuccess ? rows.length : undefined} more={q.hasNextPage} filter={filter} />
+      <PanelHead crumb={head.crumb} title={head.title} count={count} right={filter} className="mb-3" />
       {q.isPending ? (
         <DelayedSkeleton lines={4} />
       ) : q.isError ? (
@@ -99,6 +121,7 @@ export function MyRequestsTab() {
       perspective="requester"
       statuses={status ? [status as AccessRequestStatus] : []}
       caption={t("access.tabs.requests")}
+      head={{ crumb: t("access.panel.requests.crumb"), title: t("access.panel.requests.title") }}
       filter={
         <StatusFilter
           value={status}
@@ -112,5 +135,5 @@ export function MyRequestsTab() {
 
 export function ReviewTab() {
   const t = useTranslations();
-  return <RequestTable perspective="reviewer" statuses={["SUBMITTED", "UNDER_REVIEW"]} caption={t("access.tabs.review")} />;
+  return <RequestTable perspective="reviewer" statuses={["SUBMITTED", "UNDER_REVIEW"]} caption={t("access.tabs.review")} head={{ crumb: t("access.panel.review.crumb"), title: t("access.panel.review.title") }} />;
 }

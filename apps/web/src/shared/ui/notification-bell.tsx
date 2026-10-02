@@ -57,8 +57,8 @@ export function NotificationBell() {
         </PopoverTrigger>
         <PopoverContent align="end" className="flex w-90 flex-col p-0">
           <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border pl-4 pr-2">
-            <PopoverTitle className="text-body font-semibold">{t("shell.notificationsTitle")}</PopoverTitle>
-            {count > 0 ? <span className="num text-small text-fg-muted">{t("shell.unreadCount", { count })}</span> : null}
+            <PopoverTitle className="text-[15px] font-[720] tracking-[-0.03em] text-fg">{t("shell.notificationsTitle")}</PopoverTitle>
+            {count > 0 ? <span className="num rounded-xs bg-accent-soft px-1.5 text-caption text-accent-fg">{t("shell.unreadCount", { count })}</span> : null}
             {count > 0 ? (
               <button
                 type="button"
@@ -73,12 +73,12 @@ export function NotificationBell() {
           {items.length === 0 ? (
             <p className="px-4 py-6 text-small text-fg-muted">{t("shell.noNotifications")}</p>
           ) : (
-            <ul className="max-h-[min(400px,60dvh)] overflow-y-auto p-1">
+            <ul className="max-h-[min(400px,60dvh)] divide-y divide-border overflow-y-auto">
               {items.map((n) => (
                 <li key={n.notification_id}>
                   <button
                     type="button"
-                    className={cn("flex w-full cursor-pointer gap-3 rounded-sm px-3 py-2 text-left hover:bg-bg-hover", focusRing, "focus-visible:outline-offset-0")}
+                    className={cn("flex w-full cursor-pointer gap-3 px-4 py-3 text-left transition-colors duration-[var(--dur-fast)] hover:bg-bg-hover", focusRing, "focus-visible:outline-offset-[-2px]")}
                     onClick={async () => {
                       setOpen(false);
                       if (!n.read) await markRead.mutateAsync(n.notification_id).catch(() => notify.error(t("shell.markReadFailed")));
@@ -90,9 +90,10 @@ export function NotificationBell() {
                     <NotificationIcon type={n.type} />
                     <span className="min-w-0 flex-1">
                       <span className={cn("line-clamp-2 text-body", n.read ? "text-fg-muted" : "font-medium text-fg")}>{localizeUtcTimes(n.title)}</span>
-                      <span className="mt-0.5 block text-caption font-normal text-fg-muted">
-                        {t(`enums.NotificationType.${n.type}`)} ·{" "}
-                        <time dateTime={n.created_at} title={new Date(n.created_at).toISOString()} className="num">
+                      <span className="mt-1 flex items-center gap-1.5 text-caption font-normal text-fg-muted">
+                        <span className="font-medium">{t(`enums.NotificationType.${n.type}`)}</span>
+                        <span aria-hidden="true">·</span>
+                        <time dateTime={n.created_at} title={new Date(n.created_at).toISOString()} className="num font-mono">
                           {ago(n.created_at)}
                         </time>
                       </span>

@@ -343,3 +343,60 @@ test.describe("dashboard and error pages (Task 12)", () => {
     await shoot(page, `${prefix}-blocked`, [[1440, 900]]);
   });
 });
+
+// UI v2 (Track C): access management and activity. V2_PHASE=before|after names the set: v2-access-<screen>-<phase>-<w>-<theme>.png.
+test.describe("v2 track C screens", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  const phase = process.env.V2_PHASE ?? "after";
+
+  test("access", async ({ page, baseURL }) => {
+    await seedTask10(page, baseURL!);
+    const id = await seedReviewQueue(page, baseURL!);
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/access");
+    await expect(page.getByText("김민준").first()).toBeVisible();
+    await shoot(page, `v2-access-review-${phase}`);
+    await page.goto(`/commons/access/${id}`);
+    await expect(page.getByRole("button", { name: "승인" }).first()).toBeVisible();
+    await shoot(page, `v2-access-detail-${phase}`);
+    await page.goto("/commons/access?tab=org-grants");
+    await expect(page.getByRole("tab", { name: "기관 권한" })).toHaveAttribute("aria-selected", "true");
+    await page.waitForLoadState("networkidle");
+    await shoot(page, `v2-access-org-grants-${phase}`, [[1440, 900]]);
+
+    await page.context().clearCookies();
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/access");
+    await expect(page.getByRole("link", { name: "리튬이온 배터리 셀 사이클 시험 데이터" }).first()).toBeVisible();
+    await shoot(page, `v2-access-requests-${phase}`, [[1440, 900]]);
+    await page.goto("/commons/access?tab=grants");
+    await expect(page.getByRole("link", { name: "다운로드" }).first()).toBeVisible();
+    await shoot(page, `v2-access-grants-${phase}`);
+    await page.goto("/commons/access/00000000-0000-7000-8000-000000003001");
+    await expect(page.getByRole("link", { name: "다운로드" })).toBeVisible();
+    await shoot(page, `v2-access-detail-requester-${phase}`, [[1440, 900]]);
+  });
+
+  test("activity and notifications", async ({ page, baseURL }) => {
+    await seedTask10(page, baseURL!);
+    await as(page, "admin", baseURL!);
+    await page.goto("/commons/activity");
+    await expect(page.getByText("다운로드가 거부되었습니다").first()).toBeVisible();
+    await shoot(page, `v2-activity-${phase}`);
+    await page.context().clearCookies();
+    await page.context().addCookies([{ name: "nais_mock_user", value: MOCK_USERS.aSteward, url: baseURL! }]);
+    for (const theme of ["light", "dark"] as Theme[]) {
+      await setup(page, [1440, 900], theme);
+      await page.goto("/commons/activity");
+      await page.getByRole("button", { name: /^알림/ }).click();
+      await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+      await shootOne(page, `v2-activity-notifications-${phase}`, 1440, theme);
+      await page.keyboard.press("Escape");
+    }
+    await setup(page, [390, 844], "light");
+    await page.goto("/commons/activity");
+    await page.getByRole("button", { name: /^알림/ }).click();
+    await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+    await shootOne(page, `v2-activity-notifications-${phase}`, 390, "light");
+  });
+});

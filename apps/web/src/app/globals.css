@@ -143,3 +143,7 @@
   *, *::before, *::after { transition-property: opacity !important; transition-duration: 120ms !important; animation: none !important; }
   .press:active, [data-starting-style], [data-ending-style] { transform: none !important; scale: none !important; translate: none !important; }
 }
+
+/* A bar that fills once on first paint (grant D-day bars). Transform only; without motion it is simply drawn. */
+@keyframes nais-grow-x { from { transform: scaleX(0); } }
+@media (prefers-reduced-motion: no-preference) { .grow-x { animation: nais-grow-x 650ms var(--ease-out) both; } }

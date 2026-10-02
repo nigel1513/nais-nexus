@@ -42,8 +42,8 @@ export function useDayGroups(events: AuditEvent[]): ListGroup<TimelineRow>[] {
         ...g,
         label: (
           <>
-            <span className="text-fg">{relative ?? full}</span>
-            {relative ? <span>{full}</span> : null}
+            {relative ? <span className="font-semibold text-accent-fg">{relative}</span> : null}
+            <span className="font-semibold text-fg">{full}</span>
             {/* With a single day the result count above already says it. */}
             {several ? <span className="num ml-auto">{t("activity.dayCount", { count })}</span> : null}
           </>
@@ -61,6 +61,7 @@ export function ActivityTimeline({ events, label, compact, headingLevel }: { eve
     <GroupedList<TimelineRow>
       label={label}
       headingLevel={headingLevel}
+      headerClassName={compact ? undefined : "h-10 text-small"}
       groups={groups}
       itemKey={(r) => r.key}
       renderItem={(r) =>
