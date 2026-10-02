@@ -597,16 +597,21 @@
     "description": "접근 요청과 권한을 한곳에서 관리합니다.",
     "tabsLabel": "접근 관리 보기",
     "tabs": {
+      "review": "검토할 요청",
+      "reviewLabel": "검토할 요청 ({count}건)",
       "requests": "내 요청",
-      "review": "검토 대기",
-      "reviewWithCount": "검토 대기 ({count})",
       "grants": "내 권한",
       "orgGrants": "기관 권한"
     },
     "allStatuses": "모든 상태",
+    "count": "{count}건",
+    "countMore": "{count}건 이상",
     "emptyRequests": "보낸 접근 요청이 없습니다.",
+    "emptyRequestsHint": "데이터 카드에서 접근을 요청하면 여기에 표시됩니다.",
     "emptyReview": "검토할 요청이 없습니다.",
+    "emptyReviewHint": "새 요청이 들어오면 알림으로 알려 드립니다.",
     "emptyGrants": "받은 접근 권한이 없습니다.",
+    "emptyGrantsHint": "요청이 승인되면 받은 권한이 여기에 표시됩니다.",
     "emptyOrgGrants": "우리 기관 데이터에 부여된 유효 권한이 없습니다.",
     "columns": {
       "dataset": "데이터셋",
@@ -615,6 +620,7 @@
       "purpose": "목적",
       "days": "기간",
       "status": "상태",
+      "submitted": "제출일",
       "updated": "최근 변경",
       "expires": "만료",
       "subject": "대상 사용자"
@@ -643,9 +649,20 @@
       "viewExisting": "기존 요청 보기"
     },
     "detail": {
-      "title": "접근 요청: {dataset}",
+      "subtitle": "{name}의 접근 요청",
+      "copyId": "요청 ID 복사",
       "summary": "요청 내용",
       "history": "진행 이력",
+      "reviewPanel": "검토",
+      "requestedDays": "요청 기간",
+      "maxGrant": "승인 가능 기간",
+      "accessLevel": "공개 수준",
+      "policyPanel": "이용 정책",
+      "policyMax": "최대 이용 기간",
+      "allowedPurposes": "허용 목적",
+      "minePanel": "내 요청",
+      "mineWaiting": "검토가 끝나면 알림으로 알려 드립니다. 결정 전에는 요청을 철회할 수 있습니다.",
+      "mineChanges": "검토자의 수정 요청을 반영해 본문 아래에서 다시 제출하세요.",
       "createdAt": "요청일",
       "byRequester": "요청자",
       "byReviewer": "검토자",
@@ -665,6 +682,7 @@
       "changesComment": "수정 요청 내용",
       "changesRequested": "수정을 요청했습니다.",
       "resubmitTitle": "요청 수정 후 다시 제출",
+      "resubmitHint": "목적과 기간을 고쳐 다시 제출하면 검토 대기열로 돌아갑니다.",
       "resubmit": "다시 제출",
       "resubmitted": "요청을 다시 제출했습니다.",
       "withdraw": "요청 철회",
@@ -672,8 +690,7 @@
       "withdrawWarning": "철회한 요청은 되돌릴 수 없습니다.",
       "withdrawn": "요청을 철회했습니다.",
       "handledElsewhere": "다른 사용자가 먼저 처리했습니다. 최신 상태를 불러옵니다.",
-      "grantTitle": "승인된 권한",
-      "grantExpires": "만료:"
+      "grantTitle": "승인된 권한"
     }
   },
   "activity": {

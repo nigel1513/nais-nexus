@@ -1,5 +1,6 @@
 "use client";
-import { Button, buttonClass, DataTable, EmptyState, Select } from "@nais/ui";
+import { Button, buttonClass, DataTable, EmptyState } from "@nais/ui";
+import { KeyRound, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
@@ -14,6 +15,7 @@ import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
 import { useListAccessGrants, useRevokeAccessGrant } from "../api";
 import { ReasonDialog, useServerFieldError } from "./reason-dialog";
+import { ListToolbar, Person, StatusFilter } from "./request-meta";
 
 const short = (id: string) => id.slice(-8);
 
@@ -24,20 +26,12 @@ export function MyGrantsTab() {
   const projects = useListProjects({ scope: "mine", limit: 100 });
   const names = Object.fromEntries(flattenPages(projects.data).map((p) => [p.project_id, p.name]));
   return (
-    <div className="flex flex-col gap-3">
-      <div className="w-60">
-        <label htmlFor="grant-status" className="sr-only">
-          {t("access.columns.status")}
-        </label>
-        <Select id="grant-status" value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">{t("access.allStatuses")}</option>
-          {ENUMS.AccessGrantStatus.map((s) => (
-            <option key={s} value={s}>
-              {t(`enums.AccessGrantStatus.${s}`)}
-            </option>
-          ))}
-        </Select>
-      </div>
+    <div>
+      <ListToolbar
+        count={q.isSuccess ? flattenPages(q.data).length : undefined}
+        more={q.hasNextPage}
+        filter={<StatusFilter value={status} onChange={setStatus} options={ENUMS.AccessGrantStatus.map((s) => ({ value: s, label: t(`enums.AccessGrantStatus.${s}`) }))} />}
+      />
       {q.isPending ? (
         <DelayedSkeleton lines={4} />
       ) : q.isError ? (
@@ -47,19 +41,20 @@ export function MyGrantsTab() {
           caption={t("access.tabs.grants")}
           rows={flattenPages(q.data)}
           rowKey={(g) => g.access_grant_id}
-          empty={<EmptyState title={t("access.emptyGrants")} />}
+          empty={<EmptyState className="rounded-md border border-border" icon={KeyRound} title={t("access.emptyGrants")} description={t("access.emptyGrantsHint")} />}
           columns={[
-            { key: "dataset", header: t("access.columns.dataset"), cell: (g) => g.dataset_title ?? g.dataset_id },
+            { key: "dataset", header: t("access.columns.dataset"), cell: (g) => <span className="font-medium text-fg">{g.dataset_title ?? g.dataset_id}</span> },
             { key: "project", header: t("access.columns.project"), cell: (g) => names[g.project_id] ?? short(g.project_id) },
             { key: "purpose", header: t("access.columns.purpose"), cell: (g) => t(`enums.Purpose.${g.purpose}`) },
             { key: "status", header: t("access.columns.status"), cell: (g) => <GrantStatusBadge status={g.status} /> },
-            { key: "expires", header: t("access.columns.expires"), cell: (g) => (g.status === "ACTIVE" ? <ExpiryText value={g.expires_at} /> : <DateTime value={g.expires_at} />) },
+            { key: "expires", header: t("access.columns.expires"), numeric: true, cell: (g) => (g.status === "ACTIVE" ? <ExpiryText value={g.expires_at} /> : <DateTime value={g.expires_at} />) },
             {
               key: "actions",
               header: t("common.actions"),
+              className: "text-right",
               cell: (g) =>
                 g.status === "ACTIVE" ? (
-                  <Link href={`/commons/data/${g.dataset_id}`} className={buttonClass("outline", "sm")}>
+                  <Link href={`/commons/data/${g.dataset_id}`} className={buttonClass("secondary", "sm")}>
                     {t("data.detail.download")}
                   </Link>
                 ) : null,
@@ -90,22 +85,29 @@ export function OrgGrantsTab() {
   if (q.isError) return <ErrorView error={q.error} onRetry={() => void q.refetch()} />;
   return (
     <>
+      <ListToolbar count={flattenPages(q.data).length} more={q.hasNextPage} />
       <DataTable<AccessGrant>
         caption={t("access.tabs.orgGrants")}
         rows={flattenPages(q.data)}
         rowKey={(g) => g.access_grant_id}
-        empty={<EmptyState title={t("access.emptyOrgGrants")} />}
+        empty={<EmptyState className="rounded-md border border-border" icon={ShieldCheck} title={t("access.emptyOrgGrants")} />}
         columns={[
-          { key: "dataset", header: t("access.columns.dataset"), cell: (g) => g.dataset_title ?? g.dataset_id },
-          { key: "subject", header: t("access.columns.subject"), cell: (g) => g.subject_display_name ?? <code>{short(g.subject_user_id)}</code> },
-          { key: "project", header: t("access.columns.project"), cell: (g) => g.project_name ?? <code>{short(g.project_id)}</code> },
+          { key: "dataset", header: t("access.columns.dataset"), cell: (g) => <span className="font-medium text-fg">{g.dataset_title ?? g.dataset_id}</span> },
+          {
+            key: "subject",
+            header: t("access.columns.subject"),
+            cell: (g) => (g.subject_display_name ? <Person name={g.subject_display_name} /> : <code className="font-mono text-mono">{short(g.subject_user_id)}</code>),
+          },
+          { key: "project", header: t("access.columns.project"), cell: (g) => g.project_name ?? <code className="font-mono text-mono">{short(g.project_id)}</code> },
           { key: "purpose", header: t("access.columns.purpose"), cell: (g) => t(`enums.Purpose.${g.purpose}`) },
-          { key: "expires", header: t("access.columns.expires"), cell: (g) => <ExpiryText value={g.expires_at} /> },
+          { key: "expires", header: t("access.columns.expires"), numeric: true, cell: (g) => <ExpiryText value={g.expires_at} /> },
           {
             key: "actions",
             header: t("common.actions"),
+            className: "text-right",
             cell: (g) => (
-              <Button size="sm" variant="destructive" onClick={() => {
+              // A quiet row action: the red, filled button lives in the confirming dialog.
+              <Button size="sm" variant="secondary" className="text-danger" onClick={() => {
                   setReasonError(undefined);
                   setLastTitle(g.dataset_title ?? "");
                   setTarget(g);

@@ -108,3 +108,80 @@ test.describe("screens", () => {
     await shootOne(page, "task3-sheet", 390, "light");
   });
 });
+
+// Task 9: access management. The mock API lives in the web server's memory, so seeding through it shows up on the next page load.
+const MOCK_USERS = { aResearcher: "00000000-0000-7000-8000-000000000a02", aSteward: "00000000-0000-7000-8000-000000000a03", aAdmin: "00000000-0000-7000-8000-000000000a01" };
+const T9 = process.env.SHOT_PREFIX ?? "task9";
+
+async function seedReviewQueue(page: Page, baseURL: string): Promise<string> {
+  const api = (path: string, user: string, data?: unknown) =>
+    data === undefined
+      ? page.request.get(`${baseURL}/mock-api/v1${path}`, { headers: { "x-mock-user": user } })
+      : page.request.post(`${baseURL}/mock-api/v1${path}`, { headers: { "x-mock-user": user }, data });
+  const pending = (await (await api("/access-requests?role=reviewer&status=SUBMITTED&status=UNDER_REVIEW", USERS.steward)).json()) as { items: { access_request_id: string; status: string }[] };
+  if (pending.items.length >= 3) return pending.items.find((r) => r.status === "SUBMITTED")?.access_request_id ?? pending.items[0]!.access_request_id;
+  const file = async (user: string, project: string, body: Record<string, unknown>) => {
+    const p = (await (await api("/projects", user, { name: project, description: "접근 요청 화면 시연" })).json()) as { project_id: string };
+    const r = await api("/access-requests", user, { project_id: p.project_id, operations: ["READ"], ...body });
+    return r.ok() ? ((await r.json()) as { access_request_id: string }).access_request_id : null;
+  };
+  await file(MOCK_USERS.aSteward, "센서 융합 공동연구", { dataset_id: DATASET_BATTERY, purpose: "ACADEMIC_RESEARCH", purpose_detail: "충방전 사이클 데이터로 열화 지표를 비교하는 공동연구에 사용합니다.", requested_days: 30 });
+  await file(MOCK_USERS.aAdmin, "기관 품질 비교", { dataset_id: DATASET_BATTERY, purpose: "ACADEMIC_RESEARCH", purpose_detail: "두 기관의 셀 시험 기록 형식을 비교해 공통 단위 규칙을 정리합니다.", requested_days: 60 });
+  const id = await file(MOCK_USERS.aResearcher, "열화 예측 모델 학습", {
+    dataset_id: DATASET_BATTERY,
+    purpose: "AI_TRAINING",
+    purpose_detail: "배터리 열화 예측 모델을 학습하기 위해 셀별 충방전 곡선과 온도 기록을 사용합니다.\n학습 결과는 기관 내부 보고서에만 사용합니다.",
+    requested_days: 90,
+  });
+  return id!;
+}
+
+test.describe("task 9 screens", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+
+  test("access review list and steward request detail", async ({ page, baseURL }) => {
+    const id = await seedReviewQueue(page, baseURL!);
+    await as(page, "steward", baseURL!);
+    await page.goto("/commons/access?tab=review");
+    await expect(page.getByRole("heading", { level: 1, name: "접근 관리" })).toBeVisible();
+    await expect(page.getByText("A Researcher").first()).toBeVisible();
+    await shoot(page, `${T9}-access-review`);
+
+    await page.goto(`/commons/access/${id}`);
+    await expect(page.getByRole("button", { name: "승인" }).first()).toBeVisible();
+    await shoot(page, `${T9}-access-detail-steward`);
+  });
+
+  test("my requests, my grants and the download panel", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/access");
+    await expect(page.getByRole("link", { name: "Battery Cycling Measurements" }).first()).toBeVisible();
+    await shoot(page, `${T9}-access-requests`, [[1440, 900]]);
+    await page.goto("/commons/access?tab=grants");
+    await expect(page.getByRole("link", { name: "다운로드" }).first()).toBeVisible();
+    await shoot(page, `${T9}-access-grants`, [[1440, 900]]);
+    await page.goto("/commons/access/00000000-0000-7000-8000-000000003001");
+    await expect(page.getByRole("link", { name: "다운로드" })).toBeVisible();
+    await shoot(page, `${T9}-access-detail-requester`, [[1440, 900]]);
+
+    await page.goto(`/commons/data/${DATASET_BATTERY}/versions/00000000-0000-7000-8000-000000002101`);
+    const panel = page.getByRole("region", { name: "다운로드" });
+    await panel.getByRole("button", { name: "다운로드 링크 받기" }).click();
+    await expect(panel.getByRole("link").first()).toBeVisible();
+    await panel.scrollIntoViewIfNeeded();
+    for (const theme of ["light", "dark"] as Theme[]) {
+      await page.emulateMedia({ colorScheme: theme, reducedMotion: "reduce" });
+      mkdirSync(OUT, { recursive: true });
+      await panel.screenshot({ path: `${OUT}/${T9}-download-1440-${theme}.png` });
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+    await panel.screenshot({ path: `${OUT}/${T9}-download-390-light.png` });
+
+    await page.context().clearCookies();
+    await as(page, "admin", baseURL!);
+    await page.goto("/commons/access");
+    await expect(page.getByText("보낸 접근 요청이 없습니다.")).toBeVisible();
+    await shoot(page, `${T9}-access-empty`, [[1440, 900]]);
+  });
+});

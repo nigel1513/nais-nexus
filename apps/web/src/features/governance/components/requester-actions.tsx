@@ -12,15 +12,26 @@ import { notify } from "@/shared/ui/toast";
 import { useGetAccessRequest, useResubmitAccessRequest, useWithdrawAccessRequest } from "../api";
 import { accessRequestSchema, type AccessRequestFormValues } from "../schemas";
 
-export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { request: AccessRequest; allowedPurposes: Purpose[]; maxGrantDays: number }) {
+/** ACCESS_REQUEST_INVALID_STATE → "someone else handled it" + refetch; anything else is a localized toast. */
+function useRequesterError(id: string) {
+  const t = useTranslations();
+  const errorText = useErrorText();
+  const current = useGetAccessRequest(id);
+  return (e: unknown) => {
+    if (asApiError(e).code === "ACCESS_REQUEST_INVALID_STATE") {
+      notify.error(t("access.detail.handledElsewhere"));
+      void current.refetch();
+    } else notify.error(errorText(e));
+  };
+}
+
+/** CHANGE_REQUESTED: the requester edits the request and sends it back to the queue. */
+export function ResubmitForm({ request, allowedPurposes, maxGrantDays }: { request: AccessRequest; allowedPurposes: Purpose[]; maxGrantDays: number }) {
   const t = useTranslations();
   const tv = useValidationText();
-  const errorText = useErrorText();
   const id = request.access_request_id;
-  const current = useGetAccessRequest(id);
-  const withdraw = useWithdrawAccessRequest(id);
   const resubmit = useResubmitAccessRequest(id);
-  const [confirming, setConfirming] = useState(false);
+  const onError = useRequesterError(id);
   const form = useForm<AccessRequestFormValues>({
     resolver: zodResolver(accessRequestSchema(maxGrantDays)),
     defaultValues: { project_id: request.project_id, purpose: request.purpose, purpose_detail: request.purpose_detail, requested_days: request.requested_days },
@@ -31,62 +42,69 @@ export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { r
   useEffect(() => {
     reset({ project_id: request.project_id, purpose: request.purpose, purpose_detail: request.purpose_detail, requested_days: request.requested_days });
   }, [request.updated_at, request.project_id, request.purpose, request.purpose_detail, request.requested_days, reset]);
-  const onError = (e: unknown) => {
-    if (asApiError(e).code === "ACCESS_REQUEST_INVALID_STATE") {
-      notify.error(t("access.detail.handledElsewhere"));
-      void current.refetch();
-    } else notify.error(errorText(e));
-  };
 
   return (
-    <div className="flex flex-col gap-4">
-      {request.status === "CHANGE_REQUESTED" ? (
-        <form
-          noValidate
-          className="flex max-w-2xl flex-col gap-3 rounded-md border border-warning p-4"
-          onSubmit={form.handleSubmit(async (v) => {
-            try {
-              await resubmit.mutateAsync({ purpose: v.purpose as Purpose, purpose_detail: v.purpose_detail.trim(), requested_days: v.requested_days });
-              notify.success(t("access.detail.resubmitted"));
-            } catch (e) {
-              const err = asApiError(e);
-              const mapped = Object.entries(fieldErrors(err)).filter(([k]) => k === "purpose" || k === "purpose_detail" || k === "requested_days");
-              if (err.code === "VALIDATION_FAILED" && mapped.length) {
-                for (const [k, m] of mapped) form.setError(k as keyof AccessRequestFormValues, { message: m });
-              } else onError(e);
-            }
-          })}
-        >
-          <h2 className="text-lg font-semibold">{t("access.detail.resubmitTitle")}</h2>
-          <FormField id="resubmit-purpose" label={t("access.request.purpose")} error={tv(errors.purpose?.message)}>
-            {(a11y) => (
-              <Select {...a11y} {...form.register("purpose")}>
-                {allowedPurposes.map((p) => (
-                  <option key={p} value={p}>
-                    {t(`enums.Purpose.${p}`)}
-                  </option>
-                ))}
-              </Select>
-            )}
-          </FormField>
-          <FormField id="resubmit-detail" label={t("access.request.detail")} error={tv(errors.purpose_detail?.message)}>
-            {(a11y) => <Textarea {...a11y} rows={5} maxLength={4000} {...form.register("purpose_detail")} />}
-          </FormField>
-          <FormField id="resubmit-days" label={t("access.request.days")} hint={t("access.request.daysHint", { max: maxGrantDays })} error={tv(errors.requested_days?.message, { max: maxGrantDays })}>
-            {(a11y) => <Input {...a11y} type="number" min={1} max={maxGrantDays} {...form.register("requested_days", { valueAsNumber: true })} />}
-          </FormField>
-          <div>
-            <Button variant="primary" type="submit" disabled={isSubmitting}>
-              {t("access.detail.resubmit")}
-            </Button>
-          </div>
-        </form>
-      ) : null}
+    <form
+      noValidate
+      aria-labelledby="resubmit-title"
+      className="flex flex-col gap-4 rounded-md border border-border bg-bg-panel p-4"
+      onSubmit={form.handleSubmit(async (v) => {
+        try {
+          await resubmit.mutateAsync({ purpose: v.purpose as Purpose, purpose_detail: v.purpose_detail.trim(), requested_days: v.requested_days });
+          notify.success(t("access.detail.resubmitted"));
+        } catch (e) {
+          const err = asApiError(e);
+          const mapped = Object.entries(fieldErrors(err)).filter(([k]) => k === "purpose" || k === "purpose_detail" || k === "requested_days");
+          if (err.code === "VALIDATION_FAILED" && mapped.length) {
+            for (const [k, m] of mapped) form.setError(k as keyof AccessRequestFormValues, { message: m });
+          } else onError(e);
+        }
+      })}
+    >
       <div>
-        <Button variant="outline" onClick={() => setConfirming(true)}>
-          {t("access.detail.withdraw")}
+        <h2 id="resubmit-title" className="text-heading text-fg">
+          {t("access.detail.resubmitTitle")}
+        </h2>
+        <p className="mt-1 text-small text-fg-muted">{t("access.detail.resubmitHint")}</p>
+      </div>
+      <FormField id="resubmit-purpose" label={t("access.request.purpose")} error={tv(errors.purpose?.message)}>
+        {(a11y) => (
+          <Select {...a11y} {...form.register("purpose")}>
+            {allowedPurposes.map((p) => (
+              <option key={p} value={p}>
+                {t(`enums.Purpose.${p}`)}
+              </option>
+            ))}
+          </Select>
+        )}
+      </FormField>
+      <FormField id="resubmit-detail" label={t("access.request.detail")} error={tv(errors.purpose_detail?.message)}>
+        {(a11y) => <Textarea {...a11y} rows={5} maxLength={4000} {...form.register("purpose_detail")} />}
+      </FormField>
+      <FormField id="resubmit-days" label={t("access.request.days")} hint={t("access.request.daysHint", { max: maxGrantDays })} error={tv(errors.requested_days?.message, { max: maxGrantDays })}>
+        {(a11y) => <Input {...a11y} type="number" min={1} max={maxGrantDays} {...form.register("requested_days", { valueAsNumber: true })} />}
+      </FormField>
+      <div className="flex justify-end">
+        <Button variant="primary" type="submit" loading={isSubmitting}>
+          {t("access.detail.resubmit")}
         </Button>
       </div>
+    </form>
+  );
+}
+
+/** Withdrawing is irreversible, so it always asks first. */
+export function WithdrawAction({ request }: { request: AccessRequest }) {
+  const t = useTranslations();
+  const id = request.access_request_id;
+  const withdraw = useWithdrawAccessRequest(id);
+  const onError = useRequesterError(id);
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <>
+      <Button variant="secondary" className="w-full" onClick={() => setConfirming(true)}>
+        {t("access.detail.withdraw")}
+      </Button>
       <ConfirmDialog
         open={confirming}
         onOpenChange={setConfirming}
@@ -110,6 +128,6 @@ export function RequesterActions({ request, allowedPurposes, maxGrantDays }: { r
           })
         }
       />
-    </div>
+    </>
   );
 }

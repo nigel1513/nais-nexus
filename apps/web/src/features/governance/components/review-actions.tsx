@@ -1,5 +1,6 @@
 "use client";
 import { Button, Checkbox, ConfirmDialog, FormField, Input, Textarea } from "@nais/ui";
+import { Check } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { asApiError } from "@/shared/api/errors";
@@ -51,14 +52,19 @@ export function ReviewActions({ request, maxGrantDays }: { request: AccessReques
   const daysValid = Number.isInteger(days) && days >= 1 && days <= cap;
 
   return (
-    <div className="flex flex-wrap gap-2">
-      <Button variant="primary" onClick={() => openDialog("approve")}>{t("access.detail.approve")}</Button>
-      <Button variant="outline" onClick={() => openDialog("changes")}>
-        {t("access.detail.requestChanges")}
+    <div className="flex flex-col gap-2">
+      <Button variant="primary" className="w-full" onClick={() => openDialog("approve")}>
+        <Check aria-hidden="true" />
+        {t("access.detail.approve")}
       </Button>
-      <Button variant="destructive" onClick={() => openDialog("reject")}>
-        {t("access.detail.reject")}
-      </Button>
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="secondary" onClick={() => openDialog("changes")}>
+          {t("access.detail.requestChanges")}
+        </Button>
+        <Button variant="danger" onClick={() => openDialog("reject")}>
+          {t("access.detail.reject")}
+        </Button>
+      </div>
 
       <ConfirmDialog
         open={dialog === "approve"}
@@ -78,15 +84,15 @@ export function ReviewActions({ request, maxGrantDays }: { request: AccessReques
           {(a11y) => <Input {...a11y} type="number" min={1} max={cap} value={Number.isNaN(days) ? "" : days} onChange={(e) => setDays(e.target.valueAsNumber)} />}
         </FormField>
         <fieldset className="flex flex-col gap-1" aria-describedby={serverErrors.operations ? "approve-operations-error" : undefined}>
-          <legend className="text-sm font-medium">{t("access.request.operations")}</legend>
+          <legend className="mb-1 text-body font-medium text-fg">{t("access.request.operations")}</legend>
           {request.operations.map((op) => (
-            <label key={op} className="flex items-center gap-2 text-sm">
+            <label key={op} className="flex h-8 items-center gap-2 text-body text-fg">
               <Checkbox checked={ops.includes(op)} onChange={(e) => setOps(e.target.checked ? [...ops, op] : ops.filter((o) => o !== op))} />
               {t(`enums.Operation.${op}`)}
             </label>
           ))}
           {serverErrors.operations ? (
-            <p id="approve-operations-error" role="alert" className="text-sm text-danger">
+            <p id="approve-operations-error" role="alert" className="text-small text-danger">
               {serverErrors.operations}
             </p>
           ) : null}
