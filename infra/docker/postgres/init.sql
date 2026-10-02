@@ -10,7 +10,7 @@ DECLARE
   s text;
 BEGIN
   FOREACH s IN ARRAY ARRAY['platform','identity','project','catalog','governance','readiness','audit',
-                           'marketplace','compute','knowledge','autonomy'] LOOP
+                           'marketplace','compute','knowledge','autonomy','workspace','notes'] LOOP
     EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I AUTHORIZATION nais_migrator', s);
     EXECUTE format('GRANT USAGE ON SCHEMA %I TO nais_app', s);
     EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE nais_migrator IN SCHEMA %I '

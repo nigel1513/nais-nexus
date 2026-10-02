@@ -163,12 +163,35 @@ EXPECTED = {
 }
 
 
-def test_index_json_lists_exactly_the_28_consumed_types() -> None:
+# Contract 1.4.0 events (hub / workspace / research notes) whose audit rules are implemented in Task 8 of the
+# 2026-10-02 data-hub plan. Task 8 maps each one (AUDIT_RULES or NOT_AUDITED) and empties this set.
+PENDING_AUDIT_RULES: frozenset[str] = frozenset(
+    {
+        "workspace.input.added.v1",
+        "workspace.input.version_changed.v1",
+        "workspace.input.removed.v1",
+        "workspace.recipe.saved.v1",
+        "workspace.run.succeeded.v1",
+        "workspace.run.failed.v1",
+        "workspace.output.created.v1",
+        "workspace.publish.requested.v1",
+        "workspace.publish.decided.v1",
+        "workspace.comment.added.v1",
+        "notes.note.submitted.v1",
+        "notes.note.signed.v1",
+        "notes.note.rejected.v1",
+        "notes.note.viewed.v1",
+    }
+)
+
+
+def test_index_json_lists_exactly_the_42_consumed_types() -> None:
     index = json.loads((get_settings().contracts_dir / "events" / "index.json").read_text(encoding="utf-8"))
     types = {e["event_type"] for e in index["events"]}
-    assert len(types) == 28
-    assert types == set(AUDIT_RULES) | NOT_AUDITED == {e.value for e in EventType}
+    assert len(types) == 42
+    assert types == set(AUDIT_RULES) | NOT_AUDITED | PENDING_AUDIT_RULES == {e.value for e in EventType}
     assert not set(AUDIT_RULES) & NOT_AUDITED
+    assert not (set(AUDIT_RULES) | NOT_AUDITED) & PENDING_AUDIT_RULES
 
 
 @pytest.mark.parametrize("event_type", [e.value for e in EventType])

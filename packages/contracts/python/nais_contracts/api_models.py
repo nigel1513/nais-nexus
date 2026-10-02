@@ -193,6 +193,13 @@ class ResourceType(StrEnum):
     ACCESS_REQUEST = 'ACCESS_REQUEST'
     ACCESS_GRANT = 'ACCESS_GRANT'
     READINESS_VALIDATION = 'READINESS_VALIDATION'
+    PROJECT_INPUT = 'PROJECT_INPUT'
+    RECIPE = 'RECIPE'
+    RUN = 'RUN'
+    OUTPUT = 'OUTPUT'
+    PUBLISH_REQUEST = 'PUBLISH_REQUEST'
+    THREAD = 'THREAD'
+    RESEARCH_NOTE = 'RESEARCH_NOTE'
 
 
 class AuditAction(StrEnum):
@@ -220,6 +227,20 @@ class AuditAction(StrEnum):
     FILE_DOWNLOADED = 'FILE_DOWNLOADED'
     DOWNLOAD_DENIED = 'DOWNLOAD_DENIED'
     READINESS_VALIDATION_COMPLETED = 'READINESS_VALIDATION_COMPLETED'
+    PROJECT_INPUT_ADDED = 'PROJECT_INPUT_ADDED'
+    PROJECT_INPUT_VERSION_CHANGED = 'PROJECT_INPUT_VERSION_CHANGED'
+    PROJECT_INPUT_REMOVED = 'PROJECT_INPUT_REMOVED'
+    RECIPE_SAVED = 'RECIPE_SAVED'
+    RUN_SUCCEEDED = 'RUN_SUCCEEDED'
+    RUN_FAILED = 'RUN_FAILED'
+    OUTPUT_CREATED = 'OUTPUT_CREATED'
+    OUTPUT_PUBLISH_REQUESTED = 'OUTPUT_PUBLISH_REQUESTED'
+    OUTPUT_PUBLISH_DECIDED = 'OUTPUT_PUBLISH_DECIDED'
+    COMMENT_ADDED = 'COMMENT_ADDED'
+    NOTE_SUBMITTED = 'NOTE_SUBMITTED'
+    NOTE_SIGNED = 'NOTE_SIGNED'
+    NOTE_REJECTED = 'NOTE_REJECTED'
+    NOTE_VIEWED = 'NOTE_VIEWED'
 
 
 class NotificationType(StrEnum):
@@ -231,6 +252,12 @@ class NotificationType(StrEnum):
     ACCESS_EXPIRING = 'ACCESS_EXPIRING'
     ACCESS_REVOKED = 'ACCESS_REVOKED'
     DATASET_PUBLISHED = 'DATASET_PUBLISHED'
+    OUTPUT_PUBLISH_REQUESTED = 'OUTPUT_PUBLISH_REQUESTED'
+    OUTPUT_PUBLISH_DECIDED = 'OUTPUT_PUBLISH_DECIDED'
+    NOTE_SUBMITTED = 'NOTE_SUBMITTED'
+    NOTE_REJECTED = 'NOTE_REJECTED'
+    NOTE_SIGNED = 'NOTE_SIGNED'
+    DATASET_COMMENT_ADDED = 'DATASET_COMMENT_ADDED'
 
 
 class IdentityPublicProfile(BaseModel):
@@ -1037,6 +1064,797 @@ class Notification(BaseModel):
     link: str | None = Field(None, description='Web route, e.g. /commons/access/{id}')
     read: bool
     created_at: Timestamp
+
+
+class DatasetActivityType(StrEnum):
+    VERSION_PUBLISHED = 'VERSION_PUBLISHED'
+    METADATA_CHANGED = 'METADATA_CHANGED'
+    POLICY_CHANGED = 'POLICY_CHANGED'
+    READINESS_COMPLETED = 'READINESS_COMPLETED'
+    USED_IN_PROJECT = 'USED_IN_PROJECT'
+    OUTPUT_PUBLISHED = 'OUTPUT_PUBLISHED'
+    DISCUSSION_STARTED = 'DISCUSSION_STARTED'
+
+
+class HubCard(BaseModel):
+    dataset_id: Id
+    title: str
+    owner_organization_name: str
+    subject_labels: list[str] = Field(
+        ..., description='Korean SUBJECT vocabulary labels'
+    )
+    access_level: AccessLevel
+    readiness_overall: ReadinessOverall | None = Field(
+        ..., description='Same rule as DatasetVersionSummary.readiness_overall (D-028)'
+    )
+    updated_at: Timestamp
+    metric: conint(ge=0) | None = Field(
+        ...,
+        description='trending = access requests in the last 7 days, most_used = project inputs, recent = null. Only real counts; null hides the figure.',
+    )
+
+
+class HubOrganizationStat(BaseModel):
+    organization_id: Id
+    name: str
+    dataset_count: conint(ge=0)
+    public_count: conint(ge=0)
+    controlled_count: conint(ge=0) = Field(..., description='CONTROLLED + SENSITIVE')
+    last_updated_at: AwareDatetime | None
+
+
+class Rails(BaseModel):
+    trending: list[HubCard] = Field(..., max_length=6)
+    recent: list[HubCard] = Field(..., max_length=6)
+    most_used: list[HubCard] = Field(..., max_length=6)
+
+
+class HubOverview(BaseModel):
+    rails: Rails
+    organizations: list[HubOrganizationStat]
+
+
+class DatasetProjectUse(BaseModel):
+    project_id: Id
+    name: str
+    lead_organization_name: str
+    input_added_at: Timestamp
+
+
+class DatasetProjectsResult(BaseModel):
+    items: list[DatasetProjectUse]
+    hidden_count: conint(ge=0) = Field(
+        ...,
+        description='Projects using the dataset that the caller is not a member of (names hidden)',
+    )
+
+
+class DatasetActivity(BaseModel):
+    activity_id: Id
+    dataset_id: Id
+    type: DatasetActivityType
+    label: str | None = Field(
+        ...,
+        description='Entity label (version label, project name, output title, thread title); never data values',
+    )
+    ref_id: Id | None = Field(
+        ..., description='Version, project, output or thread id for linking'
+    )
+    actor_display_name: str | None
+    project_id: Id | None = Field(
+        ..., description='Set only when the caller is a member of that project'
+    )
+    occurred_at: Timestamp
+
+
+class RunStatus(StrEnum):
+    QUEUED = 'QUEUED'
+    RUNNING = 'RUNNING'
+    SUCCEEDED = 'SUCCEEDED'
+    FAILED = 'FAILED'
+
+
+class OutputKind(StrEnum):
+    DERIVED_DATASET = 'DERIVED_DATASET'
+    FILE = 'FILE'
+
+
+class OutputPublishStatus(StrEnum):
+    NONE = 'NONE'
+    PENDING = 'PENDING'
+    APPROVED = 'APPROVED'
+    REJECTED = 'REJECTED'
+    PUBLISHED = 'PUBLISHED'
+
+
+class PublishRequestStatus(StrEnum):
+    PENDING = 'PENDING'
+    APPROVED = 'APPROVED'
+    REJECTED = 'REJECTED'
+
+
+class PublishDecision(StrEnum):
+    APPROVE = 'APPROVE'
+    REJECT = 'REJECT'
+
+
+class ThreadScope(StrEnum):
+    PROJECT = 'PROJECT'
+    DATASET = 'DATASET'
+    OUTPUT = 'OUTPUT'
+    RECIPE = 'RECIPE'
+
+
+class RecipeStepType(StrEnum):
+    select_columns = 'select_columns'
+    filter_rows = 'filter_rows'
+    drop_missing = 'drop_missing'
+    fill_missing = 'fill_missing'
+    cast_type = 'cast_type'
+    convert_unit = 'convert_unit'
+    aggregate = 'aggregate'
+    join = 'join'
+    sort = 'sort'
+    limit = 'limit'
+
+
+class RecipeFilterOp(StrEnum):
+    eq = 'eq'
+    ne = 'ne'
+    lt = 'lt'
+    le = 'le'
+    gt = 'gt'
+    ge = 'ge'
+    contains = 'contains'
+    in_ = 'in'
+    is_null = 'is_null'
+    not_null = 'not_null'
+
+
+class RecipeCastType(StrEnum):
+    int = 'int'
+    float = 'float'
+    string = 'string'
+    bool = 'bool'
+    datetime = 'datetime'
+
+
+class RecipeAggregateFn(StrEnum):
+    count = 'count'
+    sum = 'sum'
+    mean = 'mean'
+    min = 'min'
+    max = 'max'
+
+
+class RecipeJoinHow(StrEnum):
+    inner = 'inner'
+    left = 'left'
+
+
+class ProjectInput(BaseModel):
+    input_id: Id
+    project_id: Id
+    dataset_id: Id
+    dataset_title: str
+    dataset_version_id: Id = Field(..., description='Pinned version')
+    version_label: str
+    newer_version_label: str | None = Field(
+        ..., description='Latest PUBLISHED label when newer than the pinned version'
+    )
+    access_level: AccessLevel
+    access_lapsed: bool = Field(
+        ...,
+        description="true when the caller's access was revoked or expired; runs and downloads using it are blocked (INPUT_ACCESS_LAPSED)",
+    )
+    added_by: Id
+    added_by_display_name: str
+    added_at: Timestamp
+    note: str | None
+
+
+class ProjectInputCreate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    dataset_id: Id
+    dataset_version_id: Id | None = Field(
+        None, description='Default: latest PUBLISHED version'
+    )
+    note: constr(max_length=2000) | None = None
+
+
+class ProjectInputUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    dataset_version_id: Id | None = None
+    note: constr(max_length=2000) | None = None
+
+
+class Column(RootModel[constr(min_length=1)]):
+    root: constr(min_length=1)
+
+
+class RecipeStepSelectColumns(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['select_columns']
+    columns: list[Column] = Field(..., min_length=1)
+
+
+class RecipeStepFilterRows(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['filter_rows']
+    column: constr(min_length=1)
+    op: RecipeFilterOp
+    value: str | int | float | bool | list[str | int | float] | None = Field(
+        None, description='Required except for is_null/not_null; an array for in'
+    )
+
+
+class RecipeStepDropMissing(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['drop_missing']
+    columns: list[constr(min_length=1)] | None = Field(
+        ..., description='null = any column'
+    )
+
+
+class RecipeStepFillMissing(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['fill_missing']
+    column: constr(min_length=1)
+    value: str | int | float | bool
+
+
+class RecipeStepCastType(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['cast_type']
+    column: constr(min_length=1)
+    to: RecipeCastType
+
+
+class RecipeStepConvertUnit(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['convert_unit']
+    column: constr(min_length=1)
+    factor: float = Field(..., description='new = old * factor + offset')
+    offset: float
+    unit_label: constr(min_length=1, max_length=32)
+
+
+class Metric(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    column: constr(min_length=1)
+    fn: RecipeAggregateFn
+
+
+class RecipeStepAggregate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['aggregate']
+    group_by: list[constr(min_length=1)]
+    metrics: list[Metric] = Field(..., min_length=1)
+
+
+class OnItem(RootModel[constr(min_length=1)]):
+    root: constr(min_length=1)
+
+
+class RecipeStepJoin(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['join']
+    right_input_id: Id = Field(..., description="Must be one of the recipe's input_ids")
+    on: list[OnItem] = Field(..., min_length=1)
+    how: RecipeJoinHow
+
+
+class ByItem(RootModel[constr(min_length=1)]):
+    root: constr(min_length=1)
+
+
+class RecipeStepSort(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['sort']
+    by: list[ByItem] = Field(..., min_length=1)
+    descending: bool
+
+
+class RecipeStepLimit(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    type: Literal['limit']
+    n: conint(ge=1, le=5000000)
+
+
+class RecipeStep(
+    RootModel[
+        RecipeStepSelectColumns
+        | RecipeStepFilterRows
+        | RecipeStepDropMissing
+        | RecipeStepFillMissing
+        | RecipeStepCastType
+        | RecipeStepConvertUnit
+        | RecipeStepAggregate
+        | RecipeStepJoin
+        | RecipeStepSort
+        | RecipeStepLimit
+    ]
+):
+    root: (
+        RecipeStepSelectColumns
+        | RecipeStepFilterRows
+        | RecipeStepDropMissing
+        | RecipeStepFillMissing
+        | RecipeStepCastType
+        | RecipeStepConvertUnit
+        | RecipeStepAggregate
+        | RecipeStepJoin
+        | RecipeStepSort
+        | RecipeStepLimit
+    ) = Field(..., discriminator='type')
+
+
+class Recipe(BaseModel):
+    recipe_id: Id
+    project_id: Id
+    name: str
+    input_ids: list[Id] = Field(
+        ..., description='First id is the base table; join steps reference the others'
+    )
+    steps: list[RecipeStep]
+    version: conint(ge=1) = Field(
+        ..., description='+1 on every save; send as If-Match on updateRecipe'
+    )
+    updated_by: Id
+    updated_at: Timestamp
+
+
+class RecipeWrite(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    name: constr(min_length=1, max_length=200)
+    input_ids: list[Id] = Field(..., max_length=10, min_length=1)
+    steps: list[RecipeStep] = Field(..., max_length=50)
+
+
+class RecipePreviewRequest(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    input_ids: list[Id] | None = Field(None, max_length=10, min_length=1)
+    steps: list[RecipeStep] | None = Field(None, max_length=50)
+
+
+class RecipePreview(BaseModel):
+    header: list[str]
+    rows: list[list[constr(max_length=200) | None]] = Field(..., max_length=100)
+    rows_truncated: bool = Field(..., description='More than 100 result rows')
+    input_rows_read: conint(ge=0) = Field(
+        ..., description='Rows read from the inputs (≤ 10,000 per input)'
+    )
+    output_rows: conint(ge=0) = Field(
+        ..., description='Result rows of the sampled inputs'
+    )
+
+
+class Run(BaseModel):
+    run_id: Id
+    project_id: Id
+    recipe_id: Id
+    recipe_version: conint(ge=1)
+    status: RunStatus
+    started_by: Id
+    queued_at: Timestamp
+    started_at: AwareDatetime | None
+    finished_at: AwareDatetime | None
+    input_rows: conint(ge=0) | None
+    output_rows: conint(ge=0) | None
+    error: str | None = Field(
+        ..., description='Short summary when FAILED (no stack trace, no data values)'
+    )
+    output_id: Id | None = Field(
+        ..., description='DERIVED_DATASET output when SUCCEEDED'
+    )
+
+
+class OutputFile(BaseModel):
+    name: str
+    size_bytes: conint(ge=0)
+    sha256: constr(pattern=r'^[a-f0-9]{64}$')
+    media_type: str
+
+
+class OutputLineageInput(BaseModel):
+    dataset_id: Id
+    dataset_title: str
+    dataset_version_id: Id
+    version_label: str
+
+
+class OutputLineage(BaseModel):
+    inputs: list[OutputLineageInput]
+    recipe_id: Id | None
+    recipe_version: conint(ge=1) | None
+    run_id: Id | None
+
+
+class Output(BaseModel):
+    output_id: Id
+    project_id: Id
+    kind: OutputKind
+    title: str
+    access_level: AccessLevel = Field(
+        ..., description='Never looser than the strictest lineage input'
+    )
+    files: list[OutputFile]
+    produced_by_run_id: Id | None = Field(
+        ..., description='null for uploaded FILE outputs'
+    )
+    lineage: OutputLineage
+    publish_status: OutputPublishStatus
+    created_by: Id
+    created_at: Timestamp
+
+
+class File3(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    name: constr(pattern=r'^[A-Za-z0-9._-]{1,255}$') = Field(
+        ..., description='Flat file name, no path'
+    )
+    size_bytes: conint(ge=1, le=5368709120) = Field(
+        ..., description='Single presigned PUT: ≤ 5 GiB'
+    )
+    sha256: constr(pattern=r'^[a-f0-9]{64}$')
+    media_type: str
+
+
+class OutputUploadCreate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    title: constr(min_length=1, max_length=300)
+    access_level: AccessLevel
+    files: list[File3] = Field(..., max_length=20, min_length=1)
+
+
+class Upload2(BaseModel):
+    method: Literal['PUT']
+    url: AnyUrl
+    headers: dict[str, str] | None = None
+
+
+class File4(BaseModel):
+    name: str
+    upload: Upload2
+
+
+class OutputUploadSession(BaseModel):
+    output_id: Id
+    expires_at: Timestamp = Field(..., description='now + 15 min')
+    files: list[File4]
+
+
+class File5(BaseModel):
+    name: str
+    url: AnyUrl
+    size_bytes: int
+    sha256: str
+
+
+class OutputDownload(BaseModel):
+    output_id: Id
+    expires_at: Timestamp = Field(..., description='URL expiry (now + 300s)')
+    files: list[File5]
+
+
+class PublishApproval(BaseModel):
+    organization_id: Id
+    organization_name: str | None = None
+    decided_by: Id | None
+    decision: PublishDecision | None
+    comment: str | None
+    decided_at: AwareDatetime | None
+
+
+class PublishRequest(BaseModel):
+    request_id: Id
+    output_id: Id
+    project_id: Id
+    status: PublishRequestStatus
+    approvals: list[PublishApproval] = Field(..., min_length=1)
+    created_by: Id
+    created_at: Timestamp
+    output_title: str | None = None
+    project_name: str | None = None
+    published_dataset_id: Id | None = Field(
+        None, description='Catalog dataset created once APPROVED'
+    )
+
+
+class PublishRequestCreate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    title: constr(min_length=3, max_length=300) | None = Field(
+        None, description='Dataset title; default = output title'
+    )
+    description: constr(max_length=20000) | None = None
+
+
+class PublishDecisionCreate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    decision: PublishDecision
+    comment: constr(max_length=2000) | None = Field(
+        None, description='Required (minLength 1) for REJECT; enforced by the server'
+    )
+
+
+class Thread(BaseModel):
+    thread_id: Id
+    scope: ThreadScope
+    target_id: Id = Field(
+        ..., description='project_id, dataset_id, output_id or recipe_id per scope'
+    )
+    project_id: Id | None = Field(..., description='null for DATASET threads')
+    title: str
+    created_by: Id
+    created_by_display_name: str
+    created_at: Timestamp
+    resolved: bool
+    comment_count: conint(ge=1)
+    last_comment_at: Timestamp
+
+
+class ThreadCreate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    scope: ThreadScope
+    target_id: Id
+    title: constr(min_length=1, max_length=200)
+    body: constr(min_length=1, max_length=10000) = Field(..., description='Markdown')
+
+
+class ThreadUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    resolved: bool | None = None
+    title: constr(min_length=1, max_length=200) | None = None
+
+
+class Comment(BaseModel):
+    comment_id: Id
+    thread_id: Id
+    body: str = Field(..., description='Markdown')
+    author_id: Id
+    author_display_name: str
+    created_at: Timestamp
+    edited_at: AwareDatetime | None
+
+
+class CommentCreate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    body: constr(min_length=1, max_length=10000) = Field(..., description='Markdown')
+
+
+class NoteStatus(StrEnum):
+    DRAFT = 'DRAFT'
+    SUBMITTED = 'SUBMITTED'
+    SIGNED = 'SIGNED'
+
+
+class NoteDraftStatus(StrEnum):
+    NONE = 'NONE'
+    QUEUED = 'QUEUED'
+    RUNNING = 'RUNNING'
+    FAILED = 'FAILED'
+    DONE = 'DONE'
+
+
+class NoteSection(StrEnum):
+    DIRECTION = 'DIRECTION'
+    STEPS = 'STEPS'
+    RESULTS = 'RESULTS'
+    NEXT = 'NEXT'
+    MEMO = 'MEMO'
+
+
+class NoteBlockOrigin(StrEnum):
+    HUMAN = 'HUMAN'
+    AI = 'AI'
+
+
+class NoteSignerRole(StrEnum):
+    RECORDER = 'RECORDER'
+    WITNESS = 'WITNESS'
+
+
+class NoteEvidenceType(StrEnum):
+    INPUT_ADDED = 'INPUT_ADDED'
+    INPUT_VERSION_CHANGED = 'INPUT_VERSION_CHANGED'
+    RECIPE_SAVED = 'RECIPE_SAVED'
+    RUN_SUCCEEDED = 'RUN_SUCCEEDED'
+    RUN_FAILED = 'RUN_FAILED'
+    OUTPUT_CREATED = 'OUTPUT_CREATED'
+    PUBLISH_REQUESTED = 'PUBLISH_REQUESTED'
+    DATASET_DOWNLOADED = 'DATASET_DOWNLOADED'
+    ACCESS_DECIDED = 'ACCESS_DECIDED'
+
+
+class NoteEvidence(BaseModel):
+    type: NoteEvidenceType
+    ref_id: Id = Field(
+        ...,
+        description='Input, recipe, run, output, publish request, dataset version or access request id',
+    )
+    label: str = Field(
+        ...,
+        description='Entity label only (dataset title@version, recipe name, row counts); never data values',
+    )
+    at: Timestamp
+
+
+class NoteBlock(BaseModel):
+    block_id: Id
+    section: NoteSection
+    text: str
+    origin: NoteBlockOrigin
+    accepted: bool = Field(
+        ...,
+        description='AI blocks start false; submit/sign require every AI block accepted',
+    )
+    evidence: list[NoteEvidence]
+
+
+class NoteBlockWrite(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    block_id: Id | None = Field(
+        None,
+        description='Existing block (keeps origin and evidence); omit for a new HUMAN block',
+    )
+    section: NoteSection
+    text: constr(min_length=1, max_length=4000)
+    accepted: bool | None = Field(
+        None,
+        description='Accepting an AI block; ignored for HUMAN blocks (always true)',
+    )
+
+
+class NoteBlocksPut(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    blocks: list[NoteBlockWrite] = Field(..., max_length=500)
+
+
+class NoteSignature(BaseModel):
+    signer_id: Id
+    signer_display_name: str
+    role: NoteSignerRole
+    signed_at: Timestamp = Field(..., description='Server time')
+    content_hash: constr(pattern=r'^[a-f0-9]{64}$')
+
+
+class ResearchNote(BaseModel):
+    note_id: Id
+    project_id: Id
+    project_name: str
+    organization_id: Id = Field(
+        ...,
+        description="Recorder's organization when the note was created; never changes (지침 제8·9조)",
+    )
+    recorder_id: Id
+    recorder_display_name: str
+    note_date: date_aliased = Field(..., description='Asia/Seoul date')
+    version: conint(ge=1)
+    previous_version_id: Id | None
+    status: NoteStatus
+    revision: conint(ge=1) = Field(
+        ..., description='+1 on every block save; send as If-Match on updateNoteBlocks'
+    )
+    blocks: list[NoteBlock]
+    draft_status: NoteDraftStatus
+    draft_error: str | None
+    signatures: list[NoteSignature]
+    content_hash: constr(pattern=r'^[a-f0-9]{64}$') | None = Field(
+        ...,
+        description='sha256 of the canonical JSON of content + metadata; set on submit/sign',
+    )
+    chain_hash: constr(pattern=r'^[a-f0-9]{64}$') | None = Field(
+        ...,
+        description='sha256(previous chain_hash + content_hash) per project × organization; set when SIGNED',
+    )
+    submitted_at: AwareDatetime | None
+    rejected_reason: str | None
+    created_at: Timestamp
+    updated_at: Timestamp
+
+
+class ResearchNoteSummary(BaseModel):
+    note_id: Id
+    project_id: Id
+    project_name: str
+    recorder_id: Id
+    recorder_display_name: str
+    note_date: date_aliased
+    version: conint(ge=1)
+    status: NoteStatus
+    draft_status: NoteDraftStatus
+    block_count: conint(ge=0)
+    unaccepted_ai_count: conint(ge=0) | None = None
+    submitted_at: AwareDatetime | None = None
+    updated_at: Timestamp
+
+
+class NoteVerification(BaseModel):
+    note_id: Id
+    valid: bool = Field(..., description='content_hash == recomputed_hash')
+    content_hash: constr(pattern=r'^[a-f0-9]{64}$')
+    recomputed_hash: constr(pattern=r'^[a-f0-9]{64}$')
+    chain_valid: bool = Field(
+        ...,
+        description='Rebuilt project × organization chain matches the stored chain_hash values',
+    )
+    checked_at: Timestamp
+
+
+class NoteSearchHit(BaseModel):
+    note_id: Id
+    project_name: str
+    note_date: date_aliased
+    snippet: str
+    score: float | None = Field(
+        ..., description='Rerank/cosine score; null for keyword fallback'
+    )
+
+
+class NoteSettings(BaseModel):
+    project_id: Id
+    witness_required: bool
+    witness_user_ids: list[Id]
+    llm_enabled: bool = Field(
+        ...,
+        description='Server setting NAIS_LLM_ENABLED; hides the draft button when false',
+    )
+
+
+class NoteSettingsUpdate(BaseModel):
+    model_config = ConfigDict(
+        extra='forbid',
+    )
+    witness_required: bool | None = None
+    witness_user_ids: list[Id] | None = Field(None, max_length=20)
 
 
 class Dataset(BaseModel):

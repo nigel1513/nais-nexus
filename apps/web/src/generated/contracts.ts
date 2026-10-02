@@ -45,7 +45,17 @@ export const ERROR_HTTP: Record<string, number> = {
   "READINESS_PROFILE_UNKNOWN": 422,
   "READINESS_VALIDATION_IN_PROGRESS": 409,
   "READINESS_NOT_AVAILABLE": 404,
-  "NOTIFICATION_NOT_FOUND": 404
+  "NOTIFICATION_NOT_FOUND": 404,
+  "ACCESS_REQUIRED": 403,
+  "INPUT_ACCESS_LAPSED": 409,
+  "RECIPE_INVALID": 422,
+  "RUN_NOT_ALLOWED": 409,
+  "OUTPUT_PUBLISH_PENDING": 409,
+  "NOTE_LOCKED": 409,
+  "NOTE_HAS_UNACCEPTED_AI": 409,
+  "NOTE_SIGNATURE_EXPIRED": 401,
+  "NOTE_NOT_WITNESS": 403,
+  "LLM_UNAVAILABLE": 503
 };
 
 export const ERROR_CODES = [
@@ -93,7 +103,17 @@ export const ERROR_CODES = [
   "READINESS_PROFILE_UNKNOWN",
   "READINESS_VALIDATION_IN_PROGRESS",
   "READINESS_NOT_AVAILABLE",
-  "NOTIFICATION_NOT_FOUND"
+  "NOTIFICATION_NOT_FOUND",
+  "ACCESS_REQUIRED",
+  "INPUT_ACCESS_LAPSED",
+  "RECIPE_INVALID",
+  "RUN_NOT_ALLOWED",
+  "OUTPUT_PUBLISH_PENDING",
+  "NOTE_LOCKED",
+  "NOTE_HAS_UNACCEPTED_AI",
+  "NOTE_SIGNATURE_EXPIRED",
+  "NOTE_NOT_WITNESS",
+  "LLM_UNAVAILABLE"
 ] as const;
 
 export const ENUMS = {
@@ -204,7 +224,14 @@ export const ENUMS = {
     "DATASET_FILE",
     "ACCESS_REQUEST",
     "ACCESS_GRANT",
-    "READINESS_VALIDATION"
+    "READINESS_VALIDATION",
+    "PROJECT_INPUT",
+    "RECIPE",
+    "RUN",
+    "OUTPUT",
+    "PUBLISH_REQUEST",
+    "THREAD",
+    "RESEARCH_NOTE"
   ],
   "AuditAction": [
     "LOGIN",
@@ -230,7 +257,21 @@ export const ENUMS = {
     "ACCESS_EXPIRED",
     "FILE_DOWNLOADED",
     "DOWNLOAD_DENIED",
-    "READINESS_VALIDATION_COMPLETED"
+    "READINESS_VALIDATION_COMPLETED",
+    "PROJECT_INPUT_ADDED",
+    "PROJECT_INPUT_VERSION_CHANGED",
+    "PROJECT_INPUT_REMOVED",
+    "RECIPE_SAVED",
+    "RUN_SUCCEEDED",
+    "RUN_FAILED",
+    "OUTPUT_CREATED",
+    "OUTPUT_PUBLISH_REQUESTED",
+    "OUTPUT_PUBLISH_DECIDED",
+    "COMMENT_ADDED",
+    "NOTE_SUBMITTED",
+    "NOTE_SIGNED",
+    "NOTE_REJECTED",
+    "NOTE_VIEWED"
   ],
   "NotificationType": [
     "PROJECT_INVITATION",
@@ -240,7 +281,13 @@ export const ENUMS = {
     "ACCESS_CHANGES_REQUESTED",
     "ACCESS_EXPIRING",
     "ACCESS_REVOKED",
-    "DATASET_PUBLISHED"
+    "DATASET_PUBLISHED",
+    "OUTPUT_PUBLISH_REQUESTED",
+    "OUTPUT_PUBLISH_DECIDED",
+    "NOTE_SUBMITTED",
+    "NOTE_REJECTED",
+    "NOTE_SIGNED",
+    "DATASET_COMMENT_ADDED"
   ],
   "VocabularyScheme": [
     "SUBJECT",
@@ -264,5 +311,126 @@ export const ENUMS = {
     "READY",
     "FAILED",
     "UNSUPPORTED"
+  ],
+  "DatasetActivityType": [
+    "VERSION_PUBLISHED",
+    "METADATA_CHANGED",
+    "POLICY_CHANGED",
+    "READINESS_COMPLETED",
+    "USED_IN_PROJECT",
+    "OUTPUT_PUBLISHED",
+    "DISCUSSION_STARTED"
+  ],
+  "RunStatus": [
+    "QUEUED",
+    "RUNNING",
+    "SUCCEEDED",
+    "FAILED"
+  ],
+  "OutputKind": [
+    "DERIVED_DATASET",
+    "FILE"
+  ],
+  "OutputPublishStatus": [
+    "NONE",
+    "PENDING",
+    "APPROVED",
+    "REJECTED",
+    "PUBLISHED"
+  ],
+  "PublishRequestStatus": [
+    "PENDING",
+    "APPROVED",
+    "REJECTED"
+  ],
+  "PublishDecision": [
+    "APPROVE",
+    "REJECT"
+  ],
+  "ThreadScope": [
+    "PROJECT",
+    "DATASET",
+    "OUTPUT",
+    "RECIPE"
+  ],
+  "RecipeStepType": [
+    "select_columns",
+    "filter_rows",
+    "drop_missing",
+    "fill_missing",
+    "cast_type",
+    "convert_unit",
+    "aggregate",
+    "join",
+    "sort",
+    "limit"
+  ],
+  "RecipeFilterOp": [
+    "eq",
+    "ne",
+    "lt",
+    "le",
+    "gt",
+    "ge",
+    "contains",
+    "in",
+    "is_null",
+    "not_null"
+  ],
+  "RecipeCastType": [
+    "int",
+    "float",
+    "string",
+    "bool",
+    "datetime"
+  ],
+  "RecipeAggregateFn": [
+    "count",
+    "sum",
+    "mean",
+    "min",
+    "max"
+  ],
+  "RecipeJoinHow": [
+    "inner",
+    "left"
+  ],
+  "NoteStatus": [
+    "DRAFT",
+    "SUBMITTED",
+    "SIGNED"
+  ],
+  "NoteDraftStatus": [
+    "NONE",
+    "QUEUED",
+    "RUNNING",
+    "FAILED",
+    "DONE"
+  ],
+  "NoteSection": [
+    "DIRECTION",
+    "STEPS",
+    "RESULTS",
+    "NEXT",
+    "MEMO"
+  ],
+  "NoteBlockOrigin": [
+    "HUMAN",
+    "AI"
+  ],
+  "NoteSignerRole": [
+    "RECORDER",
+    "WITNESS"
+  ],
+  "NoteEvidenceType": [
+    "INPUT_ADDED",
+    "INPUT_VERSION_CHANGED",
+    "RECIPE_SAVED",
+    "RUN_SUCCEEDED",
+    "RUN_FAILED",
+    "OUTPUT_CREATED",
+    "PUBLISH_REQUESTED",
+    "DATASET_DOWNLOADED",
+    "ACCESS_DECIDED"
   ]
 } as const;

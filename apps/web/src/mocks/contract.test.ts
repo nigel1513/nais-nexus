@@ -10,6 +10,20 @@ const doc = YAML.parse(readFileSync(path.resolve(process.cwd(), "../../NAIS_PRD/
 
 const exercised = new Set<string>();
 
+// Contract 1.4.0 operations (hub, workspace, research notes) whose mock handlers do not exist yet — implemented in Task 12.
+// Task 12 must exercise each of them below and empty this list; an operation listed here that is exercised fails the test.
+const PENDING_MOCK_OPERATIONS: ReadonlySet<string> = new Set([
+  "getHubOverview", "listDatasetProjects", "listDatasetActivity",
+  "listProjectInputs", "addProjectInput", "updateProjectInput", "removeProjectInput",
+  "listRecipes", "createRecipe", "getRecipe", "updateRecipe", "deleteRecipe", "previewRecipe",
+  "startRun", "listRuns", "getRun",
+  "listOutputs", "createOutputUpload", "completeOutputUpload", "getOutput", "getOutputDownload",
+  "requestOutputPublish", "listPublishRequests", "decidePublishRequest",
+  "listThreads", "createThread", "updateThread", "listComments", "addComment",
+  "listNotes", "exportNotes", "searchNotes", "getOrCreateTodayNote", "getNoteSettings", "updateNoteSettings",
+  "getNote", "updateNoteBlocks", "draftNote", "submitNote", "rejectNote", "signNote", "reviseNote", "verifyNote",
+]);
+
 async function call(user: string | null, method: string, pathKey: string, opts: { path?: Record<string, string>; query?: string; body?: unknown; status: number }) {
   const url = pathKey.replace(/\{(\w+)\}/g, (_, k: string) => opts.path![k]!) + (opts.query ? `?${opts.query}` : "");
   const res = await fetch(`http://localhost:3000/mock-api/v1${url}`, {
@@ -158,7 +172,8 @@ describe("mock API ↔ openapi.yaml", () => {
 
     const METHODS = ["get", "post", "put", "patch", "delete"];
     const all = Object.values(doc.paths).flatMap((item) => Object.entries(item).filter(([m]) => METHODS.includes(m)).map(([, op]) => op.operationId));
-    expect(all).toHaveLength(58);
-    expect(all.filter((id) => !exercised.has(id))).toEqual([]);
+    expect(all).toHaveLength(101);
+    expect([...PENDING_MOCK_OPERATIONS].filter((id) => !all.includes(id) || exercised.has(id))).toEqual([]);
+    expect(all.filter((id) => !exercised.has(id) && !PENDING_MOCK_OPERATIONS.has(id))).toEqual([]);
   });
 });

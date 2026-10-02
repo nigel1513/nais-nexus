@@ -91,7 +91,7 @@ def test_audit_writer_subscribed_to_every_event_type() -> None:
 def test_register_into_a_fresh_registry() -> None:
     fresh = HandlerRegistry()
     handlers.register(fresh)
-    assert len(fresh.table()) == 28
+    assert len(fresh.table()) == 42
     assert all(len(names) == len(handlers.HANDLERS) for names in fresh.table().values())
 
 

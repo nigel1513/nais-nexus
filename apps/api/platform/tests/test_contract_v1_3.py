@@ -39,7 +39,7 @@ def _spec() -> dict[str, Any]:
 
 def test_version_and_new_operations() -> None:
     spec = _spec()
-    assert spec["info"]["version"] == "1.3.0"
+    assert tuple(int(p) for p in spec["info"]["version"].split(".")[:2]) >= (1, 3)
     for op_id, (method, path) in NEW_OPS.items():
         op = spec["paths"][path][method]
         assert op["operationId"] == op_id
