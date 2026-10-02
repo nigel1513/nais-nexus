@@ -117,3 +117,41 @@ class FakeLlm:
             raise answer
         result: dict[str, Any] = answer
         return result
+
+
+# Words the fake embedding model "understands": one vector dimension each (a text's vector counts their occurrences).
+VOCAB = ("용량", "온도", "전극", "전해질", "수명", "열화")
+
+
+class FakeEmbedder:
+    """EmbeddingClient stand-in (never the network): a bag of VOCAB words, plus a constant dimension so that no
+    vector is all zeros. `fail` makes the next calls raise it; `calls` records every batch."""
+
+    def __init__(self) -> None:
+        self.calls: list[list[str]] = []
+        self.fail: BaseException | None = None
+
+    @staticmethod
+    def vector(text: str) -> list[float]:
+        return [float(text.count(word)) for word in VOCAB] + [0.1]
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls.append(list(texts))
+        if self.fail is not None:
+            raise self.fail
+        return [self.vector(t) for t in texts]
+
+
+class FakeReranker:
+    """RerankClient stand-in: `score(query, document)` decides; records each call's documents."""
+
+    def __init__(self, score: Any = None) -> None:
+        self.score = score or (lambda query, document: 0.5)
+        self.calls: list[tuple[str, list[str]]] = []
+        self.fail: BaseException | None = None
+
+    def rerank(self, query: str, documents: list[str]) -> list[float]:
+        self.calls.append((query, list(documents)))
+        if self.fail is not None:
+            raise self.fail
+        return [float(self.score(query, d)) for d in documents]

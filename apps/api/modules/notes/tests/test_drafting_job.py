@@ -455,10 +455,12 @@ def test_daily_drafts_do_nothing_when_the_llm_is_off(api: NotesApi, world: World
 def test_worker_registration() -> None:
     scheduler = Scheduler()
     jobs.register_worker(jobs.draft_note_actor.broker, scheduler)
-    assert scheduler.job_names == ["notes.daily_drafts"]
+    assert scheduler.job_names == ["notes.daily_drafts", "notes.embed_sweep"]
     assert scheduler._jobs[0].next_run <= scheduler._clock()  # runs at worker start (evening catch-up)
     assert jobs.draft_note_actor.actor_name == "notes.draft_note"
     assert jobs.draft_note_actor.queue_name == "notes"
+    assert jobs.embed_notes_actor.actor_name == "notes.embed_notes"
+    assert jobs.embed_notes_actor.queue_name == "notes"
     assert MODULE.register_worker is jobs.register_worker
     assert MODULE.dedicated_queues == {"notes": 1}
     with pytest.raises(RuntimeError, match="broker"):

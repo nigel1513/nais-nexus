@@ -1,4 +1,4 @@
-"""The notes HTTP surface is exactly its contract operations (searchNotes arrives with Task 11)."""
+"""The notes HTTP surface is exactly its contract operations."""
 
 from api.modules.notes import MODULE
 from api.platform.testing.app import create_test_app
@@ -17,6 +17,7 @@ EXPECTED = {
     "verifyNote",
     "draftNote",
     "exportNotes",
+    "searchNotes",
     "getNoteSettings",
     "updateNoteSettings",
 }

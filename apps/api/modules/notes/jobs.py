@@ -21,6 +21,13 @@ claims that day in notes.daily_runs and queues drafts; later ticks that day do n
 latest note of today drafted (a DRAFT is created when they have none; SUBMITTED/SIGNED notes are left alone). One
 researcher failing does not stop the others. Nothing runs (and the day is not claimed) while the LLM is off.
 
+Embeddings (searchNotes, search.py): `notes.embed_notes` (same queue) embeds note versions whose searchable text changed
+(sha256 text_hash) in batches of EMBED_BATCH, with no transaction held while the shared GPU answers; an unchanged
+text is not embedded again (a SIGNED note, immutable, is embedded once). A save (updateNoteBlocks) or a revise queues
+its note EMBED_DELAY after commit, so an editing burst becomes one embedding; the sweep `notes.embed_sweep` (every
+EMBED_SWEEP_S) queues notes never embedded or changed since their vector was last checked (lost messages, notes
+saved while the service was off). Nothing is queued while the embedding service is off.
+
 The actor is defined at import time: the platform sets the broker BEFORE importing modules (D-036).
 """
 
@@ -35,7 +42,7 @@ from sqlalchemy import event
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
-from api.modules.notes import repo
+from api.modules.notes import repo, search
 from api.modules.notes.access import DRAFT
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.drafting.apply import new_blocks
@@ -69,6 +76,12 @@ DAILY_FROM = time(19, 0)  # KST
 QUEUED, RUNNING, DONE, FAILED = "QUEUED", "RUNNING", "DONE", "FAILED"
 _PENDING = "notes.pending_drafts"
 _LISTENING = "notes.listening_drafts"
+EMBED_BATCH = 16  # texts per embedding call
+EMBED_DELAY_MS = 30_000
+EMBED_TIME_LIMIT_MS = 5 * 60 * 1000
+EMBED_SWEEP_S = 300.0
+EMBED_SWEEP_LIMIT = 200  # notes queued per sweep tick
+_PENDING_EMBED = "notes.pending_embeddings"
 
 
 @dataclass
@@ -236,6 +249,110 @@ def enqueue_after_commit(session: Session, note_id: UUID) -> None:
         session.info[_LISTENING] = True
 
 
+# ---------------------------------------------------------------- embeddings (searchNotes)
+
+
+def _texts(session: Session, note_ids: list[UUID]) -> dict[UUID, str]:
+    return {n: search.searchable_text(t) for n, t in repo.searchable_blocks(session, note_ids).items()}
+
+
+def embed_notes(note_ids: list[UUID]) -> int:
+    """(Re)compute the vectors of the notes whose searchable text changed. Returns how many were stored."""
+    embedder = _deps().embedder()
+    if embedder is None or not note_ids:
+        return 0
+    with _session() as session, session.begin():
+        found = repo.load_notes(session, note_ids)
+        ids = list(found)
+        texts = _texts(session, ids)
+        stored = repo.embedding_hashes(session, ids)
+        repo.touch_embeddings(
+            session, [n for n in ids if stored.get(n) == search.text_hash(texts[n])], clock.now()
+        )
+    todo = [n for n in ids if stored.get(n) != search.text_hash(texts[n])]
+    vectors: dict[UUID, list[float]] = {n: [] for n in todo if not texts[n]}  # nothing to search by
+    pending = [n for n in todo if texts[n]]
+    for start in range(0, len(pending), EMBED_BATCH):
+        batch = pending[start : start + EMBED_BATCH]
+        try:
+            answer = embedder.embed([texts[n][: search.EMBED_CHARS] for n in batch])
+        except (LlmUnavailable, ValueError) as exc:  # left for a later message or the sweep
+            logger.warning("embedding failed", extra={"notes": len(batch), "error_type": type(exc).__name__})
+            break
+        vectors.update(zip(batch, answer, strict=True))
+    if not vectors:
+        return 0
+    stored_count = 0
+    with _session() as session, session.begin():
+        now = clock.now()
+        current = _texts(session, list(vectors))
+        for note_id, vector in vectors.items():
+            text = texts[note_id]
+            if current.get(note_id) != text:  # changed (or deleted) meanwhile: its own message re-embeds it
+                continue
+            repo.upsert_embedding(
+                session,
+                note_id,
+                version=found[note_id]["version"],
+                vector=vector,
+                text_hash=search.text_hash(text),
+                at=now,
+            )
+            stored_count += 1
+    return stored_count
+
+
+@dramatiq.actor(
+    actor_name="notes.embed_notes", queue_name=QUEUE, max_retries=0, time_limit=EMBED_TIME_LIMIT_MS
+)
+def embed_notes_actor(note_ids: list[str]) -> None:
+    embed_notes([UUID(n) for n in note_ids])
+
+
+def _send_embeddings(session: Session) -> None:
+    note_ids = session.info.pop(_PENDING_EMBED, None)
+    if not note_ids:
+        return
+    try:
+        embed_notes_actor.send_with_options(args=([str(n) for n in note_ids],), delay=EMBED_DELAY_MS)
+    except Exception:  # the sweep picks the notes up
+        logger.exception("could not enqueue embeddings", extra={"notes": len(note_ids)})
+
+
+def _drop_embeddings(session: Session) -> None:
+    session.info.pop(_PENDING_EMBED, None)
+
+
+def embed_after_commit(session: Session, deps: NotesDeps, note_id: UUID) -> None:
+    """Queue the note's embedding once its change is committed (nothing while the embedding service is off)."""
+    if deps.embedder() is None:
+        return
+    pending = session.info.get(_PENDING_EMBED)
+    if pending is None:
+        session.info[_PENDING_EMBED] = pending = []
+        event.listen(session, "after_commit", _send_embeddings, once=True)
+        event.listen(session, "after_rollback", _drop_embeddings, once=True)
+    if note_id not in pending:
+        pending.append(note_id)
+
+
+def embed_sweep() -> int:
+    """Queue up to EMBED_SWEEP_LIMIT notes without a current embedding. Returns how many were queued."""
+    if _deps().embedder() is None:
+        return 0
+    with _session() as session, session.begin():
+        note_ids = repo.unembedded_note_ids(session, limit=EMBED_SWEEP_LIMIT)
+    for start in range(0, len(note_ids), EMBED_BATCH):
+        embed_notes_actor.send([str(n) for n in note_ids[start : start + EMBED_BATCH]])
+    return len(note_ids)
+
+
+def _embed_sweep_job() -> None:
+    queued = embed_sweep()
+    if queued:
+        logger.info("embeddings queued", extra={"count": queued})
+
+
 # ---------------------------------------------------------------- evening schedule
 
 
@@ -328,3 +445,4 @@ def register_worker(broker: dramatiq.Broker, scheduler: Scheduler) -> None:
     if draft_note_actor.broker is not broker:
         raise RuntimeError("configure the Dramatiq broker before importing api.modules.notes (D-036)")
     scheduler.every(DAILY_INTERVAL_S, "notes.daily_drafts", _daily_job, run_immediately=True)
+    scheduler.every(EMBED_SWEEP_S, "notes.embed_sweep", _embed_sweep_job)

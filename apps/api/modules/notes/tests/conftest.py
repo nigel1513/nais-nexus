@@ -15,7 +15,14 @@ from sqlalchemy import create_engine, text
 from api.modules.notes import MODULE, jobs
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.settings import NotesSettings
-from api.modules.notes.tests.fakes import USERS, FakeLlm, FakePeople, FakeProjects
+from api.modules.notes.tests.fakes import (
+    USERS,
+    FakeEmbedder,
+    FakeLlm,
+    FakePeople,
+    FakeProjects,
+    FakeReranker,
+)
 from api.modules.notes.wiring import install
 from api.modules.project.public import ProjectQueryPort
 from api.platform import clock, ports
@@ -31,11 +38,12 @@ from api.platform.testing.tokens import FakeIssuer
 ISSUER = FakeIssuer()
 # The draft actor binds to the global Dramatiq broker when the module is imported (D-036); bind it to our StubBroker.
 STUB_BROKER = configure_broker(Settings(), StubBroker())
-if jobs.draft_note_actor.broker is not STUB_BROKER:
-    jobs.draft_note_actor.broker = STUB_BROKER
-    STUB_BROKER.declare_actor(jobs.draft_note_actor)
+for _actor in (jobs.draft_note_actor, jobs.embed_notes_actor):
+    if _actor.broker is not STUB_BROKER:
+        _actor.broker = STUB_BROKER
+        STUB_BROKER.declare_actor(_actor)
 TABLES = (
-    "notes.signatures, notes.blocks, notes.notes, notes.chains, notes.settings, notes.evidence,"
+    "notes.embeddings, notes.signatures, notes.blocks, notes.notes, notes.chains, notes.settings, notes.evidence,"
     " notes.processed_events, notes.daily_runs"
 )
 
@@ -79,6 +87,9 @@ class World:
     project_id: UUID
     llm: FakeLlm
     llm_enabled: bool = True
+    # Search (Task 11): None = the embedding / rerank service is off (the default, as NAIS_LLM_ENABLED=false).
+    embedder: FakeEmbedder | None = None
+    reranker: FakeReranker | None = None
 
     def install(self) -> None:
         """(Re)register NotesDeps with this world's fakes; llm_enabled=False makes the platform LLM client None."""
@@ -87,6 +98,8 @@ class World:
                 settings=NotesSettings(),
                 people=self.people,
                 llm=lambda: self.llm if self.llm_enabled else None,
+                embedder=lambda: self.embedder,
+                reranker=lambda: self.reranker,
             )
         )
 

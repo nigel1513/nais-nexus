@@ -5,13 +5,35 @@ from datetime import date, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Select, and_, delete, func, insert, or_, select, tuple_, update
+from sqlalchemy import (
+    Select,
+    Subquery,
+    and_,
+    delete,
+    exists,
+    func,
+    insert,
+    or_,
+    select,
+    tuple_,
+    union_all,
+    update,
+)
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
-from api.modules.notes.tables import blocks, chains, daily_runs, evidence, notes, settings, signatures
+from api.modules.notes.tables import (
+    blocks,
+    chains,
+    daily_runs,
+    embeddings,
+    evidence,
+    notes,
+    settings,
+    signatures,
+)
 
 ListKey = tuple[date, UUID]  # (note_date, note_id), newest first
 
@@ -343,3 +365,127 @@ def claim_daily_run(session: Session, run_date: date, at: datetime) -> bool:
 def append_blocks(session: Session, note_id: UUID, rows: Sequence[dict[str, Any]]) -> None:
     if rows:
         session.execute(insert(blocks), [dict(row, note_id=note_id) for row in rows])
+
+
+# ---------------------------------------------------------------- search (Task 11)
+
+# The block text a note is searched by: the researcher's own sentences and the AI sentences they accepted.
+SEARCHABLE_BLOCK = or_(blocks.c.origin == "HUMAN", blocks.c.accepted.is_(True))
+
+
+def search_scope(user_id: UUID, *, witness_project_ids: Sequence[UUID], project_id: UUID | None) -> Subquery:
+    """(note_id, project_id, note_date) of the notes the user may read, as listNotes lists them: the latest version
+    of each of their own (project, day) notes in any status, plus the SUBMITTED/SIGNED notes whose witness snapshot
+    names them in projects where they are an ACTIVE member (witness_project_ids). Another recorder's DRAFT never."""
+    own = select(notes).where(notes.c.recorder_id == user_id)
+    if project_id is not None:
+        own = own.where(notes.c.project_id == project_id)
+    own_sq = (
+        own.ext(distinct_on(notes.c.project_id, notes.c.note_date))
+        .order_by(notes.c.project_id, notes.c.note_date, notes.c.version.desc())
+        .subquery()
+    )
+    parts: list[Select[Any]] = [select(own_sq.c.note_id, own_sq.c.project_id, own_sq.c.note_date)]
+    projects = [p for p in witness_project_ids if project_id is None or p == project_id]
+    if projects:
+        parts.append(
+            select(notes.c.note_id, notes.c.project_id, notes.c.note_date).where(
+                notes.c.status.in_(("SUBMITTED", "SIGNED")),
+                notes.c.witness_required.is_(True),
+                notes.c.witness_user_ids.contains([user_id]),
+                notes.c.project_id.in_(projects),
+                notes.c.recorder_id != user_id,
+            )
+        )
+    return (union_all(*parts) if len(parts) > 1 else parts[0]).subquery("scope")
+
+
+def scope_vectors(session: Session, scope: Subquery) -> list[RowMapping]:
+    """(note_id, project_id, note_date, vector) of the scope's notes that have a non-empty embedding."""
+    stmt = (
+        select(scope.c.note_id, scope.c.project_id, scope.c.note_date, embeddings.c.vector)
+        .join(embeddings, embeddings.c.note_id == scope.c.note_id)
+        .where(func.cardinality(embeddings.c.vector) > 0)
+    )
+    return list(session.execute(stmt).mappings())
+
+
+def _like_literal(q: str) -> str:
+    return "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def keyword_hits(session: Session, scope: Subquery, q: str, *, limit: int) -> list[RowMapping]:
+    """(note_id, project_id, note_date) of the scope's notes with a searchable block containing q (case-insensitive,
+    literally), newest day first."""
+    match = exists().where(
+        blocks.c.note_id == scope.c.note_id,
+        SEARCHABLE_BLOCK,
+        blocks.c.text.ilike(_like_literal(q), escape="\\"),
+    )
+    stmt = (
+        select(scope.c.note_id, scope.c.project_id, scope.c.note_date)
+        .where(match)
+        .order_by(scope.c.note_date.desc(), scope.c.note_id.desc())
+        .limit(limit)
+    )
+    return list(session.execute(stmt).mappings())
+
+
+def searchable_blocks(session: Session, note_ids: Sequence[UUID]) -> dict[UUID, list[str]]:
+    """note_id -> the texts of its searchable blocks in order."""
+    out: dict[UUID, list[str]] = {note_id: [] for note_id in note_ids}
+    if not note_ids:
+        return out
+    stmt = (
+        select(blocks.c.note_id, blocks.c.text)
+        .where(blocks.c.note_id.in_(note_ids), SEARCHABLE_BLOCK)
+        .order_by(blocks.c.note_id, blocks.c.position)
+    )
+    for note_id, text_ in session.execute(stmt):
+        out[note_id].append(text_)
+    return out
+
+
+def load_notes(session: Session, note_ids: Sequence[UUID]) -> dict[UUID, RowMapping]:
+    if not note_ids:
+        return {}
+    return {
+        r["note_id"]: r
+        for r in session.execute(select(notes).where(notes.c.note_id.in_(note_ids))).mappings()
+    }
+
+
+def embedding_hashes(session: Session, note_ids: Sequence[UUID]) -> dict[UUID, str]:
+    if not note_ids:
+        return {}
+    stmt = select(embeddings.c.note_id, embeddings.c.text_hash).where(embeddings.c.note_id.in_(note_ids))
+    return {row[0]: row[1] for row in session.execute(stmt)}
+
+
+def upsert_embedding(
+    session: Session, note_id: UUID, *, version: int, vector: Sequence[float], text_hash: str, at: datetime
+) -> None:
+    values = {"version": version, "vector": list(vector), "text_hash": text_hash, "updated_at": at}
+    session.execute(
+        pg_insert(embeddings)
+        .values(note_id=note_id, **values)
+        .on_conflict_do_update(index_elements=[embeddings.c.note_id], set_=values)
+    )
+
+
+def touch_embeddings(session: Session, note_ids: Sequence[UUID], at: datetime) -> None:
+    """The stored vectors were checked against the notes' current text (unchanged) at `at`."""
+    if note_ids:
+        session.execute(update(embeddings).where(embeddings.c.note_id.in_(note_ids)).values(updated_at=at))
+
+
+def unembedded_note_ids(session: Session, *, limit: int) -> list[UUID]:
+    """Notes without an embedding, or changed since it was last checked; most recently changed first."""
+    stmt = (
+        select(notes.c.note_id)
+        .outerjoin(embeddings, embeddings.c.note_id == notes.c.note_id)
+        .where(or_(embeddings.c.note_id.is_(None), embeddings.c.updated_at < notes.c.updated_at))
+        .order_by(notes.c.updated_at.desc(), notes.c.note_id)
+        .limit(limit)
+    )
+    return [row[0] for row in session.execute(stmt)]

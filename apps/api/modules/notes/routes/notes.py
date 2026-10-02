@@ -1,7 +1,7 @@
 """/notes..., /projects/{project_id}/notes/today (openapi tag `notes`).
 
-/notes/export is declared before /notes/{note_id} so the literal segment is not parsed as a note id (keep
-/notes/search, Task 11, above it too).
+/notes/export and /notes/search are declared before /notes/{note_id} so the literal segments are not parsed as note
+ids.
 """
 
 from datetime import date
@@ -10,15 +10,19 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from fastapi.responses import StreamingResponse
+from pydantic import AfterValidator
 
+from api.modules.notes import search
 from api.modules.notes.deps import NotesDepsDep
 from api.modules.notes.schemas import (
     NoteBlocksIn,
+    NoteSearchResult,
     NoteStatus,
     NoteVerification,
     RejectIn,
     ResearchNote,
     ResearchNoteSummary,
+    no_nul,
 )
 from api.modules.notes.service import drafting, export, signing
 from api.modules.notes.service import notes as service
@@ -55,6 +59,17 @@ def list_notes(
         date_to=date_to,
         params=paging,
     )
+
+
+@router.get("/notes/search", operation_id="searchNotes")
+def search_notes(
+    q: Annotated[str, Query(min_length=1, max_length=500), AfterValidator(no_nul)],
+    user: CurrentUserDep,
+    session: SessionDep,
+    deps: NotesDepsDep,
+    project_id: UUID | None = None,
+) -> NoteSearchResult:
+    return NoteSearchResult(items=search.search_notes(session, deps, user, q, project_id))
 
 
 @router.get(

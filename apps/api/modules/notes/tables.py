@@ -1,6 +1,7 @@
 """notes schema (SQLAlchemy Core). migrations/ owns the DDL (with the guard triggers); keep both in step."""
 
 from sqlalchemy import (
+    REAL,
     BigInteger,
     Boolean,
     Column,
@@ -126,6 +127,23 @@ daily_runs = Table(
     metadata,
     Column("run_date", Date, primary_key=True),
     Column("ran_at", DateTime(timezone=True), nullable=False),
+)
+
+# searchNotes (Task 11): the bge-m3 vector of a note version's searchable text (search.searchable_text: HUMAN blocks
+# and accepted AI blocks) and that text's sha256; updated_at = when it was last checked against the note (jobs).
+embeddings = Table(
+    "embeddings",
+    metadata,
+    Column(
+        "note_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("notes.notes.note_id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("version", Integer, nullable=False),
+    Column("vector", ARRAY(REAL), nullable=False),
+    Column("text_hash", Text, nullable=False),
+    Column("updated_at", DateTime(timezone=True), nullable=False),
 )
 
 processed_events = Table(

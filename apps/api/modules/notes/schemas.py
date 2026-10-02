@@ -6,6 +6,7 @@ from typing import Annotated, Any, ClassVar
 from uuid import UUID
 
 from nais_contracts.api_models import (
+    NoteSearchHit,
     NoteSection,
     NoteSettings,
     NoteStatus,
@@ -16,7 +17,7 @@ from nais_contracts.api_models import (
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
-def _no_nul(value: str) -> str:
+def no_nul(value: str) -> str:
     if "\x00" in value:
         raise ValueError("must not contain NUL characters")
     return value
@@ -34,9 +35,9 @@ def _unique[T](values: list[T]) -> list[T]:
     return values
 
 
-BlockText = Annotated[str, StringConstraints(min_length=1, max_length=4000), AfterValidator(_no_nul)]
+BlockText = Annotated[str, StringConstraints(min_length=1, max_length=4000), AfterValidator(no_nul)]
 Reason = Annotated[
-    str, StringConstraints(min_length=1, max_length=2000), AfterValidator(_no_nul), AfterValidator(_not_blank)
+    str, StringConstraints(min_length=1, max_length=2000), AfterValidator(no_nul), AfterValidator(_not_blank)
 ]
 WitnessIds = Annotated[list[UUID], Field(max_length=20), AfterValidator(_unique)]
 
@@ -105,3 +106,9 @@ __all__ = [
     "ResearchNote",
     "ResearchNoteSummary",
 ]
+
+
+class NoteSearchResult(BaseModel):
+    """searchNotes 200 (openapi inline object): hits, best first."""
+
+    items: list[NoteSearchHit] = Field(max_length=20)

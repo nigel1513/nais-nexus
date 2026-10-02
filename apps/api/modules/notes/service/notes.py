@@ -12,7 +12,7 @@ from uuid import UUID
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
-from api.modules.notes import repo
+from api.modules.notes import jobs, repo
 from api.modules.notes.access import (
     DRAFT,
     SIGNED,
@@ -235,6 +235,7 @@ def update_blocks(
         )
     repo.replace_blocks(session, note_id, rows)
     note = repo.update_note(session, note_id, revision=note["revision"] + 1, updated_at=clock.now())
+    jobs.embed_after_commit(session, deps, note_id)
     return note_view(session, deps, note)
 
 
@@ -377,6 +378,7 @@ def revise(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) 
             for b in blocks
         ],
     )
+    jobs.embed_after_commit(session, deps, draft["note_id"])
     return note_view(session, deps, draft)
 
 

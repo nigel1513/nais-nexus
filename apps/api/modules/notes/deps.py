@@ -12,7 +12,14 @@ from api.modules.project.public import ProjectQueryPort
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
-from api.platform.llm import LlmClient, get_llm_client
+from api.platform.llm import (
+    EmbeddingClient,
+    LlmClient,
+    RerankClient,
+    get_embedding_client,
+    get_llm_client,
+    get_rerank_client,
+)
 
 
 @dataclass(frozen=True)
@@ -21,6 +28,9 @@ class NotesDeps:
     people: DisplayNameLookup
     # The platform LLM client, resolved per use (None while NAIS_LLM_ENABLED is false or no base URL is set).
     llm: Callable[[], LlmClient | None] = field(default=get_llm_client)
+    # searchNotes (bge-m3 embeddings, bge-reranker), resolved per use; None while switched off or unconfigured.
+    embedder: Callable[[], EmbeddingClient | None] = field(default=get_embedding_client)
+    reranker: Callable[[], RerankClient | None] = field(default=get_rerank_client)
 
     @property
     def projects(self) -> ProjectQueryPort:
