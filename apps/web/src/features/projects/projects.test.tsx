@@ -267,14 +267,14 @@ describe("ProjectDetailScreen activity tab", () => {
 
   it("members see the project's audit rows", async () => {
     open();
-    expect(await screen.findByText("프로젝트 생성")).toBeInTheDocument();
-    expect(screen.getByText("프로젝트 멤버 추가")).toBeInTheDocument();
+    expect(await screen.findByText("프로젝트를 만들었습니다")).toBeInTheDocument();
+    expect(screen.getByText("구성원을 추가했습니다")).toBeInTheDocument();
   });
 
   it("a server 403 is shown as a localized error, not a crash", async () => {
     server.use(http.get("*/mock-api/v1/audit-events", () => HttpResponse.json({ error: { code: "FORBIDDEN", message: "x", trace_id: "t" } }, { status: 403 })));
     open();
     expect(await screen.findByRole("alert")).toBeInTheDocument();
-    expect(screen.queryByText("프로젝트 생성")).not.toBeInTheDocument();
+    expect(screen.queryByText("프로젝트를 만들었습니다")).not.toBeInTheDocument();
   });
 });

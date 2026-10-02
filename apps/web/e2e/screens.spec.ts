@@ -185,3 +185,35 @@ test.describe("task 9 screens", () => {
     await shoot(page, `${T9}-access-empty`, [[1440, 900]]);
   });
 });
+
+// Task 10: activity and notifications.
+const T10 = process.env.SHOT_PREFIX_10 ?? "task10";
+
+test.describe("task 10 screens", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+
+  test("activity timeline and the open notification popover", async ({ page, baseURL }) => {
+    await seedReviewQueue(page, baseURL!);
+    await as(page, "admin", baseURL!);
+    await page.goto("/commons/activity");
+    await expect(page.getByRole("heading", { level: 1, name: "활동 · 감사 로그" })).toBeVisible();
+    await expect(page.getByText("A Researcher").first()).toBeVisible();
+    await shoot(page, `${T10}-activity`);
+
+    await page.context().clearCookies();
+    await as(page, "steward", baseURL!);
+    for (const theme of ["light", "dark"] as Theme[]) {
+      await setup(page, [1440, 900], theme);
+      await page.goto("/commons/access");
+      await page.getByRole("button", { name: /^알림/ }).click();
+      await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+      await shootOne(page, `${T10}-notifications-open`, 1440, theme);
+      await page.keyboard.press("Escape");
+    }
+    await setup(page, [390, 844], "light");
+    await page.goto("/commons/access");
+    await page.getByRole("button", { name: /^알림/ }).click();
+    await expect(page.getByRole("dialog", { name: "알림" })).toBeVisible();
+    await shootOne(page, `${T10}-notifications-open`, 390, "light");
+  });
+});

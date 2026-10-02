@@ -250,3 +250,26 @@ test("access: review queue and request detail pass axe in both themes, rows open
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }
 });
+
+test("activity: the timeline and its action filter pass axe in both themes; no sideways scroll on a phone", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000101", url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await page.goto("/commons/activity");
+    const timeline = page.getByRole("region", { name: "활동 목록" });
+    await expect(timeline.getByRole("heading", { level: 2 }).first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "행동 종류" }).click();
+    await expect(page.getByRole("checkbox", { name: "프로젝트 생성" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.keyboard.press("Escape");
+    await timeline.getByRole("button", { name: "상세 보기" }).first().click();
+    await expect(timeline.getByText("추적 ID").first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/commons/activity");
+  await expect(page.getByRole("region", { name: "활동 목록" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+});
