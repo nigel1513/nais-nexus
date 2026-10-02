@@ -402,3 +402,88 @@ def test_preview_cells_are_strings_cut_to_200_chars() -> None:
     assert rows[0][:4] == ["1", "2875.4", "true", "2026-01-01T00:00:00+00:00"]
     assert len(rows[0][4]) == 200
     assert rows[1][0] is None and rows[1][3] is None
+
+
+# ---------------------------------------------------------------- review fixes: NaN, joins, integer bounds
+
+
+def test_nan_never_matches_ne_and_is_not_counted() -> None:
+    table = pa.table({"g": ["a", "a", "a", "a"], "x": [1.0, float("nan"), None, 2.0]})
+    assert col(run([{"type": "filter_rows", "column": "x", "op": "ne", "value": 1}], base=table), "x") == [
+        2.0
+    ]
+    assert col(run([{"type": "filter_rows", "column": "x", "op": "in", "value": [2]}], base=table), "x") == [
+        2.0
+    ]
+    got = run(
+        [
+            {
+                "type": "aggregate",
+                "group_by": ["g"],
+                "metrics": [
+                    {"column": "x", "fn": "count"},
+                    {"column": "x", "fn": "mean"},
+                    {"column": "x", "fn": "max"},
+                ],
+            }
+        ],
+        base=table,
+    )
+    assert got.to_pylist() == [{"g": "a", "x_count": 2, "x_mean": 1.5, "x_max": 2.0}]
+
+
+def test_cast_float_to_int_treats_nan_as_missing() -> None:
+    got = run([{"type": "cast_type", "column": "x", "to": "int"}], base=pa.table({"x": [1.0, float("nan")]}))
+    assert col(got, "x") == [1, None]
+
+
+def test_join_names_agree_between_plan_and_execution() -> None:
+    left = pa.table({"k": [1], "a": ["left"]})
+    right = pa.table({"k": [1], "a": ["right"], "a_right": ["right2"]})
+    step = parse_steps([{"type": "join", "right_input_id": str(RIGHT), "on": ["k"], "how": "inner"}])
+    planned = S.plan(step, {BASE: left.schema, RIGHT: right.schema}, IDS)
+    got = S.apply(step, {BASE: left, RIGHT: right}, IDS, max_rows=10)
+    assert got.column_names == planned.names == ["k", "a", "a_right", "a_right_right"]
+    assert got.to_pylist() == [{"k": 1, "a": "left", "a_right": "right", "a_right_right": "right2"}]
+    clash = pa.table({"k": [1], "a": ["l"], "a_right": ["l2"]})
+    with pytest.raises(S.StepError) as exc:
+        S.plan(step, {BASE: clash.schema, RIGHT: pa.table({"k": [1], "a": ["r"]}).schema}, IDS)
+    assert exc.value.reason == "DUPLICATE_COLUMN"
+
+
+def test_join_keys_take_the_wider_type() -> None:
+    left = pa.table({"k": pa.array([1, 2], pa.int32())})
+    big = 2**40
+    right = pa.table({"k": pa.array([1, big], pa.int64()), "v": ["one", "big"]})
+    step = parse_steps([{"type": "join", "right_input_id": str(RIGHT), "on": ["k"], "how": "left"}])
+    planned = S.plan(step, {BASE: left.schema, RIGHT: right.schema}, IDS)
+    got = S.apply(step, {BASE: left, RIGHT: right}, IDS, max_rows=10)
+    assert planned.field("k").type == got.schema.field("k").type == pa.int64()
+    assert got.sort_by("k").to_pylist() == [{"k": 1, "v": "one"}, {"k": 2, "v": None}]
+
+
+def test_integer_literals_are_bounded_to_int64() -> None:
+    for value in (2**63, -(2**63) - 1):
+        with pytest.raises(ValidationError):
+            parse_steps([{"type": "filter_rows", "column": "cycles", "op": "eq", "value": value}])
+        with pytest.raises(ValidationError):
+            parse_steps([{"type": "fill_missing", "column": "cycles", "value": value}])
+    assert col(
+        run([{"type": "filter_rows", "column": "cycles", "op": "lt", "value": 2**63 - 1}]), "cycles"
+    ) == [
+        1,
+        2,
+        3,
+        4,
+        5,
+    ]
+
+
+def test_integer_sum_overflow_is_a_clear_step_error() -> None:
+    table = pa.table({"g": ["a", "a"], "v": pa.array([2**62, 2**62], pa.int64())})
+    with pytest.raises(S.StepError) as exc:
+        run([{"type": "aggregate", "group_by": ["g"], "metrics": [{"column": "v", "fn": "sum"}]}], base=table)
+    assert exc.value.reason == "STEP_FAILED" and "integer range" in exc.value.message
+    ok = pa.table({"g": ["a", "a"], "v": pa.array([2**61, 2**61], pa.int64())})
+    got = run([{"type": "aggregate", "group_by": ["g"], "metrics": [{"column": "v", "fn": "sum"}]}], base=ok)
+    assert col(got, "v_sum") == [2**62]

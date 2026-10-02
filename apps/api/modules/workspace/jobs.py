@@ -7,6 +7,8 @@ workspace/{project_id}/outputs/{output_id}/result.parquet -> one transaction: DE
 pinned inputs + recipe@version + run) + run SUCCEEDED + workspace.run.succeeded.v1 + workspace.output.created.v1.
 Failures end the run FAILED with a short summary (`CODE: text`, no stack trace, no data values, <= 500 chars) and
 workspace.run.failed.v1. Storage/database outages are retried (3 attempts in all) before failing.
+Sweeper (every 10 min): RUNNING past the time limit + 10 min -> FAILED; QUEUED with no message sent for 1 h -> the
+message is re-sent (duplicates are harmless); QUEUED for 24 h -> FAILED as a last resort.
 No database transaction is held while reading, computing or uploading.
 
 The actor is defined at import time: the platform sets the broker BEFORE importing modules (D-036).
@@ -15,6 +17,7 @@ The actor is defined at import time: the platform sets the broker BEFORE importi
 import hashlib
 import logging
 import tempfile
+import traceback
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -51,7 +54,10 @@ from api.platform.scheduler import Scheduler
 logger = logging.getLogger("nais.workspace")
 QUEUE = "workspace"
 MAX_ATTEMPTS = 3
-STALE_QUEUED_S = 3600
+RESEND_QUEUED_AFTER_S = (
+    3600  # a QUEUED run whose message is older than this is sent again (claims are idempotent)
+)
+ABANDON_QUEUED_AFTER_S = 24 * 3600  # last resort: a run QUEUED this long is failed
 SWEEP_INTERVAL_S = 600.0
 RESULT_NAME = "result.parquet"
 RESULT_MEDIA_TYPE = "application/vnd.apache.parquet"
@@ -122,8 +128,12 @@ def claim(run_id: UUID) -> RowMapping | None:
 
 
 def _requeue(run_id: UUID) -> None:
+    """RUNNING -> QUEUED for an infrastructure retry; the wait is measured afresh from now."""
+    now = clock.now()
     with _session() as session, session.begin():
-        repo.update_run(session, run_id, from_statuses=("RUNNING",), status="QUEUED")
+        repo.update_run(
+            session, run_id, from_statuses=("RUNNING",), status="QUEUED", queued_at=now, last_enqueued_at=now
+        )
 
 
 def _failed_event(session: Session, run: RowMapping) -> None:
@@ -409,9 +419,25 @@ def run_recipe(run_id: UUID) -> str:
             return fail_run(
                 run_id, summary("STORAGE_UNAVAILABLE", f"{type(exc).__name__} after {MAX_ATTEMPTS} attempts")
             )
-        logger.exception("recipe run crashed", extra={"run_id": str(run_id)})
+        # the exception message may quote data values: log its type and frames only
+        logger.error(
+            "recipe run crashed",
+            extra={
+                "run_id": str(run_id),
+                "error_type": type(exc).__name__,
+                "traceback": _frames(exc),
+            },
+        )
         return fail_run(run_id, summary("INTERNAL_ERROR", type(exc).__name__))
     return "SUCCEEDED"
+
+
+def _frames(exc: BaseException) -> str:
+    """Where it failed (file:line in function), without the message or source lines (either may quote data)."""
+    return " <- ".join(
+        f"{Path(f.filename).name}:{f.lineno} in {f.name}"
+        for f in reversed(traceback.extract_tb(exc.__traceback__))
+    )
 
 
 def _retry_when(retries: int, exc: BaseException) -> bool:
@@ -462,10 +488,31 @@ def enqueue_after_commit(session: Session, run_id: UUID) -> None:
 # ---------------------------------------------------------------- sweeper
 
 
-def sweep_stale() -> int:
-    """QUEUED > 1 h or RUNNING > run timeout + 10 min -> FAILED(STALE_RUN) + run.failed event."""
+def resend_waiting() -> int:
+    """Re-send the message of every run QUEUED for over an hour since its last send. A legitimately waiting run
+    (busy single-concurrency queue) loses nothing: a duplicate delivery is SKIPPED by the guarded claim; a lost
+    message (broker restart, failed send after commit) gets its run going again."""
     now = clock.now()
-    queued_before = now - timedelta(seconds=STALE_QUEUED_S)
+    sent_before = now - timedelta(seconds=RESEND_QUEUED_AFTER_S)
+    with _session() as session:
+        ids = repo.waiting_run_ids(session, sent_before=sent_before)
+    resent = 0
+    for run_id in ids:
+        with _session() as session, session.begin():
+            marked = repo.mark_resent(session, run_id, sent_before=sent_before, at=now)
+        if marked:
+            try:
+                run_recipe_actor.send(str(run_id))
+                resent += 1
+            except Exception:
+                logger.error("could not re-send recipe run", extra={"run_id": str(run_id)})
+    return resent
+
+
+def sweep_stale() -> int:
+    """QUEUED > 24 h (last resort) or RUNNING > run timeout + 10 min -> FAILED(STALE_RUN) + run.failed event."""
+    now = clock.now()
+    queued_before = now - timedelta(seconds=ABANDON_QUEUED_AFTER_S)
     running_before = now - timedelta(seconds=_SETTINGS.workspace_run_timeout_seconds, minutes=10)
     with _session() as session:
         ids = repo.stale_run_ids(session, queued_before=queued_before, running_before=running_before)
@@ -490,6 +537,9 @@ def _sweep_job() -> None:
     swept = sweep_stale()
     if swept:
         logger.warning("stale recipe runs failed", extra={"count": swept})
+    resent = resend_waiting()
+    if resent:
+        logger.info("waiting recipe runs re-sent", extra={"count": resent})
 
 
 def register_worker(broker: dramatiq.Broker, scheduler: Scheduler) -> None:

@@ -420,6 +420,7 @@ def list_runs(
 
 
 def stale_run_ids(session: Session, *, queued_before: datetime, running_before: datetime) -> list[UUID]:
+    """Runs to give up on: QUEUED since before queued_before, or RUNNING since before running_before."""
     stmt = select(runs.c.run_id).where(_stale(queued_before, running_before))
     return list(session.execute(stmt).scalars())
 
@@ -446,3 +447,25 @@ def fail_if_stale(
         .returning(runs)
     )
     return session.execute(stmt).mappings().first()
+
+
+def _waiting(sent_before: datetime) -> Any:
+    return (runs.c.status == "QUEUED") & (
+        func.coalesce(runs.c.last_enqueued_at, runs.c.queued_at) < sent_before
+    )
+
+
+def waiting_run_ids(session: Session, *, sent_before: datetime) -> list[UUID]:
+    """QUEUED runs whose message was last sent before sent_before (it may have been lost)."""
+    return list(session.execute(select(runs.c.run_id).where(_waiting(sent_before))).scalars())
+
+
+def mark_resent(session: Session, run_id: UUID, *, sent_before: datetime, at: datetime) -> bool:
+    """Guarded: only a run that is still QUEUED and still waiting is marked (and then re-sent)."""
+    stmt = (
+        update(runs)
+        .where(runs.c.run_id == run_id, _waiting(sent_before))
+        .values(last_enqueued_at=at)
+        .returning(runs.c.run_id)
+    )
+    return session.execute(stmt).first() is not None

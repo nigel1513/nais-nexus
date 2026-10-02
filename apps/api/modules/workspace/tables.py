@@ -179,6 +179,7 @@ recipe_versions = Table(
 
 # One QUEUED/RUNNING run per recipe (partial unique index). started_by_organization_id lets the worker re-check the
 # starter's dataset access without a request context. attempt counts worker claims (infrastructure retries).
+# queued_at is reset when an infrastructure retry puts the run back in the queue.
 runs = Table(
     "runs",
     metadata,
@@ -193,6 +194,9 @@ runs = Table(
     Column("started_at", DateTime(timezone=True)),
     Column("finished_at", DateTime(timezone=True)),
     Column("attempt", Integer, nullable=False, server_default=text("0")),
+    Column(
+        "last_enqueued_at", DateTime(timezone=True)
+    ),  # last message re-send (sweeper / requeue); NULL = queued_at
     Column("input_rows", BigInteger),
     Column("output_rows", BigInteger),
     Column("error", Text),

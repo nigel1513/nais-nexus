@@ -11,6 +11,7 @@ from uuid import UUID
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StrictBool,
@@ -37,7 +38,17 @@ def _distinct(values: list[str]) -> list[str]:
 ColumnName = Annotated[str, StringConstraints(min_length=1, max_length=255), AfterValidator(_no_nul)]
 Columns = Annotated[list[ColumnName], Field(min_length=1, max_length=1000), AfterValidator(_distinct)]
 Text = Annotated[StrictStr, StringConstraints(max_length=1000), AfterValidator(_no_nul)]
-Number = StrictInt | Annotated[StrictFloat, Field(allow_inf_nan=False)]
+
+
+def _not_an_integer(value: object) -> object:
+    if isinstance(value, int) and not isinstance(value, bool):
+        raise ValueError("integers must be within the 64-bit range")  # never silently turned into a float
+    return value
+
+
+Int64 = Annotated[StrictInt, Field(ge=-(2**63), le=2**63 - 1)]
+Float = Annotated[StrictFloat, BeforeValidator(_not_an_integer), Field(allow_inf_nan=False)]
+Number = Int64 | Float
 Scalar = Text | Number | StrictBool
 FilterValue = Scalar | Annotated[list[Text | Number], Field(max_length=1000)] | None
 
@@ -85,8 +96,8 @@ class CastType(_Step):
 class ConvertUnit(_Step):
     type: Literal["convert_unit"]
     column: ColumnName
-    factor: Annotated[StrictFloat | StrictInt, Field(allow_inf_nan=False)]
-    offset: Annotated[StrictFloat | StrictInt, Field(allow_inf_nan=False)]
+    factor: Number
+    offset: Number
     unit_label: Annotated[str, StringConstraints(min_length=1, max_length=32), AfterValidator(_no_nul)]
 
 

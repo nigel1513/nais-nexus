@@ -61,9 +61,11 @@ Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4
     / `steps` without saving.
 - Inputs are read through the catalog's `CatalogReadPort` (`recipes/reader.py`): the version's first VERIFIED
   `.csv`/`.parquet` file by path. CSV is UTF-8, comma-separated, header required; columns are read as text and typed
-  over the rows read (integer → float → boolean → text; missing tokens `""`, NA, N/A, null, NULL, NaN). Date/time
+  over the rows read (canonical spellings only: "007", "+1" and integers beyond int64 stay text; integer → float →
+  boolean → text; missing tokens `""`, NA, N/A, null, NULL, NaN). Date/time
   columns stay text until a `cast_type` step. Parquet keeps its types (dictionaries decoded). Errors never quote file
-  content. Step semantics (`recipes/steps.py`): missing values (and NaN) never match a comparison; aggregate columns
+  content. Step semantics (`recipes/steps.py`): missing values (and NaN) never match a comparison (`ne` included) and are not
+  counted or aggregated; integer literals are limited to int64 (422); integer sums that overflow fail the step; aggregate columns
   are `<column>_<fn>` (`count` counts non-missing values); join collisions get `_right`; group-by/join run
   single-threaded so results are deterministic.
 - Runs (`service/runs.py`, `jobs.py`): `POST .../recipes/{r}/runs` (202), `GET /projects/{p}/runs[/{run}]`.
@@ -78,7 +80,10 @@ Spec: `docs/superpowers/specs/2026-10-02-data-hub-workspace-notes-design.md` §4
     `workspace.output.created.v1`. No transaction is open while reading/computing/uploading.
   - Failures end FAILED with `CODE: summary` (≤ 500 chars, no stack trace, no data values) and
     `workspace.run.failed.v1`. Storage/database outages are retried (3 attempts). `WORKSPACE_RUN_TIMEOUT_SECONDS` is
-    the Dramatiq time limit; the sweeper (every 10 min) fails runs QUEUED > 1 h or RUNNING > timeout + 10 min.
+    the Dramatiq time limit. The sweeper (every 10 min) fails runs RUNNING > timeout + 10 min, re-sends the message of
+    runs QUEUED with no send for 1 h (an infrastructure retry resets `queued_at`; a duplicate delivery is skipped by the
+    guarded claim), and fails runs QUEUED for 24 h as a last resort. Crashes are logged with the exception type and
+    frames only (messages may quote data).
   - The `workspace` queue has its own worker (`WORKSPACE_WORKER_CONCURRENCY`, default 1): a run holds its inputs
     and result in memory, so size the worker container for `WORKSPACE_MAX_ROWS`.
 - Data-Hub (`service/hub.py`, tag `hub`): `GET /hub/overview`, `GET /datasets/{d}/projects`,

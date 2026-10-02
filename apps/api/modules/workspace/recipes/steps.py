@@ -35,6 +35,7 @@ from api.modules.workspace.recipes.model import (
 )
 
 CELL_CHARS = 200
+INT64_LIMIT = float(2**63)
 JOIN_SUFFIX = "_right"
 _OFFSET = r"[T ]\d{2}(:?\d{2})?.*(Z|z|[+-]\d{2}(:?\d{2})?)$"  # a time part followed by a zone
 _CAST_TARGET: dict[str, pa.DataType] = {
@@ -229,6 +230,35 @@ def _plan_aggregate(p: _Planner, s: Aggregate) -> pa.Schema:
     return pa.schema(out)
 
 
+def join_names(left: Sequence[str], right: Sequence[str], keys: Sequence[str]) -> list[str]:
+    """Result names of the joined input's non-key columns (in order): a name already taken gets `_right`.
+    Raises ValueError(name) when even the suffixed name is taken. Shared by planning and execution."""
+    taken = set(left)
+    names: list[str] = []
+    for n in right:
+        if n in keys:
+            continue
+        name = n if n not in taken else f"{n}{JOIN_SUFFIX}"
+        if name in taken:
+            raise ValueError(name)
+        taken.add(name)
+        names.append(name)
+    return names
+
+
+def join_key_type(left: pa.DataType, right: pa.DataType) -> pa.DataType:
+    """The type both key columns are cast to: the wider integer / the large string (same family planned)."""
+    if left == right:
+        return left
+    if pa.types.is_integer(left) and pa.types.is_integer(right):
+        if pa.types.is_signed_integer(left) == pa.types.is_signed_integer(right):
+            return left if left.bit_width >= right.bit_width else right
+        return pa.int64()
+    if pa.types.is_large_string(left) or pa.types.is_large_string(right):
+        return pa.large_string()
+    return left
+
+
 def _plan_join(
     p: _Planner, s: Join, schemas: Mapping[UUID, pa.Schema], input_ids: Sequence[UUID]
 ) -> pa.Schema:
@@ -247,16 +277,19 @@ def _plan_join(
                 f"key '{key}' is {_LABEL[lf]} on the left and {_LABEL[rf]} in the joined input; cast one first.",
                 key,
             )
-    out = list(p.schema)
-    taken = set(p.schema.names)
-    for f in right:
-        if f.name in s.on:
-            continue
-        name = f.name if f.name not in taken else f"{f.name}{JOIN_SUFFIX}"
-        if name in taken:
-            raise p.fail("DUPLICATE_COLUMN", f"the result column '{name}' would appear twice.", name)
-        taken.add(name)
-        out.append(pa.field(name, f.type, metadata=f.metadata))
+    try:
+        names = join_names(p.schema.names, right.names, s.on)
+    except ValueError as exc:
+        name = str(exc)
+        raise p.fail("DUPLICATE_COLUMN", f"the result column '{name}' would appear twice.", name) from exc
+    out = [
+        pa.field(f.name, join_key_type(f.type, right.field(f.name).type), metadata=f.metadata)
+        if f.name in s.on
+        else f
+        for f in p.schema
+    ]
+    payload = [f for f in right if f.name not in s.on]
+    out += [pa.field(n, f.type, metadata=f.metadata) for n, f in zip(names, payload, strict=True)]
     return pa.schema(out)
 
 
@@ -366,6 +399,7 @@ def _filter(table: pa.Table, s: FilterRows) -> pa.Table:
         return table.filter(pc.invert(_missing(col)))
     if s.op == "contains":
         return table.filter(pc.match_substring(col, s.value))
+    present = pc.invert(_missing(col))
     col = _numeric(col)
     if s.op == "in":
         values = s.value if isinstance(s.value, list) else [s.value]
@@ -373,7 +407,7 @@ def _filter(table: pa.Table, s: FilterRows) -> pa.Table:
             col = pc.cast(col, pa.float64()) if family(col.type) in _NUMERIC else col
         scalars = [_literal(v, col.type) for v in values]
         value_set = pa.array([x.cast(col.type).as_py() for x in scalars], col.type)
-        return table.filter(pc.is_in(col, value_set=value_set))
+        return table.filter(pc.and_(pc.is_in(col, value_set=value_set), present))
     fn = {
         "eq": pc.equal,
         "ne": pc.not_equal,
@@ -382,7 +416,7 @@ def _filter(table: pa.Table, s: FilterRows) -> pa.Table:
         "gt": pc.greater,
         "ge": pc.greater_equal,
     }[s.op]
-    return table.filter(fn(col, _literal(s.value, col.type)))
+    return table.filter(pc.and_(fn(col, _literal(s.value, col.type)), present))
 
 
 def _replace(
@@ -411,6 +445,8 @@ def _to_datetime(col: pa.ChunkedArray) -> pa.ChunkedArray:
 def _cast(col: pa.ChunkedArray, to: str) -> pa.ChunkedArray:
     if to == "datetime":
         return _to_datetime(col)
+    if pa.types.is_floating(col.type) and to in ("int", "bool"):
+        col = _nan_to_null(col)
     if pa.types.is_string(col.type) or pa.types.is_large_string(col.type):
         col = pc.utf8_trim_whitespace(col)
         if to == "bool":
@@ -421,12 +457,28 @@ def _cast(col: pa.ChunkedArray, to: str) -> pa.ChunkedArray:
 def _aggregate(table: pa.Table, s: Aggregate) -> pa.Table:
     source = table.select(list(dict.fromkeys([*s.group_by, *(m.column for m in s.metrics)])))
     for name in source.column_names:
-        if pa.types.is_decimal(source.schema.field(name).type):
+        dtype = source.schema.field(name).type
+        if pa.types.is_decimal(dtype):
             source = _replace(source, name, _numeric(source.column(name)))
+        elif pa.types.is_floating(dtype):  # NaN is missing: not counted, not summed, not compared
+            source = _replace(source, name, _nan_to_null(source.column(name)))
+    checks = [
+        m.column
+        for m in s.metrics
+        if m.fn == "sum" and family(source.schema.field(m.column).type) == "integer"
+    ]
+    for name in dict.fromkeys(checks):  # float shadow sums detect integer overflow (pyarrow sums wrap)
+        shadow = pc.cast(source.column(name), pa.float64(), safe=False)  # approximate is enough here
+        source = source.append_column(f"\x00{name}", shadow)
     pyarrow_fn = {"count": "count", "sum": "sum", "mean": "mean", "min": "min", "max": "max"}
     grouped = source.group_by(list(s.group_by), use_threads=False).aggregate(
         [(m.column, pyarrow_fn[m.fn]) for m in s.metrics]
+        + [(f"\x00{n}", "sum") for n in dict.fromkeys(checks)]
     )
+    for name in dict.fromkeys(checks):
+        largest = pc.max(pc.abs(grouped.column(f"\x00{name}_sum"))).as_py()
+        if largest is not None and largest >= INT64_LIMIT:
+            raise OverflowError(name)
     names = [*s.group_by, *(f"{m.column}_{m.fn}" for m in s.metrics)]
     out = grouped.select(names)
     for m in s.metrics:  # an integer column's sum stays integer, everything else as planned
@@ -435,6 +487,10 @@ def _aggregate(table: pa.Table, s: Aggregate) -> pa.Table:
         if m.fn == "sum" and family(table.schema.field(m.column).type) == "integer":
             out = _replace(out, f"{m.column}_sum", pc.cast(out.column(f"{m.column}_sum"), pa.int64()))
     return out
+
+
+def _nan_to_null(col: pa.ChunkedArray) -> pa.ChunkedArray:
+    return pc.if_else(pc.is_nan(col), pa.scalar(None, col.type), col)
 
 
 def _join_rows(left: pa.Table, right: pa.Table, keys: list[str], how: str) -> int:
@@ -460,18 +516,20 @@ def _join(
     table: pa.Table, right: pa.Table, s: Join, max_rows: int, fail: Callable[[str, str], StepError]
 ) -> pa.Table:
     keys = list(s.on)
-    for key in keys:  # same family was planned; align integer/string widths to the left side
+    for key in keys:  # same family was planned; both sides take the wider type
         lt, rt = table.schema.field(key).type, right.schema.field(key).type
-        if lt != rt:
-            right = _replace(right, key, pc.cast(right.column(key), lt))
+        common = join_key_type(lt, rt)
+        if lt != common:
+            table = _replace(table, key, pc.cast(table.column(key), common), table.schema.field(key).metadata)
+        if rt != common:
+            right = _replace(right, key, pc.cast(right.column(key), common))
     expected = _join_rows(table, right, keys, s.how)
     if expected > max_rows:
         raise fail(
             "TOO_MANY_ROWS", f"the join would produce {expected:,} rows, more than the limit of {max_rows:,}."
         )
-    taken = set(table.column_names)
-    renames = [(f"{n}{JOIN_SUFFIX}" if n in taken and n not in keys else n) for n in right.column_names]
-    right = right.rename_columns(renames)
+    payload = iter(join_names(table.column_names, right.column_names, keys))  # planned: no ValueError
+    right = right.rename_columns([n if n in keys else next(payload) for n in right.column_names])
     joined = table.join(
         right,
         keys,
@@ -520,7 +578,13 @@ def _apply_step(
             converted = pc.add(pc.multiply(col, float(s.factor)), float(s.offset))
             return _replace(table, s.column, converted, {"unit": s.unit_label})
         case Aggregate():
-            return _aggregate(table, s)
+            try:
+                return _aggregate(table, s)
+            except OverflowError as exc:
+                raise fail(
+                    "STEP_FAILED",
+                    f"the sum of column '{exc.args[0]}' is outside the integer range; cast it to float.",
+                ) from exc
         case Join():
             return _join(table, tables[s.right_input_id], s, max_rows, fail)
         case Sort():

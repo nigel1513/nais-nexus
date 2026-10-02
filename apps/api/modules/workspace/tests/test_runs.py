@@ -280,11 +280,14 @@ def test_storage_outage_is_retried_then_fails(
 ) -> None:
     _, run_id = started(api, s)
     world.reader.fail_with = StorageUnavailable("down")
+    old = clock.now() - timedelta(hours=3)
+    sql(db, "UPDATE workspace.runs SET queued_at = :at", at=old)
     for attempt in (1, 2):
         with pytest.raises(jobs.RetryableInfraError):
             jobs.run_recipe(UUID(run_id))
-        [row] = sql(db, "SELECT status, attempt FROM workspace.runs")
-        assert row == {"status": "QUEUED", "attempt": attempt}
+        [row] = sql(db, "SELECT status, attempt, queued_at, last_enqueued_at FROM workspace.runs")
+        assert (row["status"], row["attempt"]) == ("QUEUED", attempt)
+        assert row["queued_at"] > old and row["last_enqueued_at"] == row["queued_at"]  # waits afresh
     assert jobs.run_recipe(UUID(run_id)) == "FAILED"
     assert failed(api, s, run_id) == "STORAGE_UNAVAILABLE: StorageUnavailable after 3 attempts"
 
@@ -302,7 +305,7 @@ def test_upload_outage_is_retried(api: WorkspaceApi, world: World, s: Recipes, d
 
 
 def test_unexpected_errors_fail_with_the_type_only(
-    api: WorkspaceApi, s: Recipes, monkeypatch: pytest.MonkeyPatch
+    api: WorkspaceApi, s: Recipes, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     _, run_id = started(api, s)
 
@@ -310,8 +313,13 @@ def test_unexpected_errors_fail_with_the_type_only(
         raise ValueError("secret cell value C-01")
 
     monkeypatch.setattr(jobs.steps, "apply", boom)
-    assert jobs.run_recipe(UUID(run_id)) == "FAILED"
+    with caplog.at_level("ERROR", logger="nais.workspace"):
+        assert jobs.run_recipe(UUID(run_id)) == "FAILED"
     assert failed(api, s, run_id) == "INTERNAL_ERROR: ValueError"
+    [record] = [r for r in caplog.records if r.getMessage() == "recipe run crashed"]
+    assert record.error_type == "ValueError" and "in boom" in record.traceback  # type: ignore[attr-defined]
+    logged = " ".join(f"{r.getMessage()} {r.__dict__} {r.exc_text or ''}" for r in caplog.records)
+    assert "secret" not in logged and record.exc_info is None
 
 
 def test_input_without_a_table_at_run_time(api: WorkspaceApi, world: World, s: Recipes) -> None:
@@ -365,17 +373,89 @@ def test_list_runs_newest_first_with_filters(api: WorkspaceApi, s: Recipes) -> N
 # ---------------------------------------------------------------- sweeper / worker registration
 
 
-def test_sweeper_fails_stale_runs(api: WorkspaceApi, s: Recipes, db: PgUrls) -> None:
-    _, stale = started(api, s)
+def test_sweeper_resends_long_waiting_runs_instead_of_failing_them(
+    api: WorkspaceApi, s: Recipes, db: PgUrls
+) -> None:
+    _, waiting = started(api, s)
     _, fresh = started(api, s, name="새 레시피")
-    old = clock.now() - timedelta(hours=2)
+    STUB = jobs.run_recipe_actor.broker
+    assert isinstance(STUB, StubBroker)
+    STUB.flush_all()
+    two_hours_ago = clock.now() - timedelta(hours=2)
+    sql(db, "UPDATE workspace.runs SET queued_at = :at WHERE run_id = :id", at=two_hours_ago, id=waiting)
+    assert jobs.sweep_stale() == 0  # a busy queue is not a reason to fail
+    assert jobs.resend_waiting() == 1
+    assert [m["args"] for m in queued()] == [[waiting]]
+    assert jobs.resend_waiting() == 0  # not again within the hour
+    [row] = sql(db, "SELECT status, last_enqueued_at FROM workspace.runs WHERE run_id = :id", id=waiting)
+    assert row["status"] == "QUEUED" and row["last_enqueued_at"] is not None
+    assert jobs.run_recipe(UUID(waiting)) == "SUCCEEDED"
+    assert jobs.run_recipe(UUID(waiting)) == "SKIPPED"  # the original message, delivered late
+    assert api.get("a.researcher", f"{s.base}/runs/{fresh}").json()["status"] == "QUEUED"
+
+
+def test_sweeper_fails_runs_queued_for_a_day(api: WorkspaceApi, s: Recipes, db: PgUrls) -> None:
+    _, stale = started(api, s)
+    old = clock.now() - timedelta(hours=25)
     sql(db, "UPDATE workspace.runs SET queued_at = :at WHERE run_id = :id", at=old, id=stale)
     assert jobs.sweep_stale() == 1
     assert failed(api, s, stale) == "STALE_RUN: no progress within the allowed time"
-    assert api.get("a.researcher", f"{s.base}/runs/{fresh}").json()["status"] == "QUEUED"
     [event] = events(db, "workspace.run.failed.v1")
     assert_valid_event(event)
     assert jobs.run_recipe(UUID(stale)) == "SKIPPED"
+
+
+def test_sweeper_fails_runs_stuck_in_running(api: WorkspaceApi, s: Recipes, db: PgUrls) -> None:
+    _, stuck = started(api, s)
+    _, busy = started(api, s, name="진행 중")
+    timeout = jobs._SETTINGS.workspace_run_timeout_seconds
+    long_ago = clock.now() - timedelta(seconds=timeout, minutes=11)
+    recently = clock.now() - timedelta(seconds=timeout, minutes=5)
+    for run_id, at in ((stuck, long_ago), (busy, recently)):
+        sql(
+            db,
+            "UPDATE workspace.runs SET status = 'RUNNING', started_at = :at, attempt = 1 WHERE run_id = :id",
+            at=at,
+            id=run_id,
+        )
+    assert jobs.sweep_stale() == 1
+    assert failed(api, s, stuck).startswith("STALE_RUN")
+    assert api.get("a.researcher", f"{s.base}/runs/{busy}").json()["status"] == "RUNNING"
+
+
+def test_rolled_back_start_sends_nothing(api: WorkspaceApi, s: Recipes, db: PgUrls) -> None:
+    from api.platform.db import session_factory
+
+    with session_factory(db.app)() as session:
+        session.begin()
+        jobs.enqueue_after_commit(session, new_id())
+        session.rollback()
+    assert queued() == []
+    with session_factory(db.app)() as session, session.begin():
+        jobs.enqueue_after_commit(session, run := new_id())
+    assert [m["args"] for m in queued()] == [[str(run)]]
+
+
+def test_a_run_swept_during_execution_keeps_no_result(
+    api: WorkspaceApi, world: World, s: Recipes, db: PgUrls
+) -> None:
+    _, run_id = started(api, s)
+    upload = world.storage.put_file
+
+    def swept_meanwhile(*args: Any) -> None:
+        upload(*args)
+        sql(
+            db,
+            "UPDATE workspace.runs SET status = 'FAILED', finished_at = now(), error = 'STALE_RUN: x' "
+            "WHERE run_id = :id",
+            id=run_id,
+        )
+
+    world.storage.put_file = swept_meanwhile  # type: ignore[method-assign]
+    assert jobs.run_recipe(UUID(run_id)) == "SKIPPED"
+    assert sql(db, "SELECT count(*) AS n FROM workspace.outputs") == [{"n": 0}]
+    assert events(db, "workspace.run.succeeded.v1") == []
+    assert failed(api, s, run_id) == "STALE_RUN: x"
 
 
 def test_worker_registration() -> None:

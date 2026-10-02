@@ -144,3 +144,27 @@ def test_schema_cache_reads_a_file_once() -> None:
     assert cache.schema(port, ref) == first
     assert len(port.opened) == opened
     assert first.field("a").type == pa.int64()
+
+
+def test_csv_typing_keeps_identifiers_as_text() -> None:
+    port = FakeReader()
+    body = (
+        b"zip,code,big,plus,neg,zero,dec,lead_dec,flag\n"
+        b"007,01234,12345678901234567890,+5,-3,0,1.50,00.5,TRUE\n"
+        b"10,5,1,6,4,0,0.5,1.0,false\n"
+    )
+    table = R.read_table(port, port.add("ids.csv", body), max_rows=10, truncate=False).table
+    types = {f.name: f.type for f in table.schema}
+    assert types == {
+        "zip": pa.string(),
+        "code": pa.string(),
+        "big": pa.string(),  # beyond int64: never a float
+        "plus": pa.string(),
+        "neg": pa.int64(),
+        "zero": pa.int64(),
+        "dec": pa.float64(),
+        "lead_dec": pa.string(),
+        "flag": pa.bool_(),
+    }
+    assert table.column("zip").to_pylist() == ["007", "10"]
+    assert table.column("big").to_pylist() == ["12345678901234567890", "1"]

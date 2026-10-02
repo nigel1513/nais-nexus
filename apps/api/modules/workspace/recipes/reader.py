@@ -5,7 +5,8 @@ Primary file: the first VERIFIED `.csv` / `.parquet` file of the version by path
 ascending). A version without one is not usable in a recipe (INPUT_NOT_TABULAR).
 
 CSV: UTF-8 (BOM allowed), comma-delimited, header row required, quoted newlines allowed. Every column is read as
-text, then typed over the rows read: integer, else float, else boolean (true/false/1/0), else text. Missing
+text, then typed over the rows read: integer, else float, else boolean (true/false), else text. Only canonical
+spellings count: "007", "+1" and integers beyond int64 stay text. Missing
 tokens: "", NA, N/A, null, NULL, NaN (same as readiness). Columns with no values stay text. Date/time columns stay
 text until a cast_type step. Parquet: the file's own types; dictionary columns are decoded.
 
@@ -14,7 +15,6 @@ read is capped and checks the caller's deadline, a file over `max_bytes` is refu
 Errors never quote file content (pyarrow's messages do, so they are replaced).
 """
 
-import contextlib
 import csv
 import io
 import threading
@@ -198,22 +198,38 @@ def _csv_problem(exc: BaseException) -> str:
     return "The CSV file cannot be parsed."
 
 
+# canonical number spellings only: no "+", no leading zeros (but "0" and "0.5"), so "007" / "+1" / zip codes and
+# other identifiers stay text and every typed value prints back as it was written
+_INTEGER = r"^(0|-?[1-9][0-9]*)$"
+_DECIMAL = r"^-?(0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?$|^-?\.[0-9]+$"
+_BOOLEAN = r"^(?i:true|false)$"
+
+
+def _all_match(values: pa.ChunkedArray, pattern: str) -> bool:
+    return bool(pc.all(pc.match_substring_regex(values, pattern)).as_py())
+
+
 def _typed(table: pa.Table) -> pa.Table:
-    """Text columns -> integer / float / boolean when every value read converts; otherwise text."""
+    """Text columns -> integer / float / boolean when every value read is a canonical spelling of one;
+    otherwise text. An integer column that overflows int64 stays text (never float: identifiers would lose digits)."""
     for i, name in enumerate(table.column_names):
         col = table.column(i)
         if col.null_count == len(col):
             continue
         trimmed = pc.utf8_trim_whitespace(col)
-        for target in (pa.int64(), pa.float64()):
-            try:
-                table = table.set_column(i, name, pc.cast(trimmed, target))
-                break
-            except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
-                continue
-        else:
-            with contextlib.suppress(pa.ArrowInvalid, pa.ArrowNotImplementedError):
-                table = table.set_column(i, name, pc.cast(pc.utf8_lower(trimmed), pa.bool_()))
+        typed: pa.ChunkedArray | None = None
+        try:
+            if _all_match(trimmed, _INTEGER):
+                typed = pc.cast(trimmed, pa.int64())
+            elif _all_match(trimmed, _DECIMAL):
+                floats = pc.cast(trimmed, pa.float64())
+                typed = floats if bool(pc.all(pc.is_finite(floats)).as_py()) else None
+            elif _all_match(trimmed, _BOOLEAN):
+                typed = pc.cast(pc.utf8_lower(trimmed), pa.bool_())
+        except (pa.ArrowInvalid, pa.ArrowNotImplementedError):
+            typed = None  # e.g. integer overflow: keep the text
+        if typed is not None:
+            table = table.set_column(i, name, typed)
     return table
 
 

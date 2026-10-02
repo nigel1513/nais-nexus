@@ -147,6 +147,8 @@ def test_unreadable_input_and_storage_outage(api: WorkspaceApi, world: World, s:
         {"steps": [{"type": "limit", "n": 0}]},
         {"steps": [{"type": "explode"}]},
         {"steps": [{"type": "limit", "n": 1}] * 51},
+        {"steps": [{"type": "filter_rows", "column": "temperature_c", "op": "eq", "value": 2**63}]},
+        {"steps": [{"type": "fill_missing", "column": "temperature_c", "value": -(2**63) - 1}]},
     ],
 )
 def test_request_shape(api: WorkspaceApi, s: Recipes, overrides: dict[str, Any]) -> None:
