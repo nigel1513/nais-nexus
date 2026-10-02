@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, configure, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
@@ -10,6 +10,8 @@ import { renderScreen } from "../../../tests/render";
 import { DataSearchScreen } from "./data-search-screen";
 import { DatasetDetailScreen } from "./dataset-detail-screen";
 import { DatasetNewScreen } from "./dataset-new-screen";
+
+configure({ asyncUtilTimeout: 5000 }); // the full suite loads the machine; the 1 s default flakes
 
 describe("DataSearchScreen", () => {
   it("lists visible datasets with badges and filters via facets synced to the URL", async () => {

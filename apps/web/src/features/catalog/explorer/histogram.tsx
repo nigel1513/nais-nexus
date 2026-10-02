@@ -1,22 +1,20 @@
 "use client";
+import { MiniHistogram } from "@nais/ui";
 import { useTranslations } from "next-intl";
 import type { ColumnDistribution } from "@/shared/api/types";
+import { formatStat } from "./format-stat";
 
-const W = 240;
-const H = 80;
-
+/** Column distribution as a MiniHistogram (chart tokens, hover shows range · count) plus a screen-reader table. */
 export function Histogram({ name, min, max, bins }: { name: string; min: number; max: number; bins: NonNullable<ColumnDistribution["histogram"]> }) {
   const t = useTranslations();
-  const top = Math.max(1, ...bins.map((b) => b.count));
-  const bw = W / Math.max(1, bins.length);
   return (
     <div>
-      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label={t("data.explorer.histogramLabel", { name, min, max })} className="max-w-full text-primary">
-        {bins.map((b, i) => {
-          const h = (b.count / top) * (H - 2);
-          return <rect key={i} x={i * bw + 0.5} y={H - h} width={Math.max(0, bw - 1)} height={h} fill="currentColor" />;
-        })}
-      </svg>
+      <MiniHistogram
+        height={48}
+        label={t("data.explorer.histogramLabel", { name, min: formatStat(min), max: formatStat(max) })}
+        bins={bins.map((b) => b.count)}
+        labels={bins.map((b) => `${formatStat(b.lower)}–${formatStat(b.upper)}`)}
+      />
       <table className="sr-only">
         <tbody>
           {bins.map((b, i) => (

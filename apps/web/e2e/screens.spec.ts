@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 // Screenshot harness for the UI redesign (spec §8). SHOTS_DIR lets a worktree write into the main checkout.
 // Run: corepack pnpm --dir apps/web exec playwright test e2e/screens.spec.ts --project=chromium
 const OUT = process.env.SHOTS_DIR ?? "../../.superpowers/sdd/2026-10-01-ui-redesign/shots";
-const USERS = { steward: "00000000-0000-7000-8000-000000000b03", researcher: "00000000-0000-7000-8000-000000000a02", admin: "00000000-0000-7000-8000-000000000101" };
+const USERS = { gated: "00000000-0000-7000-8000-000000000a01", steward: "00000000-0000-7000-8000-000000000b03", researcher: "00000000-0000-7000-8000-000000000a02", admin: "00000000-0000-7000-8000-000000000101" };
 const DATASET_BATTERY = "00000000-0000-7000-8000-000000002001";
 
 type Size = readonly [number, number];
@@ -88,6 +88,26 @@ test.describe("screens", () => {
     await page.getByRole("button", { name: /^필터/ }).click();
     await expect(page.getByRole("dialog", { name: "필터" })).toBeVisible();
     await shootOne(page, "task4-data-search-filters", 390, "light");
+  });
+
+  test("task5 data card (steward, gated researcher) and explorer column view", async ({ page, baseURL }) => {
+    await as(page, "steward", baseURL!);
+    await page.goto(`/commons/data/${DATASET_BATTERY}`);
+    await expect(page.getByRole("heading", { level: 1, name: "Battery Cycling Measurements" })).toBeVisible();
+    await expect(page.getByRole("img", { name: /분포/ }).first()).toBeVisible();
+    await shoot(page, "task5-data-card-steward");
+
+    await setup(page, [1440, 900], "light");
+    await page.getByText("Column", { exact: true }).click();
+    await expect(page.getByRole("table", { name: /열 요약/ })).toBeVisible();
+    await shoot(page, "task5-data-card-explorer-column", [[1440, 900]]);
+
+    await page.context().clearCookies();
+    await as(page, "gated", baseURL!);
+    await setup(page, [1440, 900], "light");
+    await page.goto(`/commons/data/${DATASET_BATTERY}`);
+    await expect(page.getByText("접근 승인 후 미리보기 가능")).toBeVisible();
+    await shoot(page, "task5-data-card-researcher-gated");
   });
 
   test("shell overlays: ⌘K, notifications, user menu, collapsed rail, phone sheet", async ({ page, baseURL }) => {
