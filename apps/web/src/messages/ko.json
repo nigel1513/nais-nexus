@@ -2239,6 +2239,7 @@
       "overview": "개요",
       "data": "데이터",
       "recipes": "변환",
+      "notebook": "노트북",
       "outputs": "산출물",
       "notes": "연구노트",
       "discussion": "토론",
@@ -2751,7 +2752,16 @@
       "unavailableHint": "잠시 후 다시 시도하세요. 계속되면 관리자에게 알려 주세요.",
       "archived": "보관된 프로젝트는 노트북을 열 수 없습니다"
     },
-    "dismiss": "알림 닫기",
+    "retry": "다시 시도",
+    "tab": {
+      "title": "JupyterLab",
+      "hint": "이 프로젝트의 내 폴더입니다. 여기에 저장한 노트북으로 그날 연구노트의 AI 초안을 만듭니다.",
+      "preparing": "노트북 폴더를 준비하고 있습니다",
+      "preparingHint": "입력 데이터를 복사하는 동안 20초까지 걸릴 수 있습니다.",
+      "frame": "{project} JupyterLab",
+      "expand": "넓게 보기",
+      "collapse": "원래 크기로"
+    },
     "todayHint": "오늘 연구노트를 열면 표시됩니다"
   }
 }

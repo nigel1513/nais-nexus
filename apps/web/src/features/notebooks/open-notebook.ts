@@ -1,15 +1,16 @@
 import type { DatasetFile, DatasetVersion, Project, Schemas } from "@/shared/api/types";
 
 /**
- * "노트북 열기" (M07-lite, D-049): prepares the caller's folder of a project in the one shared JupyterLab and sends the
- * browser there. Runs on the web server only (the Jupyter token never reaches a client bundle):
+ * "노트북 열기" (M07-lite, D-049): prepares the caller's folder of a project in the one shared JupyterLab and answers
+ * where it is. Runs on the web server only (the Jupyter token is in no client bundle):
  *   1. the caller (getMe) must be a member of the project (getProject with the caller's own session);
  *   2. `work/<user_id>/<project_id>/` and its `data/` exist (Jupyter contents API, created when missing);
  *   3. each pinned input's primary table (skip "_" files, largest VERIFIED csv/parquet) is copied to `data/` when its
  *      access level is PUBLIC or INTERNAL and it is ≤ 50 MiB; an unchanged file (same size) is not uploaded again;
  *   4. README.md (project name, copied and skipped inputs, in Korean) is rewritten;
- *   5. the answer is a redirect to `/notebooks/lab/tree/work/<u>/<p>?token=…` (Jupyter turns the token into a cookie).
- * The whole copy shares one 20 s budget: inputs it does not reach are listed as "복사 중 건너뜀" and the redirect goes ahead.
+ *   5. the answer is `/notebooks/lab/tree/work/<u>/<p>?token=…` (Jupyter turns the token into a cookie): the project's
+ *      노트북 tab shows it in a frame inside the portal (notebook-tab.tsx).
+ * The whole copy shares one 20 s budget: inputs it does not reach are listed as "복사 중 건너뜀" and the folder still opens.
  * Path segments are canonical UUIDs only (validated before any path is built).
  */
 
@@ -278,19 +279,3 @@ export function readmeText(projectName: string, files: string[], skipped: Skippe
   return lines.join("\n");
 }
 
-/** Where an error goes back to: the page the button was on (its /commons path from Referer), else the notebooks screen. */
-export function errorLocation(referer: string | null, error: NotebookError): string {
-  let back = "/commons/notebooks";
-  if (referer) {
-    try {
-      // Only the path is kept (the Location stays relative, so another origin's Referer cannot redirect elsewhere).
-      const ref = new URL(referer);
-      if (ref.pathname === "/commons" || ref.pathname.startsWith("/commons/")) back = `${ref.pathname}${ref.search}`;
-    } catch {
-      /* malformed Referer */
-    }
-  }
-  const url = new URL(back, "http://x");
-  url.searchParams.set("notebook_error", error);
-  return `${url.pathname}${url.search}`;
-}

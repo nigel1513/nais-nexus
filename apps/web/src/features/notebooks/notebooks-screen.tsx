@@ -13,13 +13,13 @@ import { useMeData } from "@/shared/hooks/use-me";
 import { ScreenTitle } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 import { PanelHead } from "@/shared/ui/work-hero";
-import { NotebookErrorAlert, OpenNotebookLink } from "./notebook-link";
+import { OpenNotebookLink } from "./notebook-link";
 
 /** Today in Asia/Seoul (the research-note day). */
 const seoulToday = () => new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
 
 /**
- * /commons/notebooks (M07-lite): my ACTIVE projects, each with "노트북 열기" into the shared JupyterLab, and — where today's
+ * /commons/notebooks (M07-lite): my ACTIVE projects, each with "노트북 열기" to its 노트북 tab (the shared JupyterLab), and — where today's
  * research note exists — how many notebooks I saved today (the note's draft_source_count; hidden otherwise).
  */
 export function NotebooksScreen() {
@@ -40,7 +40,6 @@ export function NotebooksScreen() {
     <>
       <ScreenTitle context={[t("notebooks.context"), me.organization.name]} title={t("notebooks.title")} description={t("notebooks.description")} />
       <div className="flex flex-col gap-5">
-        <NotebookErrorAlert />
         <section aria-labelledby={headingId} className="flex flex-col gap-3">
           <PanelHead id={headingId} crumb={t("notebooks.listCrumb")} title={t("notebooks.list")} count={projects.data ? rows.length : undefined} />
           <p className="max-w-3xl text-small text-fg-muted">{t("notebooks.hint")}</p>

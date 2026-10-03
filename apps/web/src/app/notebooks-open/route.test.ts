@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../tests/msw";
 import { getDb } from "@/mocks/db";
 import { PROJECT, USER } from "@/mocks/fixtures";
-import { GET } from "./route";
+import { GET, POST } from "./route";
 
 const JUPYTER = "http://notebook.test/notebooks";
 const TOKEN = "jupyter-secret";
@@ -36,27 +36,33 @@ function fakeJupyter() {
   return { tree, puts };
 }
 
-const open = (project: string | null, { user = USER.aResearcher as string | null, referer }: { user?: string | null; referer?: string } = {}) =>
-  GET(
+const open = (project: string | null, { user = USER.aResearcher as string | null }: { user?: string | null } = {}) =>
+  POST(
     new Request(`http://localhost:3000/notebooks-open${project === null ? "" : `?project=${project}`}`, {
-      headers: { ...(user ? { cookie: `nais_mock_user=${user}` } : {}), ...(referer ? { referer } : {}) },
+      method: "POST",
+      headers: user ? { cookie: `nais_mock_user=${user}` } : {},
     }),
   );
+/** Status and JSON body of an answer. */
+const answer = async (res: Promise<Response>) => {
+  const r = await res;
+  return [r.status, await r.json()];
+};
 
 const folder = `work/${USER.aResearcher}/${PROJECT.seed}`;
 
-describe("GET /notebooks-open (mock mode)", () => {
+describe("POST /notebooks-open (mock mode)", () => {
   beforeEach(() => {
     vi.stubEnv("NAIS_JUPYTER_URL", JUPYTER);
     vi.stubEnv("NAIS_JUPYTER_TOKEN", TOKEN);
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("creates the folder, copies the PUBLIC input's primary table, writes README.md and redirects into JupyterLab", async () => {
+  it("creates the folder, copies the PUBLIC input's primary table, writes README.md and answers the JupyterLab address", async () => {
     const { tree } = fakeJupyter();
     const res = await open(PROJECT.seed);
-    expect(res.status).toBe(302);
-    expect(res.headers.get("location")).toBe(`/notebooks/lab/tree/${folder}?token=${TOKEN}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ location: `/notebooks/lab/tree/${folder}?token=${TOKEN}` });
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(tree.get(`work/${USER.aResearcher}`)?.type).toBe("directory");
     expect(tree.get(`${folder}/data`)?.type).toBe("directory");
@@ -78,40 +84,46 @@ describe("GET /notebooks-open (mock mode)", () => {
     const first = puts.filter((p) => p.startsWith(`${folder}/data`)).length;
     expect(first).toBe(2); // the data/ folder and one file
     puts.length = 0;
-    expect((await open(PROJECT.seed)).status).toBe(302);
+    expect((await open(PROJECT.seed)).status).toBe(200);
     expect(puts).toEqual([`${folder}/README.md`]);
   });
 
-  it("refuses non-UUID projects and non-members (forbidden), back to the calling page", async () => {
+  it("refuses non-UUID projects and non-members with 403 forbidden", async () => {
     fakeJupyter();
-    expect((await open("../../etc")).headers.get("location")).toBe("/commons/notebooks?notebook_error=forbidden");
-    expect((await open(null)).headers.get("location")).toBe("/commons/notebooks?notebook_error=forbidden");
-    const outsider = await open(PROJECT.seed, { user: USER.aSteward, referer: `http://localhost:3000/commons/projects/${PROJECT.seed}?x=1&notebook_error=unavailable` });
-    expect(outsider.headers.get("location")).toBe(`/commons/projects/${PROJECT.seed}?x=1&notebook_error=forbidden`);
-    // A Referer outside /commons (or another origin) is never followed.
-    expect((await open(PROJECT.seed, { user: USER.aSteward, referer: "http://evil.test/phish" })).headers.get("location")).toBe("/commons/notebooks?notebook_error=forbidden");
+    expect(await answer(open("../../etc"))).toEqual([403, { error: "forbidden" }]);
+    expect(await answer(open(null))).toEqual([403, { error: "forbidden" }]);
+    expect(await answer(open(PROJECT.seed, { user: USER.aSteward }))).toEqual([403, { error: "forbidden" }]);
   });
 
-  it("refuses an archived project with notebook_error=archived", async () => {
+  it("refuses an archived project with 409 archived", async () => {
     fakeJupyter();
     getDb().projects.find((p) => p.project_id === PROJECT.seed)!.status = "ARCHIVED";
-    expect((await open(PROJECT.seed)).headers.get("location")).toBe("/commons/notebooks?notebook_error=archived");
+    expect(await answer(open(PROJECT.seed))).toEqual([409, { error: "archived" }]);
   });
 
-  it("sends a caller without a session to the notebooks screen (which asks for a login)", async () => {
+  it("answers 401 to a caller without a session", async () => {
     fakeJupyter();
-    expect((await open(PROJECT.seed, { user: null })).headers.get("location")).toBe("/commons/notebooks");
+    expect(await answer(open(PROJECT.seed, { user: null }))).toEqual([401, { error: "unauthenticated" }]);
   });
 
-  it("answers unavailable when Jupyter is not configured, down or rejects the token", async () => {
+  it("answers 503 unavailable when Jupyter is not configured, down or rejects the token", async () => {
     vi.stubEnv("NAIS_JUPYTER_TOKEN", "");
-    expect((await open(PROJECT.seed)).headers.get("location")).toBe("/commons/notebooks?notebook_error=unavailable");
+    expect(await answer(open(PROJECT.seed))).toEqual([503, { error: "unavailable" }]);
     vi.stubEnv("NAIS_JUPYTER_TOKEN", TOKEN);
     server.use(http.all(`${JUPYTER}/*`, () => HttpResponse.error()));
-    expect((await open(PROJECT.seed)).headers.get("location")).toBe("/commons/notebooks?notebook_error=unavailable");
+    expect(await answer(open(PROJECT.seed))).toEqual([503, { error: "unavailable" }]);
     server.resetHandlers();
     fakeJupyter();
     vi.stubEnv("NAIS_JUPYTER_TOKEN", "wrong");
-    expect((await open(PROJECT.seed)).headers.get("location")).toBe("/commons/notebooks?notebook_error=unavailable");
+    expect(await answer(open(PROJECT.seed))).toEqual([503, { error: "unavailable" }]);
+  });
+});
+
+describe("GET /notebooks-open (an old link)", () => {
+  it("goes to the project's 노트북 tab without touching Jupyter; anything else to the notebooks screen", () => {
+    const get = (query: string) => GET(new Request(`http://localhost:3000/notebooks-open${query}`));
+    expect(get(`?project=${PROJECT.seed}`).headers.get("location")).toBe(`/commons/projects/${PROJECT.seed}/notebook`);
+    expect(get("?project=../../etc").headers.get("location")).toBe("/commons/notebooks");
+    expect(get("").headers.get("location")).toBe("/commons/notebooks");
   });
 });

@@ -15,7 +15,7 @@ import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 import { ScreenTitle } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
-import { NotebookErrorAlert, OpenNotebookLink } from "@/features/notebooks/notebook-link";
+import { OpenNotebookLink } from "@/features/notebooks/notebook-link";
 import { draftPending, useDraftNote, useNote, useNoteSettings, useReviseNote, useSubmitNote, type ResearchNote } from "./api";
 import { ExportButton } from "./export-button";
 import { NoteForm, useNoteEditor, type NoteEditorState } from "./note-editor";
@@ -190,8 +190,6 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
           }
           actions={actions}
         />
-
-        <NotebookErrorAlert />
 
         {editable && note.rejected_reason ? (
           <div className="flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft p-3 text-small text-fg">

@@ -15,11 +15,11 @@ import { DateTime } from "@/shared/ui/date-text";
 import { BandTag, SummaryBand } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
-import { NotebookErrorAlert, OpenNotebookLink } from "@/features/notebooks/notebook-link";
+import { OpenNotebookLink } from "@/features/notebooks/notebook-link";
 import { PublicSummary } from "./overview-tab";
 
 /** Workspace tabs, in order; each is its own route under /commons/projects/{id}. */
-export const WORKSPACE_TABS = ["overview", "data", "recipes", "outputs", "notes", "discussion", "members", "activity"] as const;
+export const WORKSPACE_TABS = ["overview", "data", "recipes", "notebook", "outputs", "notes", "discussion", "members", "activity"] as const;
 export type WorkspaceTab = (typeof WORKSPACE_TABS)[number];
 /** Old `?tab=` links of the single-page project detail. */
 const LEGACY_TABS: Record<string, WorkspaceTab> = { members: "members", data: "data", activity: "activity" };
@@ -82,7 +82,7 @@ function tabOf(pathname: string, projectId: string): WorkspaceTab {
 
 /**
  * Project workspace frame: the summary band (name, status, my role, key facts, edit/archive), the tab strip as links
- * (개요 · 데이터 · 변환 · 산출물 · 연구노트 · 토론 · 구성원 · 활동) and the current tab's page. Non-members of a PUBLIC project see
+ * (개요 · 데이터 · 변환 · 노트북 · 산출물 · 연구노트 · 토론 · 구성원 · 활동) and the current tab's page. Non-members of a PUBLIC project see
  * its public summary only.
  */
 export function WorkspaceLayout({ projectId, children }: { projectId: string; children: ReactNode }) {
@@ -130,8 +130,7 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
 
   return (
     <WorkspaceContext.Provider value={ws}>
-      <WorkspaceBand ws={ws} />
-      <NotebookErrorAlert className="mb-6" />
+      <WorkspaceBand ws={ws} onNotebook={tab === "notebook"} />
       {archived ? (
         <p role="status" className="mb-6 flex items-center gap-2 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-small text-fg">
           <Archive aria-hidden="true" className="size-4 shrink-0 text-warning" strokeWidth={1.75} />
@@ -170,7 +169,7 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
   );
 }
 
-function WorkspaceBand({ ws }: { ws: Workspace }) {
+function WorkspaceBand({ ws, onNotebook }: { ws: Workspace; onNotebook: boolean }) {
   const t = useTranslations();
   const errorText = useErrorText();
   const { project: p, manager, owner, archived, navigate } = ws;
@@ -195,7 +194,7 @@ function WorkspaceBand({ ws }: { ws: Workspace }) {
         actions={
           manager || owner || p.my_role ? (
             <>
-              {p.my_role && !archived ? (
+              {p.my_role && !archived && !onNotebook ? (
                 <OpenNotebookLink projectId={p.project_id} className={cn("sv-hb sv-hb-g", focusRing)} />
               ) : null}
               {manager ? (

@@ -440,7 +440,7 @@ test("research notes: list, search, the standard form editor, sign dialog, verif
   }
 });
 
-test("notebooks: the 노트북 screen, its error alert and the workspace button pass axe in both themes; no sideways scroll at 390", async ({ page, context, baseURL }) => {
+test("notebooks: the 노트북 screen, the workspace 노트북 tab and the workspace button pass axe in both themes; no sideways scroll at 390", async ({ page, context, baseURL }) => {
   const PROJECT = "00000000-0000-7000-8000-000000001001";
   await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
   for (const colorScheme of ["light", "dark"] as const) {
@@ -450,24 +450,26 @@ test("notebooks: the 노트북 screen, its error alert and the workspace button 
     await expect(page.getByRole("heading", { level: 1, name: "노트북" })).toBeVisible();
     const nav = page.getByRole("navigation", { name: "주 메뉴" });
     await expect(nav.getByRole("link", { name: "노트북", exact: true })).toHaveAttribute("aria-current", "page");
-    // The Jupyter link is a plain same-tab anchor to the server route; it is not followed here.
+    // "노트북 열기" leads to the project's 노트북 tab (JupyterLab in a frame inside the portal).
     const open = page.getByRole("table", { name: "내 프로젝트" }).getByRole("link", { name: "차세대 이차전지 소재 공동연구 노트북 열기" });
-    await expect(open).toHaveAttribute("href", `/notebooks-open?project=${PROJECT}`);
+    await expect(open).toHaveAttribute("href", `/commons/projects/${PROJECT}/notebook`);
     expect(await seriousViolations(page)).toEqual([]);
     await page.setViewportSize({ width: 390, height: 844 });
     await expect(page.getByRole("link", { name: /노트북 열기$/ }).first()).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     expect(await seriousViolations(page)).toEqual([]);
 
-    await page.goto("/commons/notebooks?notebook_error=unavailable");
-    await expect(page.getByRole("alert").filter({ hasText: "노트북 서버에 연결할 수 없습니다" })).toBeVisible();
+    // No notebook server in the e2e stack: the tab explains it in place, with a retry.
+    await page.goto(`/commons/projects/${PROJECT}/notebook`);
+    const alert = page.getByRole("alert").filter({ hasText: "노트북 서버에 연결할 수 없습니다" });
+    await expect(alert).toBeVisible();
+    await expect(alert.getByRole("button", { name: "다시 시도" })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
     expect(await seriousViolations(page)).toEqual([]);
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`/commons/projects/${PROJECT}?notebook_error=forbidden`);
-    await expect(page.getByRole("alert").filter({ hasText: "이 프로젝트의 노트북을 열 권한이 없습니다" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "노트북 열기", exact: true })).toHaveAttribute("href", `/notebooks-open?project=${PROJECT}`);
+    await page.goto(`/commons/projects/${PROJECT}`);
+    await expect(page.getByRole("link", { name: "노트북 열기", exact: true })).toHaveAttribute("href", `/commons/projects/${PROJECT}/notebook`);
     expect(await seriousViolations(page)).toEqual([]);
   }
 });

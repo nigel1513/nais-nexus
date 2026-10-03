@@ -1,6 +1,8 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
+import { server } from "../../../tests/msw";
 import { getDb } from "@/mocks/db";
 import { NOTE, PROJECT, USER } from "@/mocks/fixtures";
 import { seoulDate } from "@/mocks/note-hash";
@@ -10,7 +12,10 @@ import { renderScreen } from "../../../tests/render";
 import { renderWorkspace } from "../../../tests/workspace-routes";
 import { NotebooksScreen } from "./notebooks-screen";
 
-const href = `/notebooks-open?project=${PROJECT.seed}`;
+const href = `/commons/projects/${PROJECT.seed}/notebook`;
+const LOCATION = `/notebooks/lab/tree/work/${USER.aResearcher}/${PROJECT.seed}?token=tok`;
+/** What POST /notebooks-open answers in this test. */
+const opener = (status: number, body: object) => server.use(http.post("*/notebooks-open", () => HttpResponse.json(body, { status })));
 
 describe("/commons/notebooks", () => {
   it("lists my active projects with a plain 노트북 열기 link and today's notebook count", async () => {
@@ -23,7 +28,6 @@ describe("/commons/notebooks", () => {
     expect(link).not.toHaveAttribute("target");
     const row = link.closest("tr")!;
     expect(await within(row).findByText("1개")).toBeInTheDocument(); // today's DRAFT note sees one saved notebook
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("explains the — count when today's note does not exist yet", async () => {
@@ -40,17 +44,54 @@ describe("/commons/notebooks", () => {
     expect(await screen.findByText("참여 중인 진행 프로젝트가 없습니다")).toBeInTheDocument();
   });
 
-  it.each([
-    ["unavailable", "노트북 서버에 연결할 수 없습니다"],
-    ["forbidden", "이 프로젝트의 노트북을 열 권한이 없습니다"],
-    ["archived", "보관된 프로젝트는 노트북을 열 수 없습니다"],
-  ])("explains ?notebook_error=%s inline, and the alert can be dismissed", async (code, text) => {
-    renderScreen(<NotebooksScreen />, { user: USER.aResearcher, path: `/commons/notebooks?notebook_error=${code}` });
+});
+
+describe("workspace 노트북 tab", () => {
+  it("shows JupyterLab in a frame inside the workspace; 넓게 보기 fills the window and Esc brings it back", async () => {
+    opener(200, { location: LOCATION });
+    renderWorkspace(href, USER.aResearcher);
+    expect(await screen.findByText("노트북 폴더를 준비하고 있습니다")).toBeInTheDocument();
+    const frame = await screen.findByTitle("차세대 이차전지 소재 공동연구 JupyterLab");
+    expect(frame).toHaveAttribute("src", LOCATION);
+    expect(within(screen.getByRole("navigation", { name: "프로젝트 작업 공간" })).getByRole("link", { name: "노트북" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: "노트북 열기" })).not.toBeInTheDocument(); // already here
+    const section = frame.closest("section")!;
+    await userEvent.click(screen.getByRole("button", { name: "넓게 보기" }));
+    expect(section).toHaveClass("fixed");
+    expect(screen.getByTitle("차세대 이차전지 소재 공동연구 JupyterLab")).toBe(frame); // the frame is not reloaded
+    await userEvent.keyboard("{Escape}");
+    expect(section).not.toHaveClass("fixed");
+    expect(screen.getByRole("button", { name: "넓게 보기" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("explains an unavailable notebook server in place and opens on 다시 시도", async () => {
+    opener(503, { error: "unavailable" });
+    renderWorkspace(href, USER.aResearcher);
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(text);
-    await userEvent.click(within(alert).getByRole("button", { name: "알림 닫기" }));
+    expect(alert).toHaveTextContent("노트북 서버에 연결할 수 없습니다");
+    opener(200, { location: LOCATION });
+    await userEvent.click(within(alert).getByRole("button", { name: "다시 시도" }));
+    expect(await screen.findByTitle("차세대 이차전지 소재 공동연구 JupyterLab")).toHaveAttribute("src", LOCATION);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 1, name: "노트북" })).toHaveFocus(); // focus is not lost with the alert
+  });
+
+  it("says forbidden without a retry, and never frames an address outside /notebooks/", async () => {
+    opener(403, { error: "forbidden" });
+    const first = renderWorkspace(href, USER.aResearcher);
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("이 프로젝트의 노트북을 열 권한이 없습니다");
+    expect(within(alert).queryByRole("button")).not.toBeInTheDocument();
+    first.unmount();
+    opener(200, { location: "https://evil.test/" });
+    const { container } = renderWorkspace(href, USER.aResearcher);
+    expect(await screen.findByRole("alert")).toHaveTextContent("노트북 서버에 연결할 수 없습니다");
+    expect(container.querySelector("iframe")).toBeNull();
+  });
+
+  it("does not ask the notebook server for an archived project", async () => {
+    getDb().projects.find((p) => p.project_id === PROJECT.seed)!.status = "ARCHIVED";
+    renderWorkspace(href, USER.aResearcher); // an unhandled POST would fail the test
+    expect(await screen.findByText("보관된 프로젝트는 노트북을 열 수 없습니다")).toBeInTheDocument();
   });
 });
 

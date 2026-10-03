@@ -1,4 +1,5 @@
 import { usePathname } from "next/navigation";
+import { NotebookTab } from "@/features/notebooks/notebook-tab";
 import { ProjectNotesTab } from "@/features/notes/project-notes-tab";
 import { DiscussionTab } from "@/features/workspace/discussion-tab";
 import { InputsTab } from "@/features/workspace/inputs-tab";
@@ -19,6 +20,7 @@ function WorkspaceRoutes({ projectId }: { projectId: string }) {
     tab === "data" ? <InputsTab />
     : tab === "recipes" ? (id ? <RecipeEditor recipeId={id} /> : <RecipesTab />)
     : tab === "outputs" ? (id ? <OutputDetail outputId={id} /> : <OutputsTab />)
+    : tab === "notebook" ? <NotebookTab />
     : tab === "notes" ? <ProjectNotesTab />
     : tab === "discussion" ? <DiscussionTab />
     : tab === "members" ? <WorkspaceMembers />

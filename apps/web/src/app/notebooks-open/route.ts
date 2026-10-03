@@ -1,9 +1,11 @@
-import { errorLocation, openNotebook, type OpenDeps } from "@/features/notebooks/open-notebook";
+import { openNotebook, UUID_RE, type OpenDeps, type OpenResult } from "@/features/notebooks/open-notebook";
 import { isMocking } from "@/shared/config";
 
 export const dynamic = "force-dynamic";
 
-const redirect = (location: string) => new Response(null, { status: 302, headers: { location, "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+type OpenBody = { location: string } | { error: Extract<OpenResult, { ok: false }>["error"] };
+const json = (status: number, body: OpenBody) => Response.json(body, { status, headers: { "cache-control": "no-store", "referrer-policy": "no-referrer" } });
+const STATUS = { unauthenticated: 401, forbidden: 403, archived: 409, unavailable: 503 } as const;
 
 function jupyterConfig(env: Record<string, string | undefined> = process.env): OpenDeps["jupyter"] {
   const base = env.NAIS_JUPYTER_URL?.trim();
@@ -60,16 +62,21 @@ async function realDeps(): Promise<Pick<OpenDeps, "api" | "sizeOf" | "readFile">
 }
 
 /**
- * GET /notebooks-open?project=<uuid>: prepare the caller's folder in the shared JupyterLab and redirect there
- * (open-notebook.ts). Failures go back to the calling page with ?notebook_error=unavailable|forbidden; without a
- * session, to the notebooks screen (which asks for a login).
+ * POST /notebooks-open?project=<uuid>: prepare the caller's folder in the shared JupyterLab (open-notebook.ts) and answer
+ * `{ location }`, the JupyterLab address the project's 노트북 tab puts in its frame. Failures answer `{ error }`:
+ * 401 unauthenticated, 403 forbidden, 409 archived, 503 unavailable.
  */
-export async function GET(request: Request): Promise<Response> {
+export async function POST(request: Request): Promise<Response> {
   const projectId = new URL(request.url).searchParams.get("project");
   const io = isMocking() ? await mockDeps(request) : await realDeps();
-  if (!io) return redirect("/commons/notebooks");
+  if (!io) return json(401, { error: "unauthenticated" });
   const result = await openNotebook(projectId, { ...io, jupyter: jupyterConfig() });
-  if (result.ok) return redirect(result.location);
-  if (result.error === "unauthenticated") return redirect("/commons/notebooks");
-  return redirect(errorLocation(request.headers.get("referer"), result.error));
+  return result.ok ? json(200, { location: result.location }) : json(STATUS[result.error], { error: result.error });
+}
+
+/** GET (an old link or bookmark): the project's 노트북 tab, which opens the notebook inside the portal. */
+export function GET(request: Request): Response {
+  const projectId = new URL(request.url).searchParams.get("project");
+  const location = projectId && UUID_RE.test(projectId) ? `/commons/projects/${projectId}/notebook` : "/commons/notebooks";
+  return new Response(null, { status: 302, headers: { location, "cache-control": "no-store" } });
 }
