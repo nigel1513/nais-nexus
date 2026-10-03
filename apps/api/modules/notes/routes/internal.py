@@ -41,9 +41,9 @@ router = APIRouter(tags=["Internal"], dependencies=[Depends(require_internal_tok
 
 @router.get("/internal/notes/notebook-activity", operation_id="getInternalNotebookActivity")
 def get_internal_notebook_activity(
-    user_id: UUID, project_id: UUID, day: date, deps: NotesDepsDep
+    user_id: UUID, project_id: UUID, day: date, deps: NotesDepsDep, detail: bool = False
 ) -> InternalNotebookActivity:
-    return service.notebook_activity(deps, user_id, project_id, day)
+    return service.notebook_activity(deps, user_id, project_id, day, detail=detail)
 
 
 _BODY = {

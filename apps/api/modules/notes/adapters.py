@@ -8,7 +8,7 @@ from typing import Any, Literal
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from api.modules.identity.public import IdentityPublicProfile, IdentityQueryPort
-from api.modules.notes.interfaces import NotebookActivity, NotebookCell
+from api.modules.notes.interfaces import NotebookActivity, NotebookCell, NotebookSave
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
@@ -63,6 +63,9 @@ class NoNotebooks:
 
     def count_notebooks(self, user_id: UUID, project_id: UUID, day: date) -> int:
         return 0
+
+    def list_notebook_saves(self, user_id: UUID, project_id: UUID, day: date) -> list[NotebookSave]:
+        return []
 
 
 logger = logging.getLogger("nais.notes")
@@ -224,9 +227,18 @@ class JupyterNotebooks:
             logger.warning("notebooks skipped: too large", extra={"skipped": too_large})
         return out
 
-    def count_notebooks(self, user_id: UUID, project_id: UUID, day: date) -> int:
+    def list_notebook_saves(self, user_id: UUID, project_id: UUID, day: date) -> list[NotebookSave]:
+        folder = f"{WORK}/{user_id}/{project_id}"
+        saves: list[NotebookSave] = []
         with self._client.session(self.activity_budget_s) as session:
-            return len(self._day_paths(session, user_id, project_id, day))
+            for entry in self._notebook_entries(session, folder):
+                at = _modified(entry)
+                if at is not None and _on(at, day):
+                    saves.append(NotebookSave(entry["path"].rsplit("/", 1)[-1].removesuffix(".ipynb"), at))
+        return saves
+
+    def count_notebooks(self, user_id: UUID, project_id: UUID, day: date) -> int:
+        return len(self.list_notebook_saves(user_id, project_id, day))
 
     def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
         authors: list[tuple[UUID, UUID]] = []

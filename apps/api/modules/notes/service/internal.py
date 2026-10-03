@@ -42,14 +42,27 @@ def _activity(deps: NotesDeps, user_id: UUID, project_id: UUID, day: date) -> li
 
 
 def notebook_activity(
-    deps: NotesDeps, user_id: UUID, project_id: UUID, day: date
+    deps: NotesDeps, user_id: UUID, project_id: UUID, day: date, *, detail: bool = False
 ) -> InternalNotebookActivity:
-    activity = sorted(_activity(deps, user_id, project_id, day), key=lambda a: (a.saved_at, a.title))
+    """From file listings (cell_count null) unless `detail`, which reads the notebooks (cell_count filled)."""
+    rows: list[tuple[str, datetime, int | None]]
+    if detail:
+        activity = sorted(_activity(deps, user_id, project_id, day), key=lambda a: (a.saved_at, a.title))
+        rows = [(a.title, a.saved_at, len(a.cells)) for a in activity]
+    else:
+        try:
+            saves = deps.notebooks.list_notebook_saves(user_id, project_id, day)
+        except Exception as exc:  # Jupyter down or refusing the token
+            logger.warning(
+                "internal notes: notebook source unavailable", extra={"error_type": type(exc).__name__}
+            )
+            raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "The notebook source is unavailable.") from exc
+        rows = [(s.title, s.saved_at, None) for s in sorted(saves, key=lambda s: (s.saved_at, s.title))]
     return InternalNotebookActivity.model_validate(
         {
-            "count": len(activity),
+            "count": len(rows),
             "notebooks": [
-                {"title": a.title, "saved_at": _utc(a.saved_at), "cell_count": len(a.cells)} for a in activity
+                {"title": title, "saved_at": _utc(at), "cell_count": cells} for title, at, cells in rows
             ],
         }
     )

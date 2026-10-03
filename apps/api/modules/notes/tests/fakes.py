@@ -11,7 +11,7 @@ from uuid import UUID
 import httpx
 from nais_contracts.api_models import ProjectSummary
 
-from api.modules.notes.interfaces import NotebookActivity, NotebookCell
+from api.modules.notes.interfaces import NotebookActivity, NotebookCell, NotebookSave
 from api.platform.auth import CurrentUser
 from api.platform.ids import new_id
 from api.platform.llm import ChatMessage
@@ -155,6 +155,9 @@ class FakeNotebooks:
     def count_notebooks(self, user_id: UUID, project_id: UUID, day: date) -> int:
         self.counts.append((user_id, project_id, day))
         return len(self.saved.get((user_id, project_id, day), []))
+
+    def list_notebook_saves(self, user_id: UUID, project_id: UUID, day: date) -> list[NotebookSave]:
+        return [NotebookSave(n.title, n.saved_at) for n in self.saved.get((user_id, project_id, day), [])]
 
 
 class FakeLlm:

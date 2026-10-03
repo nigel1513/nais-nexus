@@ -1910,13 +1910,14 @@ paths:
       operationId: getInternalNotebookActivity
       security: [ { internalToken: [] } ]
       description: |
-        The notebooks a researcher saved in a project on a day (Asia/Seoul) in the shared Jupyter, as the drafting source sees them (title, save time,
-        cell count; never cell outputs). For the web server's mock mode (draft_source_count). Header X-NAIS-Internal-Token must equal NAIS_INTERNAL_TOKEN:
+        The notebooks a researcher saved in a project on a day (Asia/Seoul) in the shared Jupyter (title, save time; with detail=true also the cell
+        count, read like the drafting source; never cell outputs). The default reads file listings only. For the web server's mock mode (draft_source_count). Header X-NAIS-Internal-Token must equal NAIS_INTERNAL_TOKEN:
         404 NOT_FOUND while the setting is empty, 403 FORBIDDEN on a missing or wrong token. Jupyter unreachable -> 503 DEPENDENCY_UNAVAILABLE.
       parameters:
         - { name: user_id, in: query, required: true, schema: { $ref: "#/components/schemas/Id" } }
         - { name: project_id, in: query, required: true, schema: { $ref: "#/components/schemas/Id" } }
         - { name: day, in: query, required: true, schema: { type: string, format: date } }
+        - { name: detail, in: query, required: false, schema: { type: boolean, default: false }, description: "false (default): from file listings only, cell_count null; true: read the notebooks (cell_count filled, slower)" }
       responses:
         "200":
           description: The day's notebooks
@@ -3713,7 +3714,7 @@ components:
       properties:
         title: { type: string, description: "File name without .ipynb (display only)" }
         saved_at: { $ref: "#/components/schemas/Timestamp" }
-        cell_count: { type: integer, minimum: 0 }
+        cell_count: { type: [integer, "null"], minimum: 0, description: "null unless detail=true" }
     InternalDraftSectionsRequest:
       type: object
       required: [user_id, project_id, day]

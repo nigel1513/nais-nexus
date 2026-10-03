@@ -152,7 +152,7 @@ def test_internal_endpoints_ignore_a_user_bearer_token(internal: Internal) -> No
 # ---------------------------------------------------------------- notebook activity
 
 
-def test_notebook_activity_counts_the_day(internal: Internal) -> None:
+def test_notebook_activity_counts_the_day_from_listings(internal: Internal) -> None:
     analysis(internal)
     internal.jupyter.add_notebook(f"{internal.folder()}/old.ipynb", "2026-10-02T14:59:00Z", md("# old"))
     internal.jupyter.add_notebook(f"{internal.folder()}/data/x.ipynb", IN_DAY, md("# input"))
@@ -162,9 +162,25 @@ def test_notebook_activity_counts_the_day(internal: Internal) -> None:
     assert_matches_response("getInternalNotebookActivity", 200, body)
     assert body == {
         "count": 1,
+        "notebooks": [{"title": "용량 분석", "saved_at": "2026-10-03T01:20:00.123456Z", "cell_count": None}],
+    }
+    # The cheap path: the project listing only, no notebook read.
+    assert internal.jupyter.contents_requests() == [("GET", internal.folder())]
+
+
+def test_notebook_activity_detail_reads_the_notebooks(internal: Internal) -> None:
+    analysis(internal)
+    response = internal.activity(detail="true")
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert_matches_response("getInternalNotebookActivity", 200, body)
+    assert body == {
+        "count": 1,
         "notebooks": [{"title": "용량 분석", "saved_at": "2026-10-03T01:20:00.123456Z", "cell_count": 3}],
     }
+    assert ("GET", f"{internal.folder()}/용량 분석.ipynb") in internal.jupyter.contents_requests()
     assert SECRET not in response.text
+    assert internal.activity(detail="false").json()["notebooks"][0]["cell_count"] is None
 
 
 def test_notebook_activity_validates_ids(internal: Internal) -> None:

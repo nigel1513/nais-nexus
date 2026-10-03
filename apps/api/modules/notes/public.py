@@ -31,6 +31,14 @@ class NotebookActivity:
     cells: tuple[NotebookCell, ...]
 
 
+@dataclass(frozen=True)
+class NotebookSave:
+    """A notebook saved that day as a file listing shows it (no cell is read)."""
+
+    title: str
+    saved_at: datetime
+
+
 class NotebookActivityPort(Protocol):
     def list_notebook_activity(
         self, user_id: UUID, project_id: UUID | None, day: date
@@ -45,5 +53,9 @@ class NotebookActivityPort(Protocol):
         the draftNote gate (an implementation may answer from file listings without reading any notebook)."""
         ...
 
+    def list_notebook_saves(self, user_id: UUID, project_id: UUID, day: date) -> list[NotebookSave]:
+        """The same notebooks as count_notebooks with title and save time, from listings only."""
+        ...
 
-__all__ = ["NotebookActivity", "NotebookActivityPort", "NotebookCell"]
+
+__all__ = ["NotebookActivity", "NotebookActivityPort", "NotebookCell", "NotebookSave"]

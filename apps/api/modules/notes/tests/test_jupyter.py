@@ -325,6 +325,13 @@ def test_count_reads_listings_only() -> None:
     fake.add_notebook(f"{base}/data/in.ipynb", IN_DAY, md("# data"))
     assert adapter(fake).count_notebooks(user_id, project_id, DAY) == 2
     assert [path for _, path in fake.contents_requests()] == [base, f"{base}/sub"]
+    fake.requests.clear()
+    saves = adapter(fake).list_notebook_saves(user_id, project_id, DAY)
+    assert sorted((s.title, s.saved_at.isoformat()) for s in saves) == [
+        ("a", "2026-10-03T01:20:00.123456+00:00"),
+        ("b", "2026-10-02T15:30:00+00:00"),
+    ]
+    assert [path for _, path in fake.contents_requests()] == [base, f"{base}/sub"]
 
 
 def test_oversized_notebooks_are_skipped(caplog: pytest.LogCaptureFixture) -> None:

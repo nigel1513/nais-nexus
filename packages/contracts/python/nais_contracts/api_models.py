@@ -1858,7 +1858,7 @@ class NoteEvidenceType(StrEnum):
 class InternalNotebookSummary(BaseModel):
     title: str = Field(..., description='File name without .ipynb (display only)')
     saved_at: Timestamp
-    cell_count: conint(ge=0)
+    cell_count: conint(ge=0) | None = Field(..., description='null unless detail=true')
 
 
 class InternalDraftSectionsRequest(BaseModel):

@@ -1704,8 +1704,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description The notebooks a researcher saved in a project on a day (Asia/Seoul) in the shared Jupyter, as the drafting source sees them (title, save time,
-         *     cell count; never cell outputs). For the web server's mock mode (draft_source_count). Header X-NAIS-Internal-Token must equal NAIS_INTERNAL_TOKEN:
+         * @description The notebooks a researcher saved in a project on a day (Asia/Seoul) in the shared Jupyter (title, save time; with detail=true also the cell
+         *     count, read like the drafting source; never cell outputs). The default reads file listings only. For the web server's mock mode (draft_source_count). Header X-NAIS-Internal-Token must equal NAIS_INTERNAL_TOKEN:
          *     404 NOT_FOUND while the setting is empty, 403 FORBIDDEN on a missing or wrong token. Jupyter unreachable -> 503 DEPENDENCY_UNAVAILABLE.
          */
         get: operations["getInternalNotebookActivity"];
@@ -3018,7 +3018,8 @@ export interface components {
             /** @description File name without .ipynb (display only) */
             title: string;
             saved_at: components["schemas"]["Timestamp"];
-            cell_count: number;
+            /** @description null unless detail=true */
+            cell_count: number | null;
         };
         InternalDraftSectionsRequest: {
             user_id: components["schemas"]["Id"];
@@ -6329,6 +6330,8 @@ export interface operations {
                 user_id: components["schemas"]["Id"];
                 project_id: components["schemas"]["Id"];
                 day: string;
+                /** @description false (default): from file listings only, cell_count null; true: read the notebooks (cell_count filled, slower) */
+                detail?: boolean;
             };
             header?: never;
             path?: never;
