@@ -102,4 +102,19 @@ describe("global API error handling (Task 4 carry)", () => {
     await flush();
     expect(deps.signIn).toHaveBeenCalledTimes(1);
   });
+
+  it("leaves 401 NOTE_SIGNATURE_EXPIRED to the sign dialog: no refresh, no sign-in, no /blocked", async () => {
+    const refreshSession = vi.fn().mockResolvedValue({ accessToken: "new" });
+    const { deps, h } = setup("/commons/notes/n1", { getToken: () => "old", refreshSession });
+    h.onError(err(401, "NOTE_SIGNATURE_EXPIRED"));
+    h.onError(err(401, "NOTE_SIGNATURE_EXPIRED"));
+    await flush();
+    expect(refreshSession).not.toHaveBeenCalled();
+    expect(deps.signIn).not.toHaveBeenCalled();
+    expect(deps.goBlocked).not.toHaveBeenCalled();
+    // An ordinary 401 right after still takes the global path.
+    h.onError(err(401, "UNAUTHENTICATED"));
+    await flush();
+    expect(refreshSession).toHaveBeenCalledTimes(1);
+  });
 });

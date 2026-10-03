@@ -4,11 +4,12 @@ import { Archive, Ellipsis, Globe, Lock, Pencil } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { useArchiveProject, useGetProject } from "@/features/projects/api";
 import { asApiError } from "@/shared/api/errors";
 import type { Project } from "@/shared/api/types";
 import { useErrorText } from "@/shared/api/use-error-text";
+import { useBeforeUnload, useNavigationGuard } from "@/shared/hooks/use-leave-guard";
 import { useBreadcrumbs, type Crumb } from "@/shared/ui/breadcrumbs";
 import { DateTime } from "@/shared/ui/date-text";
 import { BandTag, SummaryBand } from "@/shared/ui/screen-v2";
@@ -16,8 +17,8 @@ import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
 import { PublicSummary } from "./overview-tab";
 
-/** Workspace tabs, in order; each is its own route under /commons/projects/{id}. Task 15 adds 연구노트 here. */
-export const WORKSPACE_TABS = ["overview", "data", "recipes", "outputs", "discussion", "members", "activity"] as const;
+/** Workspace tabs, in order; each is its own route under /commons/projects/{id}. */
+export const WORKSPACE_TABS = ["overview", "data", "recipes", "outputs", "notes", "discussion", "members", "activity"] as const;
 export type WorkspaceTab = (typeof WORKSPACE_TABS)[number];
 /** Old `?tab=` links of the single-page project detail. */
 const LEGACY_TABS: Record<string, WorkspaceTab> = { members: "members", data: "data", activity: "activity" };
@@ -65,29 +66,12 @@ export function useDetailCrumb(crumb: Crumb | null) {
  */
 export function useLeaveGuard(dirty: boolean) {
   const { setDirty } = useWorkspace();
+  useBeforeUnload(dirty);
   useEffect(() => {
     setDirty(dirty);
     if (!dirty) return;
-    const onUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onUnload);
-    return () => {
-      window.removeEventListener("beforeunload", onUnload);
-      setDirty(false);
-    };
+    return () => setDirty(false);
   }, [dirty, setDirty]);
-}
-
-/** The in-app target of a plain left click on a same-origin link, or null (new tab, download, other origin, hash only). */
-function linkTarget(e: MouseEvent): string | null {
-  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return null;
-  const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
-  if (!a || a.target === "_blank" || a.hasAttribute("download")) return null;
-  const url = new URL(a.href, window.location.href);
-  if (url.origin !== window.location.origin) return null;
-  return `${url.pathname}${url.search}`;
 }
 
 function tabOf(pathname: string, projectId: string): WorkspaceTab {
@@ -97,7 +81,7 @@ function tabOf(pathname: string, projectId: string): WorkspaceTab {
 
 /**
  * Project workspace frame: the summary band (name, status, my role, key facts, edit/archive), the tab strip as links
- * (개요 · 데이터 · 변환 · 산출물 · 토론 · 구성원 · 활동) and the current tab's page. Non-members of a PUBLIC project see
+ * (개요 · 데이터 · 변환 · 산출물 · 연구노트 · 토론 · 구성원 · 활동) and the current tab's page. Non-members of a PUBLIC project see
  * its public summary only.
  */
 export function WorkspaceLayout({ projectId, children }: { projectId: string; children: ReactNode }) {
@@ -109,31 +93,8 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
   const tab = tabOf(pathname, projectId);
   const legacy = tab === "overview" ? LEGACY_TABS[params.get("tab") ?? ""] : undefined;
   const [detail, setDetailCrumb] = useState<Crumb | null>(null);
-  const dirtyRef = useRef(false);
-  const [leaving, setLeaving] = useState<string | null>(null);
-  const setDirty = useCallback((d: boolean) => {
-    dirtyRef.current = d;
-  }, []);
-  const navigate = useCallback(
-    (href: string) => {
-      if (dirtyRef.current) setLeaving(href);
-      else router.push(href);
-    },
-    [router],
-  );
-  // Capture phase on the document: runs before Next's Link handler, so a guarded click never starts the navigation.
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
-      if (!dirtyRef.current) return;
-      const href = linkTarget(e);
-      if (!href || href === `${window.location.pathname}${window.location.search}`) return;
-      e.preventDefault();
-      e.stopPropagation();
-      setLeaving(href);
-    };
-    document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
-  }, []);
+  const guard = useNavigationGuard(t("workspace.leave.description"));
+  const { setDirty, navigate } = guard;
 
   useEffect(() => {
     if (legacy) router.replace(projectHref(projectId, legacy));
@@ -202,21 +163,7 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
         </ul>
       </nav>
       {children}
-      <ConfirmDialog
-        open={leaving !== null}
-        onOpenChange={(o) => (o ? undefined : setLeaving(null))}
-        title={t("workspace.leave.title")}
-        description={t("workspace.leave.description")}
-        confirmLabel={t("workspace.leave.leave")}
-        cancelLabel={t("workspace.leave.stay")}
-        closeLabel={t("common.close")}
-        onConfirm={() => {
-          const href = leaving;
-          dirtyRef.current = false;
-          setLeaving(null);
-          if (href) router.push(href);
-        }}
-      />
+      {guard.dialog}
     </WorkspaceContext.Provider>
   );
 }

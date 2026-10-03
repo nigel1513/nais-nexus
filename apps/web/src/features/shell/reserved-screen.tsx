@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { PageHeader } from "@/shared/ui/page-header";
 
-/** P1 routes are reserved (M10 §1 Out of scope) and hidden from navigation; /commons/notes holds its place until the notes screens land (data-hub plan Task 15). */
-export function ReservedScreen({ name }: { name: "marketplace" | "compute" | "notes" }) {
+/** P1 routes are reserved (M10 §1 Out of scope) and hidden from navigation. */
+export function ReservedScreen({ name }: { name: "marketplace" | "compute" }) {
   const t = useTranslations();
   return (
     <>

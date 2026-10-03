@@ -23,7 +23,12 @@
     "expired": "만료됨",
     "expiresInDays": "{count}일 후 만료",
     "expiresInHours": "{count}시간 후 만료",
-    "formErrors": "입력값 {count}개를 확인해 주세요."
+    "formErrors": "입력값 {count}개를 확인해 주세요.",
+    "leave": {
+      "title": "저장하지 않은 변경이 있습니다",
+      "leave": "계속",
+      "stay": "머무르기"
+    }
   },
   "nav": {
     "dashboard": "대시보드",
@@ -2005,6 +2010,7 @@
       "data": "데이터",
       "recipes": "변환",
       "outputs": "산출물",
+      "notes": "연구노트",
       "discussion": "토론",
       "members": "구성원",
       "activity": "활동"
@@ -2301,11 +2307,176 @@
       "outputTitle": "이 산출물 토론"
     },
     "leave": {
-      "title": "저장하지 않은 변경이 있습니다",
       "description": "이 화면을 떠나면 저장하지 않은 레시피 변경이 사라집니다.",
-      "reloadDescription": "최신 버전을 불러오면 화면의 저장하지 않은 변경이 사라집니다.",
-      "leave": "계속",
-      "stay": "머무르기"
+      "reloadDescription": "최신 버전을 불러오면 화면의 저장하지 않은 변경이 사라집니다."
+    }
+  },
+  "notes": {
+    "context": "연구 기록",
+    "title": "연구노트",
+    "description": "날마다 표준 양식으로 기록하고, 제출·서명으로 내용을 고정합니다.",
+    "today": "오늘 노트 쓰기",
+    "todayDescription": "프로젝트를 고르면 오늘 날짜의 노트를 엽니다. 오늘 이미 쓰던 노트가 있으면 그 노트가 열립니다.",
+    "project": "프로젝트",
+    "open": "열기",
+    "noProjects": "참여 중인 프로젝트가 없습니다. 프로젝트에 참여하면 연구노트를 쓸 수 있습니다.",
+    "tabsLabel": "연구노트 구분",
+    "mine": "내 노트",
+    "witness": "확인할 노트",
+    "list": {
+      "date": "연구일자",
+      "project": "프로젝트",
+      "recorder": "기록자",
+      "status": "상태",
+      "review": "AI 검토",
+      "unreviewed": "검토 전 {count}",
+      "updated": "최근 수정",
+      "version": "v{version}",
+      "emptyMine": "아직 연구노트가 없습니다.",
+      "emptyMineHint": "오늘 노트 쓰기로 오늘의 연구 기록을 시작하세요.",
+      "emptyWitness": "확인을 기다리는 노트가 없습니다.",
+      "emptyWitnessHint": "확인자로 지정된 프로젝트에서 노트가 제출되면 여기에 나타납니다."
+    },
+    "search": {
+      "form": "노트 검색",
+      "label": "연구노트 검색",
+      "placeholder": "내용으로 찾기 (예: 온도 보정)",
+      "submit": "검색",
+      "results": "검색 결과",
+      "clear": "검색 지우기",
+      "empty": "찾는 내용이 있는 노트가 없습니다.",
+      "hint": "내가 쓴 노트와 확인자로 지정된 노트에서 찾습니다."
+    },
+    "back": "연구노트 목록",
+    "noteTitle": "{date} 연구노트",
+    "head": {
+      "label": "노트 정보",
+      "project": "과제명",
+      "date": "연구일자",
+      "recorder": "기록자",
+      "organization": "소속"
+    },
+    "form": {
+      "label": "연구 내용",
+      "sentence": "{section} {n}번째 문장",
+      "remove": "{section} {n}번째 문장 삭제",
+      "add": "문장 추가",
+      "addLabel": "{section}에 문장 추가",
+      "empty": "기록 없음",
+      "placeholder": "이 항목에 기록할 내용을 쓰세요."
+    },
+    "ai": {
+      "label": "AI 초안",
+      "unreviewed": "검토 전",
+      "evidence": "근거",
+      "draft": "AI 초안 만들기",
+      "noSource": "오늘 저장한 노트북이 없습니다.",
+      "sourceHint": "오늘 저장한 노트북 {count}개를 읽고 문장을 제안합니다.",
+      "queued": "AI 초안 대기 중입니다. 노트북 {count}개를 읽습니다.",
+      "running": "AI 초안을 만들고 있습니다…",
+      "failed": "AI 초안을 만들지 못했습니다. 직접 쓴 문장은 그대로입니다.",
+      "rateLimited": "AI 초안은 1분에 한 번 만들 수 있습니다. 1분 뒤에 다시 시도하세요.",
+      "sourceUnavailable": "노트북 기록을 읽지 못했습니다. 잠시 후 다시 시도하세요.",
+      "pending": "검토하지 않은 AI 문장 {count}개가 있습니다. 고치거나 그대로 두고 저장하면 검토한 것으로 기록되고, 필요 없는 문장은 삭제하세요.",
+      "accept": "검토 완료로 저장"
+    },
+    "save": {
+      "label": "저장 상태",
+      "dirty": "저장하지 않은 변경",
+      "saving": "저장 중…",
+      "saved": "저장됨",
+      "savedAt": "저장됨 · {time}",
+      "failed": "저장하지 못했습니다",
+      "retry": "다시 저장",
+      "conflictState": "저장되지 않음",
+      "conflict": "다른 곳에서 이 노트가 먼저 저장되었습니다. 화면의 변경은 저장되지 않았습니다. 아래 내용을 복사해 두고 다시 불러오세요.",
+      "reload": "다시 불러오기",
+      "rescued": "저장하지 못한 내 내용",
+      "rescuedHint": "다시 불러오기 전에 화면에 있던 내용입니다. 필요한 문장을 복사해 노트에 다시 넣으세요.",
+      "dismiss": "닫기",
+      "leave": "이 화면을 떠나면 아직 저장되지 않은 노트 내용이 사라집니다."
+    },
+    "signatures": {
+      "label": "서명",
+      "role": "구분",
+      "signer": "성명",
+      "signedAt": "서명 일시",
+      "notSigned": "서명 전",
+      "contentHash": "내용 해시"
+    },
+    "rejected": {
+      "title": "반려 사유",
+      "hint": "고친 뒤 다시 제출하세요."
+    },
+    "actions": {
+      "submit": "제출",
+      "submitTitle": "연구노트 제출",
+      "submitDescription": "제출하면 내용이 고정되고 확인자에게 확인 요청이 갑니다. 확인자가 반려하면 다시 고칠 수 있습니다.",
+      "submitted": "노트를 제출했습니다.",
+      "sign": "서명",
+      "signDraft": "서명하고 확정",
+      "reject": "반려",
+      "revise": "새 버전 만들기",
+      "revised": "새 버전(v{version})을 만들었습니다. 고친 뒤 다시 서명하세요.",
+      "verify": "무결성 검증",
+      "export": "내보내기",
+      "exported": "ZIP 파일을 내려받았습니다.",
+      "more": "노트 작업 더 보기",
+      "blockedByAi": "검토하지 않은 AI 문장이 있어 아직 제출하거나 서명할 수 없습니다."
+    },
+    "sign": {
+      "title": "연구노트 서명",
+      "description": "서명하면 내용이 고정되어 더 이상 고칠 수 없습니다. 고칠 일이 생기면 새 버전을 만듭니다.",
+      "draftDescription": "이 프로젝트는 확인자 서명이 없어 제출과 서명을 함께 합니다.",
+      "signer": "서명자",
+      "role": "역할",
+      "time": "서명 시각은 서버 시각으로 기록됩니다.",
+      "confirm": "서명",
+      "signed": "서명했습니다.",
+      "completed": "서명이 완료되어 노트가 확정되었습니다.",
+      "expired": "로그인한 지 5분이 지났습니다. 본인 확인을 다시 한 뒤 서명할 수 있습니다.",
+      "reauthInPlace": "다시 확인하고 서명",
+      "reauth": "다시 로그인하고 서명"
+    },
+    "reject": {
+      "title": "연구노트 반려",
+      "description": "기록자에게 노트를 돌려보냅니다. 기록자가 고친 뒤 다시 제출합니다.",
+      "reason": "반려 사유",
+      "confirm": "반려",
+      "done": "노트를 반려했습니다."
+    },
+    "verify": {
+      "title": "무결성 검증 결과",
+      "contentOk": "내용 해시 일치",
+      "contentBad": "내용 해시 불일치",
+      "chainOk": "체인 일치",
+      "chainBad": "체인 불일치",
+      "stored": "저장된 내용 해시",
+      "recomputed": "다시 계산한 해시",
+      "checkedAt": "검증 시각",
+      "again": "다시 검증",
+      "explainOk": "저장된 내용으로 다시 계산한 해시가 서명할 때의 해시와 같고, 같은 과제·기관의 서명 체인도 이어져 있습니다.",
+      "explainBad": "서명 이후 기록이 바뀌었거나 체인이 끊겼습니다. 기관 연구노트 관리자에게 알리세요."
+    },
+    "export": {
+      "title": "연구노트 내보내기",
+      "description": "이 프로젝트에서 내가 쓴 노트를 JSON·HTML·해시 목록이 든 ZIP 파일로 내려받습니다. 기간을 비우면 전체를 내보냅니다.",
+      "from": "시작일",
+      "to": "종료일",
+      "download": "ZIP 내려받기"
+    },
+    "settings": {
+      "title": "확인자 설정",
+      "kicker": "설정",
+      "required": "제출한 노트에 확인자 서명 받기",
+      "hint": "켜면 노트는 제출 뒤 확인자 한 명의 서명까지 받아야 확정됩니다. 바꾼 설정은 이후 제출하는 노트부터 적용됩니다.",
+      "witnesses": "확인자",
+      "saved": "확인자 설정을 저장했습니다.",
+      "save": "저장"
+    },
+    "tab": {
+      "title": "연구노트",
+      "witness": "확인할 노트"
     }
   }
 }

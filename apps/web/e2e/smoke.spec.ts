@@ -391,6 +391,55 @@ test("project workspace: tabs, recipe editor, output lineage and the 공개 요�
   }
 });
 
+test("research notes: list, search, the standard form editor, sign dialog, verification and the project tab pass axe in both themes; no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  const P = "/commons/projects/00000000-0000-7000-8000-000000001001";
+  const SIGNED = "00000000-0000-7000-8000-000000005701";
+  const DRAFT = "00000000-0000-7000-8000-000000005702";
+  await context.addCookies([
+    { name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! },
+    { name: "nais_mock_auth_time", value: String(Date.now()), url: baseURL! },
+  ]);
+  const narrow = async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.setViewportSize({ width: 1440, height: 900 });
+  };
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto("/commons/notes?q=18650");
+    await expect(page.getByRole("heading", { level: 1, name: "연구노트" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "내 노트" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "검색 결과" }).getByRole("link").first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
+
+    await page.goto(`/commons/notes/${DRAFT}`);
+    await expect(page.getByRole("table", { name: "노트 정보" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "연구 목표" }).getByRole("textbox").first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
+    // The sign dialog only describes what will be signed until 서명 is pressed (the draft stays a draft here).
+    await page.getByRole("button", { name: /서명하고 확정|제출/ }).first().click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
+    await page.keyboard.press("Escape");
+
+    await page.goto(`/commons/notes/${SIGNED}`);
+    await page.getByRole("button", { name: "무결성 검증" }).click();
+    await expect(page.getByRole("region", { name: "무결성 검증 결과" }).getByText("내용 해시 일치")).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
+
+    await page.goto(`${P}/notes`);
+    await expect(page.getByRole("table", { name: "내 노트" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "확인자 설정" }).getByRole("switch")).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
+  }
+});
+
 test("data search: rail, table view, empty result and the phone filter sheet pass axe in both themes", async ({ page, context, baseURL }) => {
   await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
   for (const colorScheme of ["light", "dark"] as const) {

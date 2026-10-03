@@ -2,7 +2,7 @@
 import { StatusBadge, type Tone } from "@nais/ui";
 import {
   Archive, Ban, Building2, CircleCheck, CircleDashed, CircleX, Clock, Eye, Globe, LoaderCircle, Lock, Minus, PencilLine, Send,
-  ShieldAlert, TriangleAlert, Undo2, Upload, type LucideIcon,
+  ShieldAlert, Signature, TriangleAlert, Undo2, Upload, type LucideIcon,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import type {
@@ -43,6 +43,7 @@ const OUTPUT_PUBLISH: Record<Schemas["OutputPublishStatus"], Spec> = {
   PUBLISHED: ["success", Globe],
 };
 const PUBLISH_REQUEST: Record<Schemas["PublishRequestStatus"], Spec> = { PENDING: ["info", Eye], APPROVED: ["success", CircleCheck], REJECTED: ["danger", CircleX] };
+const NOTE: Record<Schemas["NoteStatus"], Spec> = { DRAFT: ["neutral", PencilLine], SUBMITTED: ["info", Send], SIGNED: ["success", Signature] };
 const CHECK: Record<ReadinessCheckStatus, Spec> = { PASS: ["success", CircleCheck], WARNING: ["warning", TriangleAlert], FAIL: ["danger", CircleX], NOT_APPLICABLE: ["neutral", Minus] };
 
 export const AccessLevelBadge = ({ level }: { level: AccessLevel }) => <EnumBadge enumName="AccessLevel" value={level} map={ACCESS} />;
@@ -56,6 +57,7 @@ export const CheckStatusBadge = ({ status }: { status: ReadinessCheckStatus }) =
 
 export const WorkspaceRunBadge = ({ status }: { status: Schemas["RunStatus"] }) => <EnumBadge enumName="RunStatus" value={status} map={WORK_RUN} />;
 export const OutputPublishBadge = ({ status }: { status: Schemas["OutputPublishStatus"] }) => <EnumBadge enumName="OutputPublishStatus" value={status} map={OUTPUT_PUBLISH} />;
+export const NoteStatusBadge = ({ status }: { status: Schemas["NoteStatus"] }) => <EnumBadge enumName="NoteStatus" value={status} map={NOTE} />;
 export const PublishRequestBadge = ({ status }: { status: Schemas["PublishRequestStatus"] }) => <EnumBadge enumName="PublishRequestStatus" value={status} map={PUBLISH_REQUEST} />;
 
 export function ReadinessBadge({ value }: { value: ReadinessOverall | null | undefined }) {

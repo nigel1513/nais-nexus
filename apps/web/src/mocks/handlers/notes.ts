@@ -156,7 +156,7 @@ function witnessNotes(db: MockDb, user: MockUser): StoredNote[] {
 
 // ---------------------------------------------------------------- drafting (service/drafting.py, jobs.draft_note)
 
-/** The draft worker: QUEUED → RUNNING (1st read) → DONE (2nd read), appending AI blocks; a note no longer DRAFT drops the draft. */
+/** The draft worker: QUEUED → RUNNING (1st read) → DONE (2nd read), appending AI blocks (revision + 1); a note no longer DRAFT drops the draft. */
 function advanceDraft(note: StoredNote) {
   if (note.draft_status === "QUEUED") {
     note.draft_status = "RUNNING";
@@ -167,10 +167,13 @@ function advanceDraft(note: StoredNote) {
     note.draft_status = "NONE";
     return;
   }
-  appendDraftBlocks(note, draftSentences(listNotebookActivity(note.recorder_id, note.project_id, note.note_date)));
+  // jobs._finish: appended blocks bump the revision (an editor still holding the old one gets 409 CONFLICT).
+  if (appendDraftBlocks(note, draftSentences(listNotebookActivity(note.recorder_id, note.project_id, note.note_date)))) {
+    note.revision += 1;
+    note.updated_at = nowIso();
+  }
   note.draft_status = "DONE";
   note.draft_error = null;
-  note.updated_at = nowIso();
 }
 
 // ---------------------------------------------------------------- submit / chain (service/notes.fix_content, signing.py)

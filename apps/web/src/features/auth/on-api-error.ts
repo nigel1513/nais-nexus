@@ -2,6 +2,11 @@ import { ApiError, isBlockedCode } from "@/shared/api/errors";
 import { isProtected } from "./redirects";
 
 const AUTH_PATHS = [/^\/blocked(\/|$)/, /^\/web-auth(\/|$)/, /^\/mock-login(\/|$)/];
+/**
+ * 401s that are answers for the screen, not a lost session: signNote's NOTE_SIGNATURE_EXPIRED (the login is older than
+ * 5 minutes) is handled by the sign dialog, which re-authenticates and comes back to the note.
+ */
+const LOCAL_401_CODES = new Set(["NOTE_SIGNATURE_EXPIRED"]);
 
 /** Two sign-in attempts closer than this are a loop (Keycloak accepted the login but the API still says 401). */
 export const LOOP_WINDOW_MS = 60_000;
@@ -93,6 +98,7 @@ export function createApiErrorHandler(deps: ApiErrorDeps) {
       const path = deps.pathname();
       if (AUTH_PATHS.some((re) => re.test(path))) return;
       if (error.status === 401) {
+        if (LOCAL_401_CODES.has(error.code)) return;
         if (isProtected(path)) void unauthenticated();
       } else if (isBlockedCode(error.code)) {
         deps.goBlocked(error.code);

@@ -480,10 +480,10 @@ function EditorBody({ recipe, onReload }: { recipe: Recipe; onReload: () => Prom
       <ConfirmDialog
         open={confirmReload}
         onOpenChange={setConfirmReload}
-        title={t("workspace.leave.title")}
+        title={t("common.leave.title")}
         description={t("workspace.leave.reloadDescription")}
-        confirmLabel={t("workspace.leave.leave")}
-        cancelLabel={t("workspace.leave.stay")}
+        confirmLabel={t("common.leave.leave")}
+        cancelLabel={t("common.leave.stay")}
         closeLabel={t("common.close")}
         onConfirm={() => {
           setConfirmReload(false);

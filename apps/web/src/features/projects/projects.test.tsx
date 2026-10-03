@@ -82,9 +82,10 @@ describe("Projects redesign (Task 8)", () => {
     renderWorkspace(`/commons/projects/${PROJECT.seed}`, USER.aResearcher);
     await screen.findByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" });
     const tabs = within(screen.getByRole("navigation", { name: "프로젝트 작업 공간" })).getAllByRole("link");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["개요", "데이터", "변환", "산출물", "토론", "구성원2", "활동"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["개요", "데이터", "변환", "산출물", "연구노트", "토론", "구성원2", "활동"]);
     expect(tabs[0]).toHaveAttribute("aria-current", "page");
-    expect(tabs[5]).toHaveAttribute("href", `/commons/projects/${PROJECT.seed}/members`);
+    expect(tabs[6]).toHaveAttribute("href", `/commons/projects/${PROJECT.seed}/members`);
+    expect(tabs[4]).toHaveAttribute("href", `/commons/projects/${PROJECT.seed}/notes`);
     const info = screen.getByRole("region", { name: "프로젝트 정보" });
     expect(info).toHaveTextContent("한국에너지기술연구원");
     expect(info).toHaveTextContent("주관");
