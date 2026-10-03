@@ -601,7 +601,7 @@ export function DatasetForm({
   return (
     <form
       noValidate
-      className={cn(sheet ? "@container/form flex flex-col px-5 pt-4" : "grid grid-cols-1 gap-10 min-[1360px]:grid-cols-[minmax(0,1fr)_18rem]")}
+      className={cn(sheet ? "@container/form flex flex-col px-5 pt-4" : "grid grid-cols-1 gap-10 min-[1360px]:grid-cols-[minmax(0,72rem)_18rem]")}
       onSubmit={form.handleSubmit(async (values) => {
         // The API has no way to clear an optional field (null is rejected), so block it instead of silently keeping the old value.
         if (mode === "edit") {
@@ -616,7 +616,7 @@ export function DatasetForm({
         else await submit(values);
       }, (errs) => setSummary(toSummary(errs)))}
     >
-      <div className={cn("flex min-w-0 flex-col", !sheet && "@container/form max-w-[52rem]")}>
+      <div className={cn("flex min-w-0 flex-col", !sheet && "@container/form max-w-[72rem]")}>
         {summary.length || submitError ? (
           <div className="mb-6 flex flex-col gap-3">
             <FormErrorSummary errors={summary} onNavigate={(id) => id === "dataset-description" && setDescriptionView("write")} />

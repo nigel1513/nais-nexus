@@ -241,9 +241,10 @@ export function DataSearchScreen() {
             ) : view === "table" ? (
               <ResultsTable hits={hits} />
             ) : (
-              <ul className="divide-y divide-border border-y border-border">
+              // Very wide screens: two, then three columns, so a row is not a title at one edge and badges at the other.
+              <ul className="grid grid-cols-1 gap-x-10 border-t border-border min-[2200px]:grid-cols-2 min-[3200px]:grid-cols-3">
                 {hits.map((hit, i) => (
-                  <li key={hit.dataset_id}>
+                  <li key={hit.dataset_id} className="border-b border-border">
                     <SearchResultCard hit={hit} index={i + 1} showSnippet={!!debounced} />
                   </li>
                 ))}

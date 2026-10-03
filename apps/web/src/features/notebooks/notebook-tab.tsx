@@ -3,7 +3,7 @@ import { Button, cn } from "@nais/ui";
 import { useQuery } from "@tanstack/react-query";
 import { LoaderCircle, Maximize2, Minimize2, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWorkspace } from "@/features/workspace/workspace-layout";
 import { PanelHead } from "@/shared/ui/work-hero";
 import type { NotebookError } from "./open-notebook";
@@ -24,12 +24,14 @@ async function openProjectNotebook(projectId: string): Promise<Opened> {
 
 /**
  * Workspace 노트북 tab (M07-lite): the caller's folder of this project in the shared JupyterLab, in a frame inside the
- * portal. "넓게 보기" lets the frame fill the window (Esc or the same button brings the workspace back).
+ * portal. Once JupyterLab is ready the page scrolls so the tab's title sits under the top bar and the frame takes the
+ * rest of the window; "넓게 보기" lets the frame fill the whole window (Esc or the same button brings the workspace back).
  */
 export function NotebookTab() {
   const t = useTranslations();
   const { project, archived } = useWorkspace();
   const [expanded, setExpanded] = useState(false);
+  const sectionRef = useRef<HTMLElement>(null);
   const blocked: NotebookError | null = archived ? "archived" : project.my_role ? null : "forbidden";
   const opened = useQuery({
     queryKey: ["notebook-open", project.project_id],
@@ -44,6 +46,11 @@ export function NotebookTab() {
   const error = blocked ?? (opened.data && "error" in opened.data ? opened.data.error : null);
   const location = !blocked && opened.data && "location" in opened.data ? opened.data.location : null;
 
+  // JupyterLab is the work area here: bring it up past the summary band as soon as it can be shown.
+  useEffect(() => {
+    if (location) sectionRef.current?.scrollIntoView?.({ block: "start", behavior: "instant" });
+  }, [location]);
+
   useEffect(() => {
     if (!expanded) return;
     const onKey = (e: KeyboardEvent) => {
@@ -53,9 +60,9 @@ export function NotebookTab() {
     return () => document.removeEventListener("keydown", onKey);
   }, [expanded]);
 
-  const frameSize = expanded ? "min-h-0 flex-1" : "h-[max(36rem,calc(100dvh-9rem))]";
+  const frameSize = expanded ? "min-h-0 flex-1" : "h-[max(32rem,calc(100dvh-11.5rem))]";
   return (
-    <section aria-labelledby="ws-notebook-title" className={cn("flex flex-col", expanded && "fixed inset-0 z-dialog bg-bg p-3")}>
+    <section ref={sectionRef} aria-labelledby="ws-notebook-title" className={cn("flex scroll-mt-16 flex-col", expanded && "fixed inset-0 z-dialog bg-bg p-3")}>
       <PanelHead
         id="ws-notebook-title"
         crumb={t("workspace.tabs.notebook")}

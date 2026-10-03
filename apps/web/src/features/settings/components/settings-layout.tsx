@@ -38,7 +38,7 @@ const itemClass = (active: boolean) =>
 
 /**
  * Settings template (spec §5): a left sub-nav (profile, researcher number, theme, language, notifications, and
- * 기관 관리 for ORG_ADMIN / PLATFORM_ADMIN) beside a 768px column of section cards. Below lg the nav becomes a
+ * 기관 관리 for ORG_ADMIN / PLATFORM_ADMIN) beside a 768px column of section cards (1024px from 1536px wide; two, then three columns of cards from 2200px). Below lg the nav becomes a
  * row that scrolls inside itself.
  */
 export function SettingsLayout({ page, header, children }: { page: "account" | "organization"; header: ReactNode; children: ReactNode }) {
@@ -64,7 +64,7 @@ export function SettingsLayout({ page, header, children }: { page: "account" | "
   return (
     <>
       {header}
-      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_minmax(0,48rem)] lg:items-start lg:gap-12">
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_minmax(0,48rem)] lg:items-start lg:gap-12 2xl:grid-cols-[14rem_minmax(0,64rem)] 2xl:gap-16 min-[2200px]:grid-cols-[14rem_minmax(0,1fr)]">
         <nav
           ref={navRef}
           aria-label={t("settings.nav.label")}
@@ -106,7 +106,8 @@ export function SettingsLayout({ page, header, children }: { page: "account" | "
             ) : null}
           </ul>
         </nav>
-        <div className="flex min-w-0 flex-col gap-6">{children}</div>
+        {/* Very wide screens: the section cards sit side by side instead of leaving the right of the page empty. */}
+        <div className="flex min-w-0 flex-col gap-6 min-[2200px]:grid min-[2200px]:grid-cols-2 min-[2200px]:items-start min-[3200px]:grid-cols-3">{children}</div>
       </div>
     </>
   );

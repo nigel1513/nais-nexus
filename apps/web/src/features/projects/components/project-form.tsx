@@ -50,7 +50,7 @@ export function ProjectForm({
   return (
     <form
       noValidate
-      className="@container/form flex max-w-[52rem] flex-col"
+      className="@container/form flex max-w-[72rem] flex-col"
       onSubmit={form.handleSubmit(
         async (values) => {
           setSubmitError(null);
