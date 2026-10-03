@@ -154,6 +154,13 @@ export function creatorsFromSnapshot(snapshot: Record<string, unknown>, fallback
   const out: Creator[] = [];
   if (people.principal_investigator) out.push(person(people.principal_investigator));
   out.push(...(people.contributors ?? []).filter((c) => CREATOR_ROLES.has(String(c.role))).map(person));
+  // A PI who is also listed as co-investigator is one creator, not two.
+  const seen = new Set<string>();
+  const unique = out.filter((c) => {
+    const key = `${c.ntis ?? ""}|${c.name}|${c.affiliation ?? ""}`;
+    return seen.has(key) ? false : (seen.add(key), true);
+  });
+  out.splice(0, out.length, ...unique);
   return out.length ? out : [{ name: fallbackOrg, affiliation: null, ntis: null }];
 }
 

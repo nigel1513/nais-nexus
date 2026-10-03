@@ -33,6 +33,8 @@ export type StoredFile = Omit<Schemas["DatasetFile"], "inherited"> & { inherited
 export type StoredVersion = Omit<Schemas["DatasetVersion"], "readiness_overall" | "files" | "base_is_latest" | "change_summary"> & {
   files: StoredFile[];
   metadata_snapshot?: Record<string, unknown>;
+  /** Seed only: how this old version's metadata differed from the dataset's current one (applied until a snapshot is frozen). */
+  metadata_overrides?: Record<string, unknown>;
 };
 export type ReadinessOutcome = Pick<Schemas["ReadinessValidation"], "overall_status" | "summary" | "checks">;
 export type StoredValidation = Schemas["ReadinessValidation"] & { polls: number; outcome: ReadinessOutcome };

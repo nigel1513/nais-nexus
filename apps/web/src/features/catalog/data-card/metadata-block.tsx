@@ -8,6 +8,7 @@ import { notify } from "@/shared/ui/toast";
 import { downloadJsonLd } from "../api";
 import { PersonLine } from "../components/person-line";
 import { VocabularyTags } from "../components/vocabulary-tags";
+import { CitationBox } from "../versions/citation-box";
 import { PanelHead } from "@/shared/ui/work-hero";
 import "@/shared/ui/screen-v2.css";
 
@@ -162,6 +163,7 @@ export function MetadataBlock({ dataset: d }: { dataset: Dataset }) {
           </Row>
         </Group>
       </div>
+      {d.latest_published_version ? <CitationBox versionId={d.latest_published_version.dataset_version_id} label={d.latest_published_version.version_label} /> : null}
     </section>
   );
 }

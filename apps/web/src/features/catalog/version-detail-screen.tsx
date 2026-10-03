@@ -23,6 +23,7 @@ import { notify } from "@/shared/ui/toast";
 import { useGetDataset, useGetDatasetVersion } from "./api";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 import type { ChangeSummary } from "./versions/diff-stat";
+import { CitationBox } from "./versions/citation-box";
 import { DraftBanner, useVersionLine } from "./versions/draft-banner";
 import { PublishDialog } from "./versions/publish-dialog";
 import { versionAccess } from "./versions/version-history-tab";
@@ -221,6 +222,7 @@ export function VersionDetailScreen({
           </section>
           {steward && draft ? <UploadPanel versionId={versionId} /> : null}
           {published ? <DownloadPanel dataset={dataset} versionId={versionId} focus={focusDownload} /> : null}
+          {published ? <CitationBox versionId={versionId} label={version.version_label} /> : null}
           <ReadinessPanel versionId={versionId} published={published} steward={steward} pollMs={readinessPollMs} />
         </div>
         <ConfirmDialog

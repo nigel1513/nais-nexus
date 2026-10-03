@@ -408,6 +408,36 @@ export function createSeed(now: Date): MockDb {
     .map((f, i) => ({ ...f, file_id: sid(`ab${i + 1}`), inherited_from: f.file_id }));
   draftV.files.push(...inheritedRows);
   draftV.file_count = draftV.files.length;
+  // Metadata as it stood at v1.0 / v1.1 (applied over the current metadata until a snapshot is frozen), so the compare
+  // screen's metadata layer has real history: a narrower period, fewer keywords, an earlier licence and description.
+  const README_DESC = (cycles: string, files: string[]) =>
+    [
+      `리튬이온 18650 셀 12개를 상온(25 ℃)에서 1C 정전류-정전압으로 충방전하며 사이클별 용량, 평균 전압, 셀 표면 온도를 기록한 사이클 수명 시험 데이터셋이다. ${cycles}`,
+      "",
+      ...files,
+    ].join("\n");
+  Object.assign(versions.find((v) => v.dataset_version_id === VERSION.batteryV10)!, {
+    metadata_overrides: {
+      subtitle: "리튬이온 18650 셀 12개의 200 사이클 충방전 용량·전압·온도 이력",
+      description: README_DESC("사이클 1~200까지 수록했다.", ["- `data/measurements.csv`: 사이클별 `capacity_ah`, `voltage_v`, `temp_c`"]),
+      keywords: ["lithium-ion", "cycle-life"],
+      license: "CC-BY-NC-4.0",
+      temporal_end: "2026-02-20",
+      update_frequency: "IRREGULAR",
+    },
+  });
+  Object.assign(versions.find((v) => v.dataset_version_id === VERSION.batteryV11)!, {
+    metadata_overrides: {
+      subtitle: "리튬이온 18650 셀 12개의 500 사이클 충방전 용량·전압·온도 이력",
+      description: README_DESC("사이클 1~500까지 수록했고 셀 정보 파일을 더했다.", [
+        "- `data/measurements.csv`: 사이클별 `capacity_ah`, `voltage_v`, `temp_c`",
+        "- `data/test_cells.csv`: 셀별 화학계와 정격 용량",
+      ]),
+      keywords: ["lithium-ion", "cycle-life", "capacity-fade"],
+      license: "CC-BY-NC-4.0",
+      temporal_end: "2026-04-10",
+    },
+  });
   draftV.total_bytes = draftV.files.reduce((n, f) => n + f.size_bytes, 0);
 
   // Each tabular file gets a profile/preview built from a topic-specific CSV (not the shared README/codebook files, which start with "_" or are markdown).

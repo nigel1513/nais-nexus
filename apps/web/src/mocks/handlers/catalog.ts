@@ -80,8 +80,9 @@ const filesOf = (db: MockDb, versionId: string | null | undefined): StoredFile[]
 const defaultTarget = (v: StoredVersion) => (v.status === "DRAFT" ? v.base_version_id : v.previous_version_id) ?? null;
 
 export function versionView(db: MockDb, v: StoredVersion): Schemas["DatasetVersion"] {
-  const { files, metadata_snapshot: _snapshot, ...rest } = v;
+  const { files, metadata_snapshot: _snapshot, metadata_overrides: _overrides, ...rest } = v;
   void _snapshot;
+  void _overrides;
   const target = defaultTarget(v);
   return {
     ...rest,
@@ -132,10 +133,11 @@ function liveSnapshot(db: MockDb, ds: StoredDataset): Record<string, unknown> {
 function freezeSnapshots(db: MockDb, datasetId: string) {
   const ds = db.datasets.find((d) => d.dataset_id === datasetId);
   if (!ds) return;
-  for (const v of db.versions) if (v.dataset_id === datasetId && v.status !== "DRAFT" && !v.metadata_snapshot) v.metadata_snapshot = structuredClone(liveSnapshot(db, ds));
+  for (const v of db.versions) if (v.dataset_id === datasetId && v.status !== "DRAFT" && !v.metadata_snapshot) v.metadata_snapshot = structuredClone({ ...liveSnapshot(db, ds), ...v.metadata_overrides });
 }
 
-const snapshotOf = (db: MockDb, v: StoredVersion, ds: StoredDataset) => (v.status === "DRAFT" ? liveSnapshot(db, ds) : (v.metadata_snapshot ?? liveSnapshot(db, ds)));
+const snapshotOf = (db: MockDb, v: StoredVersion, ds: StoredDataset) =>
+  v.status === "DRAFT" ? liveSnapshot(db, ds) : (v.metadata_snapshot ?? { ...liveSnapshot(db, ds), ...v.metadata_overrides });
 const canSeeVersionRow = (user: MockUser, ds: StoredDataset, v: StoredVersion) => v.status === "PUBLISHED" || canSeeAllVersions(user, ds.owner_organization_id);
 const sideOf = (f: StoredFile | undefined) => (f ? { sha256: f.sha256, size_bytes: f.size_bytes } : null);
 const inheritedCopy = (f: StoredFile): StoredFile => ({ file_id: newId(), path: f.path, size_bytes: f.size_bytes, sha256: f.sha256, media_type: f.media_type, status: "VERIFIED", inherited_from: f.file_id });
