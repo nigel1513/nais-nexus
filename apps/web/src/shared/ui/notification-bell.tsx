@@ -1,6 +1,6 @@
 "use client";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger, buttonClass, cn, focusRing, notify, toneClass, type Tone } from "@nais/ui";
-import { Ban, Bell, CircleCheck, CircleX, Clock, Database, Inbox, PencilLine, UserPlus, type LucideIcon } from "lucide-react";
+import { BadgeCheck, Ban, Bell, CircleCheck, CircleX, Clock, Database, FileCheck, Inbox, MessageSquare, NotebookPen, PencilLine, TriangleAlert, Upload, UserPlus, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -20,6 +20,13 @@ const KIND: Record<AppNotification["type"], readonly [LucideIcon, Tone]> = {
   ACCESS_EXPIRING: [Clock, "warning"],
   ACCESS_REVOKED: [Ban, "danger"],
   DATASET_PUBLISHED: [Database, "neutral"],
+  OUTPUT_PUBLISH_REQUESTED: [Upload, "info"],
+  OUTPUT_PUBLISH_DECIDED: [FileCheck, "success"],
+  NOTE_SUBMITTED: [NotebookPen, "info"],
+  NOTE_REJECTED: [NotebookPen, "danger"],
+  NOTE_SIGNED: [BadgeCheck, "success"],
+  DATASET_COMMENT_ADDED: [MessageSquare, "neutral"],
+  RUN_FAILED: [TriangleAlert, "danger"],
 };
 
 const RTF = new Intl.RelativeTimeFormat("ko", { numeric: "auto" });

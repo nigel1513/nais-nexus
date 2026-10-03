@@ -59,6 +59,8 @@ export function checkResponse(method: string, apiPath: string, status: number, b
   if (!schema && status >= 400) schema = { $ref: "#/components/schemas/ErrorEnvelope" };
   const declared = operation.responses?.[String(status)];
   if (!declared && status < 400) return [`${method} ${match.template}: status ${status} not declared`];
+  const binary = declared?.content && !declared.content["application/json"]; // e.g. exportNotes' application/zip
+  if (!schema && binary) return [];
   if (!schema) return status === 204 || body === null || body === "" ? [] : [`${method} ${match.template} ${status}: unexpected body`];
   const validate = validatorFor(schema);
   if (validate(body)) return [];

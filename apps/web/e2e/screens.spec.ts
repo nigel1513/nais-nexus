@@ -249,7 +249,7 @@ test.describe("screens", () => {
     await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
     await shoot(page, `${prefix}-projects-list`);
 
-    await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
+    await page.goto(`/commons/projects/${PROJECT_SEED}/members`);
     await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
     await shoot(page, `${prefix}-project-detail-members`);
 
@@ -295,7 +295,7 @@ test.describe("v2 track B: dataset form and projects", () => {
     await page.goto(`/commons/projects/${PROJECT_SEED}`);
     await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
     await shoot(page, `v2-projects-${phase}-detail`);
-    await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
+    await page.goto(`/commons/projects/${PROJECT_SEED}/members`);
     await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
     await shoot(page, `v2-projects-${phase}-members`, [[1440, 900]]);
     await page.goto("/commons/projects/new");
@@ -596,5 +596,53 @@ test.describe("version history (stage 2)", () => {
     await dialog.getByRole("button", { name: "초안 만들기" }).click();
     await expect(page.getByText("파일 2개를 이어받았습니다")).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`/commons/data/${DATASET_BATTERY}/versions/[0-9a-f-]{36}$`));
+  });
+});
+
+test.describe("data hub, workspace and research notes (2026-10-02 plan, Task 16)", () => {
+  test.beforeEach(({}, info) => test.skip(info.project.name !== "chromium", "screenshots once"));
+  // SHOTS_DIR=../../.superpowers/sdd/2026-10-02-data-hub-workspace-notes/shots puts them next to the plan's report.
+  const prefix = process.env.SHOTS_PREFIX ?? "hubws";
+  const project = `/commons/projects/${PROJECT_SEED}`;
+  const NOTE_SIGNED = "00000000-0000-7000-8000-000000005701";
+  const NOTE_DRAFT = "00000000-0000-7000-8000-000000005702";
+  const OUTPUT_CAPACITY = "00000000-0000-7000-8000-000000005401";
+  const RECIPE_CAPACITY = "00000000-0000-7000-8000-000000005201";
+
+  test("hub", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/hub");
+    await expect(page.getByRole("heading", { level: 1, name: "데이터 허브" })).toBeVisible();
+    await shoot(page, `${prefix}-hub`);
+  });
+
+  test("workspace: overview, data, recipe editor, output detail", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto(project);
+    await expect(page.getByRole("region", { name: "입력 데이터" })).toBeVisible();
+    await shoot(page, `${prefix}-workspace-overview`);
+    await page.goto(`${project}/data`);
+    await expect(page.getByRole("button", { name: "데이터 추가" })).toBeVisible();
+    await shoot(page, `${prefix}-workspace-data`);
+    await page.goto(`${project}/recipes/${RECIPE_CAPACITY}`);
+    await expect(page.getByRole("region", { name: "변환 단계" })).toBeVisible();
+    await shoot(page, `${prefix}-workspace-recipe`);
+    await page.goto(`${project}/outputs/${OUTPUT_CAPACITY}`);
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await shoot(page, `${prefix}-workspace-output`);
+  });
+
+  test("research notes: list, draft editor, signed note verified", async ({ page, baseURL }) => {
+    await as(page, "researcher", baseURL!);
+    await page.goto("/commons/notes");
+    await expect(page.getByRole("table", { name: "내 노트" })).toBeVisible();
+    await shoot(page, `${prefix}-notes-list`);
+    await page.goto(`/commons/notes/${NOTE_DRAFT}`);
+    await expect(page.getByRole("group", { name: "연구 목표" })).toBeVisible();
+    await shoot(page, `${prefix}-notes-editor`);
+    await page.goto(`/commons/notes/${NOTE_SIGNED}`);
+    await page.getByRole("button", { name: "무결성 검증" }).click();
+    await expect(page.getByRole("region", { name: "무결성 검증 결과" }).getByText("내용 해시 일치")).toBeVisible();
+    await shoot(page, `${prefix}-notes-signed`);
   });
 });

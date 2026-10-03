@@ -3,20 +3,31 @@ import { cn, focusRing } from "@nais/ui";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 
-export const CARD_SECTIONS = ["overview", "files", "schema", "meta"] as const;
+export const CARD_SECTIONS = ["overview", "files", "schema", "meta", "projects", "discussion", "history"] as const;
 export type CardSection = (typeof CARD_SECTIONS)[number];
 export const sectionId = (s: CardSection) => `card-${s}`;
 
 /**
- * In-page section nav under the tabs (개요 · 파일·분포 · 스키마 · 메타데이터). Sticks below the top bar; the section in the
+ * In-page section nav under the tabs (개요 · 파일·분포 · 스키마 · 메타데이터 · 프로젝트 · 토론 · 이력). Sticks below the top bar; the section in the
  * upper part of the viewport is the current one (IntersectionObserver, nothing per scroll frame). A click jumps
  * without a smooth scroll and moves focus to the section, so keyboard and screen-reader users land where they asked.
  */
-export function SectionNav() {
+export function SectionNav({ initial = "overview" }: { initial?: CardSection }) {
   const t = useTranslations();
-  const [active, setActive] = useState<CardSection>("overview");
+  const [active, setActive] = useState<CardSection>(initial);
   const [stuck, setStuck] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLUListElement>(null);
+
+  // Seven sections overflow a phone-width nav: keep the current one inside the strip (horizontal only, no page scroll).
+  useEffect(() => {
+    const ul = list.current;
+    const a = ul?.querySelector<HTMLElement>("[aria-current=location]");
+    if (!ul || !a) return;
+    const left = a.offsetLeft - ul.offsetLeft;
+    if (left < ul.scrollLeft) ul.scrollLeft = left - 8;
+    else if (left + a.offsetWidth > ul.scrollLeft + ul.clientWidth) ul.scrollLeft = left + a.offsetWidth - ul.clientWidth + 8;
+  }, [active]);
 
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
@@ -65,7 +76,7 @@ export function SectionNav() {
         data-stuck={stuck ? "" : undefined}
         className="sticky top-12 z-[var(--z-sticky)] -mx-1 border-b border-transparent bg-bg px-1 py-2 data-[stuck]:border-border"
       >
-        <ul className="flex gap-1 overflow-x-auto [scrollbar-width:none]">
+        <ul ref={list} className="flex gap-1 overflow-x-auto [scrollbar-width:none]">
           {CARD_SECTIONS.map((s) => (
             <li key={s} className="shrink-0">
               <a

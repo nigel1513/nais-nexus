@@ -35,7 +35,9 @@
         "governance",
         "readiness",
         "audit",
-        "platform"
+        "platform",
+        "workspace",
+        "notes"
       ]
     },
     "correlation_id": {
@@ -1590,6 +1592,1052 @@
               "items": {
                 "type": "string"
               }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.input.added.v1",
+      "description": "Dataset version pinned as a project input (Audit PROJECT_INPUT_ADDED; notes evidence INPUT_ADDED; hub most_used).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.input.added.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "input_id",
+            "dataset_id",
+            "dataset_title",
+            "dataset_version_id",
+            "version_label",
+            "owner_organization_id"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "input_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_title": {
+              "type": "string"
+            },
+            "dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version_label": {
+              "type": "string"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.input.version_changed.v1",
+      "description": "Pinned input version changed explicitly (Audit PROJECT_INPUT_VERSION_CHANGED; notes evidence INPUT_VERSION_CHANGED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.input.version_changed.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "input_id",
+            "dataset_id",
+            "dataset_title",
+            "dataset_version_id",
+            "version_label",
+            "owner_organization_id",
+            "previous_dataset_version_id",
+            "previous_version_label"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "input_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_title": {
+              "type": "string"
+            },
+            "dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version_label": {
+              "type": "string"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "previous_dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "previous_version_label": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.input.removed.v1",
+      "description": "Project input removed (Audit PROJECT_INPUT_REMOVED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.input.removed.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "input_id",
+            "dataset_id",
+            "dataset_title",
+            "dataset_version_id",
+            "version_label",
+            "owner_organization_id"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "input_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "dataset_title": {
+              "type": "string"
+            },
+            "dataset_version_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "version_label": {
+              "type": "string"
+            },
+            "owner_organization_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.recipe.saved.v1",
+      "description": "Recipe created or saved as a new version (Audit RECIPE_SAVED; notes evidence RECIPE_SAVED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.recipe.saved.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "recipe_id",
+            "recipe_name",
+            "recipe_version",
+            "input_ids",
+            "step_count"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "recipe_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipe_name": {
+              "type": "string"
+            },
+            "recipe_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "input_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "step_count": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.run.succeeded.v1",
+      "description": "Recipe run finished and produced a DERIVED_DATASET output (Audit RUN_SUCCEEDED; notes evidence RUN_SUCCEEDED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.run.succeeded.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "run_id",
+            "recipe_id",
+            "recipe_name",
+            "recipe_version",
+            "input_rows",
+            "output_rows",
+            "output_id"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "run_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipe_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipe_name": {
+              "type": "string"
+            },
+            "recipe_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "input_rows": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output_rows": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "output_id": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.run.failed.v1",
+      "description": "Recipe run failed; error is a stable failure code such as INPUT_TOO_LARGE, never text or data values (Audit RUN_FAILED; notifies the run starter; notes evidence RUN_FAILED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.run.failed.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "run_id",
+            "recipe_id",
+            "recipe_name",
+            "recipe_version",
+            "error"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "run_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipe_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "recipe_name": {
+              "type": "string"
+            },
+            "recipe_version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "error": {
+              "type": "string",
+              "maxLength": 500
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.output.created.v1",
+      "description": "Output created from a run or an upload (Audit OUTPUT_CREATED; notes evidence OUTPUT_CREATED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.output.created.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "output_id",
+            "output_title",
+            "kind",
+            "access_level",
+            "run_id",
+            "lineage_dataset_version_ids"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "output_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "output_title": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "DERIVED_DATASET",
+                "FILE"
+              ]
+            },
+            "access_level": {
+              "type": "string",
+              "enum": [
+                "PUBLIC",
+                "INTERNAL",
+                "CONTROLLED",
+                "SENSITIVE"
+              ]
+            },
+            "run_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "lineage_dataset_version_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.publish.requested.v1",
+      "description": "Hub publication of an output requested; one approval slot per organization (Audit OUTPUT_PUBLISH_REQUESTED; notifies the organizations' DATA_STEWARDs; notes evidence PUBLISH_REQUESTED).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.publish.requested.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "request_id",
+            "output_id",
+            "output_title",
+            "project_name",
+            "approver_organization_ids"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "request_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "output_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "output_title": {
+              "type": "string"
+            },
+            "project_name": {
+              "type": "string"
+            },
+            "approver_organization_ids": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.publish.decided.v1",
+      "description": "One organization decided a publish request; request_status is the request status after this decision (Audit OUTPUT_PUBLISH_DECIDED; notifies the requester). A terminal catalog publication failure is reported as a system REJECT (request_status REJECTED) with failure_reason.",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.publish.decided.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "request_id",
+            "output_id",
+            "output_title",
+            "organization_id",
+            "decision",
+            "request_status",
+            "requested_by",
+            "published_dataset_id"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "request_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "output_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "output_title": {
+              "type": "string"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "decision": {
+              "type": "string",
+              "enum": [
+                "APPROVE",
+                "REJECT"
+              ]
+            },
+            "request_status": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "APPROVED",
+                "REJECTED"
+              ]
+            },
+            "requested_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "published_dataset_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "failure_reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "workspace.comment.added.v1",
+      "description": "Comment added (first comment of a new thread included). project_id is null for DATASET threads and required (non-null) for PROJECT/OUTPUT/RECIPE threads (Audit COMMENT_ADDED; DATASET threads notify the owner organization's DATA_STEWARDs).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "workspace.comment.added.v1"
+        },
+        "producer": {
+          "const": "workspace"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "thread_id",
+            "thread_title",
+            "scope",
+            "target_id",
+            "comment_id",
+            "new_thread",
+            "owner_organization_id"
+          ],
+          "properties": {
+            "project_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "thread_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "thread_title": {
+              "type": "string"
+            },
+            "scope": {
+              "type": "string",
+              "enum": [
+                "PROJECT",
+                "DATASET",
+                "OUTPUT",
+                "RECIPE"
+              ]
+            },
+            "target_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "comment_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "new_thread": {
+              "type": "boolean"
+            },
+            "owner_organization_id": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "format": "uuid"
+            }
+          },
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "DATASET"
+              }
+            },
+            "required": [
+              "scope"
+            ]
+          },
+          "then": {
+            "properties": {
+              "project_id": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "project_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "notes.note.submitted.v1",
+      "description": "Research note submitted and locked (Audit NOTE_SUBMITTED; notifies witnesses).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "notes.note.submitted.v1"
+        },
+        "producer": {
+          "const": "notes"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "note_id",
+            "note_date",
+            "version",
+            "recorder_id",
+            "organization_id",
+            "project_name",
+            "witness_user_ids",
+            "content_hash"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "note_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "note_date": {
+              "type": "string",
+              "format": "date"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "recorder_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_name": {
+              "type": "string"
+            },
+            "witness_user_ids": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "content_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "notes.note.signed.v1",
+      "description": "A signature was recorded; final=true when the note became SIGNED (Audit NOTE_SIGNED; notifies the recorder when a witness signs).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "notes.note.signed.v1"
+        },
+        "producer": {
+          "const": "notes"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "note_id",
+            "note_date",
+            "version",
+            "recorder_id",
+            "organization_id",
+            "project_name",
+            "signer_id",
+            "signer_role",
+            "final",
+            "content_hash",
+            "chain_hash"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "note_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "note_date": {
+              "type": "string",
+              "format": "date"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "recorder_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_name": {
+              "type": "string"
+            },
+            "signer_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "signer_role": {
+              "type": "string",
+              "enum": [
+                "RECORDER",
+                "WITNESS"
+              ]
+            },
+            "final": {
+              "type": "boolean"
+            },
+            "content_hash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "chain_hash": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "notes.note.rejected.v1",
+      "description": "Witness returned a submitted note to DRAFT with a reason (Audit NOTE_REJECTED; notifies the recorder).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "notes.note.rejected.v1"
+        },
+        "producer": {
+          "const": "notes"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "note_id",
+            "note_date",
+            "version",
+            "recorder_id",
+            "organization_id",
+            "project_name",
+            "reason"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "note_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "note_date": {
+              "type": "string",
+              "format": "date"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "recorder_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "project_name": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
+          }
+        }
+      }
+    },
+    {
+      "title": "notes.note.viewed.v1",
+      "description": "Someone other than the recorder opened the note (Audit NOTE_VIEWED, 열람 관리대장).",
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "const": "notes.note.viewed.v1"
+        },
+        "producer": {
+          "const": "notes"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "project_id",
+            "actor_id",
+            "occurred_at",
+            "note_id",
+            "note_date",
+            "version",
+            "recorder_id",
+            "organization_id",
+            "status"
+          ],
+          "properties": {
+            "project_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "actor_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "occurred_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "note_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "note_date": {
+              "type": "string",
+              "format": "date"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "recorder_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "organization_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "type": "string",
+              "enum": [
+                "DRAFT",
+                "SUBMITTED",
+                "SIGNED"
+              ]
             }
           }
         }

@@ -3,7 +3,7 @@ import { Button } from "@nais/ui";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback } from "react";
-import { isMocking, MOCK_USER_COOKIE } from "@/shared/config";
+import { isMocking, MOCK_AUTH_TIME_COOKIE, MOCK_USER_COOKIE } from "@/shared/config";
 import { logoutAction } from "../actions";
 
 /** Mock mode drops the mock-user cookie and goes home; otherwise the server action ends the Auth.js and Keycloak sessions. */
@@ -12,6 +12,7 @@ export function useSignOut(): () => void {
   return useCallback(() => {
     if (isMocking()) {
       document.cookie = `${MOCK_USER_COOKIE}=; max-age=0; path=/`;
+      document.cookie = `${MOCK_AUTH_TIME_COOKIE}=; max-age=0; path=/`;
       router.push("/");
       router.refresh();
     } else {

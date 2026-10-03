@@ -4,6 +4,8 @@ import { useTranslations } from "next-intl";
 import { flattenPages } from "@/shared/api/pagination";
 import { hasOrgRole, useMeData } from "@/shared/hooks/use-me";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
+import { usePublishRequests } from "@/features/workspace/api";
+import { PublishReviewTab } from "@/features/workspace/publish-review-tab";
 import { WorkHero, type HeroStat } from "@/shared/ui/work-hero";
 import { useListAccessGrants, useListAccessRequests } from "./api";
 import { grantTerm } from "./components/grant-term";
@@ -12,9 +14,15 @@ import { submittedAt } from "./components/request-meta";
 import { MyRequestsTab, ReviewTab } from "./components/request-tabs";
 
 // A steward's work comes first: the review queue leads and is their default tab.
-const TABS = ["review", "requests", "grants", "org-grants"] as const;
+const TABS = ["review", "publish", "requests", "grants", "org-grants"] as const;
 type Tab = (typeof TABS)[number];
-const LABEL: Record<Tab, string> = { requests: "access.tabs.requests", review: "access.tabs.review", grants: "access.tabs.grants", "org-grants": "access.tabs.orgGrants" };
+const LABEL: Record<Tab, string> = {
+  requests: "access.tabs.requests",
+  review: "access.tabs.review",
+  publish: "access.tabs.publish",
+  grants: "access.tabs.grants",
+  "org-grants": "access.tabs.orgGrants",
+};
 const DAY_MS = 86_400_000;
 const LIMIT = 100;
 
@@ -26,7 +34,7 @@ export function AccessScreen() {
   const me = useMeData();
   const steward = hasOrgRole(me, "DATA_STEWARD");
   const orgAdmin = hasOrgRole(me, "DATA_STEWARD", "ORG_ADMIN");
-  const visible = TABS.filter((k) => (k !== "review" || steward) && (k !== "org-grants" || orgAdmin));
+  const visible = TABS.filter((k) => ((k !== "review" && k !== "publish") || steward) && (k !== "org-grants" || orgAdmin));
   const fallback = visible[0]!;
   const [params, setParams] = useUrlQuery();
   // The tab is derived from the URL (never copied into state), so Back/Forward and the dashboard's ?tab= links stay in sync.
@@ -40,6 +48,11 @@ export function AccessScreen() {
   const openRows = flattenPages(open.data);
   const grantRows = flattenPages(grants.data);
   const reviewCount = reviewRows.length;
+  // Same query (and cache) as the 공개 요청 tab's default filter; counts the requests still waiting on my organization.
+  const publish = usePublishRequests({ role: "reviewer", status: ["PENDING"] }, { enabled: steward });
+  const publishCount = flattenPages(publish.data).filter(
+    (r) => r.created_by !== me.user_id && r.approvals.some((a) => a.organization_id === me.organization.organization_id && a.decision === null),
+  ).length;
 
   const now = Date.now();
   const oldest = reviewRows.length ? Math.max(...reviewRows.map((r) => Math.floor((now - Date.parse(submittedAt(r))) / DAY_MS))) : 0;
@@ -96,6 +109,10 @@ export function AccessScreen() {
               <TabsTrigger key={k} value={k} count={review.data ? reviewCount : undefined} aria-label={review.data ? t("access.tabs.reviewLabel", { count: reviewCount }) : undefined}>
                 {t(LABEL[k])}
               </TabsTrigger>
+            ) : k === "publish" ? (
+              <TabsTrigger key={k} value={k} count={publish.data ? publishCount : undefined} aria-label={publish.data ? t("access.tabs.publishLabel", { count: publishCount }) : undefined}>
+                {t(LABEL[k])}
+              </TabsTrigger>
             ) : (
               <TabsTrigger key={k} value={k}>
                 {t(LABEL[k])}
@@ -106,6 +123,11 @@ export function AccessScreen() {
         {steward ? (
           <TabsContent value="review" className="pt-6">
             <ReviewTab />
+          </TabsContent>
+        ) : null}
+        {steward ? (
+          <TabsContent value="publish" className="pt-6">
+            <PublishReviewTab />
           </TabsContent>
         ) : null}
         <TabsContent value="requests" className="pt-6">

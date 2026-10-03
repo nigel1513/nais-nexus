@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
 import { MOCK_USER_COOKIE } from "@/shared/config";
+import { stampMockAuthTime } from "../reauth";
 
 export function MockLoginForm({ callbackUrl, users }: { callbackUrl: string; users: { id: string; label: string; email: string; organization?: string }[] }) {
   const t = useTranslations();
@@ -15,6 +16,7 @@ export function MockLoginForm({ callbackUrl, users }: { callbackUrl: string; use
       onSubmit={(e) => {
         e.preventDefault();
         document.cookie = `${MOCK_USER_COOKIE}=${encodeURIComponent(userId)}; path=/; SameSite=Lax`;
+        stampMockAuthTime();
         router.push(callbackUrl);
         router.refresh();
       }}

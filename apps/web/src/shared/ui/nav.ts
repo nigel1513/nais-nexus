@@ -1,5 +1,5 @@
 "use client";
-import { Activity, Building2, Database, FolderKanban, LayoutDashboard, NotebookPen, Settings, ShieldCheck, type LucideIcon } from "lucide-react";
+import { Activity, BookText, Building2, Compass, Database, FolderKanban, LayoutDashboard, NotebookPen, Settings, ShieldCheck, type LucideIcon } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useMemo } from "react";
 import type { Me } from "@/shared/api/types";
@@ -15,7 +15,7 @@ export type NavItem = {
 export type NavGroup = { key: "work" | "governance" | "admin"; label: string; items: NavItem[] };
 
 /**
- * Sidebar sections (spec §3). Reserved P1 routes (/marketplace, /compute) stay hidden (M10 §7.13).
+ * Sidebar sections (spec §3; data-hub plan §3: 데이터 허브 is the discovery home, 전체 데이터 the full search). Reserved P1 routes (/marketplace, /compute) stay hidden (M10 §7.13).
  * 기관 관리 is for ORG_ADMIN or PLATFORM_ADMIN only.
  */
 export function useNavGroups(me: Me): NavGroup[] {
@@ -28,8 +28,10 @@ export function useNavGroups(me: Me): NavGroup[] {
         label: t("shell.groupWork"),
         items: [
           { href: "/commons", label: t("nav.dashboard"), icon: LayoutDashboard },
-          { href: "/commons/projects", label: t("nav.projects"), icon: FolderKanban },
+          { href: "/commons/hub", label: t("nav.hub"), icon: Compass },
           { href: "/commons/data", label: t("nav.data"), icon: Database },
+          { href: "/commons/projects", label: t("nav.projects"), icon: FolderKanban },
+          { href: "/commons/notes", label: t("nav.notes"), icon: BookText },
           { href: "/commons/notebooks", label: t("nav.notebooks"), icon: NotebookPen, soon: true },
         ],
       },

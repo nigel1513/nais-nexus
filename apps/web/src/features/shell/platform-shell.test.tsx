@@ -39,7 +39,9 @@ describe("PlatformShell: sidebar", () => {
     setLocation("/commons/projects");
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     const nav = await screen.findByRole("navigation", { name: "주 메뉴" });
-    expect(within(nav).getAllByRole("link").map((l) => l.textContent)).toEqual(["대시보드", "프로젝트", "데이터", "접근 관리", "활동"]);
+    expect(within(nav).getAllByRole("link").map((l) => l.textContent)).toEqual(["대시보드", "데이터 허브", "전체 데이터", "프로젝트", "연구노트", "접근 관리", "활동"]);
+    expect(within(nav).getByRole("link", { name: "데이터 허브" })).toHaveAttribute("href", "/commons/hub");
+    expect(within(nav).getByRole("link", { name: "연구노트" })).toHaveAttribute("href", "/commons/notes");
     expect(within(nav).getByRole("link", { name: "프로젝트" })).toHaveAttribute("aria-current", "page");
     expect(within(nav).getByRole("link", { name: "대시보드" })).not.toHaveAttribute("aria-current");
     // Groups: 작업 / 거버넌스; 관리 only with a role that can use it.
@@ -83,7 +85,7 @@ describe("PlatformShell: sidebar", () => {
     expect(screen.getByRole("button", { name: "사이드바 펼치기" })).toBeInTheDocument();
     expect(setItem).toHaveBeenCalledWith("nais-sidebar-collapsed", "1");
     // Labels stay as accessible names in the rail.
-    expect(within(screen.getByRole("navigation", { name: "주 메뉴" })).getByRole("link", { name: "데이터" })).toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "주 메뉴" })).getByRole("link", { name: "전체 데이터" })).toBeInTheDocument();
     unmount();
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     expect(await screen.findByRole("button", { name: "사이드바 펼치기" })).toBeInTheDocument();
@@ -107,7 +109,7 @@ describe("PlatformShell: sidebar", () => {
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     await userEvent.click(await screen.findByRole("button", { name: "메뉴" }));
     const sheet = await screen.findByRole("dialog", { name: "메뉴" });
-    await userEvent.click(within(sheet).getByRole("link", { name: "데이터" }));
+    await userEvent.click(within(sheet).getByRole("link", { name: "전체 데이터" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "메뉴" })).not.toBeInTheDocument());
   });
 });
@@ -126,8 +128,8 @@ describe("PlatformShell: top bar", () => {
       { user: USER.aResearcher },
     );
     const crumbs = await screen.findByRole("navigation", { name: "현재 위치" });
-    await waitFor(() => expect(within(crumbs).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["데이터", "리튬이온 배터리 셀 사이클 시험 데이터"]));
-    expect(within(crumbs).getByRole("link", { name: "데이터" })).toHaveAttribute("href", "/commons/data");
+    await waitFor(() => expect(within(crumbs).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["전체 데이터", "리튬이온 배터리 셀 사이클 시험 데이터"]));
+    expect(within(crumbs).getByRole("link", { name: "전체 데이터" })).toHaveAttribute("href", "/commons/data");
     expect(within(crumbs).getByText("리튬이온 배터리 셀 사이클 시험 데이터")).toHaveAttribute("aria-current", "page");
   });
 

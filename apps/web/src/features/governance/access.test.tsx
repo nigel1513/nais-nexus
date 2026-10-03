@@ -84,8 +84,9 @@ describe("AccessScreen", () => {
     const id = await seedPending();
     renderScreen(<AccessScreen />, { user: USER.aSteward, path: "/commons/access" });
     await screen.findByRole("tab", { name: "검토할 요청 (1건)" });
+    await screen.findByRole("tab", { name: "공개 요청 (0건 결정 대기)" });
     const tabs = screen.getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["검토할 요청1", "내 요청", "내 권한", "기관 권한"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["검토할 요청1", "공개 요청0", "내 요청", "내 권한", "기관 권한"]);
     expect(tabs[0]).toHaveAttribute("aria-selected", "true");
     const table = await screen.findByRole("table", { name: "검토할 요청" });
     const headers = within(table).getAllByRole("columnheader").map((h) => h.textContent);

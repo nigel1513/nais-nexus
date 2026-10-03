@@ -1,6 +1,6 @@
 "use client";
 import { Badge, Button, buttonClass, SelectMenu, Skeleton } from "@nais/ui";
-import { MessageSquare, NotebookPen, Pencil } from "lucide-react";
+import { FolderInput, MessageSquare, NotebookPen, Pencil } from "lucide-react";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useState } from "react";
@@ -117,7 +117,7 @@ export function VersionPicker({
 
 /**
  * Data Card header (UI v2): the shared SummaryBand. Context (연구 데이터 · owner · subjects) over the bold title; the
- * subtitle and keyword tags under it; actions — 문의 · 새 노트북 (예정) · the access CTA as the one primary, with 편집
+ * subtitle and keyword tags under it; actions — 문의 · 프로젝트에서 열기 · 새 노트북 (예정) · the access CTA as the one primary, with 편집
  * as a quiet ghost for the owner steward; then the fact row: PI · NTIS, period, version · publish date, and the
  * AI-ready score as a compact meter. App controls inside the band sit in a `.dark` wrapper so they use dark tokens.
  */
@@ -127,12 +127,15 @@ export function DataCardHeader({
   steward,
   onEdit,
   onInquiry,
+  onOpenInProject,
 }: {
   dataset: Dataset;
   selected: DatasetVersion | undefined;
   steward: boolean;
   onEdit: () => void;
   onInquiry: () => void;
+  /** Pin the dataset as a project input; offered once a version is published. */
+  onOpenInProject: () => void;
 }) {
   const t = useTranslations();
   const vocab = useVocabularyLabels();
@@ -199,6 +202,12 @@ export function DataCardHeader({
               <MessageSquare aria-hidden="true" strokeWidth={1.75} />
               {t("data.card.inquiry")}
             </Button>
+            {latest ? (
+              <Button onClick={onOpenInProject}>
+                <FolderInput aria-hidden="true" strokeWidth={1.75} />
+                {t("data.card.openInProject.title")}
+              </Button>
+            ) : null}
             <Button disabled>
               <NotebookPen aria-hidden="true" strokeWidth={1.75} />
               {t("data.card.newNotebook")}

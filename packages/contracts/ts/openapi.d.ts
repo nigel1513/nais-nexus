@@ -961,6 +961,741 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/hub/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Data-Hub home. Only datasets the caller can see (D-012). Each rail holds at most 6 cards:
+         *     trending = most access requests in the last 7 days (0 excluded, metric = request count),
+         *     recent = most recently published versions (metric null), most_used = most project inputs (metric = input count).
+         *     Organization rows count ACTIVE datasets visible to the caller.
+         */
+        get: operations["getHubOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        /** @description Projects that use this dataset as an input. Projects the caller is an ACTIVE member of are listed; the rest are only counted in hidden_count. Visible datasets only (else 404). */
+        get: operations["listDatasetProjects"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/datasets/{dataset_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        /** @description Dataset history (versions, policy, validation, project use, hub publication, discussion), newest first. Visible datasets only (else 404). */
+        get: operations["listDatasetActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description ACTIVE project members only (else 404). access_lapsed is computed for the caller at read time. */
+        get: operations["listProjectInputs"];
+        put?: never;
+        /**
+         * @description ACTIVE member other than VIEWER (FORBIDDEN). Dataset must be visible (404) and the version PUBLISHED (DATASET_VERSION_NOT_PUBLISHED).
+         *     Non-PUBLIC datasets need an ACTIVE grant for the caller (403 ACCESS_REQUIRED, details.dataset_id for the access-request link).
+         *     One live input per dataset (409 CONFLICT). Emits workspace.input.added.v1.
+         */
+        post: operations["addProjectInput"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/inputs/{input_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                input_id: components["parameters"]["InputId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description ACTIVE member other than VIEWER. Soft delete; recipes still referencing the input fail validation (RECIPE_INVALID) until edited. Emits workspace.input.removed.v1. */
+        delete: operations["removeProjectInput"];
+        options?: never;
+        head?: never;
+        /** @description ACTIVE member other than VIEWER. Changing dataset_version_id is an explicit, audited action (workspace.input.version_changed.v1) and re-checks access like addProjectInput. */
+        patch: operations["updateProjectInput"];
+        trace?: never;
+    };
+    "/projects/{project_id}/recipes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description ACTIVE project members only (else 404). */
+        get: operations["listRecipes"];
+        put?: never;
+        /** @description ACTIVE member other than VIEWER. Steps are validated against the inputs' column profiles (422 RECIPE_INVALID with details.step_index). Creates version 1 and emits workspace.recipe.saved.v1. */
+        post: operations["createRecipe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/recipes/{recipe_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                recipe_id: components["parameters"]["RecipeId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getRecipe"];
+        /** @description ACTIVE member other than VIEWER. If-Match must carry the current version (409 CONFLICT otherwise). Saving increments version and emits workspace.recipe.saved.v1. */
+        put: operations["updateRecipe"];
+        post?: never;
+        /** @description ACTIVE member other than VIEWER. Not allowed while a run of the recipe is QUEUED/RUNNING (RUN_NOT_ALLOWED). Past runs and outputs keep their lineage. */
+        delete: operations["deleteRecipe"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/recipes/{recipe_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                recipe_id: components["parameters"]["RecipeId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Synchronous preview: reads at most the first 10,000 rows of each input, applies the steps and returns the first 100 rows (cells ≤ 200 chars).
+         *     Body may carry unsaved input_ids/steps; omitted fields use the saved recipe. Lapsed inputs -> 409 INPUT_ACCESS_LAPSED; timeout (20 s) -> 503.
+         */
+        post: operations["previewRecipe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/recipes/{recipe_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                recipe_id: components["parameters"]["RecipeId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description ACTIVE member other than VIEWER. Pins the current recipe version and input versions. Every input must be accessible (409 INPUT_ACCESS_LAPSED);
+         *     one QUEUED/RUNNING run per recipe (409 RUN_NOT_ALLOWED). Queued after commit; the worker emits workspace.run.succeeded.v1 / workspace.run.failed.v1.
+         */
+        post: operations["startRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description ACTIVE project members only (else 404). Newest first. */
+        get: operations["listRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                run_id: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/outputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description ACTIVE project members only (else 404). Completed outputs only, newest first. */
+        get: operations["listOutputs"];
+        put?: never;
+        /**
+         * @description ACTIVE member other than VIEWER uploads files as a FILE output. Returns presigned PUT URLs (TTL 15 min, single PUT so ≤ 5 GiB per file).
+         *     access_level may not be looser than the strictest project input (422 VALIDATION_FAILED, field access_level); default INTERNAL when the project has no inputs.
+         */
+        post: operations["createOutputUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/outputs/{output_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                output_id: components["parameters"]["OutputId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description The uploader completes the session. Size and sha256 are re-checked server-side (422 UPLOAD_CHECKSUM_MISMATCH); expired session -> 409 UPLOAD_SESSION_EXPIRED. Emits workspace.output.created.v1. */
+        post: operations["completeOutputUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/outputs/{output_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                output_id: components["parameters"]["OutputId"];
+            };
+            cookie?: never;
+        };
+        /** @description ACTIVE project members only (else 404). Includes lineage (inputs -> recipe@version -> run). */
+        get: operations["getOutput"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/outputs/{output_id}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                output_id: components["parameters"]["OutputId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description ACTIVE project members only. Every lineage input must still be accessible (409 INPUT_ACCESS_LAPSED). Presigned GET URLs, TTL 300 s. */
+        post: operations["getOutputDownload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/outputs/{output_id}/publish-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                output_id: components["parameters"]["OutputId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description ACTIVE member other than VIEWER asks to publish the output to the hub as a new dataset (owner = project lead organization).
+         *     Allowed when publish_status is NONE or REJECTED (else 409 OUTPUT_PUBLISH_PENDING). One approval slot per owner organization of the lineage inputs,
+         *     plus one for the project lead organization when it owns none of them (it becomes the dataset owner); an output without inputs needs only the
+         *     lead organization. Every slot is decided by a DATA_STEWARD of its organization. Emits workspace.publish.requested.v1.
+         */
+        post: operations["requestOutputPublish"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/publish-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listPublishRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/publish-requests/{request_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: components["parameters"]["PublishRequestId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description DATA_STEWARD of an organization with a pending approval slot (403 otherwise); the requester never decides their own request (403).
+         *     A REJECT needs a comment (422). Any REJECT -> REJECTED; all APPROVE -> APPROVED, then the catalog dataset is created (published by the lead
+         *     organization's approving steward) and the output becomes PUBLISHED. If the catalog cannot publish it (terminal failure), the request becomes
+         *     REJECTED with failure_reason and the output can be requested again. Decided slots cannot change (409). Emits workspace.publish.decided.v1.
+         */
+        post: operations["decidePublishRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/threads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Either scope + target_id (one target) or project_id (all PROJECT/OUTPUT/RECIPE threads of the project) is required (422 otherwise).
+         *     PROJECT/OUTPUT/RECIPE: ACTIVE project members only (404). DATASET: anyone who can see the dataset. Newest activity first.
+         */
+        get: operations["listThreads"];
+        put?: never;
+        /** @description Creates the thread with its first comment. PROJECT/OUTPUT/RECIPE need ACTIVE project membership; DATASET threads are open to every signed-in user who can see the dataset. Emits workspace.comment.added.v1. */
+        post: operations["createThread"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/threads/{thread_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Thread author, or PROJECT_OWNER/PROJECT_ADMIN for project threads, or owner-org DATA_STEWARD for dataset threads. */
+        patch: operations["updateThread"];
+        trace?: never;
+    };
+    "/threads/{thread_id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        /** @description Same read rule as the thread. Oldest first. */
+        get: operations["listComments"];
+        put?: never;
+        /** @description Same write rule as createThread. Markdown body, at most 10,000 characters. Emits workspace.comment.added.v1. */
+        post: operations["addComment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description role=recorder (default): the caller's own notes (latest version per day). role=witness: SUBMITTED/SIGNED notes of projects
+         *     where the caller is a configured witness. Newest note_date first. from/to are inclusive Asia/Seoul dates.
+         */
+        get: operations["listNotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description ZIP of the caller's own notes in the project (every status). An ORG_ADMIN additionally gets the SUBMITTED/SIGNED notes of other
+         *     recorders of their organization in the project — never other recorders' DRAFTs (DRAFT is recorder-only) — and each exported note
+         *     of another recorder emits notes.note.viewed.v1 (열람 관리대장), as getNote does.
+         *     Contents: notes/*.json, notes/*.html (human readable) and hashes.csv. Streamed. from/to are inclusive Asia/Seoul dates.
+         */
+        get: operations["exportNotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Semantic search (embedding + rerank, top 20) over notes the caller may read; falls back to keyword search with score null when the embedding service is off. */
+        get: operations["searchNotes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/notes/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description ACTIVE project member. Returns the caller's latest note version for today (Asia/Seoul), or creates a DRAFT (organization_id = recorder's current organization, fixed for life). */
+        post: operations["getOrCreateTodayNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/note-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        /** @description ACTIVE project members. llm_enabled mirrors the server setting NAIS_LLM_ENABLED (read-only). */
+        get: operations["getNoteSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * @description PROJECT_OWNER / PROJECT_ADMIN. witness_user_ids must be ACTIVE project members (422). Applies only to notes submitted (or signed
+         *     from DRAFT) afterwards: each note keeps the witness_required / witness_user_ids snapshot taken at its submit, and signNote, rejectNote
+         *     and witness visibility use that snapshot, never the current setting.
+         */
+        patch: operations["updateNoteSettings"];
+        trace?: never;
+    };
+    "/notes/{note_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * @description Recorder always; SUBMITTED/SIGNED also the witnesses in the note's witness_user_ids snapshot who are ACTIVE members. Other ACTIVE members of the
+         *     project get 403 FORBIDDEN; non-members, and anyone but the recorder for a DRAFT, get 404.
+         *     A read by anyone other than the recorder emits notes.note.viewed.v1 (열람 관리대장).
+         */
+        get: operations["getNote"];
+        put?: never;
+        post?: never;
+        /**
+         * @description Recorder only, DRAFT only (409 NOTE_LOCKED for SUBMITTED/SIGNED; signed notes are never deleted). Deleting a revision DRAFT
+         *     leaves the signed previous version untouched.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+         */
+        delete: operations["deleteNote"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/{note_id}/blocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * @description Recorder only, DRAFT only (409 NOTE_LOCKED). If-Match must carry the current revision (409 CONFLICT). Replaces the block list in order:
+         *     listed block_ids keep their origin and evidence, new blocks (no block_id) are HUMAN/accepted, unlisted blocks are deleted.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+         */
+        put: operations["updateNoteBlocks"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/{note_id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Recorder only, DRAFT only (409 NOTE_LOCKED). Queues a local-LLM draft of the standard template (NoteSection) from the Jupyter notebooks the recorder
+         *     saved in the note's project on note_date (cell sources and output kinds only, never output values); new AI blocks are appended with accepted=false and
+         *     NOTEBOOK evidence. No notebook saved that day -> 422 VALIDATION_FAILED with details.reason NO_NOTEBOOK_ACTIVITY ("오늘 저장한 노트북이 없습니다.").
+         *     Workspace activity evidence is not sent to the LLM. Once per minute per note (429 RATE_LIMITED); 503 LLM_UNAVAILABLE when NAIS_LLM_ENABLED is false.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+         */
+        post: operations["draftNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/{note_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Recorder only, DRAFT -> SUBMITTED (locked). Unaccepted AI blocks -> 409 NOTE_HAS_UNACCEPTED_AI; other states -> 409 NOTE_LOCKED.
+         *     Fixes content_hash and snapshots the project's witness_required / witness_user_ids onto the note (visible to those witnesses from now on).
+         *     Emits notes.note.submitted.v1.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+         */
+        post: operations["submitNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/{note_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description A witness in the note's witness_user_ids snapshot only (403 NOTE_NOT_WITNESS), SUBMITTED -> DRAFT with a reason (409 otherwise); the next submit takes a new snapshot. Emits notes.note.rejected.v1. */
+        post: operations["rejectNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/{note_id}/sign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Requires a token whose auth_time is within 5 minutes (401 NOTE_SIGNATURE_EXPIRED -> re-authenticate).
+         *     Recorder (RECORDER signature): from SUBMITTED in every case; from DRAFT only when the project currently requires no witness — that
+         *     sign runs the submit checks (409 NOTE_HAS_UNACCEPTED_AI) and takes the witness snapshot (witness_required=false) in the same step.
+         *     From DRAFT while the project requires witnesses -> 409 CONFLICT (submit first).
+         *     Witness (WITNESS signature): a user in the note's witness_user_ids snapshot, SUBMITTED only, and only when the snapshot has
+         *     witness_required=true; anyone else 403 NOTE_NOT_WITNESS.
+         *     The note becomes SIGNED (chain_hash fixed) when it has the RECORDER signature and, if the snapshot requires witnesses, one WITNESS signature.
+         *     Only the snapshot on the note is consulted, never the current project setting, so a SUBMITTED note can always be completed.
+         *     Emits notes.note.signed.v1 per signature.
+         */
+        post: operations["signNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/{note_id}/revise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Recorder only, SIGNED only (409 NOTE_LOCKED otherwise). Creates a new DRAFT version (version + 1, previous_version_id set, blocks copied);
+         *     the signed version is unchanged.
+         *     Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+         *     403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+         */
+        post: operations["reviseNote"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notes/{note_id}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        /** @description Same read rule as getNote. Recomputes content_hash from the stored content and rebuilds the project × organization chain. DRAFT notes have nothing to verify (409 CONFLICT). */
+        get: operations["verifyNote"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1034,11 +1769,11 @@ export interface components {
         /** @enum {string} */
         ReadinessCheckStatus: "PASS" | "WARNING" | "FAIL" | "NOT_APPLICABLE";
         /** @enum {string} */
-        ResourceType: "USER" | "ORGANIZATION" | "MEMBERSHIP" | "PROJECT" | "PROJECT_MEMBER" | "DATASET" | "DATASET_VERSION" | "DATASET_FILE" | "ACCESS_REQUEST" | "ACCESS_GRANT" | "READINESS_VALIDATION";
+        ResourceType: "USER" | "ORGANIZATION" | "MEMBERSHIP" | "PROJECT" | "PROJECT_MEMBER" | "DATASET" | "DATASET_VERSION" | "DATASET_FILE" | "ACCESS_REQUEST" | "ACCESS_GRANT" | "READINESS_VALIDATION" | "PROJECT_INPUT" | "RECIPE" | "RUN" | "OUTPUT" | "PUBLISH_REQUEST" | "THREAD" | "RESEARCH_NOTE";
         /** @enum {string} */
-        AuditAction: "LOGIN" | "USER_CREATED" | "ORGANIZATION_CREATED" | "ADMIN_ROLE_CHANGED" | "PROJECT_CREATED" | "PROJECT_ARCHIVED" | "PROJECT_MEMBER_ADDED" | "PROJECT_MEMBER_REMOVED" | "PROJECT_MEMBER_ROLE_CHANGED" | "DATASET_CREATED" | "DATASET_VERSION_PUBLISHED" | "DATASET_UPDATED" | "POLICY_CHANGED" | "ACCESS_REQUESTED" | "ACCESS_REVIEW_STARTED" | "ACCESS_APPROVED" | "ACCESS_REJECTED" | "ACCESS_CHANGES_REQUESTED" | "ACCESS_WITHDRAWN" | "ACCESS_REVOKED" | "ACCESS_EXPIRED" | "FILE_DOWNLOADED" | "DOWNLOAD_DENIED" | "READINESS_VALIDATION_COMPLETED";
+        AuditAction: "LOGIN" | "USER_CREATED" | "ORGANIZATION_CREATED" | "ADMIN_ROLE_CHANGED" | "PROJECT_CREATED" | "PROJECT_ARCHIVED" | "PROJECT_MEMBER_ADDED" | "PROJECT_MEMBER_REMOVED" | "PROJECT_MEMBER_ROLE_CHANGED" | "DATASET_CREATED" | "DATASET_VERSION_PUBLISHED" | "DATASET_UPDATED" | "POLICY_CHANGED" | "ACCESS_REQUESTED" | "ACCESS_REVIEW_STARTED" | "ACCESS_APPROVED" | "ACCESS_REJECTED" | "ACCESS_CHANGES_REQUESTED" | "ACCESS_WITHDRAWN" | "ACCESS_REVOKED" | "ACCESS_EXPIRED" | "FILE_DOWNLOADED" | "DOWNLOAD_DENIED" | "READINESS_VALIDATION_COMPLETED" | "PROJECT_INPUT_ADDED" | "PROJECT_INPUT_VERSION_CHANGED" | "PROJECT_INPUT_REMOVED" | "RECIPE_SAVED" | "RUN_SUCCEEDED" | "RUN_FAILED" | "OUTPUT_CREATED" | "OUTPUT_PUBLISH_REQUESTED" | "OUTPUT_PUBLISH_DECIDED" | "COMMENT_ADDED" | "NOTE_SUBMITTED" | "NOTE_SIGNED" | "NOTE_REJECTED" | "NOTE_VIEWED";
         /** @enum {string} */
-        NotificationType: "PROJECT_INVITATION" | "ACCESS_SUBMITTED" | "ACCESS_APPROVED" | "ACCESS_REJECTED" | "ACCESS_CHANGES_REQUESTED" | "ACCESS_EXPIRING" | "ACCESS_REVOKED" | "DATASET_PUBLISHED";
+        NotificationType: "PROJECT_INVITATION" | "ACCESS_SUBMITTED" | "ACCESS_APPROVED" | "ACCESS_REJECTED" | "ACCESS_CHANGES_REQUESTED" | "ACCESS_EXPIRING" | "ACCESS_REVOKED" | "DATASET_PUBLISHED" | "OUTPUT_PUBLISH_REQUESTED" | "OUTPUT_PUBLISH_DECIDED" | "NOTE_SUBMITTED" | "NOTE_REJECTED" | "NOTE_SIGNED" | "DATASET_COMMENT_ADDED" | "RUN_FAILED";
         IdentityPublicProfile: {
             user_id: components["schemas"]["Id"];
             display_name: string;
@@ -1805,6 +2540,555 @@ export interface components {
             read: boolean;
             created_at: components["schemas"]["Timestamp"];
         };
+        /** @enum {string} */
+        DatasetActivityType: "VERSION_PUBLISHED" | "METADATA_CHANGED" | "POLICY_CHANGED" | "READINESS_COMPLETED" | "USED_IN_PROJECT" | "OUTPUT_PUBLISHED" | "DISCUSSION_STARTED";
+        HubCard: {
+            dataset_id: components["schemas"]["Id"];
+            title: string;
+            owner_organization_name: string;
+            /** @description Korean SUBJECT vocabulary labels */
+            subject_labels: string[];
+            access_level: components["schemas"]["AccessLevel"];
+            /** @description Same rule as DatasetVersionSummary.readiness_overall (D-028) */
+            readiness_overall: components["schemas"]["ReadinessOverall"] | null;
+            updated_at: components["schemas"]["Timestamp"];
+            /** @description trending = access requests in the last 7 days, most_used = project inputs, recent = null. Only real counts; null hides the figure. */
+            metric: number | null;
+        };
+        HubOrganizationStat: {
+            organization_id: components["schemas"]["Id"];
+            name: string;
+            dataset_count: number;
+            public_count: number;
+            /** @description CONTROLLED + SENSITIVE */
+            controlled_count: number;
+            /** Format: date-time */
+            last_updated_at: string | null;
+        };
+        HubOverview: {
+            rails: {
+                trending: components["schemas"]["HubCard"][];
+                recent: components["schemas"]["HubCard"][];
+                most_used: components["schemas"]["HubCard"][];
+            };
+            organizations: components["schemas"]["HubOrganizationStat"][];
+        };
+        DatasetProjectUse: {
+            project_id: components["schemas"]["Id"];
+            name: string;
+            lead_organization_name: string;
+            input_added_at: components["schemas"]["Timestamp"];
+        };
+        DatasetProjectsResult: {
+            items: components["schemas"]["DatasetProjectUse"][];
+            /** @description Projects using the dataset that the caller is not a member of (names hidden) */
+            hidden_count: number;
+        };
+        DatasetActivity: {
+            activity_id: components["schemas"]["Id"];
+            dataset_id: components["schemas"]["Id"];
+            type: components["schemas"]["DatasetActivityType"];
+            /** @description Entity label (version label, project name, output title, thread title); never data values */
+            label: string | null;
+            /** @description Version, project, output or thread id for linking */
+            ref_id: components["schemas"]["Id"] | null;
+            actor_display_name: string | null;
+            /** @description Set only when the caller is a member of that project */
+            project_id: components["schemas"]["Id"] | null;
+            occurred_at: components["schemas"]["Timestamp"];
+        };
+        /** @enum {string} */
+        RunStatus: "QUEUED" | "RUNNING" | "SUCCEEDED" | "FAILED";
+        /** @enum {string} */
+        OutputKind: "DERIVED_DATASET" | "FILE";
+        /** @enum {string} */
+        OutputPublishStatus: "NONE" | "PENDING" | "APPROVED" | "REJECTED" | "PUBLISHED";
+        /** @enum {string} */
+        PublishRequestStatus: "PENDING" | "APPROVED" | "REJECTED";
+        /** @enum {string} */
+        PublishDecision: "APPROVE" | "REJECT";
+        /** @enum {string} */
+        ThreadScope: "PROJECT" | "DATASET" | "OUTPUT" | "RECIPE";
+        /**
+         * @description Discriminator values of RecipeStep.type
+         * @enum {string}
+         */
+        RecipeStepType: "select_columns" | "filter_rows" | "drop_missing" | "fill_missing" | "cast_type" | "convert_unit" | "aggregate" | "join" | "sort" | "limit";
+        /** @enum {string} */
+        RecipeFilterOp: "eq" | "ne" | "lt" | "le" | "gt" | "ge" | "contains" | "in" | "is_null" | "not_null";
+        /** @enum {string} */
+        RecipeCastType: "int" | "float" | "string" | "bool" | "datetime";
+        /** @enum {string} */
+        RecipeAggregateFn: "count" | "sum" | "mean" | "min" | "max";
+        /** @enum {string} */
+        RecipeJoinHow: "inner" | "left";
+        ProjectInput: {
+            input_id: components["schemas"]["Id"];
+            project_id: components["schemas"]["Id"];
+            dataset_id: components["schemas"]["Id"];
+            dataset_title: string;
+            /** @description Pinned version */
+            dataset_version_id: components["schemas"]["Id"];
+            version_label: string;
+            /** @description Latest PUBLISHED label when newer than the pinned version */
+            newer_version_label: string | null;
+            access_level: components["schemas"]["AccessLevel"];
+            /** @description true when the caller's access was revoked or expired; runs and downloads using it are blocked (INPUT_ACCESS_LAPSED) */
+            access_lapsed: boolean;
+            added_by: components["schemas"]["Id"];
+            added_by_display_name: string;
+            added_at: components["schemas"]["Timestamp"];
+            note: string | null;
+        };
+        ProjectInputCreate: {
+            dataset_id: components["schemas"]["Id"];
+            /** @description Default: latest PUBLISHED version */
+            dataset_version_id?: components["schemas"]["Id"];
+            note?: string;
+        };
+        ProjectInputUpdate: {
+            dataset_version_id?: components["schemas"]["Id"];
+            note?: string | null;
+        };
+        RecipeStepSelectColumns: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "select_columns";
+            columns: string[];
+        };
+        RecipeStepFilterRows: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "filter_rows";
+            column: string;
+            op: components["schemas"]["RecipeFilterOp"];
+            /** @description Required except for is_null/not_null; an array for in */
+            value?: string | number | boolean | null | (string | number)[];
+        };
+        RecipeStepDropMissing: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "drop_missing";
+            /** @description null = any column */
+            columns: string[] | null;
+        };
+        RecipeStepFillMissing: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "fill_missing";
+            column: string;
+            value: string | number | boolean;
+        };
+        RecipeStepCastType: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "cast_type";
+            column: string;
+            to: components["schemas"]["RecipeCastType"];
+        };
+        RecipeStepConvertUnit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "convert_unit";
+            column: string;
+            /** @description new = old * factor + offset */
+            factor: number;
+            offset: number;
+            unit_label: string;
+        };
+        RecipeStepAggregate: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "aggregate";
+            group_by: string[];
+            metrics: {
+                column: string;
+                fn: components["schemas"]["RecipeAggregateFn"];
+            }[];
+        };
+        RecipeStepJoin: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "join";
+            /** @description Must be one of the recipe's input_ids */
+            right_input_id: components["schemas"]["Id"];
+            on: string[];
+            how: components["schemas"]["RecipeJoinHow"];
+        };
+        RecipeStepSort: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "sort";
+            by: string[];
+            descending: boolean;
+        };
+        RecipeStepLimit: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            type: "limit";
+            n: number;
+        };
+        RecipeStep: components["schemas"]["RecipeStepSelectColumns"] | components["schemas"]["RecipeStepFilterRows"] | components["schemas"]["RecipeStepDropMissing"] | components["schemas"]["RecipeStepFillMissing"] | components["schemas"]["RecipeStepCastType"] | components["schemas"]["RecipeStepConvertUnit"] | components["schemas"]["RecipeStepAggregate"] | components["schemas"]["RecipeStepJoin"] | components["schemas"]["RecipeStepSort"] | components["schemas"]["RecipeStepLimit"];
+        Recipe: {
+            recipe_id: components["schemas"]["Id"];
+            project_id: components["schemas"]["Id"];
+            name: string;
+            /** @description First id is the base table; join steps reference the others */
+            input_ids: components["schemas"]["Id"][];
+            steps: components["schemas"]["RecipeStep"][];
+            /** @description +1 on every save; send as If-Match on updateRecipe */
+            version: number;
+            updated_by: components["schemas"]["Id"];
+            updated_at: components["schemas"]["Timestamp"];
+        };
+        RecipeWrite: {
+            name: string;
+            input_ids: components["schemas"]["Id"][];
+            steps: components["schemas"]["RecipeStep"][];
+        };
+        RecipePreviewRequest: {
+            input_ids?: components["schemas"]["Id"][];
+            steps?: components["schemas"]["RecipeStep"][];
+        };
+        RecipePreview: {
+            header: string[];
+            rows: (string | null)[][];
+            /** @description More than 100 result rows */
+            rows_truncated: boolean;
+            /** @description Rows read from the inputs (≤ 10,000 per input) */
+            input_rows_read: number;
+            /** @description Result rows of the sampled inputs */
+            output_rows: number;
+        };
+        Run: {
+            run_id: components["schemas"]["Id"];
+            project_id: components["schemas"]["Id"];
+            recipe_id: components["schemas"]["Id"];
+            recipe_version: number;
+            status: components["schemas"]["RunStatus"];
+            started_by: components["schemas"]["Id"];
+            queued_at: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            started_at: string | null;
+            /** Format: date-time */
+            finished_at: string | null;
+            input_rows: number | null;
+            output_rows: number | null;
+            /**
+             * @description Stable failure code when FAILED (RECIPE_MISSING, INPUT_ACCESS_LAPSED, RECIPE_INVALID, RESULT_TOO_LARGE, INPUT_UNAVAILABLE, INPUT_NOT_TABULAR, INPUT_TOO_LARGE, INPUT_UNREADABLE, STORAGE_NOT_CONFIGURED, OUT_OF_MEMORY, STORAGE_UNAVAILABLE, INTERNAL_ERROR, RUN_TIMEOUT, STALE_RUN). Clients show a localized sentence and a generic one for an unknown code; the detail is only logged.
+             * @example INPUT_TOO_LARGE
+             */
+            error: string | null;
+            /** @description DERIVED_DATASET output when SUCCEEDED */
+            output_id: components["schemas"]["Id"] | null;
+        };
+        OutputFile: {
+            name: string;
+            size_bytes: number;
+            sha256: string;
+            media_type: string;
+        };
+        OutputLineageInput: {
+            dataset_id: components["schemas"]["Id"];
+            dataset_title: string;
+            dataset_version_id: components["schemas"]["Id"];
+            version_label: string;
+        };
+        OutputLineage: {
+            inputs: components["schemas"]["OutputLineageInput"][];
+            recipe_id: components["schemas"]["Id"] | null;
+            recipe_version: number | null;
+            run_id: components["schemas"]["Id"] | null;
+        };
+        Output: {
+            output_id: components["schemas"]["Id"];
+            project_id: components["schemas"]["Id"];
+            kind: components["schemas"]["OutputKind"];
+            title: string;
+            /** @description Never looser than the strictest lineage input */
+            access_level: components["schemas"]["AccessLevel"];
+            files: components["schemas"]["OutputFile"][];
+            /** @description null for uploaded FILE outputs */
+            produced_by_run_id: components["schemas"]["Id"] | null;
+            lineage: components["schemas"]["OutputLineage"];
+            publish_status: components["schemas"]["OutputPublishStatus"];
+            created_by: components["schemas"]["Id"];
+            created_at: components["schemas"]["Timestamp"];
+        };
+        OutputUploadCreate: {
+            title: string;
+            access_level: components["schemas"]["AccessLevel"];
+            files: {
+                /** @description Flat file name, no path */
+                name: string;
+                /** @description Single presigned PUT: ≤ 5 GiB */
+                size_bytes: number;
+                sha256: string;
+                media_type: string;
+            }[];
+        };
+        OutputUploadSession: {
+            output_id: components["schemas"]["Id"];
+            /** @description now + 15 min */
+            expires_at: components["schemas"]["Timestamp"];
+            files: {
+                name: string;
+                upload: {
+                    /** @constant */
+                    method: "PUT";
+                    /** Format: uri */
+                    url: string;
+                    headers?: {
+                        [key: string]: string;
+                    };
+                };
+            }[];
+        };
+        OutputDownload: {
+            output_id: components["schemas"]["Id"];
+            /** @description URL expiry (now + 300s) */
+            expires_at: components["schemas"]["Timestamp"];
+            files: {
+                name: string;
+                /** Format: uri */
+                url: string;
+                size_bytes: number;
+                sha256: string;
+            }[];
+        };
+        PublishApproval: {
+            organization_id: components["schemas"]["Id"];
+            organization_name?: string;
+            decided_by: components["schemas"]["Id"] | null;
+            decision: components["schemas"]["PublishDecision"] | null;
+            comment: string | null;
+            /** Format: date-time */
+            decided_at: string | null;
+        };
+        PublishRequest: {
+            request_id: components["schemas"]["Id"];
+            output_id: components["schemas"]["Id"];
+            project_id: components["schemas"]["Id"];
+            status: components["schemas"]["PublishRequestStatus"];
+            /** @description One slot per owner organization of the lineage inputs, then the project lead organization when it owns none of them (only the lead organization for an output without inputs); each decided by a DATA_STEWARD of that organization */
+            approvals: components["schemas"]["PublishApproval"][];
+            created_by: components["schemas"]["Id"];
+            created_at: components["schemas"]["Timestamp"];
+            output_title?: string;
+            project_name?: string;
+            /** @description Catalog dataset created once APPROVED */
+            published_dataset_id?: components["schemas"]["Id"] | null;
+            /** @description Set when an APPROVED request could not be published by the catalog and was turned REJECTED by the system (human-readable, no data values) */
+            failure_reason?: string | null;
+        };
+        PublishRequestCreate: {
+            /** @description Dataset title; default = output title */
+            title?: string;
+            description?: string;
+        };
+        PublishDecisionCreate: {
+            decision: components["schemas"]["PublishDecision"];
+            /** @description Required (minLength 1) for REJECT; enforced by the server */
+            comment?: string;
+        };
+        Thread: {
+            thread_id: components["schemas"]["Id"];
+            scope: components["schemas"]["ThreadScope"];
+            /** @description project_id, dataset_id, output_id or recipe_id per scope */
+            target_id: components["schemas"]["Id"];
+            /** @description null for DATASET threads */
+            project_id: components["schemas"]["Id"] | null;
+            title: string;
+            created_by: components["schemas"]["Id"];
+            created_by_display_name: string;
+            created_at: components["schemas"]["Timestamp"];
+            resolved: boolean;
+            comment_count: number;
+            last_comment_at: components["schemas"]["Timestamp"];
+        };
+        ThreadCreate: {
+            scope: components["schemas"]["ThreadScope"];
+            target_id: components["schemas"]["Id"];
+            title: string;
+            /** @description Markdown */
+            body: string;
+        };
+        ThreadUpdate: {
+            resolved?: boolean;
+            title?: string;
+        };
+        Comment: {
+            comment_id: components["schemas"]["Id"];
+            thread_id: components["schemas"]["Id"];
+            /** @description Markdown */
+            body: string;
+            author_id: components["schemas"]["Id"];
+            author_display_name: string;
+            created_at: components["schemas"]["Timestamp"];
+            /** Format: date-time */
+            edited_at: string | null;
+        };
+        CommentCreate: {
+            /** @description Markdown */
+            body: string;
+        };
+        /** @enum {string} */
+        NoteStatus: "DRAFT" | "SUBMITTED" | "SIGNED";
+        /** @enum {string} */
+        NoteDraftStatus: "NONE" | "QUEUED" | "RUNNING" | "FAILED" | "DONE";
+        /**
+         * @description Standard research-note template, in display / hash / export order: 연구 목표, 연구 방법·재료, 수행 내용, 결과 및 관찰, 고찰·문제점, 향후 계획, 참고 자료
+         * @enum {string}
+         */
+        NoteSection: "OBJECTIVE" | "METHOD" | "PROCEDURE" | "RESULTS" | "DISCUSSION" | "NEXT" | "REFERENCES";
+        /** @enum {string} */
+        NoteBlockOrigin: "HUMAN" | "AI";
+        /** @enum {string} */
+        NoteSignerRole: "RECORDER" | "WITNESS";
+        /** @enum {string} */
+        NoteEvidenceType: "INPUT_ADDED" | "INPUT_VERSION_CHANGED" | "RECIPE_SAVED" | "RUN_SUCCEEDED" | "RUN_FAILED" | "OUTPUT_CREATED" | "PUBLISH_REQUESTED" | "DATASET_DOWNLOADED" | "ACCESS_DECIDED" | "NOTEBOOK";
+        NoteEvidence: {
+            type: components["schemas"]["NoteEvidenceType"];
+            /** @description Input, recipe, run, output, publish request, dataset version or access request id; for NOTEBOOK the notebook version id (the notebook id when unversioned) */
+            ref_id: components["schemas"]["Id"];
+            /** @description Entity label only (dataset title@version, recipe name, row counts, notebook title · cell k); never data values */
+            label: string;
+            at: components["schemas"]["Timestamp"];
+        };
+        NoteBlock: {
+            block_id: components["schemas"]["Id"];
+            section: components["schemas"]["NoteSection"];
+            text: string;
+            origin: components["schemas"]["NoteBlockOrigin"];
+            /** @description AI blocks start false; submit/sign require every AI block accepted */
+            accepted: boolean;
+            evidence: components["schemas"]["NoteEvidence"][];
+        };
+        NoteBlockWrite: {
+            /** @description Existing block (keeps origin and evidence); omit for a new HUMAN block */
+            block_id?: components["schemas"]["Id"];
+            section: components["schemas"]["NoteSection"];
+            text: string;
+            /** @description Accepting an AI block; ignored for HUMAN blocks (always true) */
+            accepted?: boolean;
+        };
+        NoteBlocksPut: {
+            blocks: components["schemas"]["NoteBlockWrite"][];
+        };
+        NoteSignature: {
+            signer_id: components["schemas"]["Id"];
+            signer_display_name: string;
+            role: components["schemas"]["NoteSignerRole"];
+            /** @description Server time */
+            signed_at: components["schemas"]["Timestamp"];
+            content_hash: string;
+        };
+        ResearchNote: {
+            note_id: components["schemas"]["Id"];
+            project_id: components["schemas"]["Id"];
+            project_name: string;
+            /** @description Recorder's organization when the note was created; never changes (지침 제8·9조) */
+            organization_id: components["schemas"]["Id"];
+            recorder_id: components["schemas"]["Id"];
+            recorder_display_name: string;
+            /**
+             * Format: date
+             * @description Asia/Seoul date
+             */
+            note_date: string;
+            version: number;
+            previous_version_id: components["schemas"]["Id"] | null;
+            status: components["schemas"]["NoteStatus"];
+            /** @description +1 on every block save; send as If-Match on updateNoteBlocks */
+            revision: number;
+            blocks: components["schemas"]["NoteBlock"][];
+            draft_status: components["schemas"]["NoteDraftStatus"];
+            draft_error: string | null;
+            /** @description Notebooks the recorder saved in this project on note_date (the drafting source); shown to the recorder only, 0 for everyone else. 0 -> draftNote answers 422 NO_NOTEBOOK_ACTIVITY */
+            draft_source_count: number;
+            signatures: components["schemas"]["NoteSignature"][];
+            /** @description sha256 of the canonical JSON of content + metadata; set on submit/sign, cleared when a witness rejects the note back to DRAFT */
+            content_hash: string | null;
+            /** @description sha256(previous chain_hash + content_hash) per project × organization; set when SIGNED */
+            chain_hash: string | null;
+            /** Format: date-time */
+            submitted_at: string | null;
+            rejected_reason: string | null;
+            /** @description Snapshot of the project setting taken at submit (or at a sign from DRAFT). signNote/rejectNote use this, never the current setting. While DRAFT it mirrors the current setting for display and is re-taken at the next submit. */
+            readonly witness_required: boolean;
+            /** @description Witness snapshot taken together with witness_required; these users may read, reject and sign the SUBMITTED/SIGNED note */
+            readonly witness_user_ids: components["schemas"]["Id"][];
+            created_at: components["schemas"]["Timestamp"];
+            updated_at: components["schemas"]["Timestamp"];
+        };
+        ResearchNoteSummary: {
+            note_id: components["schemas"]["Id"];
+            project_id: components["schemas"]["Id"];
+            project_name: string;
+            recorder_id: components["schemas"]["Id"];
+            recorder_display_name: string;
+            /** Format: date */
+            note_date: string;
+            version: number;
+            status: components["schemas"]["NoteStatus"];
+            draft_status: components["schemas"]["NoteDraftStatus"];
+            block_count: number;
+            unaccepted_ai_count?: number;
+            /** Format: date-time */
+            submitted_at?: string | null;
+            updated_at: components["schemas"]["Timestamp"];
+        };
+        NoteVerification: {
+            note_id: components["schemas"]["Id"];
+            /** @description content_hash == recomputed_hash */
+            valid: boolean;
+            content_hash: string;
+            recomputed_hash: string;
+            /** @description Rebuilt project × organization chain matches the stored chain_hash values */
+            chain_valid: boolean;
+            checked_at: components["schemas"]["Timestamp"];
+        };
+        NoteSearchHit: {
+            note_id: components["schemas"]["Id"];
+            project_name: string;
+            /** Format: date */
+            note_date: string;
+            snippet: string;
+            /** @description Rerank/cosine score; null for keyword fallback */
+            score: number | null;
+        };
+        NoteSettings: {
+            project_id: components["schemas"]["Id"];
+            /** @default false */
+            witness_required: boolean;
+            witness_user_ids: components["schemas"]["Id"][];
+            /** @description Server setting NAIS_LLM_ENABLED; hides the draft button when false */
+            readonly llm_enabled: boolean;
+        };
+        NoteSettingsUpdate: {
+            witness_required?: boolean;
+            witness_user_ids?: components["schemas"]["Id"][];
+        };
     };
     responses: {
         /** @description Error envelope. See contracts/error_codes.json for codes and HTTP mapping. */
@@ -1826,6 +3110,15 @@ export interface components {
         DatasetId: components["schemas"]["Id"];
         VersionId: components["schemas"]["Id"];
         AccessRequestId: components["schemas"]["Id"];
+        InputId: components["schemas"]["Id"];
+        RecipeId: components["schemas"]["Id"];
+        RunId: components["schemas"]["Id"];
+        OutputId: components["schemas"]["Id"];
+        PublishRequestId: components["schemas"]["Id"];
+        ThreadId: components["schemas"]["Id"];
+        NoteId: components["schemas"]["Id"];
+        /** @description Current Recipe.version / ResearchNote.revision (optionally quoted). Mismatch -> 409 CONFLICT */
+        IfMatch: string;
     };
     requestBodies: never;
     headers: never;
@@ -3683,6 +4976,1269 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Error"];
+        };
+    };
+    getHubOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Rails and organization table */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HubOverview"];
+                };
+            };
+            401: components["responses"]["Error"];
+        };
+    };
+    listDatasetProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Projects using the dataset */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetProjectsResult"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listDatasetActivity: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                dataset_id: components["parameters"]["DatasetId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Activity (newest first) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageEnvelope"] & {
+                        items?: components["schemas"]["DatasetActivity"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    listProjectInputs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pinned dataset inputs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["ProjectInput"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    addProjectInput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectInputCreate"];
+            };
+        };
+        responses: {
+            /** @description Added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectInput"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    removeProjectInput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                input_id: components["parameters"]["InputId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Removed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateProjectInput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                input_id: components["parameters"]["InputId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectInputUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectInput"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    listRecipes: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recipes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Recipe"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    createRecipe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecipeWrite"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recipe"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getRecipe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                recipe_id: components["parameters"]["RecipeId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Recipe */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recipe"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    updateRecipe: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Current Recipe.version / ResearchNote.revision (optionally quoted). Mismatch -> 409 CONFLICT */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                recipe_id: components["parameters"]["RecipeId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecipeWrite"];
+            };
+        };
+        responses: {
+            /** @description Saved (new version) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Recipe"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    deleteRecipe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                recipe_id: components["parameters"]["RecipeId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    previewRecipe: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                recipe_id: components["parameters"]["RecipeId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RecipePreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description First rows of the result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RecipePreview"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    startRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                recipe_id: components["parameters"]["RecipeId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Queued */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    listRuns: {
+        parameters: {
+            query?: {
+                recipe_id?: components["schemas"]["Id"];
+                status?: components["schemas"]["RunStatus"][];
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageEnvelope"] & {
+                        items?: components["schemas"]["Run"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                run_id: components["parameters"]["RunId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Run"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    listOutputs: {
+        parameters: {
+            query?: {
+                kind?: components["schemas"]["OutputKind"];
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Outputs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageEnvelope"] & {
+                        items?: components["schemas"]["Output"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    createOutputUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutputUploadCreate"];
+            };
+        };
+        responses: {
+            /** @description Upload session */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputUploadSession"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    completeOutputUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                output_id: components["parameters"]["OutputId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Output created */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Output"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    getOutput: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                output_id: components["parameters"]["OutputId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Output with lineage */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Output"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    getOutputDownload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                output_id: components["parameters"]["OutputId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signed URLs */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputDownload"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    requestOutputPublish: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+                output_id: components["parameters"]["OutputId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublishRequestCreate"];
+            };
+        };
+        responses: {
+            /** @description Requested */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishRequest"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    listPublishRequests: {
+        parameters: {
+            query?: {
+                /** @description requester = requests of projects I am a member of; reviewer = requests with an approval slot for an organization where I am DATA_STEWARD */
+                role?: "requester" | "reviewer";
+                status?: components["schemas"]["PublishRequestStatus"][];
+                project_id?: components["schemas"]["Id"];
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Publish requests (newest first) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageEnvelope"] & {
+                        items?: components["schemas"]["PublishRequest"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    decidePublishRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: components["parameters"]["PublishRequestId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PublishDecisionCreate"];
+            };
+        };
+        responses: {
+            /** @description Decision recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublishRequest"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    listThreads: {
+        parameters: {
+            query?: {
+                scope?: components["schemas"]["ThreadScope"];
+                target_id?: components["schemas"]["Id"];
+                project_id?: components["schemas"]["Id"];
+                resolved?: boolean;
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Threads */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageEnvelope"] & {
+                        items?: components["schemas"]["Thread"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    createThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadCreate"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Thread"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    updateThread: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Thread"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    listComments: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                thread_id: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Comments (oldest first) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageEnvelope"] & {
+                        items?: components["schemas"]["Comment"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    addComment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: components["parameters"]["ThreadId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentCreate"];
+            };
+        };
+        responses: {
+            /** @description Added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Comment"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    listNotes: {
+        parameters: {
+            query?: {
+                project_id?: components["schemas"]["Id"];
+                status?: components["schemas"]["NoteStatus"][];
+                from?: string;
+                to?: string;
+                role?: "recorder" | "witness";
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Notes */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageEnvelope"] & {
+                        items?: components["schemas"]["ResearchNoteSummary"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    exportNotes: {
+        parameters: {
+            query: {
+                project_id: components["schemas"]["Id"];
+                from?: string;
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description ZIP archive */
+            200: {
+                headers: {
+                    /** @description attachment; filename="research-notes-<project>-<from>-<to>.zip" */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    searchNotes: {
+        parameters: {
+            query: {
+                q: string;
+                project_id?: components["schemas"]["Id"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Hits (best first) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["NoteSearchHit"][];
+                    };
+                };
+            };
+            401: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getOrCreateTodayNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Existing note */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            /** @description Created DRAFT */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    getNoteSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSettings"];
+                };
+            };
+            401: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    updateNoteSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: components["parameters"]["ProjectId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteSettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteSettings"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    getNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Note */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+        };
+    };
+    deleteNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    updateNoteBlocks: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Current Recipe.version / ResearchNote.revision (optionally quoted). Mismatch -> 409 CONFLICT */
+                "If-Match": components["parameters"]["IfMatch"];
+            };
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NoteBlocksPut"];
+            };
+        };
+        responses: {
+            /** @description Saved (revision + 1) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    draftNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Draft queued (draft_status QUEUED) */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    submitNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Submitted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    rejectNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    reason: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Returned to the recorder */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+    signNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Signature recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    reviseNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New DRAFT version */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchNote"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+        };
+    };
+    verifyNote: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: components["parameters"]["NoteId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Verification result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteVerification"];
+                };
+            };
+            401: components["responses"]["Error"];
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            409: components["responses"]["Error"];
         };
     };
 }

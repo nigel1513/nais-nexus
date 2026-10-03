@@ -31,6 +31,20 @@ class EventType(StrEnum):
     READINESS_VALIDATION_COMPLETED_V1 = "readiness.validation.completed.v1"
     IDENTITY_USER_UPDATED_V1 = "identity.user.updated.v1"
     CATALOG_DATASET_METADATA_CHANGED_V1 = "catalog.dataset.metadata_changed.v1"
+    WORKSPACE_INPUT_ADDED_V1 = "workspace.input.added.v1"
+    WORKSPACE_INPUT_VERSION_CHANGED_V1 = "workspace.input.version_changed.v1"
+    WORKSPACE_INPUT_REMOVED_V1 = "workspace.input.removed.v1"
+    WORKSPACE_RECIPE_SAVED_V1 = "workspace.recipe.saved.v1"
+    WORKSPACE_RUN_SUCCEEDED_V1 = "workspace.run.succeeded.v1"
+    WORKSPACE_RUN_FAILED_V1 = "workspace.run.failed.v1"
+    WORKSPACE_OUTPUT_CREATED_V1 = "workspace.output.created.v1"
+    WORKSPACE_PUBLISH_REQUESTED_V1 = "workspace.publish.requested.v1"
+    WORKSPACE_PUBLISH_DECIDED_V1 = "workspace.publish.decided.v1"
+    WORKSPACE_COMMENT_ADDED_V1 = "workspace.comment.added.v1"
+    NOTES_NOTE_SUBMITTED_V1 = "notes.note.submitted.v1"
+    NOTES_NOTE_SIGNED_V1 = "notes.note.signed.v1"
+    NOTES_NOTE_REJECTED_V1 = "notes.note.rejected.v1"
+    NOTES_NOTE_VIEWED_V1 = "notes.note.viewed.v1"
 
 
 PRODUCER: dict[EventType, str] = {
@@ -62,4 +76,18 @@ PRODUCER: dict[EventType, str] = {
     EventType.READINESS_VALIDATION_COMPLETED_V1: "readiness",
     EventType.IDENTITY_USER_UPDATED_V1: "identity",
     EventType.CATALOG_DATASET_METADATA_CHANGED_V1: "catalog",
+    EventType.WORKSPACE_INPUT_ADDED_V1: "workspace",
+    EventType.WORKSPACE_INPUT_VERSION_CHANGED_V1: "workspace",
+    EventType.WORKSPACE_INPUT_REMOVED_V1: "workspace",
+    EventType.WORKSPACE_RECIPE_SAVED_V1: "workspace",
+    EventType.WORKSPACE_RUN_SUCCEEDED_V1: "workspace",
+    EventType.WORKSPACE_RUN_FAILED_V1: "workspace",
+    EventType.WORKSPACE_OUTPUT_CREATED_V1: "workspace",
+    EventType.WORKSPACE_PUBLISH_REQUESTED_V1: "workspace",
+    EventType.WORKSPACE_PUBLISH_DECIDED_V1: "workspace",
+    EventType.WORKSPACE_COMMENT_ADDED_V1: "workspace",
+    EventType.NOTES_NOTE_SUBMITTED_V1: "notes",
+    EventType.NOTES_NOTE_SIGNED_V1: "notes",
+    EventType.NOTES_NOTE_REJECTED_V1: "notes",
+    EventType.NOTES_NOTE_VIEWED_V1: "notes",
 }

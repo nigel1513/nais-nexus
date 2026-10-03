@@ -41,6 +41,10 @@ class ObjectStore(Protocol):
     def open_stream(self, key: str, byte_range: tuple[int, int] | None = None) -> BinaryIO: ...
     def read_range(self, key: str, start: int, end: int) -> bytes: ...
     def put(self, key: str, data: bytes, content_type: str) -> None: ...
+    def copy(self, source_key: str, key: str) -> None:
+        """Server-side copy within this bucket; ObjectMissing when the source does not exist."""
+        ...
+
     def delete(self, key: str) -> None: ...
     def create_multipart(self, key: str, content_type: str) -> str: ...
     def complete_multipart(self, key: str, upload_id: str, parts: Sequence[tuple[int, str]]) -> None: ...
@@ -111,6 +115,16 @@ class S3ObjectStore:
     def put(self, key: str, data: bytes, content_type: str) -> None:
         with _translate():
             self._internal.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
+
+    def copy(self, source_key: str, key: str) -> None:
+        """Managed copy: one CopyObject, or a multipart copy above the transfer threshold (objects > 5 GiB)."""
+        try:
+            with _translate():
+                self._internal.copy({"Bucket": self.bucket, "Key": source_key}, self.bucket, key)
+        except ClientError as exc:
+            if _code(exc) in _MISSING:
+                raise ObjectMissing(source_key) from exc
+            raise
 
     def delete(self, key: str) -> None:
         with _translate():

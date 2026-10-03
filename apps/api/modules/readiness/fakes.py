@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, BinaryIO
 from uuid import UUID
 
-from api.modules.catalog.public import DatasetPolicyView
+from api.modules.catalog.public import DatasetPolicyView, DatasetSummary
 from api.modules.readiness.catalog_port import FileRef, ObjectMissing, VersionView
 from api.modules.readiness.engine.canonical import manifest_sha256
 from api.platform.auth import CurrentUser
@@ -165,6 +165,15 @@ class FixtureCatalog:
         entry = self._versions.get(dataset_version_id)
         return entry.view if entry else None
 
+    def get_latest_published_version(self, dataset_id: UUID) -> VersionView | None:
+        """Last PUBLISHED version added (insertion order stands in for published_at)."""
+        published = [
+            e.view
+            for e in self._versions.values()
+            if e.view.dataset_id == dataset_id and e.view.status == "PUBLISHED"
+        ]
+        return published[-1] if published else None
+
     def is_visible(self, ctx: CurrentUser, dataset_id: UUID) -> bool:
         """Same rule as M03 access.can_see_dataset (D-012 + R3)."""
         dataset = self._datasets.get(dataset_id)
@@ -176,6 +185,9 @@ class FixtureCatalog:
             e.view.dataset_id == dataset_id and e.view.status == "PUBLISHED" for e in self._versions.values()
         )
         return dataset.status == "ACTIVE" and dataset.access_level != "INTERNAL" and has_published
+
+    def list_visible_dataset_summaries(self, ctx: CurrentUser) -> list[DatasetSummary]:
+        raise NotImplementedError  # M05 never lists datasets
 
     # ---- CatalogReadPort
     def open_stream(self, file: FileRef, byte_range: tuple[int, int] | None = None) -> BinaryIO:

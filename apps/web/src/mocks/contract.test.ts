@@ -3,18 +3,22 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
 import { checkResponse } from "../../tests/contract";
-import { DATASET, ORG, sid, USER, VERSION } from "./fixtures";
+import { createHash } from "node:crypto";
+import { DATASET, INPUT, NOTE, ORG, OUTPUT, PROJECT, sid, USER, VERSION } from "./fixtures";
 
 type Doc = { paths: Record<string, Record<string, { operationId: string }>> };
 const doc = YAML.parse(readFileSync(path.resolve(process.cwd(), "../../NAIS_PRD/contracts/openapi.yaml"), "utf8")) as Doc;
 
 const exercised = new Set<string>();
 
-async function call(user: string | null, method: string, pathKey: string, opts: { path?: Record<string, string>; query?: string; body?: unknown; status: number }) {
+// Operations whose mock handlers do not exist yet; an operation listed here that is exercised fails the test.
+const PENDING_MOCK_OPERATIONS: ReadonlySet<string> = new Set<string>([]);
+
+async function call(user: string | null, method: string, pathKey: string, opts: { path?: Record<string, string>; query?: string; body?: unknown; headers?: Record<string, string>; status: number }) {
   const url = pathKey.replace(/\{(\w+)\}/g, (_, k: string) => opts.path![k]!) + (opts.query ? `?${opts.query}` : "");
   const res = await fetch(`http://localhost:3000/mock-api/v1${url}`, {
     method: method.toUpperCase(),
-    headers: { ...(user ? { "x-mock-user": user } : {}), "content-type": "application/json" },
+    headers: { ...(user ? { "x-mock-user": user } : {}), "content-type": "application/json", ...opts.headers },
     body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
   });
   const op = doc.paths[pathKey]![method]!;
@@ -174,9 +178,76 @@ describe("mock API ↔ openapi.yaml", () => {
     await call(A, "post", "/notifications/read-all", { status: 204 });
     await call(A, "post", "/projects/{project_id}/archive", { path: P, status: 200 });
 
+    // ---- contract 1.6.0: hub, workspace, research notes (seed project 차세대 이차전지 소재 공동연구)
+    const SP = { project_id: PROJECT.seed };
+    await call(A, "get", "/hub/overview", { status: 200 });
+    await call(A, "get", "/datasets/{dataset_id}/projects", { path: { dataset_id: DATASET.battery }, status: 200 });
+    await call(A, "get", "/datasets/{dataset_id}/activity", { path: { dataset_id: DATASET.battery }, status: 200 });
+
+    await call(A, "get", "/projects/{project_id}/inputs", { path: SP, status: 200 });
+    const input = await call(A, "post", "/projects/{project_id}/inputs", { path: SP, body: { dataset_id: DATASET.sensors, note: "공조 센서 비교" }, status: 201 });
+    const I = { ...SP, input_id: input.input_id as string };
+    await call(A, "patch", "/projects/{project_id}/inputs/{input_id}", { path: I, body: { note: null }, status: 200 });
+
+    await call(A, "get", "/projects/{project_id}/recipes", { path: SP, status: 200 });
+    const recipeBody = { name: "사이클 요약", input_ids: [INPUT.battery], steps: [{ type: "select_columns", columns: ["cycle", "capacity_ah"] }, { type: "limit", n: 10 }] };
+    const recipe = await call(A, "post", "/projects/{project_id}/recipes", { path: SP, body: recipeBody, status: 201 });
+    const RC = { ...SP, recipe_id: recipe.recipe_id as string };
+    await call(A, "get", "/projects/{project_id}/recipes/{recipe_id}", { path: RC, status: 200 });
+    await call(A, "put", "/projects/{project_id}/recipes/{recipe_id}", { path: RC, headers: { "if-match": '"1"' }, body: { ...recipeBody, name: "사이클 요약 v2" }, status: 200 });
+    await call(A, "post", "/projects/{project_id}/recipes/{recipe_id}/preview", { path: RC, body: {}, status: 200 });
+    const run = await call(A, "post", "/projects/{project_id}/recipes/{recipe_id}/runs", { path: RC, status: 202 });
+    await call(A, "get", "/projects/{project_id}/runs", { path: SP, query: `recipe_id=${RC.recipe_id}`, status: 200 });
+    await call(A, "get", "/projects/{project_id}/runs/{run_id}", { path: { ...SP, run_id: run.run_id }, status: 200 });
+    await call(A, "delete", "/projects/{project_id}/recipes/{recipe_id}", { path: RC, status: 204 });
+
+    await call(A, "get", "/projects/{project_id}/outputs", { path: SP, query: "kind=DERIVED_DATASET", status: 200 });
+    const content = "cycle,capacity_ah\n1,3.05\n";
+    const upload = await call(A, "post", "/projects/{project_id}/outputs", {
+      path: SP,
+      body: { title: "용량 요약표", access_level: "SENSITIVE", files: [{ name: "summary.csv", size_bytes: Buffer.byteLength(content), sha256: createHash("sha256").update(content).digest("hex"), media_type: "text/csv" }] },
+      status: 201,
+    });
+    expect((await fetch(upload.files[0].upload.url, { method: "PUT", body: content })).status).toBe(200);
+    await call(A, "post", "/projects/{project_id}/outputs/{output_id}/complete", { path: { ...SP, output_id: upload.output_id }, status: 200 });
+    const O = { ...SP, output_id: OUTPUT.capacity };
+    await call(A, "get", "/projects/{project_id}/outputs/{output_id}", { path: O, status: 200 });
+    await call(A, "post", "/projects/{project_id}/outputs/{output_id}/download", { path: O, status: 201 });
+    const pub = await call(A, "post", "/projects/{project_id}/outputs/{output_id}/publish-requests", { path: O, body: { title: "용량 유지율 추이 파생 데이터" }, status: 201 });
+    await call(BS, "get", "/publish-requests", { query: "role=reviewer&status=PENDING", status: 200 });
+    await call(BS, "post", "/publish-requests/{request_id}/decision", { path: { request_id: pub.request_id }, body: { decision: "APPROVE" }, status: 200 });
+
+    const thread = await call(A, "post", "/threads", { body: { scope: "PROJECT", target_id: PROJECT.seed, title: "주간 점검", body: "이번 주 실행 결과를 공유합니다." }, status: 201 });
+    await call(A, "get", "/threads", { query: `project_id=${PROJECT.seed}`, status: 200 });
+    await call(A, "patch", "/threads/{thread_id}", { path: { thread_id: thread.thread_id }, body: { resolved: true }, status: 200 });
+    await call(BR, "post", "/threads/{thread_id}/comments", { path: { thread_id: thread.thread_id }, body: { body: "확인했습니다." }, status: 201 });
+    await call(A, "get", "/threads/{thread_id}/comments", { path: { thread_id: thread.thread_id }, status: 200 });
+    await call(A, "delete", "/projects/{project_id}/inputs/{input_id}", { path: I, status: 204 });
+
+    await call(A, "get", "/notes", { query: "role=recorder", status: 200 });
+    const zipRes = await fetch(`http://localhost:3000/mock-api/v1/notes/export?project_id=${PROJECT.seed}`, { headers: { "x-mock-user": A } });
+    exercised.add("exportNotes");
+    expect(zipRes.status).toBe(200);
+    expect(zipRes.headers.get("content-type")).toBe("application/zip");
+    await call(A, "get", "/notes/search", { query: "q=temp_c", status: 200 });
+    await call(A, "get", "/projects/{project_id}/note-settings", { path: SP, status: 200 });
+    await call(A, "patch", "/projects/{project_id}/note-settings", { path: SP, body: { witness_required: false }, status: 200 });
+    await call(A, "get", "/notes/{note_id}", { path: { note_id: NOTE.signed }, status: 200 });
+    const today = await call(BR, "post", "/projects/{project_id}/notes/today", { path: SP, status: 201 });
+    const N = { note_id: today.note_id as string };
+    await call(BR, "put", "/notes/{note_id}/blocks", { path: N, headers: { "if-match": "1" }, body: { blocks: [{ section: "OBJECTIVE", text: "temp_c 주기적 상승 원인 확인" }] }, status: 200 });
+    await call(BR, "post", "/notes/{note_id}/draft", { path: N, status: 422 });
+    await call(BR, "post", "/notes/{note_id}/submit", { path: N, status: 200 });
+    await call(A, "post", "/notes/{note_id}/reject", { path: N, body: { reason: "근거 보완" }, status: 403 });
+    await call(BR, "post", "/notes/{note_id}/sign", { path: N, status: 200 });
+    await call(BR, "get", "/notes/{note_id}/verify", { path: N, status: 200 });
+    const revised = await call(BR, "post", "/notes/{note_id}/revise", { path: N, status: 201 });
+    await call(BR, "delete", "/notes/{note_id}", { path: { note_id: revised.note_id }, status: 204 });
+
     const METHODS = ["get", "post", "put", "patch", "delete"];
     const all = Object.values(doc.paths).flatMap((item) => Object.entries(item).filter(([m]) => METHODS.includes(m)).map(([, op]) => op.operationId));
-    expect(all).toHaveLength(64);
-    expect(all.filter((id) => !exercised.has(id))).toEqual([]);
+    expect(all).toHaveLength(108);
+    expect([...PENDING_MOCK_OPERATIONS].filter((id) => !all.includes(id) || exercised.has(id))).toEqual([]);
+    expect(all.filter((id) => !exercised.has(id) && !PENDING_MOCK_OPERATIONS.has(id))).toEqual([]);
   });
 });

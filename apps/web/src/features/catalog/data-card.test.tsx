@@ -81,7 +81,7 @@ describe("Data Card layout", () => {
     renderScreen(<DatasetDetailScreen datasetId={DATASET.battery} />, { user: USER.bResearcher, path: `/commons/data/${DATASET.battery}` });
     const nav = await screen.findByRole("navigation", { name: "데이터 카드 섹션" });
     const links = within(nav).getAllByRole("link");
-    expect(links.map((l) => l.textContent)).toEqual(["개요", "파일·분포", "스키마", "메타데이터"]);
+    expect(links.map((l) => l.textContent)).toEqual(["개요", "파일·분포", "스키마", "메타데이터", "프로젝트", "토론", "이력"]);
     expect(links[0]).toHaveAttribute("aria-current", "location");
     for (const l of links) expect(document.getElementById(l.getAttribute("href")!.slice(1))).not.toBeNull();
     await userEvent.click(links[2]!);

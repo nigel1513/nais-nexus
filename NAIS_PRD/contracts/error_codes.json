@@ -1,6 +1,6 @@
 {
   "$comment": "Shared error code registry. Owner: Agent 0. Other agents request additions via CONTRACT_CHANGE_REQUEST.md. Envelope: {\"error\": {\"code\", \"message\", \"trace_id\", \"details?\"}}",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "codes": [
     {
       "code": "VALIDATION_FAILED",
@@ -277,6 +277,66 @@
       "http": 404,
       "module": "audit",
       "description": "Notification does not exist or belongs to another user."
+    },
+    {
+      "code": "ACCESS_REQUIRED",
+      "http": 403,
+      "module": "workspace",
+      "description": "Dataset is not PUBLIC and the caller has no ACTIVE grant for it. details.dataset_id links the access request."
+    },
+    {
+      "code": "INPUT_ACCESS_LAPSED",
+      "http": 409,
+      "module": "workspace",
+      "description": "Access to a pinned project input was revoked or expired; runs, previews and downloads that use it are blocked. details.input_ids lists the inputs."
+    },
+    {
+      "code": "RECIPE_INVALID",
+      "http": 422,
+      "module": "workspace",
+      "description": "Recipe steps do not fit the inputs (unknown column, type mismatch, join input not in the recipe). details.step_index and details.reason."
+    },
+    {
+      "code": "RUN_NOT_ALLOWED",
+      "http": 409,
+      "module": "workspace",
+      "description": "A run of this recipe is already QUEUED/RUNNING, or the recipe cannot be run in its current state."
+    },
+    {
+      "code": "OUTPUT_PUBLISH_PENDING",
+      "http": 409,
+      "module": "workspace",
+      "description": "The output already has a pending or approved hub publish request."
+    },
+    {
+      "code": "NOTE_LOCKED",
+      "http": 409,
+      "module": "notes",
+      "description": "Submitted or signed research notes cannot be edited; signed notes are revised as a new version."
+    },
+    {
+      "code": "NOTE_HAS_UNACCEPTED_AI",
+      "http": 409,
+      "module": "notes",
+      "description": "The note still has AI sentences that were not accepted, edited or deleted."
+    },
+    {
+      "code": "NOTE_SIGNATURE_EXPIRED",
+      "http": 401,
+      "module": "notes",
+      "description": "Signing requires a re-authentication within the last 5 minutes (token auth_time)."
+    },
+    {
+      "code": "NOTE_NOT_WITNESS",
+      "http": 403,
+      "module": "notes",
+      "description": "Caller is not a configured witness of this note's project."
+    },
+    {
+      "code": "LLM_UNAVAILABLE",
+      "http": 503,
+      "module": "platform",
+      "description": "The local LLM is disabled or unreachable; drafting is unavailable but notes keep working."
     }
   ]
 }

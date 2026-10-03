@@ -1,5 +1,5 @@
 {
-  "version": "1.1.1",
+  "version": "1.2.0",
   "$comment": "Folder ownership per module. An agent edits only its own paths. Shared files are Agent 0 only. See 02_PARALLEL_DEVELOPMENT_PLAN.md and 11_DECISION_LOG.md (D-003, D-004, D-005).",
   "M00": {
     "name": "Platform Contracts / Foundation",
@@ -146,6 +146,24 @@
     "db_schema": "autonomy",
     "path": [
       "apps/api/modules/autonomy"
+    ]
+  },
+  "M13": {
+    "name": "Project Workspace & Data Hub",
+    "owner": "Agent 13 - Workspace",
+    "release": "P1",
+    "db_schema": "workspace",
+    "path": [
+      "apps/api/modules/workspace"
+    ]
+  },
+  "M14": {
+    "name": "Research Notes",
+    "owner": "Agent 14 - Notes",
+    "release": "P1",
+    "db_schema": "notes",
+    "path": [
+      "apps/api/modules/notes"
     ]
   },
   "QA": {

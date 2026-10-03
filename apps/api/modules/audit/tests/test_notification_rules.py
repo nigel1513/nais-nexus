@@ -5,16 +5,36 @@ import pytest
 from api.modules.audit import ports as audit_ports
 from api.modules.audit.fakes import (
     A_RESEARCHER,
+    A_STEWARD,
     B_RESEARCHER,
     B_STEWARD,
     DATASET_BATTERY,
+    ORG_A,
+    ORG_B,
     FakeCatalog,
     FakeGrants,
     seed_id,
 )
 from api.modules.audit.notification_rules import DATASET_FALLBACK_TITLE, build_drafts
-from api.modules.audit.tests.support.events import GRANT_ID, PROJECT_GOLDEN, REQUEST_ID, envelope
+from api.modules.audit.tests.support.events import (
+    ACTOR_A,
+    ACTOR_B_STEWARD,
+    GRANT_ID,
+    NOTE_ID,
+    OUTPUT_ID,
+    PROJECT_GOLDEN,
+    RECIPE_ID,
+    REQUEST_ID,
+    SYSTEM,
+    as_json,
+    envelope,
+)
 from api.platform import ports
+from api.platform.events import EventActor
+from api.platform.testing.contracts import assert_valid_event
+
+ACTOR_A_STEWARD = EventActor(type="USER", user_id=A_STEWARD, organization_id=ORG_A)
+ACTOR_B_RESEARCHER = EventActor(type="USER", user_id=B_RESEARCHER, organization_id=ORG_B)
 
 T = "Battery Cycling Measurements"
 ACCESS_LINK = f"/commons/access/{REQUEST_ID}"
@@ -153,3 +173,266 @@ def test_published_recipients_are_deduplicated_and_ordered() -> None:
     ports.provide(audit_ports.GrantQueryPort, FakeGrants({DATASET_BATTERY: [high, low, high, low]}))
     drafts = build_drafts(envelope("catalog.dataset.version_published.v1"))
     assert [d.recipient_user_id for d in drafts] == [low, high]
+
+
+# ---------------------------------------------------------------- contract 1.6.0: workspace and research notes
+
+OUT = "High temperature mean"
+OUTPUT_LINK = f"/commons/projects/{PROJECT_GOLDEN}/outputs/{OUTPUT_ID}"
+NOTE_LINK = f"/commons/notes/{NOTE_ID}"
+NOTE = '"Golden Project" 2026-10-02 연구노트'
+
+NEW_CASES = [
+    (
+        "workspace.publish.requested.v1",
+        ACTOR_A,
+        {},
+        B_STEWARD,
+        "OUTPUT_PUBLISH_REQUESTED",
+        f'"{OUT}" 허브 공개 검토 요청이 도착했습니다',
+        "/commons/access?tab=publish",
+    ),
+    (
+        "workspace.publish.decided.v1",
+        ACTOR_B_STEWARD,
+        {},
+        A_RESEARCHER,
+        "OUTPUT_PUBLISH_DECIDED",
+        f'"{OUT}" 허브 공개가 승인되었습니다',
+        OUTPUT_LINK,
+    ),
+    (
+        "workspace.publish.decided.v1",
+        ACTOR_B_STEWARD,
+        {"request_status": "PENDING"},
+        A_RESEARCHER,
+        "OUTPUT_PUBLISH_DECIDED",
+        f'"{OUT}" 허브 공개 요청이 일부 승인되었습니다 (다른 기관 검토 중)',
+        OUTPUT_LINK,
+    ),
+    (
+        "workspace.publish.decided.v1",
+        ACTOR_B_STEWARD,
+        {"decision": "REJECT", "request_status": "REJECTED"},
+        A_RESEARCHER,
+        "OUTPUT_PUBLISH_DECIDED",
+        f'"{OUT}" 허브 공개 요청이 반려되었습니다',
+        OUTPUT_LINK,
+    ),
+    (
+        "workspace.publish.decided.v1",
+        SYSTEM,
+        {
+            "decision": "REJECT",
+            "request_status": "REJECTED",
+            "failure_reason": "카탈로그가 공개를 거부했습니다",
+        },
+        A_RESEARCHER,
+        "OUTPUT_PUBLISH_DECIDED",
+        f'"{OUT}" 허브 공개에 실패했습니다',
+        OUTPUT_LINK,
+    ),
+    (
+        "workspace.run.failed.v1",
+        ACTOR_A,
+        {},
+        A_RESEARCHER,
+        "RUN_FAILED",
+        f'"{OUT}" 레시피 실행이 실패했습니다',
+        f"/commons/projects/{PROJECT_GOLDEN}/recipes/{RECIPE_ID}",
+    ),
+    (
+        "workspace.comment.added.v1",
+        ACTOR_A,
+        {},
+        B_STEWARD,
+        "DATASET_COMMENT_ADDED",
+        f'"{T}" 데이터에 새 토론이 시작되었습니다',
+        f"/commons/data/{DATASET_BATTERY}?tab=discussion",
+    ),
+    (
+        "workspace.comment.added.v1",
+        ACTOR_A,
+        {"new_thread": False},
+        B_STEWARD,
+        "DATASET_COMMENT_ADDED",
+        f'"{T}" 데이터 토론에 새 댓글이 달렸습니다',
+        f"/commons/data/{DATASET_BATTERY}?tab=discussion",
+    ),
+    (
+        "notes.note.submitted.v1",
+        ACTOR_A,
+        {},
+        B_RESEARCHER,
+        "NOTE_SUBMITTED",
+        f"{NOTE} 확인 요청이 도착했습니다",
+        NOTE_LINK,
+    ),
+    (
+        "notes.note.rejected.v1",
+        ACTOR_B_RESEARCHER,
+        {},
+        A_RESEARCHER,
+        "NOTE_REJECTED",
+        f"{NOTE}가 반려되었습니다",
+        NOTE_LINK,
+    ),
+    (
+        "notes.note.signed.v1",
+        ACTOR_B_RESEARCHER,
+        {"signer_id": B_RESEARCHER, "signer_role": "WITNESS"},
+        A_RESEARCHER,
+        "NOTE_SIGNED",
+        f"{NOTE} 서명이 완료되었습니다",
+        NOTE_LINK,
+    ),
+    (
+        "notes.note.signed.v1",
+        ACTOR_B_RESEARCHER,
+        {"signer_id": B_RESEARCHER, "signer_role": "WITNESS", "final": False, "chain_hash": None},
+        A_RESEARCHER,
+        "NOTE_SIGNED",
+        f"{NOTE}에 확인자 서명이 추가되었습니다",
+        NOTE_LINK,
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("event_type", "actor", "overrides", "recipient", "ntype", "title", "link"), NEW_CASES
+)
+def test_workspace_and_notes_rules(
+    event_type: str,
+    actor: EventActor,
+    overrides: dict[str, Any],
+    recipient: object,
+    ntype: str,
+    title: str,
+    link: str,
+) -> None:
+    event = envelope(event_type, actor=actor, **overrides)
+    assert_valid_event(as_json(event))
+    [draft] = build_drafts(event)
+    assert (draft.recipient_user_id, draft.type.value, draft.title, draft.link) == (
+        recipient,
+        ntype,
+        title,
+        link,
+    )
+
+
+def test_publish_request_notifies_every_slot_organizations_stewards_but_not_the_actor() -> None:
+    event = envelope(
+        "workspace.publish.requested.v1",
+        actor=ACTOR_A_STEWARD,
+        approver_organization_ids=[str(ORG_A), str(ORG_B)],
+    )
+    drafts = build_drafts(event)
+    assert [d.recipient_user_id for d in drafts] == [B_STEWARD]
+    assert drafts[0].body == "프로젝트: Golden Project"
+    both = build_drafts(
+        envelope("workspace.publish.requested.v1", approver_organization_ids=[str(ORG_A), str(ORG_B)])
+    )
+    assert sorted(d.recipient_user_id for d in both) == sorted([A_STEWARD, B_STEWARD])
+
+
+def test_publication_failure_reason_in_body() -> None:
+    [draft] = build_drafts(
+        envelope(
+            "workspace.publish.decided.v1",
+            actor=SYSTEM,
+            decision="REJECT",
+            request_status="REJECTED",
+            failure_reason="카탈로그가 공개를 거부했습니다",
+        )
+    )
+    assert draft.body == "사유: 카탈로그가 공개를 거부했습니다"
+
+
+def test_run_failure_code_becomes_a_korean_sentence() -> None:
+    [draft] = build_drafts(envelope("workspace.run.failed.v1"))
+    assert draft.body == "레시피 단계가 입력 데이터와 맞지 않습니다. 레시피를 확인해 주세요."
+
+
+@pytest.mark.parametrize(
+    ("code", "body"),
+    [
+        ("INPUT_TOO_LARGE", "입력 데이터가 허용 크기를 넘었습니다."),
+        ("STALE_RUN", "실행이 제때 진행되지 않아 중단되었습니다. 다시 실행해 주세요."),
+        ("NEW_UNKNOWN_CODE", "실행에 실패했습니다."),
+        (
+            "INPUT_TOO_LARGE: input 'x' v1: The input has more than 4 rows.",
+            "입력 데이터가 허용 크기를 넘었습니다.",
+        ),
+    ],
+)
+def test_run_failure_body_is_korean_only(code: str, body: str) -> None:
+    [draft] = build_drafts(envelope("workspace.run.failed.v1", error=code))
+    assert draft.body == body
+
+
+def test_every_run_error_code_has_a_korean_sentence() -> None:
+    import re
+
+    from api.modules.audit.notification_rules import RUN_ERROR_SENTENCES
+    from api.modules.workspace.public import RUN_ERROR_CODES
+
+    assert set(RUN_ERROR_SENTENCES) == set(RUN_ERROR_CODES)
+    for sentence in RUN_ERROR_SENTENCES.values():
+        assert not re.search(r"[A-Za-z]{2,}", sentence.replace("CSV", "").replace("Parquet", ""))
+
+
+def test_note_rejection_reason_in_body() -> None:
+    [draft] = build_drafts(envelope("notes.note.rejected.v1", actor=ACTOR_B_RESEARCHER))
+    assert draft.body == "사유: 근거 보완 필요"
+
+
+@pytest.mark.parametrize(
+    ("event_type", "actor", "overrides"),
+    [
+        ("workspace.publish.decided.v1", ACTOR_A, {}),  # the requester never decides, but never self-notify
+        ("notes.note.signed.v1", ACTOR_A, {}),  # the recorder signing their own note
+        ("notes.note.rejected.v1", ACTOR_A, {}),
+        ("notes.note.submitted.v1", ACTOR_B_RESEARCHER, {}),  # a witness who is the actor
+        ("workspace.comment.added.v1", ACTOR_B_STEWARD, {}),  # the owner's steward commenting
+    ],
+)
+def test_the_actor_is_never_notified_of_their_own_action(
+    event_type: str, actor: EventActor, overrides: dict[str, Any]
+) -> None:
+    assert build_drafts(envelope(event_type, actor=actor, **overrides)) == []
+
+
+@pytest.mark.parametrize("scope", ["PROJECT", "OUTPUT", "RECIPE"])
+def test_project_scope_comments_notify_nobody(scope: str) -> None:
+    event = envelope(
+        "workspace.comment.added.v1",
+        scope=scope,
+        project_id=PROJECT_GOLDEN,
+        target_id=PROJECT_GOLDEN,
+        owner_organization_id=None,
+    )
+    assert build_drafts(event) == []
+
+
+@pytest.mark.parametrize(
+    "event_type",
+    [
+        "workspace.input.added.v1",
+        "workspace.input.version_changed.v1",
+        "workspace.input.removed.v1",
+        "workspace.recipe.saved.v1",
+        "workspace.run.succeeded.v1",
+        "workspace.output.created.v1",
+        "notes.note.viewed.v1",
+    ],
+)
+def test_audit_only_events_produce_no_notification(event_type: str) -> None:
+    assert build_drafts(envelope(event_type, actor=ACTOR_B_STEWARD)) == []
+
+
+def test_notes_submitted_to_several_witnesses() -> None:
+    event = envelope(
+        "notes.note.submitted.v1", witness_user_ids=[str(B_STEWARD), str(B_RESEARCHER), str(B_STEWARD)]
+    )
+    assert sorted(d.recipient_user_id for d in build_drafts(event)) == sorted([B_RESEARCHER, B_STEWARD])

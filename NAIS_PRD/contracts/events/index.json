@@ -1,5 +1,5 @@
 {
-  "version": "1.2.0",
+  "version": "1.3.0",
   "events": [
     {
       "event_type": "identity.organization.created.v1",
@@ -140,6 +140,76 @@
       "event_type": "catalog.dataset.metadata_changed.v1",
       "producer": "catalog",
       "description": "Non-policy dataset metadata or contributors changed (Audit DATASET_UPDATED; M11 index input)."
+    },
+    {
+      "event_type": "workspace.input.added.v1",
+      "producer": "workspace",
+      "description": "Dataset version pinned as a project input (Audit PROJECT_INPUT_ADDED; notes evidence INPUT_ADDED; hub most_used)."
+    },
+    {
+      "event_type": "workspace.input.version_changed.v1",
+      "producer": "workspace",
+      "description": "Pinned input version changed explicitly (Audit PROJECT_INPUT_VERSION_CHANGED; notes evidence INPUT_VERSION_CHANGED)."
+    },
+    {
+      "event_type": "workspace.input.removed.v1",
+      "producer": "workspace",
+      "description": "Project input removed (Audit PROJECT_INPUT_REMOVED)."
+    },
+    {
+      "event_type": "workspace.recipe.saved.v1",
+      "producer": "workspace",
+      "description": "Recipe created or saved as a new version (Audit RECIPE_SAVED; notes evidence RECIPE_SAVED)."
+    },
+    {
+      "event_type": "workspace.run.succeeded.v1",
+      "producer": "workspace",
+      "description": "Recipe run finished and produced a DERIVED_DATASET output (Audit RUN_SUCCEEDED; notes evidence RUN_SUCCEEDED)."
+    },
+    {
+      "event_type": "workspace.run.failed.v1",
+      "producer": "workspace",
+      "description": "Recipe run failed; error is a stable failure code such as INPUT_TOO_LARGE, never text or data values (Audit RUN_FAILED; notifies the run starter; notes evidence RUN_FAILED)."
+    },
+    {
+      "event_type": "workspace.output.created.v1",
+      "producer": "workspace",
+      "description": "Output created from a run or an upload (Audit OUTPUT_CREATED; notes evidence OUTPUT_CREATED)."
+    },
+    {
+      "event_type": "workspace.publish.requested.v1",
+      "producer": "workspace",
+      "description": "Hub publication of an output requested; one approval slot per organization (Audit OUTPUT_PUBLISH_REQUESTED; notifies the organizations' DATA_STEWARDs; notes evidence PUBLISH_REQUESTED)."
+    },
+    {
+      "event_type": "workspace.publish.decided.v1",
+      "producer": "workspace",
+      "description": "One organization decided a publish request; request_status is the request status after this decision (Audit OUTPUT_PUBLISH_DECIDED; notifies the requester). A terminal catalog publication failure is reported as a system REJECT (request_status REJECTED) with failure_reason."
+    },
+    {
+      "event_type": "workspace.comment.added.v1",
+      "producer": "workspace",
+      "description": "Comment added (first comment of a new thread included). project_id is null for DATASET threads and required (non-null) for PROJECT/OUTPUT/RECIPE threads (Audit COMMENT_ADDED; DATASET threads notify the owner organization's DATA_STEWARDs)."
+    },
+    {
+      "event_type": "notes.note.submitted.v1",
+      "producer": "notes",
+      "description": "Research note submitted and locked (Audit NOTE_SUBMITTED; notifies witnesses)."
+    },
+    {
+      "event_type": "notes.note.signed.v1",
+      "producer": "notes",
+      "description": "A signature was recorded; final=true when the note became SIGNED (Audit NOTE_SIGNED; notifies the recorder when a witness signs)."
+    },
+    {
+      "event_type": "notes.note.rejected.v1",
+      "producer": "notes",
+      "description": "Witness returned a submitted note to DRAFT with a reason (Audit NOTE_REJECTED; notifies the recorder)."
+    },
+    {
+      "event_type": "notes.note.viewed.v1",
+      "producer": "notes",
+      "description": "Someone other than the recorder opened the note (Audit NOTE_VIEWED, 열람 관리대장)."
     }
   ]
 }

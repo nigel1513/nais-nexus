@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { resetDb } from "@/mocks/db";
 import { USER } from "@/mocks/fixtures";
 import { PORTAL_USER } from "@/mocks/fixtures-portal";
@@ -15,8 +15,16 @@ const tiles = () => within(screen.getByRole("region", { name: "최근 30일 요�
 const contextLine = (org: string, role: string) => (_: string, el: Element | null) => !!el?.classList.contains("sv-ctx") && el.textContent === `${org}·${role}`;
 const tileValue = (link: HTMLElement) => link.querySelector("[data-kpi-value]")!;
 
+/** Request ages ("N일째") count calendar days: pin the clock to Seoul noon so the result does not depend on the time of day. */
+const NOON_KST = new Date("2026-10-01T03:00:00Z");
+
 describe("DashboardScreen (portal-volume mock seed)", () => {
-  beforeEach(() => resetDb(new Date(), { portal: true }));
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(NOON_KST);
+    resetDb(new Date(), { portal: true });
+  });
+  afterEach(() => vi.useRealTimers());
 
   it("steward: two-step title, five linked figures with trends, review queue with age and next action", async () => {
     renderScreen(<DashboardScreen />, { user: USER.bSteward });

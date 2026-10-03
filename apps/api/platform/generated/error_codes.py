@@ -49,6 +49,16 @@ class ErrorCode(StrEnum):
     READINESS_VALIDATION_IN_PROGRESS = "READINESS_VALIDATION_IN_PROGRESS"
     READINESS_NOT_AVAILABLE = "READINESS_NOT_AVAILABLE"
     NOTIFICATION_NOT_FOUND = "NOTIFICATION_NOT_FOUND"
+    ACCESS_REQUIRED = "ACCESS_REQUIRED"
+    INPUT_ACCESS_LAPSED = "INPUT_ACCESS_LAPSED"
+    RECIPE_INVALID = "RECIPE_INVALID"
+    RUN_NOT_ALLOWED = "RUN_NOT_ALLOWED"
+    OUTPUT_PUBLISH_PENDING = "OUTPUT_PUBLISH_PENDING"
+    NOTE_LOCKED = "NOTE_LOCKED"
+    NOTE_HAS_UNACCEPTED_AI = "NOTE_HAS_UNACCEPTED_AI"
+    NOTE_SIGNATURE_EXPIRED = "NOTE_SIGNATURE_EXPIRED"
+    NOTE_NOT_WITNESS = "NOTE_NOT_WITNESS"
+    LLM_UNAVAILABLE = "LLM_UNAVAILABLE"
 
 
 HTTP_STATUS: dict[ErrorCode, int] = {
@@ -98,6 +108,16 @@ HTTP_STATUS: dict[ErrorCode, int] = {
     ErrorCode.READINESS_VALIDATION_IN_PROGRESS: 409,
     ErrorCode.READINESS_NOT_AVAILABLE: 404,
     ErrorCode.NOTIFICATION_NOT_FOUND: 404,
+    ErrorCode.ACCESS_REQUIRED: 403,
+    ErrorCode.INPUT_ACCESS_LAPSED: 409,
+    ErrorCode.RECIPE_INVALID: 422,
+    ErrorCode.RUN_NOT_ALLOWED: 409,
+    ErrorCode.OUTPUT_PUBLISH_PENDING: 409,
+    ErrorCode.NOTE_LOCKED: 409,
+    ErrorCode.NOTE_HAS_UNACCEPTED_AI: 409,
+    ErrorCode.NOTE_SIGNATURE_EXPIRED: 401,
+    ErrorCode.NOTE_NOT_WITNESS: 403,
+    ErrorCode.LLM_UNAVAILABLE: 503,
 }
 
 DESCRIPTION: dict[ErrorCode, str] = {
@@ -147,4 +167,14 @@ DESCRIPTION: dict[ErrorCode, str] = {
     ErrorCode.READINESS_VALIDATION_IN_PROGRESS: "A QUEUED/RUNNING validation already exists for this version and profile.",
     ErrorCode.READINESS_NOT_AVAILABLE: "No validation has been run for this version/profile.",
     ErrorCode.NOTIFICATION_NOT_FOUND: "Notification does not exist or belongs to another user.",
+    ErrorCode.ACCESS_REQUIRED: "Dataset is not PUBLIC and the caller has no ACTIVE grant for it. details.dataset_id links the access request.",
+    ErrorCode.INPUT_ACCESS_LAPSED: "Access to a pinned project input was revoked or expired; runs, previews and downloads that use it are blocked. details.input_ids lists the inputs.",
+    ErrorCode.RECIPE_INVALID: "Recipe steps do not fit the inputs (unknown column, type mismatch, join input not in the recipe). details.step_index and details.reason.",
+    ErrorCode.RUN_NOT_ALLOWED: "A run of this recipe is already QUEUED/RUNNING, or the recipe cannot be run in its current state.",
+    ErrorCode.OUTPUT_PUBLISH_PENDING: "The output already has a pending or approved hub publish request.",
+    ErrorCode.NOTE_LOCKED: "Submitted or signed research notes cannot be edited; signed notes are revised as a new version.",
+    ErrorCode.NOTE_HAS_UNACCEPTED_AI: "The note still has AI sentences that were not accepted, edited or deleted.",
+    ErrorCode.NOTE_SIGNATURE_EXPIRED: "Signing requires a re-authentication within the last 5 minutes (token auth_time).",
+    ErrorCode.NOTE_NOT_WITNESS: "Caller is not a configured witness of this note's project.",
+    ErrorCode.LLM_UNAVAILABLE: "The local LLM is disabled or unreachable; drafting is unavailable but notes keep working.",
 }

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: NAIS AI-OS / Research Commons API
-  version: 1.4.1
+  version: 1.7.0
   description: |
     P0 contract. Owner: Agent 0 (Platform). Changes only via CONTRACT_CHANGE_REQUEST.md.
 
@@ -25,6 +25,9 @@ tags:
   - name: readiness
   - name: audit
   - name: notifications
+  - name: hub
+  - name: workspace
+  - name: notes
 
 paths:
   /health/live:
@@ -997,6 +1000,907 @@ paths:
         "204": { description: All marked read }
         "401": { $ref: "#/components/responses/Error" }
 
+  # ---------------------------------------------------------------- hub (M13, contract 1.6.0)
+  /hub/overview:
+    get:
+      tags: [hub]
+      operationId: getHubOverview
+      description: |
+        Data-Hub home. Only datasets the caller can see (D-012). Each rail holds at most 6 cards:
+        trending = most access requests in the last 7 days (0 excluded, metric = request count),
+        recent = most recently published versions (metric null), most_used = most project inputs (metric = input count).
+        Organization rows count ACTIVE datasets visible to the caller.
+      responses:
+        "200":
+          description: Rails and organization table
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HubOverview" }
+              examples: { default: { $ref: "#/components/examples/HubOverview" } }
+        "401": { $ref: "#/components/responses/Error" }
+  /datasets/{dataset_id}/projects:
+    parameters: [ { $ref: "#/components/parameters/DatasetId" } ]
+    get:
+      tags: [hub]
+      operationId: listDatasetProjects
+      description: Projects that use this dataset as an input. Projects the caller is an ACTIVE member of are listed; the rest are only counted in hidden_count. Visible datasets only (else 404).
+      responses:
+        "200":
+          description: Projects using the dataset
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatasetProjectsResult" }
+              examples: { default: { $ref: "#/components/examples/DatasetProjectsResult" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /datasets/{dataset_id}/activity:
+    parameters: [ { $ref: "#/components/parameters/DatasetId" } ]
+    get:
+      tags: [hub]
+      operationId: listDatasetActivity
+      description: Dataset history (versions, policy, validation, project use, hub publication, discussion), newest first. Visible datasets only (else 404).
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Activity (newest first)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/DatasetActivity" } } } }
+              examples: { default: { $ref: "#/components/examples/DatasetActivityPage" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  # ---------------------------------------------------------------- workspace (M13, contract 1.6.0)
+  /projects/{project_id}/inputs:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    get:
+      tags: [workspace]
+      operationId: listProjectInputs
+      description: ACTIVE project members only (else 404). access_lapsed is computed for the caller at read time.
+      responses:
+        "200":
+          description: Pinned dataset inputs
+          content:
+            application/json:
+              schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/ProjectInput" } } } }
+              examples: { default: { $ref: "#/components/examples/ProjectInputList" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [workspace]
+      operationId: addProjectInput
+      description: |
+        ACTIVE member other than VIEWER (FORBIDDEN). Dataset must be visible (404) and the version PUBLISHED (DATASET_VERSION_NOT_PUBLISHED).
+        Non-PUBLIC datasets need an ACTIVE grant for the caller (403 ACCESS_REQUIRED, details.dataset_id for the access-request link).
+        One live input per dataset (409 CONFLICT). Emits workspace.input.added.v1.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectInputCreate" } } }
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectInput" }
+              examples: { default: { $ref: "#/components/examples/ProjectInput" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/inputs/{input_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/InputId"
+    patch:
+      tags: [workspace]
+      operationId: updateProjectInput
+      description: ACTIVE member other than VIEWER. Changing dataset_version_id is an explicit, audited action (workspace.input.version_changed.v1) and re-checks access like addProjectInput.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ProjectInputUpdate" } } }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectInput" }
+              examples: { default: { $ref: "#/components/examples/ProjectInput" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [workspace]
+      operationId: removeProjectInput
+      description: ACTIVE member other than VIEWER. Soft delete; recipes still referencing the input fail validation (RECIPE_INVALID) until edited. Emits workspace.input.removed.v1.
+      responses:
+        "204": { description: Removed }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/recipes:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    get:
+      tags: [workspace]
+      operationId: listRecipes
+      description: ACTIVE project members only (else 404).
+      responses:
+        "200":
+          description: Recipes
+          content:
+            application/json:
+              schema: { type: object, required: [items], properties: { items: { type: array, items: { $ref: "#/components/schemas/Recipe" } } } }
+              examples: { default: { $ref: "#/components/examples/RecipeList" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [workspace]
+      operationId: createRecipe
+      description: ACTIVE member other than VIEWER. Steps are validated against the inputs' column profiles (422 RECIPE_INVALID with details.step_index). Creates version 1 and emits workspace.recipe.saved.v1.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RecipeWrite" } } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recipe" }
+              examples: { default: { $ref: "#/components/examples/Recipe" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/recipes/{recipe_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/RecipeId"
+    get:
+      tags: [workspace]
+      operationId: getRecipe
+      responses:
+        "200":
+          description: Recipe
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recipe" }
+              examples: { default: { $ref: "#/components/examples/Recipe" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    put:
+      tags: [workspace]
+      operationId: updateRecipe
+      description: ACTIVE member other than VIEWER. If-Match must carry the current version (409 CONFLICT otherwise). Saving increments version and emits workspace.recipe.saved.v1.
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/RecipeWrite" } } }
+      responses:
+        "200":
+          description: Saved (new version)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recipe" }
+              examples: { default: { $ref: "#/components/examples/Recipe" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [workspace]
+      operationId: deleteRecipe
+      description: ACTIVE member other than VIEWER. Not allowed while a run of the recipe is QUEUED/RUNNING (RUN_NOT_ALLOWED). Past runs and outputs keep their lineage.
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/recipes/{recipe_id}/preview:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/RecipeId"
+    post:
+      tags: [workspace]
+      operationId: previewRecipe
+      description: |
+        Synchronous preview: reads at most the first 10,000 rows of each input, applies the steps and returns the first 100 rows (cells ≤ 200 chars).
+        Body may carry unsaved input_ids/steps; omitted fields use the saved recipe. Lapsed inputs -> 409 INPUT_ACCESS_LAPSED; timeout (20 s) -> 503.
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/RecipePreviewRequest" } } }
+      responses:
+        "200":
+          description: First rows of the result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecipePreview" }
+              examples: { default: { $ref: "#/components/examples/RecipePreview" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/recipes/{recipe_id}/runs:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/RecipeId"
+    post:
+      tags: [workspace]
+      operationId: startRun
+      description: |
+        ACTIVE member other than VIEWER. Pins the current recipe version and input versions. Every input must be accessible (409 INPUT_ACCESS_LAPSED);
+        one QUEUED/RUNNING run per recipe (409 RUN_NOT_ALLOWED). Queued after commit; the worker emits workspace.run.succeeded.v1 / workspace.run.failed.v1.
+      responses:
+        "202":
+          description: Queued
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+              examples: { default: { $ref: "#/components/examples/RunQueued" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/runs:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    get:
+      tags: [workspace]
+      operationId: listRuns
+      description: ACTIVE project members only (else 404). Newest first.
+      parameters:
+        - { name: recipe_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: status, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/RunStatus" } } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Runs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Run" } } } }
+              examples: { default: { $ref: "#/components/examples/RunPage" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/runs/{run_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/RunId"
+    get:
+      tags: [workspace]
+      operationId: getRun
+      responses:
+        "200":
+          description: Run
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+              examples: { default: { $ref: "#/components/examples/RunSucceeded" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/outputs:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    get:
+      tags: [workspace]
+      operationId: listOutputs
+      description: ACTIVE project members only (else 404). Completed outputs only, newest first.
+      parameters:
+        - { name: kind, in: query, schema: { $ref: "#/components/schemas/OutputKind" } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Outputs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Output" } } } }
+              examples: { default: { $ref: "#/components/examples/OutputPage" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [workspace]
+      operationId: createOutputUpload
+      description: |
+        ACTIVE member other than VIEWER uploads files as a FILE output. Returns presigned PUT URLs (TTL 15 min, single PUT so ≤ 5 GiB per file).
+        access_level may not be looser than the strictest project input (422 VALIDATION_FAILED, field access_level); default INTERNAL when the project has no inputs.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/OutputUploadCreate" } } }
+      responses:
+        "201":
+          description: Upload session
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OutputUploadSession" }
+              examples: { default: { $ref: "#/components/examples/OutputUploadSession" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/outputs/{output_id}/complete:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/OutputId"
+    post:
+      tags: [workspace]
+      operationId: completeOutputUpload
+      description: The uploader completes the session. Size and sha256 are re-checked server-side (422 UPLOAD_CHECKSUM_MISMATCH); expired session -> 409 UPLOAD_SESSION_EXPIRED. Emits workspace.output.created.v1.
+      responses:
+        "200":
+          description: Output created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Output" }
+              examples: { default: { $ref: "#/components/examples/OutputFile" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/outputs/{output_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/OutputId"
+    get:
+      tags: [workspace]
+      operationId: getOutput
+      description: ACTIVE project members only (else 404). Includes lineage (inputs -> recipe@version -> run).
+      responses:
+        "200":
+          description: Output with lineage
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Output" }
+              examples: { default: { $ref: "#/components/examples/OutputDerived" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/outputs/{output_id}/download:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/OutputId"
+    post:
+      tags: [workspace]
+      operationId: getOutputDownload
+      description: ACTIVE project members only. Every lineage input must still be accessible (409 INPUT_ACCESS_LAPSED). Presigned GET URLs, TTL 300 s.
+      responses:
+        "201":
+          description: Signed URLs
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OutputDownload" }
+              examples: { default: { $ref: "#/components/examples/OutputDownload" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/outputs/{output_id}/publish-requests:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+      - $ref: "#/components/parameters/OutputId"
+    post:
+      tags: [workspace]
+      operationId: requestOutputPublish
+      description: |
+        ACTIVE member other than VIEWER asks to publish the output to the hub as a new dataset (owner = project lead organization).
+        Allowed when publish_status is NONE or REJECTED (else 409 OUTPUT_PUBLISH_PENDING). One approval slot per owner organization of the lineage inputs,
+        plus one for the project lead organization when it owns none of them (it becomes the dataset owner); an output without inputs needs only the
+        lead organization. Every slot is decided by a DATA_STEWARD of its organization. Emits workspace.publish.requested.v1.
+      requestBody:
+        required: false
+        content: { application/json: { schema: { $ref: "#/components/schemas/PublishRequestCreate" } } }
+      responses:
+        "201":
+          description: Requested
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublishRequest" }
+              examples: { default: { $ref: "#/components/examples/PublishRequest" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /publish-requests:
+    get:
+      tags: [workspace]
+      operationId: listPublishRequests
+      parameters:
+        - { name: role, in: query, schema: { type: string, enum: [requester, reviewer], default: requester }, description: "requester = requests of projects I am a member of; reviewer = requests with an approval slot for an organization where I am DATA_STEWARD" }
+        - { name: status, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/PublishRequestStatus" } } }
+        - { name: project_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Publish requests (newest first)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/PublishRequest" } } } }
+              examples: { default: { $ref: "#/components/examples/PublishRequestPage" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /publish-requests/{request_id}/decision:
+    parameters: [ { $ref: "#/components/parameters/PublishRequestId" } ]
+    post:
+      tags: [workspace]
+      operationId: decidePublishRequest
+      description: |
+        DATA_STEWARD of an organization with a pending approval slot (403 otherwise); the requester never decides their own request (403).
+        A REJECT needs a comment (422). Any REJECT -> REJECTED; all APPROVE -> APPROVED, then the catalog dataset is created (published by the lead
+        organization's approving steward) and the output becomes PUBLISHED. If the catalog cannot publish it (terminal failure), the request becomes
+        REJECTED with failure_reason and the output can be requested again. Decided slots cannot change (409). Emits workspace.publish.decided.v1.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/PublishDecisionCreate" } } }
+      responses:
+        "200":
+          description: Decision recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublishRequest" }
+              examples: { default: { $ref: "#/components/examples/PublishRequest" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /threads:
+    get:
+      tags: [workspace]
+      operationId: listThreads
+      description: |
+        Either scope + target_id (one target) or project_id (all PROJECT/OUTPUT/RECIPE threads of the project) is required (422 otherwise).
+        PROJECT/OUTPUT/RECIPE: ACTIVE project members only (404). DATASET: anyone who can see the dataset. Newest activity first.
+      parameters:
+        - { name: scope, in: query, schema: { $ref: "#/components/schemas/ThreadScope" } }
+        - { name: target_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: project_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: resolved, in: query, schema: { type: boolean } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Threads
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Thread" } } } }
+              examples: { default: { $ref: "#/components/examples/ThreadPage" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [workspace]
+      operationId: createThread
+      description: Creates the thread with its first comment. PROJECT/OUTPUT/RECIPE need ACTIVE project membership; DATASET threads are open to every signed-in user who can see the dataset. Emits workspace.comment.added.v1.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ThreadCreate" } } }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Thread" }
+              examples: { default: { $ref: "#/components/examples/Thread" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /threads/{thread_id}:
+    parameters: [ { $ref: "#/components/parameters/ThreadId" } ]
+    patch:
+      tags: [workspace]
+      operationId: updateThread
+      description: Thread author, or PROJECT_OWNER/PROJECT_ADMIN for project threads, or owner-org DATA_STEWARD for dataset threads.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ThreadUpdate" } } }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Thread" }
+              examples: { default: { $ref: "#/components/examples/Thread" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /threads/{thread_id}/comments:
+    parameters: [ { $ref: "#/components/parameters/ThreadId" } ]
+    get:
+      tags: [workspace]
+      operationId: listComments
+      description: Same read rule as the thread. Oldest first.
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Comments (oldest first)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/Comment" } } } }
+              examples: { default: { $ref: "#/components/examples/CommentPage" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [workspace]
+      operationId: addComment
+      description: Same write rule as createThread. Markdown body, at most 10,000 characters. Emits workspace.comment.added.v1.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CommentCreate" } } }
+      responses:
+        "201":
+          description: Added
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Comment" }
+              examples: { default: { $ref: "#/components/examples/Comment" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+
+  # ---------------------------------------------------------------- notes (M14, contract 1.6.0)
+  /notes:
+    get:
+      tags: [notes]
+      operationId: listNotes
+      description: |
+        role=recorder (default): the caller's own notes (latest version per day). role=witness: SUBMITTED/SIGNED notes of projects
+        where the caller is a configured witness. Newest note_date first. from/to are inclusive Asia/Seoul dates.
+      parameters:
+        - { name: project_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: status, in: query, style: form, explode: true, schema: { type: array, items: { $ref: "#/components/schemas/NoteStatus" } } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: role, in: query, schema: { type: string, enum: [recorder, witness], default: recorder } }
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Notes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - { type: object, properties: { items: { type: array, items: { $ref: "#/components/schemas/ResearchNoteSummary" } } } }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteSummaryPage" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /notes/export:
+    get:
+      tags: [notes]
+      operationId: exportNotes
+      description: |
+        ZIP of the caller's own notes in the project (every status). An ORG_ADMIN additionally gets the SUBMITTED/SIGNED notes of other
+        recorders of their organization in the project — never other recorders' DRAFTs (DRAFT is recorder-only) — and each exported note
+        of another recorder emits notes.note.viewed.v1 (열람 관리대장), as getNote does.
+        Contents: notes/*.json, notes/*.html (human readable) and hashes.csv. Streamed. from/to are inclusive Asia/Seoul dates.
+      parameters:
+        - { name: project_id, in: query, required: true, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses:
+        "200":
+          description: ZIP archive
+          headers:
+            Content-Disposition: { schema: { type: string }, description: "attachment; filename=\"research-notes-<project>-<from>-<to>.zip\"" }
+          content:
+            application/zip: { schema: { type: string, format: binary } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /notes/search:
+    get:
+      tags: [notes]
+      operationId: searchNotes
+      description: Semantic search (embedding + rerank, top 20) over notes the caller may read; falls back to keyword search with score null when the embedding service is off.
+      parameters:
+        - { name: q, in: query, required: true, schema: { type: string, minLength: 1, maxLength: 500 } }
+        - { name: project_id, in: query, schema: { $ref: "#/components/schemas/Id" } }
+      responses:
+        "200":
+          description: Hits (best first)
+          content:
+            application/json:
+              schema: { type: object, required: [items], properties: { items: { type: array, maxItems: 20, items: { $ref: "#/components/schemas/NoteSearchHit" } } } }
+              examples: { default: { $ref: "#/components/examples/NoteSearchResult" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/notes/today:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    post:
+      tags: [notes]
+      operationId: getOrCreateTodayNote
+      description: ACTIVE project member. Returns the caller's latest note version for today (Asia/Seoul), or creates a DRAFT (organization_id = recorder's current organization, fixed for life).
+      responses:
+        "200":
+          description: Existing note
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteDraft" } }
+        "201":
+          description: Created DRAFT
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteDraft" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /projects/{project_id}/note-settings:
+    parameters: [ { $ref: "#/components/parameters/ProjectId" } ]
+    get:
+      tags: [notes]
+      operationId: getNoteSettings
+      description: ACTIVE project members. llm_enabled mirrors the server setting NAIS_LLM_ENABLED (read-only).
+      responses:
+        "200":
+          description: Settings
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NoteSettings" }
+              examples: { default: { $ref: "#/components/examples/NoteSettings" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    patch:
+      tags: [notes]
+      operationId: updateNoteSettings
+      description: |
+        PROJECT_OWNER / PROJECT_ADMIN. witness_user_ids must be ACTIVE project members (422). Applies only to notes submitted (or signed
+        from DRAFT) afterwards: each note keeps the witness_required / witness_user_ids snapshot taken at its submit, and signNote, rejectNote
+        and witness visibility use that snapshot, never the current setting.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NoteSettingsUpdate" } } }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NoteSettings" }
+              examples: { default: { $ref: "#/components/examples/NoteSettings" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /notes/{note_id}:
+    parameters: [ { $ref: "#/components/parameters/NoteId" } ]
+    get:
+      tags: [notes]
+      operationId: getNote
+      description: |
+        Recorder always; SUBMITTED/SIGNED also the witnesses in the note's witness_user_ids snapshot who are ACTIVE members. Other ACTIVE members of the
+        project get 403 FORBIDDEN; non-members, and anyone but the recorder for a DRAFT, get 404.
+        A read by anyone other than the recorder emits notes.note.viewed.v1 (열람 관리대장).
+      responses:
+        "200":
+          description: Note
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteSigned" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [notes]
+      operationId: deleteNote
+      description: |
+        Recorder only, DRAFT only (409 NOTE_LOCKED for SUBMITTED/SIGNED; signed notes are never deleted). Deleting a revision DRAFT
+        leaves the signed previous version untouched.
+        Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+        403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+      responses:
+        "204": { description: Deleted }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /notes/{note_id}/blocks:
+    parameters: [ { $ref: "#/components/parameters/NoteId" } ]
+    put:
+      tags: [notes]
+      operationId: updateNoteBlocks
+      description: |
+        Recorder only, DRAFT only (409 NOTE_LOCKED). If-Match must carry the current revision (409 CONFLICT). Replaces the block list in order:
+        listed block_ids keep their origin and evidence, new blocks (no block_id) are HUMAN/accepted, unlisted blocks are deleted.
+        Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+        403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/NoteBlocksPut" } } }
+      responses:
+        "200":
+          description: Saved (revision + 1)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteDraft" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /notes/{note_id}/draft:
+    parameters: [ { $ref: "#/components/parameters/NoteId" } ]
+    post:
+      tags: [notes]
+      operationId: draftNote
+      description: |
+        Recorder only, DRAFT only (409 NOTE_LOCKED). Queues a local-LLM draft of the standard template (NoteSection) from the Jupyter notebooks the recorder
+        saved in the note's project on note_date (cell sources and output kinds only, never output values); new AI blocks are appended with accepted=false and
+        NOTEBOOK evidence. No notebook saved that day -> 422 VALIDATION_FAILED with details.reason NO_NOTEBOOK_ACTIVITY ("오늘 저장한 노트북이 없습니다.").
+        Workspace activity evidence is not sent to the LLM. Once per minute per note (429 RATE_LIMITED); 503 LLM_UNAVAILABLE when NAIS_LLM_ENABLED is false.
+        Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+        403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+      responses:
+        "202":
+          description: Draft queued (draft_status QUEUED)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteDraft" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "429": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /notes/{note_id}/submit:
+    parameters: [ { $ref: "#/components/parameters/NoteId" } ]
+    post:
+      tags: [notes]
+      operationId: submitNote
+      description: |
+        Recorder only, DRAFT -> SUBMITTED (locked). Unaccepted AI blocks -> 409 NOTE_HAS_UNACCEPTED_AI; other states -> 409 NOTE_LOCKED.
+        Fixes content_hash and snapshots the project's witness_required / witness_user_ids onto the note (visible to those witnesses from now on).
+        Emits notes.note.submitted.v1.
+        Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+        403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+      responses:
+        "200":
+          description: Submitted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteSubmitted" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /notes/{note_id}/reject:
+    parameters: [ { $ref: "#/components/parameters/NoteId" } ]
+    post:
+      tags: [notes]
+      operationId: rejectNote
+      description: A witness in the note's witness_user_ids snapshot only (403 NOTE_NOT_WITNESS), SUBMITTED -> DRAFT with a reason (409 otherwise); the next submit takes a new snapshot. Emits notes.note.rejected.v1.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, required: [reason], properties: { reason: { type: string, minLength: 1, maxLength: 2000 } } }
+      responses:
+        "200":
+          description: Returned to the recorder
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteRejected" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+  /notes/{note_id}/sign:
+    parameters: [ { $ref: "#/components/parameters/NoteId" } ]
+    post:
+      tags: [notes]
+      operationId: signNote
+      description: |
+        Requires a token whose auth_time is within 5 minutes (401 NOTE_SIGNATURE_EXPIRED -> re-authenticate).
+        Recorder (RECORDER signature): from SUBMITTED in every case; from DRAFT only when the project currently requires no witness — that
+        sign runs the submit checks (409 NOTE_HAS_UNACCEPTED_AI) and takes the witness snapshot (witness_required=false) in the same step.
+        From DRAFT while the project requires witnesses -> 409 CONFLICT (submit first).
+        Witness (WITNESS signature): a user in the note's witness_user_ids snapshot, SUBMITTED only, and only when the snapshot has
+        witness_required=true; anyone else 403 NOTE_NOT_WITNESS.
+        The note becomes SIGNED (chain_hash fixed) when it has the RECORDER signature and, if the snapshot requires witnesses, one WITNESS signature.
+        Only the snapshot on the note is consulted, never the current project setting, so a SUBMITTED note can always be completed.
+        Emits notes.note.signed.v1 per signature.
+      responses:
+        "200":
+          description: Signature recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteSigned" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /notes/{note_id}/revise:
+    parameters: [ { $ref: "#/components/parameters/NoteId" } ]
+    post:
+      tags: [notes]
+      operationId: reviseNote
+      description: |
+        Recorder only, SIGNED only (409 NOTE_LOCKED otherwise). Creates a new DRAFT version (version + 1, previous_version_id set, blocks copied);
+        the signed version is unchanged.
+        Callers other than the recorder get the getNote answer: 404 when they cannot see the note (non-members, others' DRAFTs),
+        403 FORBIDDEN otherwise (other ACTIVE project members, witnesses).
+      responses:
+        "201":
+          description: New DRAFT version
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResearchNote" }
+              examples: { default: { $ref: "#/components/examples/ResearchNoteDraft" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /notes/{note_id}/verify:
+    parameters: [ { $ref: "#/components/parameters/NoteId" } ]
+    get:
+      tags: [notes]
+      operationId: verifyNote
+      description: Same read rule as getNote. Recomputes content_hash from the stored content and rebuilds the project × organization chain. DRAFT notes have nothing to verify (409 CONFLICT).
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/NoteVerification" }
+              examples: { default: { $ref: "#/components/examples/NoteVerification" } }
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1014,6 +1918,14 @@ components:
     DatasetId: { name: dataset_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
     VersionId: { name: version_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
     AccessRequestId: { name: access_request_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    InputId: { name: input_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    RecipeId: { name: recipe_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    RunId: { name: run_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    OutputId: { name: output_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    PublishRequestId: { name: request_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    ThreadId: { name: thread_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    NoteId: { name: note_id, in: path, required: true, schema: { $ref: "#/components/schemas/Id" } }
+    IfMatch: { name: If-Match, in: header, required: true, schema: { type: string, pattern: "^\"?[1-9][0-9]*\"?$" }, description: "Current Recipe.version / ResearchNote.revision (optionally quoted). Mismatch -> 409 CONFLICT" }
 
   responses:
     Error:
@@ -1021,6 +1933,328 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  examples:
+    # 1.6.0 hub / workspace / notes. Every example validates against its response schema (test_contract_v1_6.py).
+    HubOverview:
+      value:
+        rails:
+          trending:
+            - { dataset_id: 00000000-0000-7000-8000-000000002001, title: 이차전지 충방전 측정, owner_organization_name: 한국재료연구원, subject_labels: [재료], access_level: CONTROLLED, readiness_overall: PASS, updated_at: "2026-09-30T02:00:00Z", metric: 4 }
+          recent: []
+          most_used: []
+        organizations:
+          - { organization_id: 00000000-0000-7000-8000-00000000000b, name: 한국재료연구원, dataset_count: 12, public_count: 5, controlled_count: 6, last_updated_at: "2026-09-30T02:00:00Z" }
+    DatasetProjectsResult:
+      value:
+        items: [ { project_id: 00000000-0000-7000-8000-000000001001, name: 전극 소재 열화 분석, lead_organization_name: 한국기계연구원, input_added_at: "2026-09-28T01:00:00Z" } ]
+        hidden_count: 2
+    DatasetActivityPage:
+      value:
+        items:
+          - { activity_id: 00000000-0000-7000-8000-00000000a001, dataset_id: 00000000-0000-7000-8000-000000002001, type: VERSION_PUBLISHED, label: v2, ref_id: 00000000-0000-7000-8000-000000003002, actor_display_name: 박관리, project_id: null, occurred_at: "2026-09-30T02:00:00Z" }
+        page: { next_cursor: null, has_more: false }
+    ProjectInput:
+      value: &projectInput
+        input_id: 00000000-0000-7000-8000-00000000b001
+        project_id: 00000000-0000-7000-8000-000000001001
+        dataset_id: 00000000-0000-7000-8000-000000002001
+        dataset_title: 이차전지 충방전 측정
+        dataset_version_id: 00000000-0000-7000-8000-000000003001
+        version_label: v1
+        newer_version_label: v2
+        access_level: CONTROLLED
+        access_lapsed: false
+        added_by: 00000000-0000-7000-8000-000000000a01
+        added_by_display_name: 김민준
+        added_at: "2026-09-28T01:00:00Z"
+        note: 온도 구간별 비교용
+    ProjectInputList:
+      value: { items: [ *projectInput ] }
+    Recipe:
+      value: &recipe
+        recipe_id: 00000000-0000-7000-8000-00000000c001
+        project_id: 00000000-0000-7000-8000-000000001001
+        name: 고온 구간 평균 용량
+        input_ids: [ 00000000-0000-7000-8000-00000000b001 ]
+        steps:
+          - { type: filter_rows, column: temperature_c, op: ge, value: 40 }
+          - { type: aggregate, group_by: [cell_id], metrics: [ { column: capacity_mah, fn: mean } ] }
+          - { type: sort, by: [cell_id], descending: false }
+        version: 3
+        updated_by: 00000000-0000-7000-8000-000000000a01
+        updated_at: "2026-10-01T05:00:00Z"
+    RecipeList:
+      value: { items: [ *recipe ] }
+    RecipePreview:
+      value:
+        header: [cell_id, capacity_mah_mean]
+        rows: [ [C-01, "2875.4"], [C-02, null] ]
+        rows_truncated: false
+        input_rows_read: 10000
+        output_rows: 2
+    RunQueued:
+      value:
+        run_id: 00000000-0000-7000-8000-00000000d001
+        project_id: 00000000-0000-7000-8000-000000001001
+        recipe_id: 00000000-0000-7000-8000-00000000c001
+        recipe_version: 3
+        status: QUEUED
+        started_by: 00000000-0000-7000-8000-000000000a01
+        queued_at: "2026-10-01T05:01:00Z"
+        started_at: null
+        finished_at: null
+        input_rows: null
+        output_rows: null
+        error: null
+        output_id: null
+    RunSucceeded:
+      value: &runSucceeded
+        run_id: 00000000-0000-7000-8000-00000000d001
+        project_id: 00000000-0000-7000-8000-000000001001
+        recipe_id: 00000000-0000-7000-8000-00000000c001
+        recipe_version: 3
+        status: SUCCEEDED
+        started_by: 00000000-0000-7000-8000-000000000a01
+        queued_at: "2026-10-01T05:01:00Z"
+        started_at: "2026-10-01T05:01:02Z"
+        finished_at: "2026-10-01T05:01:20Z"
+        input_rows: 182340
+        output_rows: 24
+        error: null
+        output_id: 00000000-0000-7000-8000-00000000e001
+    RunPage:
+      value: { items: [ *runSucceeded ], page: { next_cursor: null, has_more: false } }
+    OutputDerived:
+      value: &outputDerived
+        output_id: 00000000-0000-7000-8000-00000000e001
+        project_id: 00000000-0000-7000-8000-000000001001
+        kind: DERIVED_DATASET
+        title: 고온 구간 평균 용량
+        access_level: CONTROLLED
+        files: [ { name: result.parquet, size_bytes: 20480, sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08, media_type: application/vnd.apache.parquet } ]
+        produced_by_run_id: 00000000-0000-7000-8000-00000000d001
+        lineage:
+          inputs: [ { dataset_id: 00000000-0000-7000-8000-000000002001, dataset_title: 이차전지 충방전 측정, dataset_version_id: 00000000-0000-7000-8000-000000003001, version_label: v1 } ]
+          recipe_id: 00000000-0000-7000-8000-00000000c001
+          recipe_version: 3
+          run_id: 00000000-0000-7000-8000-00000000d001
+        publish_status: NONE
+        created_by: 00000000-0000-7000-8000-000000000a01
+        created_at: "2026-10-01T05:01:20Z"
+    OutputFile:
+      value:
+        output_id: 00000000-0000-7000-8000-00000000e002
+        project_id: 00000000-0000-7000-8000-000000001001
+        kind: FILE
+        title: 분석 보고서 초안
+        access_level: INTERNAL
+        files: [ { name: report.pdf, size_bytes: 482113, sha256: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae, media_type: application/pdf } ]
+        produced_by_run_id: null
+        lineage: { inputs: [], recipe_id: null, recipe_version: null, run_id: null }
+        publish_status: NONE
+        created_by: 00000000-0000-7000-8000-000000000a01
+        created_at: "2026-10-01T06:00:00Z"
+    OutputPage:
+      value: { items: [ *outputDerived ], page: { next_cursor: null, has_more: false } }
+    OutputUploadSession:
+      value:
+        output_id: 00000000-0000-7000-8000-00000000e002
+        expires_at: "2026-10-01T06:15:00Z"
+        files: [ { name: report.pdf, upload: { method: PUT, url: "http://localhost:21051/storage/inst-a/workspace/report.pdf?X-Amz-Signature=abc", headers: { content-type: application/pdf } } } ]
+    OutputDownload:
+      value:
+        output_id: 00000000-0000-7000-8000-00000000e001
+        expires_at: "2026-10-01T06:05:00Z"
+        files: [ { name: result.parquet, url: "http://localhost:21051/storage/inst-a/workspace/result.parquet?X-Amz-Signature=abc", size_bytes: 20480, sha256: 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08 } ]
+    PublishRequest:
+      value: &publishRequest
+        request_id: 00000000-0000-7000-8000-00000000f101
+        output_id: 00000000-0000-7000-8000-00000000e001
+        project_id: 00000000-0000-7000-8000-000000001001
+        status: PENDING
+        approvals:
+          - { organization_id: 00000000-0000-7000-8000-00000000000b, organization_name: 한국재료연구원, decided_by: null, decision: null, comment: null, decided_at: null }
+        created_by: 00000000-0000-7000-8000-000000000a01
+        created_at: "2026-10-01T07:00:00Z"
+        output_title: 고온 구간 평균 용량
+        project_name: 전극 소재 열화 분석
+        published_dataset_id: null
+    PublishRequestPage:
+      value: { items: [ *publishRequest ], page: { next_cursor: null, has_more: false } }
+    Thread:
+      value: &thread
+        thread_id: 00000000-0000-7000-8000-00000000f201
+        scope: DATASET
+        target_id: 00000000-0000-7000-8000-000000002001
+        project_id: null
+        title: 온도 단위 확인 요청
+        created_by: 00000000-0000-7000-8000-000000000a01
+        created_by_display_name: 김민준
+        created_at: "2026-10-01T08:00:00Z"
+        resolved: false
+        comment_count: 2
+        last_comment_at: "2026-10-01T09:00:00Z"
+    ThreadPage:
+      value: { items: [ *thread ], page: { next_cursor: null, has_more: false } }
+    Comment:
+      value: &comment
+        comment_id: 00000000-0000-7000-8000-00000000f301
+        thread_id: 00000000-0000-7000-8000-00000000f201
+        body: "`temperature_c` 열은 섭씨인가요?"
+        author_id: 00000000-0000-7000-8000-000000000a01
+        author_display_name: 김민준
+        created_at: "2026-10-01T08:00:00Z"
+        edited_at: null
+    CommentPage:
+      value: { items: [ *comment ], page: { next_cursor: null, has_more: false } }
+    ResearchNoteDraft:
+      value:
+        note_id: 00000000-0000-7000-8000-00000000f401
+        project_id: 00000000-0000-7000-8000-000000001001
+        project_name: 전극 소재 열화 분석
+        organization_id: 00000000-0000-7000-8000-00000000000a
+        recorder_id: 00000000-0000-7000-8000-000000000a01
+        recorder_display_name: 김민준
+        note_date: "2026-10-01"
+        version: 1
+        previous_version_id: null
+        status: DRAFT
+        revision: 4
+        blocks:
+          - block_id: 00000000-0000-7000-8000-00000000f501
+            section: PROCEDURE
+            text: 고온 구간 용량 분석 노트북에서 충방전 측정 데이터를 불러와 온도 구간별 평균 용량을 계산했다.
+            origin: AI
+            accepted: false
+            evidence:
+              - { type: NOTEBOOK, ref_id: 00000000-0000-7000-8000-00000000d101, label: "고온 구간 용량 분석 · 셀 2", at: "2026-10-01T05:01:20Z" }
+              - { type: NOTEBOOK, ref_id: 00000000-0000-7000-8000-00000000d101, label: "고온 구간 용량 분석 · 셀 3", at: "2026-10-01T05:01:20Z" }
+          - { block_id: 00000000-0000-7000-8000-00000000f502, section: RESULTS, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
+        draft_status: DONE
+        draft_error: null
+        draft_source_count: 1
+        signatures: []
+        witness_required: true
+        witness_user_ids: [ 00000000-0000-7000-8000-000000000a02 ]
+        content_hash: null
+        chain_hash: null
+        submitted_at: null
+        rejected_reason: null
+        created_at: "2026-10-01T00:30:00Z"
+        updated_at: "2026-10-01T10:00:00Z"
+    ResearchNoteRejected:
+      value:
+        note_id: 00000000-0000-7000-8000-00000000f401
+        project_id: 00000000-0000-7000-8000-000000001001
+        project_name: 전극 소재 열화 분석
+        organization_id: 00000000-0000-7000-8000-00000000000a
+        recorder_id: 00000000-0000-7000-8000-000000000a01
+        recorder_display_name: 김민준
+        note_date: "2026-10-01"
+        version: 1
+        previous_version_id: null
+        status: DRAFT
+        revision: 4
+        blocks:
+          - block_id: 00000000-0000-7000-8000-00000000f501
+            section: PROCEDURE
+            text: 고온 구간 용량 분석 노트북에서 충방전 측정 데이터를 불러와 온도 구간별 평균 용량을 계산했다.
+            origin: AI
+            accepted: true
+            evidence:
+              - { type: NOTEBOOK, ref_id: 00000000-0000-7000-8000-00000000d101, label: "고온 구간 용량 분석 · 셀 2", at: "2026-10-01T05:01:20Z" }
+              - { type: NOTEBOOK, ref_id: 00000000-0000-7000-8000-00000000d101, label: "고온 구간 용량 분석 · 셀 3", at: "2026-10-01T05:01:20Z" }
+          - { block_id: 00000000-0000-7000-8000-00000000f502, section: RESULTS, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
+        draft_status: DONE
+        draft_error: null
+        draft_source_count: 1
+        signatures: []
+        witness_required: true
+        witness_user_ids: [ 00000000-0000-7000-8000-000000000a02 ]
+        content_hash: null
+        chain_hash: null
+        submitted_at: "2026-10-01T10:05:00Z"
+        rejected_reason: 결과 섹션에 실행 근거를 보완해 주세요.
+        created_at: "2026-10-01T00:30:00Z"
+        updated_at: "2026-10-01T10:00:00Z"
+    ResearchNoteSubmitted:
+      value:
+        note_id: 00000000-0000-7000-8000-00000000f401
+        project_id: 00000000-0000-7000-8000-000000001001
+        project_name: 전극 소재 열화 분석
+        organization_id: 00000000-0000-7000-8000-00000000000a
+        recorder_id: 00000000-0000-7000-8000-000000000a01
+        recorder_display_name: 김민준
+        note_date: "2026-10-01"
+        version: 1
+        previous_version_id: null
+        status: SUBMITTED
+        revision: 5
+        blocks:
+          - { block_id: 00000000-0000-7000-8000-00000000f502, section: RESULTS, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
+        draft_status: DONE
+        draft_error: null
+        draft_source_count: 1
+        signatures: []
+        witness_required: false
+        witness_user_ids: []
+        content_hash: 3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7
+        chain_hash: null
+        submitted_at: "2026-10-01T10:05:00Z"
+        rejected_reason: null
+        created_at: "2026-10-01T00:30:00Z"
+        updated_at: "2026-10-01T10:05:00Z"
+    ResearchNoteSigned:
+      value:
+        note_id: 00000000-0000-7000-8000-00000000f401
+        project_id: 00000000-0000-7000-8000-000000001001
+        project_name: 전극 소재 열화 분석
+        organization_id: 00000000-0000-7000-8000-00000000000a
+        recorder_id: 00000000-0000-7000-8000-000000000a01
+        recorder_display_name: 김민준
+        note_date: "2026-10-01"
+        version: 1
+        previous_version_id: null
+        status: SIGNED
+        revision: 5
+        blocks:
+          - { block_id: 00000000-0000-7000-8000-00000000f502, section: RESULTS, text: 40도 이상에서 용량 감소가 뚜렷하다., origin: HUMAN, accepted: true, evidence: [] }
+        draft_status: DONE
+        draft_error: null
+        draft_source_count: 1
+        signatures:
+          - { signer_id: 00000000-0000-7000-8000-000000000a01, signer_display_name: 김민준, role: RECORDER, signed_at: "2026-10-01T10:06:00Z", content_hash: 3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7 }
+        witness_required: false
+        witness_user_ids: []
+        content_hash: 3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7
+        chain_hash: 18ac3e7343f016890c510e93f935261169d9e3f565436429830faf0934f4f8e4
+        submitted_at: "2026-10-01T10:05:00Z"
+        rejected_reason: null
+        created_at: "2026-10-01T00:30:00Z"
+        updated_at: "2026-10-01T10:06:00Z"
+    ResearchNoteSummaryPage:
+      value:
+        items:
+          - { note_id: 00000000-0000-7000-8000-00000000f401, project_id: 00000000-0000-7000-8000-000000001001, project_name: 전극 소재 열화 분석, recorder_id: 00000000-0000-7000-8000-000000000a01, recorder_display_name: 김민준, note_date: "2026-10-01", version: 1, status: SIGNED, draft_status: DONE, block_count: 1, unaccepted_ai_count: 0, submitted_at: "2026-10-01T10:05:00Z", updated_at: "2026-10-01T10:06:00Z" }
+        page: { next_cursor: null, has_more: false }
+    NoteVerification:
+      value:
+        note_id: 00000000-0000-7000-8000-00000000f401
+        valid: true
+        content_hash: 3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7
+        recomputed_hash: 3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7
+        chain_valid: true
+        checked_at: "2026-10-02T00:00:00Z"
+    NoteSearchResult:
+      value:
+        items: [ { note_id: 00000000-0000-7000-8000-00000000f401, project_name: 전극 소재 열화 분석, note_date: "2026-10-01", snippet: 40도 이상에서 용량 감소가 뚜렷하다., score: 0.82 } ]
+    NoteSettings:
+      value:
+        project_id: 00000000-0000-7000-8000-000000001001
+        witness_required: true
+        witness_user_ids: [ 00000000-0000-7000-8000-000000000a02 ]
+        llm_enabled: true
 
   schemas:
     # ---------- shared
@@ -1075,15 +2309,19 @@ components:
     ReadinessRunStatus: { type: string, enum: [QUEUED, RUNNING, COMPLETED, FAILED] }
     ReadinessOverall: { type: string, enum: [PASS, WARNING, FAIL] }
     ReadinessCheckStatus: { type: string, enum: [PASS, WARNING, FAIL, NOT_APPLICABLE] }
-    ResourceType: { type: string, enum: [USER, ORGANIZATION, MEMBERSHIP, PROJECT, PROJECT_MEMBER, DATASET, DATASET_VERSION, DATASET_FILE, ACCESS_REQUEST, ACCESS_GRANT, READINESS_VALIDATION] }
+    ResourceType: { type: string, enum: [USER, ORGANIZATION, MEMBERSHIP, PROJECT, PROJECT_MEMBER, DATASET, DATASET_VERSION, DATASET_FILE, ACCESS_REQUEST, ACCESS_GRANT, READINESS_VALIDATION,
+                                         PROJECT_INPUT, RECIPE, RUN, OUTPUT, PUBLISH_REQUEST, THREAD, RESEARCH_NOTE] }
     AuditAction:
       type: string
       enum: [LOGIN, USER_CREATED, ORGANIZATION_CREATED, ADMIN_ROLE_CHANGED, PROJECT_CREATED, PROJECT_ARCHIVED, PROJECT_MEMBER_ADDED, PROJECT_MEMBER_REMOVED, PROJECT_MEMBER_ROLE_CHANGED,
              DATASET_CREATED, DATASET_VERSION_PUBLISHED, DATASET_UPDATED, POLICY_CHANGED, ACCESS_REQUESTED, ACCESS_REVIEW_STARTED, ACCESS_APPROVED, ACCESS_REJECTED, ACCESS_CHANGES_REQUESTED, ACCESS_WITHDRAWN,
-             ACCESS_REVOKED, ACCESS_EXPIRED, FILE_DOWNLOADED, DOWNLOAD_DENIED, READINESS_VALIDATION_COMPLETED]
+             ACCESS_REVOKED, ACCESS_EXPIRED, FILE_DOWNLOADED, DOWNLOAD_DENIED, READINESS_VALIDATION_COMPLETED,
+             PROJECT_INPUT_ADDED, PROJECT_INPUT_VERSION_CHANGED, PROJECT_INPUT_REMOVED, RECIPE_SAVED, RUN_SUCCEEDED, RUN_FAILED, OUTPUT_CREATED,
+             OUTPUT_PUBLISH_REQUESTED, OUTPUT_PUBLISH_DECIDED, COMMENT_ADDED, NOTE_SUBMITTED, NOTE_SIGNED, NOTE_REJECTED, NOTE_VIEWED]
     NotificationType:
       type: string
-      enum: [PROJECT_INVITATION, ACCESS_SUBMITTED, ACCESS_APPROVED, ACCESS_REJECTED, ACCESS_CHANGES_REQUESTED, ACCESS_EXPIRING, ACCESS_REVOKED, DATASET_PUBLISHED]
+      enum: [PROJECT_INVITATION, ACCESS_SUBMITTED, ACCESS_APPROVED, ACCESS_REJECTED, ACCESS_CHANGES_REQUESTED, ACCESS_EXPIRING, ACCESS_REVOKED, DATASET_PUBLISHED,
+             OUTPUT_PUBLISH_REQUESTED, OUTPUT_PUBLISH_DECIDED, NOTE_SUBMITTED, NOTE_REJECTED, NOTE_SIGNED, DATASET_COMMENT_ADDED, RUN_FAILED]
 
     # ---------- identity read models
     IdentityPublicProfile:
@@ -1926,3 +3164,606 @@ components:
         link: { type: string, description: "Web route, e.g. /commons/access/{id}" }
         read: { type: boolean }
         created_at: { $ref: "#/components/schemas/Timestamp" }
+
+    # ---------- hub (1.6.0)
+    DatasetActivityType: { type: string, enum: [VERSION_PUBLISHED, METADATA_CHANGED, POLICY_CHANGED, READINESS_COMPLETED, USED_IN_PROJECT, OUTPUT_PUBLISHED, DISCUSSION_STARTED] }
+    HubCard:
+      type: object
+      required: [dataset_id, title, owner_organization_name, subject_labels, access_level, readiness_overall, updated_at, metric]
+      properties:
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        title: { type: string }
+        owner_organization_name: { type: string }
+        subject_labels: { type: array, items: { type: string }, description: "Korean SUBJECT vocabulary labels" }
+        access_level: { $ref: "#/components/schemas/AccessLevel" }
+        readiness_overall: { oneOf: [ { $ref: "#/components/schemas/ReadinessOverall" }, { type: "null" } ], description: "Same rule as DatasetVersionSummary.readiness_overall (D-028)" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+        metric: { type: [integer, "null"], minimum: 0, description: "trending = access requests in the last 7 days, most_used = project inputs, recent = null. Only real counts; null hides the figure." }
+    HubOrganizationStat:
+      type: object
+      required: [organization_id, name, dataset_count, public_count, controlled_count, last_updated_at]
+      properties:
+        organization_id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        dataset_count: { type: integer, minimum: 0 }
+        public_count: { type: integer, minimum: 0 }
+        controlled_count: { type: integer, minimum: 0, description: "CONTROLLED + SENSITIVE" }
+        last_updated_at: { type: [string, "null"], format: date-time }
+    HubOverview:
+      type: object
+      required: [rails, organizations]
+      properties:
+        rails:
+          type: object
+          required: [trending, recent, most_used]
+          properties:
+            trending: { type: array, maxItems: 6, items: { $ref: "#/components/schemas/HubCard" } }
+            recent: { type: array, maxItems: 6, items: { $ref: "#/components/schemas/HubCard" } }
+            most_used: { type: array, maxItems: 6, items: { $ref: "#/components/schemas/HubCard" } }
+        organizations: { type: array, items: { $ref: "#/components/schemas/HubOrganizationStat" } }
+    DatasetProjectUse:
+      type: object
+      required: [project_id, name, lead_organization_name, input_added_at]
+      properties:
+        project_id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        lead_organization_name: { type: string }
+        input_added_at: { $ref: "#/components/schemas/Timestamp" }
+    DatasetProjectsResult:
+      type: object
+      required: [items, hidden_count]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/DatasetProjectUse" } }
+        hidden_count: { type: integer, minimum: 0, description: "Projects using the dataset that the caller is not a member of (names hidden)" }
+    DatasetActivity:
+      type: object
+      required: [activity_id, dataset_id, type, label, ref_id, actor_display_name, project_id, occurred_at]
+      properties:
+        activity_id: { $ref: "#/components/schemas/Id" }
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        type: { $ref: "#/components/schemas/DatasetActivityType" }
+        label: { type: [string, "null"], description: "Entity label (version label, project name, output title, thread title); never data values" }
+        ref_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ], description: "Version, project, output or thread id for linking" }
+        actor_display_name: { type: [string, "null"] }
+        project_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ], description: "Set only when the caller is a member of that project" }
+        occurred_at: { $ref: "#/components/schemas/Timestamp" }
+
+    # ---------- workspace (1.6.0)
+    RunStatus: { type: string, enum: [QUEUED, RUNNING, SUCCEEDED, FAILED] }
+    OutputKind: { type: string, enum: [DERIVED_DATASET, FILE] }
+    OutputPublishStatus: { type: string, enum: [NONE, PENDING, APPROVED, REJECTED, PUBLISHED] }
+    PublishRequestStatus: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+    PublishDecision: { type: string, enum: [APPROVE, REJECT] }
+    ThreadScope: { type: string, enum: [PROJECT, DATASET, OUTPUT, RECIPE] }
+    RecipeStepType:
+      type: string
+      enum: [select_columns, filter_rows, drop_missing, fill_missing, cast_type, convert_unit, aggregate, join, sort, limit]
+      description: "Discriminator values of RecipeStep.type"
+    RecipeFilterOp: { type: string, enum: [eq, ne, lt, le, gt, ge, contains, in, is_null, not_null] }
+    RecipeCastType: { type: string, enum: [int, float, string, bool, datetime] }
+    RecipeAggregateFn: { type: string, enum: [count, sum, mean, min, max] }
+    RecipeJoinHow: { type: string, enum: [inner, left] }
+    ProjectInput:
+      type: object
+      required: [input_id, project_id, dataset_id, dataset_title, dataset_version_id, version_label, newer_version_label, access_level, access_lapsed, added_by, added_by_display_name, added_at, note]
+      properties:
+        input_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        dataset_title: { type: string }
+        dataset_version_id: { $ref: "#/components/schemas/Id", description: "Pinned version" }
+        version_label: { type: string }
+        newer_version_label: { type: [string, "null"], description: "Latest PUBLISHED label when newer than the pinned version" }
+        access_level: { $ref: "#/components/schemas/AccessLevel" }
+        access_lapsed: { type: boolean, description: "true when the caller's access was revoked or expired; runs and downloads using it are blocked (INPUT_ACCESS_LAPSED)" }
+        added_by: { $ref: "#/components/schemas/Id" }
+        added_by_display_name: { type: string }
+        added_at: { $ref: "#/components/schemas/Timestamp" }
+        note: { type: [string, "null"] }
+    ProjectInputCreate:
+      type: object
+      additionalProperties: false
+      required: [dataset_id]
+      properties:
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        dataset_version_id: { $ref: "#/components/schemas/Id", description: "Default: latest PUBLISHED version" }
+        note: { type: string, maxLength: 2000 }
+    ProjectInputUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        dataset_version_id: { $ref: "#/components/schemas/Id" }
+        note: { type: [string, "null"], maxLength: 2000 }
+    RecipeStepSelectColumns:
+      type: object
+      additionalProperties: false
+      required: [type, columns]
+      properties:
+        type: { const: select_columns }
+        columns: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+    RecipeStepFilterRows:
+      type: object
+      additionalProperties: false
+      required: [type, column, op]
+      properties:
+        type: { const: filter_rows }
+        column: { type: string, minLength: 1 }
+        op: { $ref: "#/components/schemas/RecipeFilterOp" }
+        value:
+          description: "Required except for is_null/not_null; an array for in"
+          anyOf:
+            - { type: string }
+            - { type: integer }
+            - { type: number }
+            - { type: boolean }
+            - { type: "null" }
+            - { type: array, maxItems: 1000, items: { anyOf: [ { type: string }, { type: integer }, { type: number } ] } }
+    RecipeStepDropMissing:
+      type: object
+      additionalProperties: false
+      required: [type, columns]
+      properties:
+        type: { const: drop_missing }
+        columns: { type: [array, "null"], items: { type: string, minLength: 1 }, description: "null = any column" }
+    RecipeStepFillMissing:
+      type: object
+      additionalProperties: false
+      required: [type, column, value]
+      properties:
+        type: { const: fill_missing }
+        column: { type: string, minLength: 1 }
+        value: { anyOf: [ { type: string }, { type: integer }, { type: number }, { type: boolean } ] }
+    RecipeStepCastType:
+      type: object
+      additionalProperties: false
+      required: [type, column, to]
+      properties:
+        type: { const: cast_type }
+        column: { type: string, minLength: 1 }
+        to: { $ref: "#/components/schemas/RecipeCastType" }
+    RecipeStepConvertUnit:
+      type: object
+      additionalProperties: false
+      required: [type, column, factor, offset, unit_label]
+      properties:
+        type: { const: convert_unit }
+        column: { type: string, minLength: 1 }
+        factor: { type: number, description: "new = old * factor + offset" }
+        offset: { type: number }
+        unit_label: { type: string, minLength: 1, maxLength: 32 }
+    RecipeStepAggregate:
+      type: object
+      additionalProperties: false
+      required: [type, group_by, metrics]
+      properties:
+        type: { const: aggregate }
+        group_by: { type: array, items: { type: string, minLength: 1 } }
+        metrics:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [column, fn]
+            properties:
+              column: { type: string, minLength: 1 }
+              fn: { $ref: "#/components/schemas/RecipeAggregateFn" }
+    RecipeStepJoin:
+      type: object
+      additionalProperties: false
+      required: [type, right_input_id, "on", how]
+      properties:
+        type: { const: join }
+        right_input_id: { $ref: "#/components/schemas/Id", description: "Must be one of the recipe's input_ids" }
+        "on": { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+        how: { $ref: "#/components/schemas/RecipeJoinHow" }
+    RecipeStepSort:
+      type: object
+      additionalProperties: false
+      required: [type, by, descending]
+      properties:
+        type: { const: sort }
+        by: { type: array, minItems: 1, items: { type: string, minLength: 1 } }
+        descending: { type: boolean }
+    RecipeStepLimit:
+      type: object
+      additionalProperties: false
+      required: [type, n]
+      properties:
+        type: { const: limit }
+        n: { type: integer, minimum: 1, maximum: 5000000 }
+    RecipeStep:
+      oneOf:
+        - $ref: "#/components/schemas/RecipeStepSelectColumns"
+        - $ref: "#/components/schemas/RecipeStepFilterRows"
+        - $ref: "#/components/schemas/RecipeStepDropMissing"
+        - $ref: "#/components/schemas/RecipeStepFillMissing"
+        - $ref: "#/components/schemas/RecipeStepCastType"
+        - $ref: "#/components/schemas/RecipeStepConvertUnit"
+        - $ref: "#/components/schemas/RecipeStepAggregate"
+        - $ref: "#/components/schemas/RecipeStepJoin"
+        - $ref: "#/components/schemas/RecipeStepSort"
+        - $ref: "#/components/schemas/RecipeStepLimit"
+      discriminator:
+        propertyName: type
+        mapping:
+          select_columns: "#/components/schemas/RecipeStepSelectColumns"
+          filter_rows: "#/components/schemas/RecipeStepFilterRows"
+          drop_missing: "#/components/schemas/RecipeStepDropMissing"
+          fill_missing: "#/components/schemas/RecipeStepFillMissing"
+          cast_type: "#/components/schemas/RecipeStepCastType"
+          convert_unit: "#/components/schemas/RecipeStepConvertUnit"
+          aggregate: "#/components/schemas/RecipeStepAggregate"
+          join: "#/components/schemas/RecipeStepJoin"
+          sort: "#/components/schemas/RecipeStepSort"
+          limit: "#/components/schemas/RecipeStepLimit"
+    Recipe:
+      type: object
+      required: [recipe_id, project_id, name, input_ids, steps, version, updated_by, updated_at]
+      properties:
+        recipe_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        name: { type: string }
+        input_ids: { type: array, items: { $ref: "#/components/schemas/Id" }, description: "First id is the base table; join steps reference the others" }
+        steps: { type: array, items: { $ref: "#/components/schemas/RecipeStep" } }
+        version: { type: integer, minimum: 1, description: "+1 on every save; send as If-Match on updateRecipe" }
+        updated_by: { $ref: "#/components/schemas/Id" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    RecipeWrite:
+      type: object
+      additionalProperties: false
+      required: [name, input_ids, steps]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 200 }
+        input_ids: { type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: { $ref: "#/components/schemas/Id" } }
+        steps: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/RecipeStep" } }
+    RecipePreviewRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        input_ids: { type: array, minItems: 1, maxItems: 10, uniqueItems: true, items: { $ref: "#/components/schemas/Id" } }
+        steps: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/RecipeStep" } }
+    RecipePreview:
+      type: object
+      required: [header, rows, rows_truncated, input_rows_read, output_rows]
+      properties:
+        header: { type: array, items: { type: string } }
+        rows: { type: array, maxItems: 100, items: { type: array, items: { type: [string, "null"], maxLength: 200 } } }
+        rows_truncated: { type: boolean, description: "More than 100 result rows" }
+        input_rows_read: { type: integer, minimum: 0, description: "Rows read from the inputs (≤ 10,000 per input)" }
+        output_rows: { type: integer, minimum: 0, description: "Result rows of the sampled inputs" }
+    Run:
+      type: object
+      required: [run_id, project_id, recipe_id, recipe_version, status, started_by, queued_at, started_at, finished_at, input_rows, output_rows, error, output_id]
+      properties:
+        run_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        recipe_id: { $ref: "#/components/schemas/Id" }
+        recipe_version: { type: integer, minimum: 1 }
+        status: { $ref: "#/components/schemas/RunStatus" }
+        started_by: { $ref: "#/components/schemas/Id" }
+        queued_at: { $ref: "#/components/schemas/Timestamp" }
+        started_at: { type: [string, "null"], format: date-time }
+        finished_at: { type: [string, "null"], format: date-time }
+        input_rows: { type: [integer, "null"], minimum: 0 }
+        output_rows: { type: [integer, "null"], minimum: 0 }
+        error: { type: [string, "null"], description: "Stable failure code when FAILED (RECIPE_MISSING, INPUT_ACCESS_LAPSED, RECIPE_INVALID, RESULT_TOO_LARGE, INPUT_UNAVAILABLE, INPUT_NOT_TABULAR, INPUT_TOO_LARGE, INPUT_UNREADABLE, STORAGE_NOT_CONFIGURED, OUT_OF_MEMORY, STORAGE_UNAVAILABLE, INTERNAL_ERROR, RUN_TIMEOUT, STALE_RUN). Clients show a localized sentence and a generic one for an unknown code; the detail is only logged.", examples: ["INPUT_TOO_LARGE"] }
+        output_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ], description: "DERIVED_DATASET output when SUCCEEDED" }
+    OutputFile:
+      type: object
+      required: [name, size_bytes, sha256, media_type]
+      properties:
+        name: { type: string }
+        size_bytes: { type: integer, minimum: 0 }
+        sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+        media_type: { type: string }
+    OutputLineageInput:
+      type: object
+      required: [dataset_id, dataset_title, dataset_version_id, version_label]
+      properties:
+        dataset_id: { $ref: "#/components/schemas/Id" }
+        dataset_title: { type: string }
+        dataset_version_id: { $ref: "#/components/schemas/Id" }
+        version_label: { type: string }
+    OutputLineage:
+      type: object
+      required: [inputs, recipe_id, recipe_version, run_id]
+      properties:
+        inputs: { type: array, items: { $ref: "#/components/schemas/OutputLineageInput" } }
+        recipe_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        recipe_version: { type: [integer, "null"], minimum: 1 }
+        run_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+    Output:
+      type: object
+      required: [output_id, project_id, kind, title, access_level, files, produced_by_run_id, lineage, publish_status, created_by, created_at]
+      properties:
+        output_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        kind: { $ref: "#/components/schemas/OutputKind" }
+        title: { type: string }
+        access_level: { $ref: "#/components/schemas/AccessLevel", description: "Never looser than the strictest lineage input" }
+        files: { type: array, items: { $ref: "#/components/schemas/OutputFile" } }
+        produced_by_run_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ], description: "null for uploaded FILE outputs" }
+        lineage: { $ref: "#/components/schemas/OutputLineage" }
+        publish_status: { $ref: "#/components/schemas/OutputPublishStatus" }
+        created_by: { $ref: "#/components/schemas/Id" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+    OutputUploadCreate:
+      type: object
+      additionalProperties: false
+      required: [title, access_level, files]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 300 }
+        access_level: { $ref: "#/components/schemas/AccessLevel" }
+        files:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, size_bytes, sha256, media_type]
+            properties:
+              name: { type: string, pattern: "^[A-Za-z0-9._-]{1,255}$", description: "Flat file name, no path" }
+              size_bytes: { type: integer, minimum: 1, maximum: 5368709120, description: "Single presigned PUT: ≤ 5 GiB" }
+              sha256: { type: string, pattern: "^[a-f0-9]{64}$" }
+              media_type: { type: string }
+    OutputUploadSession:
+      type: object
+      required: [output_id, expires_at, files]
+      properties:
+        output_id: { $ref: "#/components/schemas/Id" }
+        expires_at: { $ref: "#/components/schemas/Timestamp", description: "now + 15 min" }
+        files:
+          type: array
+          items:
+            type: object
+            required: [name, upload]
+            properties:
+              name: { type: string }
+              upload:
+                type: object
+                required: [method, url]
+                properties:
+                  method: { const: PUT }
+                  url: { type: string, format: uri }
+                  headers: { type: object, additionalProperties: { type: string } }
+    OutputDownload:
+      type: object
+      required: [output_id, expires_at, files]
+      properties:
+        output_id: { $ref: "#/components/schemas/Id" }
+        expires_at: { $ref: "#/components/schemas/Timestamp", description: "URL expiry (now + 300s)" }
+        files:
+          type: array
+          items:
+            type: object
+            required: [name, url, size_bytes, sha256]
+            properties:
+              name: { type: string }
+              url: { type: string, format: uri }
+              size_bytes: { type: integer }
+              sha256: { type: string }
+    PublishApproval:
+      type: object
+      required: [organization_id, decided_by, decision, comment, decided_at]
+      properties:
+        organization_id: { $ref: "#/components/schemas/Id" }
+        organization_name: { type: string }
+        decided_by: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        decision: { oneOf: [ { $ref: "#/components/schemas/PublishDecision" }, { type: "null" } ] }
+        comment: { type: [string, "null"] }
+        decided_at: { type: [string, "null"], format: date-time }
+    PublishRequest:
+      type: object
+      required: [request_id, output_id, project_id, status, approvals, created_by, created_at]
+      properties:
+        request_id: { $ref: "#/components/schemas/Id" }
+        output_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        status: { $ref: "#/components/schemas/PublishRequestStatus" }
+        approvals: { type: array, minItems: 1, items: { $ref: "#/components/schemas/PublishApproval" }, description: "One slot per owner organization of the lineage inputs, then the project lead organization when it owns none of them (only the lead organization for an output without inputs); each decided by a DATA_STEWARD of that organization" }
+        created_by: { $ref: "#/components/schemas/Id" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        output_title: { type: string }
+        project_name: { type: string }
+        published_dataset_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ], description: "Catalog dataset created once APPROVED" }
+        failure_reason: { type: [string, "null"], description: "Set when an APPROVED request could not be published by the catalog and was turned REJECTED by the system (human-readable, no data values)" }
+    PublishRequestCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        title: { type: string, minLength: 3, maxLength: 300, description: "Dataset title; default = output title" }
+        description: { type: string, maxLength: 20000 }
+    PublishDecisionCreate:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision: { $ref: "#/components/schemas/PublishDecision" }
+        comment: { type: string, maxLength: 2000, description: "Required (minLength 1) for REJECT; enforced by the server" }
+    Thread:
+      type: object
+      required: [thread_id, scope, target_id, project_id, title, created_by, created_by_display_name, created_at, resolved, comment_count, last_comment_at]
+      properties:
+        thread_id: { $ref: "#/components/schemas/Id" }
+        scope: { $ref: "#/components/schemas/ThreadScope" }
+        target_id: { $ref: "#/components/schemas/Id", description: "project_id, dataset_id, output_id or recipe_id per scope" }
+        project_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ], description: "null for DATASET threads" }
+        title: { type: string }
+        created_by: { $ref: "#/components/schemas/Id" }
+        created_by_display_name: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        resolved: { type: boolean }
+        comment_count: { type: integer, minimum: 1 }
+        last_comment_at: { $ref: "#/components/schemas/Timestamp" }
+    ThreadCreate:
+      type: object
+      additionalProperties: false
+      required: [scope, target_id, title, body]
+      properties:
+        scope: { $ref: "#/components/schemas/ThreadScope" }
+        target_id: { $ref: "#/components/schemas/Id" }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        body: { type: string, minLength: 1, maxLength: 10000, description: "Markdown" }
+    ThreadUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        resolved: { type: boolean }
+        title: { type: string, minLength: 1, maxLength: 200 }
+    Comment:
+      type: object
+      required: [comment_id, thread_id, body, author_id, author_display_name, created_at, edited_at]
+      properties:
+        comment_id: { $ref: "#/components/schemas/Id" }
+        thread_id: { $ref: "#/components/schemas/Id" }
+        body: { type: string, description: "Markdown" }
+        author_id: { $ref: "#/components/schemas/Id" }
+        author_display_name: { type: string }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        edited_at: { type: [string, "null"], format: date-time }
+    CommentCreate:
+      type: object
+      additionalProperties: false
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 10000, description: "Markdown" }
+
+    # ---------- notes (1.6.0)
+    NoteStatus: { type: string, enum: [DRAFT, SUBMITTED, SIGNED] }
+    NoteDraftStatus: { type: string, enum: [NONE, QUEUED, RUNNING, FAILED, DONE] }
+    NoteSection:
+      type: string
+      enum: [OBJECTIVE, METHOD, PROCEDURE, RESULTS, DISCUSSION, NEXT, REFERENCES]
+      description: "Standard research-note template, in display / hash / export order: 연구 목표, 연구 방법·재료, 수행 내용, 결과 및 관찰, 고찰·문제점, 향후 계획, 참고 자료"
+    NoteBlockOrigin: { type: string, enum: [HUMAN, AI] }
+    NoteSignerRole: { type: string, enum: [RECORDER, WITNESS] }
+    NoteEvidenceType:
+      type: string
+      enum: [INPUT_ADDED, INPUT_VERSION_CHANGED, RECIPE_SAVED, RUN_SUCCEEDED, RUN_FAILED, OUTPUT_CREATED, PUBLISH_REQUESTED, DATASET_DOWNLOADED, ACCESS_DECIDED, NOTEBOOK]
+    NoteEvidence:
+      type: object
+      required: [type, ref_id, label, at]
+      properties:
+        type: { $ref: "#/components/schemas/NoteEvidenceType" }
+        ref_id: { $ref: "#/components/schemas/Id", description: "Input, recipe, run, output, publish request, dataset version or access request id; for NOTEBOOK the notebook version id (the notebook id when unversioned)" }
+        label: { type: string, description: "Entity label only (dataset title@version, recipe name, row counts, notebook title · cell k); never data values" }
+        at: { $ref: "#/components/schemas/Timestamp" }
+    NoteBlock:
+      type: object
+      required: [block_id, section, text, origin, accepted, evidence]
+      properties:
+        block_id: { $ref: "#/components/schemas/Id" }
+        section: { $ref: "#/components/schemas/NoteSection" }
+        text: { type: string }
+        origin: { $ref: "#/components/schemas/NoteBlockOrigin" }
+        accepted: { type: boolean, description: "AI blocks start false; submit/sign require every AI block accepted" }
+        evidence: { type: array, items: { $ref: "#/components/schemas/NoteEvidence" } }
+    NoteBlockWrite:
+      type: object
+      additionalProperties: false
+      required: [section, text]
+      properties:
+        block_id: { $ref: "#/components/schemas/Id", description: "Existing block (keeps origin and evidence); omit for a new HUMAN block" }
+        section: { $ref: "#/components/schemas/NoteSection" }
+        text: { type: string, minLength: 1, maxLength: 4000 }
+        accepted: { type: boolean, description: "Accepting an AI block; ignored for HUMAN blocks (always true)" }
+    NoteBlocksPut:
+      type: object
+      additionalProperties: false
+      required: [blocks]
+      properties:
+        blocks: { type: array, maxItems: 500, items: { $ref: "#/components/schemas/NoteBlockWrite" } }
+    NoteSignature:
+      type: object
+      required: [signer_id, signer_display_name, role, signed_at, content_hash]
+      properties:
+        signer_id: { $ref: "#/components/schemas/Id" }
+        signer_display_name: { type: string }
+        role: { $ref: "#/components/schemas/NoteSignerRole" }
+        signed_at: { $ref: "#/components/schemas/Timestamp", description: "Server time" }
+        content_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+    ResearchNote:
+      type: object
+      required: [note_id, project_id, project_name, organization_id, recorder_id, recorder_display_name, note_date, version, previous_version_id, status, revision, blocks,
+                 draft_status, draft_error, draft_source_count, signatures, witness_required, witness_user_ids, content_hash, chain_hash, submitted_at, rejected_reason,
+                 created_at, updated_at]
+      properties:
+        note_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        project_name: { type: string }
+        organization_id: { $ref: "#/components/schemas/Id", description: "Recorder's organization when the note was created; never changes (지침 제8·9조)" }
+        recorder_id: { $ref: "#/components/schemas/Id" }
+        recorder_display_name: { type: string }
+        note_date: { type: string, format: date, description: "Asia/Seoul date" }
+        version: { type: integer, minimum: 1 }
+        previous_version_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        status: { $ref: "#/components/schemas/NoteStatus" }
+        revision: { type: integer, minimum: 1, description: "+1 on every block save; send as If-Match on updateNoteBlocks" }
+        blocks: { type: array, items: { $ref: "#/components/schemas/NoteBlock" } }
+        draft_status: { $ref: "#/components/schemas/NoteDraftStatus" }
+        draft_error: { type: [string, "null"] }
+        draft_source_count: { type: integer, minimum: 0, description: "Notebooks the recorder saved in this project on note_date (the drafting source); shown to the recorder only, 0 for everyone else. 0 -> draftNote answers 422 NO_NOTEBOOK_ACTIVITY" }
+        signatures: { type: array, items: { $ref: "#/components/schemas/NoteSignature" } }
+        content_hash: { type: [string, "null"], pattern: "^[a-f0-9]{64}$", description: "sha256 of the canonical JSON of content + metadata; set on submit/sign, cleared when a witness rejects the note back to DRAFT" }
+        chain_hash: { type: [string, "null"], pattern: "^[a-f0-9]{64}$", description: "sha256(previous chain_hash + content_hash) per project × organization; set when SIGNED" }
+        submitted_at: { type: [string, "null"], format: date-time }
+        rejected_reason: { type: [string, "null"] }
+        witness_required: { type: boolean, readOnly: true, description: "Snapshot of the project setting taken at submit (or at a sign from DRAFT). signNote/rejectNote use this, never the current setting. While DRAFT it mirrors the current setting for display and is re-taken at the next submit." }
+        witness_user_ids: { type: array, readOnly: true, uniqueItems: true, items: { $ref: "#/components/schemas/Id" }, description: "Witness snapshot taken together with witness_required; these users may read, reject and sign the SUBMITTED/SIGNED note" }
+        created_at: { $ref: "#/components/schemas/Timestamp" }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    ResearchNoteSummary:
+      type: object
+      required: [note_id, project_id, project_name, recorder_id, recorder_display_name, note_date, version, status, draft_status, block_count, updated_at]
+      properties:
+        note_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        project_name: { type: string }
+        recorder_id: { $ref: "#/components/schemas/Id" }
+        recorder_display_name: { type: string }
+        note_date: { type: string, format: date }
+        version: { type: integer, minimum: 1 }
+        status: { $ref: "#/components/schemas/NoteStatus" }
+        draft_status: { $ref: "#/components/schemas/NoteDraftStatus" }
+        block_count: { type: integer, minimum: 0 }
+        unaccepted_ai_count: { type: integer, minimum: 0 }
+        submitted_at: { type: [string, "null"], format: date-time }
+        updated_at: { $ref: "#/components/schemas/Timestamp" }
+    NoteVerification:
+      type: object
+      required: [note_id, valid, content_hash, recomputed_hash, chain_valid, checked_at]
+      properties:
+        note_id: { $ref: "#/components/schemas/Id" }
+        valid: { type: boolean, description: "content_hash == recomputed_hash" }
+        content_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        recomputed_hash: { type: string, pattern: "^[a-f0-9]{64}$" }
+        chain_valid: { type: boolean, description: "Rebuilt project × organization chain matches the stored chain_hash values" }
+        checked_at: { $ref: "#/components/schemas/Timestamp" }
+    NoteSearchHit:
+      type: object
+      required: [note_id, project_name, note_date, snippet, score]
+      properties:
+        note_id: { $ref: "#/components/schemas/Id" }
+        project_name: { type: string }
+        note_date: { type: string, format: date }
+        snippet: { type: string }
+        score: { type: [number, "null"], description: "Rerank/cosine score; null for keyword fallback" }
+    NoteSettings:
+      type: object
+      required: [project_id, witness_required, witness_user_ids, llm_enabled]
+      properties:
+        project_id: { $ref: "#/components/schemas/Id" }
+        witness_required: { type: boolean, default: false }
+        witness_user_ids: { type: array, items: { $ref: "#/components/schemas/Id" }, uniqueItems: true }
+        llm_enabled: { type: boolean, readOnly: true, description: "Server setting NAIS_LLM_ENABLED; hides the draft button when false" }
+    NoteSettingsUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        witness_required: { type: boolean }
+        witness_user_ids: { type: array, maxItems: 20, uniqueItems: true, items: { $ref: "#/components/schemas/Id" } }

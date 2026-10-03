@@ -1,0 +1,59 @@
+"""draftNote: queue a local-LLM draft of the recorder's DRAFT note (the work is jobs.draft_note).
+
+Recorder only (others get the getNote answer), DRAFT only (409 NOTE_LOCKED), LLM switched off -> 503
+LLM_UNAVAILABLE, no notebook saved in the project that day -> 422 VALIDATION_FAILED reason NO_NOTEBOOK_ACTIVITY (the
+drafting source is the NotebookActivityPort only; the port failing -> 503 DEPENDENCY_UNAVAILABLE), once per minute per note (429 RATE_LIMITED). A request clears a previous FAILED error. While a
+draft is still QUEUED/RUNNING (younger than jobs.STALE_AFTER) a request is accepted without sending a second message;
+a stuck one is reclaimed.
+"""
+
+import logging
+from datetime import timedelta
+from uuid import UUID
+
+from sqlalchemy.orm import Session
+
+from api.modules.notes import jobs, repo
+from api.modules.notes.access import DRAFT, recorder_note
+from api.modules.notes.deps import NotesDeps
+from api.modules.notes.errors import locked
+from api.modules.notes.schemas import ResearchNote
+from api.modules.notes.views import note_view
+from api.platform import clock
+from api.platform.auth import CurrentUser
+from api.platform.errors import ApiError
+from api.platform.generated.error_codes import ErrorCode
+
+logger = logging.getLogger("nais.notes")
+
+MIN_INTERVAL = timedelta(minutes=1)
+NO_NOTEBOOK_ACTIVITY = "NO_NOTEBOOK_ACTIVITY"
+NO_NOTEBOOK_MESSAGE = "오늘 저장한 노트북이 없습니다."
+
+
+def request_draft(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) -> ResearchNote:
+    note = recorder_note(session, deps, user, note_id)
+    if note["status"] != DRAFT:
+        raise locked()
+    if deps.llm() is None:
+        raise ApiError(ErrorCode.LLM_UNAVAILABLE, "Drafting is unavailable: the local LLM is switched off.")
+    try:
+        activity = deps.notebooks.list_notebook_activity(
+            note["recorder_id"], note["project_id"], note["note_date"]
+        )
+    except Exception as exc:  # the notebook source (M07) failed: fail closed, nothing queued
+        logger.warning("draft refused: notebook source unavailable", extra={"error_type": type(exc).__name__})
+        raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "The notebook source is unavailable.") from exc
+    if not activity:
+        raise ApiError(ErrorCode.VALIDATION_FAILED, NO_NOTEBOOK_MESSAGE, {"reason": NO_NOTEBOOK_ACTIVITY})
+    now = clock.now()
+    last = note["draft_requested_at"]
+    if last is not None and now - last < MIN_INTERVAL:
+        raise ApiError(ErrorCode.RATE_LIMITED, "A draft of this note was requested less than a minute ago.")
+    if jobs.in_progress(note, now):
+        return note_view(session, deps, note, user.user_id)
+    note = repo.update_note(
+        session, note_id, draft_status=jobs.QUEUED, draft_error=None, draft_requested_at=now
+    )
+    jobs.enqueue_after_commit(session, note_id)
+    return note_view(session, deps, note, user.user_id)

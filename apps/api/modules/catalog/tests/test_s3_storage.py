@@ -7,7 +7,7 @@ import uuid
 import httpx
 import pytest
 
-from api.modules.catalog.objects import MultipartFailed, StorageRegistry
+from api.modules.catalog.objects import MultipartFailed, ObjectMissing, StorageRegistry
 
 CSV = b"sample_id,value\nS0001,1.0\n"
 
@@ -71,3 +71,12 @@ def test_missing_objects_and_idempotent_cleanup(seaweed_registry: StorageRegistr
     upload_id = store.create_multipart(f"{prefix}x.csv", "text/csv")
     store.abort_multipart(f"{prefix}x.csv", upload_id)
     store.abort_multipart(f"{prefix}x.csv", upload_id)
+
+
+def test_server_side_copy_and_missing_source(seaweed_registry: StorageRegistry, prefix: str) -> None:
+    store = seaweed_registry.for_org("inst-b")
+    store.put(f"{prefix}src.csv", CSV, "text/csv")
+    store.copy(f"{prefix}src.csv", f"{prefix}dst.csv")
+    assert store.read_range(f"{prefix}dst.csv", 0, len(CSV) - 1) == CSV
+    with pytest.raises(ObjectMissing):
+        store.copy(f"{prefix}nothing.csv", f"{prefix}other.csv")

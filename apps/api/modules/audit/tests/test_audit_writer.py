@@ -8,7 +8,7 @@ from api.modules.audit import handlers
 from api.modules.audit import ports as audit_ports
 from api.modules.audit.fakes import A_RESEARCHER, ORG_A
 from api.modules.audit.handlers import audit_writer
-from api.modules.audit.mapping import to_audit_record
+from api.modules.audit.mapping import AUDIT_RULES, to_audit_record
 from api.modules.audit.tests.support.db import fetch, run, scalar
 from api.modules.audit.tests.support.events import SYSTEM, envelope
 from api.platform import ports
@@ -91,7 +91,7 @@ def test_audit_writer_subscribed_to_every_event_type() -> None:
 def test_register_into_a_fresh_registry() -> None:
     fresh = HandlerRegistry()
     handlers.register(fresh)
-    assert len(fresh.table()) == 28
+    assert len(fresh.table()) == 42
     assert all(len(names) == len(handlers.HANDLERS) for names in fresh.table().values())
 
 
@@ -120,3 +120,18 @@ def test_mapping_rejects_null_resource_id_without_assert() -> None:
     event = event.model_copy(update={"payload": {**event.payload, "user_id": None}})
     with pytest.raises(ValueError, match="user_id"):
         to_audit_record(event)
+
+
+@pytest.mark.parametrize("event_type", sorted(AUDIT_RULES))
+def test_every_audited_event_type_is_stored(db: PgUrls, event_type: str) -> None:
+    """The database CHECKs accept every mapped action and resource type (audit_0003 for contract 1.6.0)."""
+    event = envelope(event_type)
+    run(db, audit_writer, event)
+    [row] = fetch(db, "SELECT action, resource_type, source_event_type FROM audit.audit_events")
+    record = to_audit_record(event)
+    assert record is not None
+    assert (row["action"], row["resource_type"], row["source_event_type"]) == (
+        record.action,
+        record.resource_type,
+        event_type,
+    )

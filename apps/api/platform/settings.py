@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     worker_shutdown_timeout_ms: int = 8000
     storage_org_codes: str = "nais,inst-a,inst-b"
     health_check_timeout_seconds: float = 2.0
+    nais_llm_enabled: bool = False
+    nais_llm_base_url: str | None = None
+    nais_llm_model: str = "llm"
+    nais_llm_timeout_s: float = 60
+    nais_embed_base_url: str | None = None
+    nais_embed_model: str = "bge-m3"
+    nais_rerank_base_url: str | None = None
+    nais_rerank_model: str = "bge-reranker"
 
     @property
     def storage_org_code_list(self) -> list[str]:

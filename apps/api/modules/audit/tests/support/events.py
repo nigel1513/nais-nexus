@@ -226,6 +226,116 @@ PAYLOADS: dict[str, dict[str, Any]] = {
 }
 
 
+# Contract 1.6.0 (hub / workspace / research notes), mapped by audit rules and notification rules since
+# Task 8 of the 2026-10-02 data-hub plan.
+INPUT_ID, RECIPE_ID, RUN_ID, OUTPUT_ID = seed_id("b001"), seed_id("c001"), seed_id("d001"), seed_id("e001")
+PUBLISH_REQUEST_ID, THREAD_ID, COMMENT_ID, NOTE_ID = (
+    seed_id("f101"),
+    seed_id("f201"),
+    seed_id("f301"),
+    seed_id("f401"),
+)
+_ws = {
+    "project_id": S(PROJECT_GOLDEN),
+    "actor_id": S(A_RESEARCHER),
+    "occurred_at": "2026-10-02T01:00:00+00:00",
+}
+_input = {
+    **_ws,
+    "input_id": S(INPUT_ID),
+    "dataset_id": S(DATASET_BATTERY),
+    "dataset_title": DATASET_TITLE,
+    "dataset_version_id": S(VERSION_ID),
+    "version_label": "v1",
+    "owner_organization_id": S(ORG_B),
+}
+_recipe = {**_ws, "recipe_id": S(RECIPE_ID), "recipe_name": "High temperature mean", "recipe_version": 2}
+_note = {
+    **_ws,
+    "note_id": S(NOTE_ID),
+    "note_date": "2026-10-02",
+    "version": 1,
+    "recorder_id": S(A_RESEARCHER),
+    "organization_id": S(ORG_A),
+}
+PAYLOADS.update(
+    {
+        "workspace.input.added.v1": _input,
+        "workspace.input.version_changed.v1": {
+            **_input,
+            "previous_dataset_version_id": S(seed_id("5000")),
+            "previous_version_label": "v0",
+        },
+        "workspace.input.removed.v1": _input,
+        "workspace.recipe.saved.v1": {**_recipe, "input_ids": [S(INPUT_ID)], "step_count": 3},
+        "workspace.run.succeeded.v1": {
+            **_recipe,
+            "run_id": S(RUN_ID),
+            "input_rows": 1000,
+            "output_rows": 24,
+            "output_id": S(OUTPUT_ID),
+        },
+        "workspace.run.failed.v1": {**_recipe, "run_id": S(RUN_ID), "error": "RECIPE_INVALID"},
+        "workspace.output.created.v1": {
+            **_ws,
+            "output_id": S(OUTPUT_ID),
+            "output_title": "High temperature mean",
+            "kind": "DERIVED_DATASET",
+            "access_level": "CONTROLLED",
+            "run_id": S(RUN_ID),
+            "lineage_dataset_version_ids": [S(VERSION_ID)],
+        },
+        "workspace.publish.requested.v1": {
+            **_ws,
+            "request_id": S(PUBLISH_REQUEST_ID),
+            "output_id": S(OUTPUT_ID),
+            "output_title": "High temperature mean",
+            "project_name": "Golden Project",
+            "approver_organization_ids": [S(ORG_B)],
+        },
+        "workspace.publish.decided.v1": {
+            **_ws,
+            "request_id": S(PUBLISH_REQUEST_ID),
+            "output_id": S(OUTPUT_ID),
+            "output_title": "High temperature mean",
+            "organization_id": S(ORG_B),
+            "decision": "APPROVE",
+            "request_status": "APPROVED",
+            "requested_by": S(A_RESEARCHER),
+            "published_dataset_id": None,
+        },
+        "workspace.comment.added.v1": {
+            **_ws,
+            "project_id": None,
+            "thread_id": S(THREAD_ID),
+            "thread_title": "Unit question",
+            "scope": "DATASET",
+            "target_id": S(DATASET_BATTERY),
+            "comment_id": S(COMMENT_ID),
+            "new_thread": True,
+            "owner_organization_id": S(ORG_B),
+        },
+        "notes.note.submitted.v1": {
+            **_note,
+            "project_name": "Golden Project",
+            "witness_user_ids": [S(B_RESEARCHER)],
+            "content_hash": "a" * 64,
+        },
+        "notes.note.signed.v1": {
+            **_note,
+            "project_name": "Golden Project",
+            "signer_id": S(A_RESEARCHER),
+            "signer_role": "RECORDER",
+            "final": True,
+            "content_hash": "a" * 64,
+            "chain_hash": "b" * 64,
+        },
+        "notes.note.rejected.v1": {**_note, "project_name": "Golden Project", "reason": "근거 보완 필요"},
+        "notes.note.viewed.v1": {**_note, "status": "SIGNED"},
+    }
+)
+
+
 def payload_for(event_type: str) -> dict[str, Any]:
     return deepcopy(PAYLOADS[event_type])
 

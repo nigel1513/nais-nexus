@@ -32,7 +32,7 @@ describe("CommandPalette", () => {
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     const dialog = await openWithShortcut();
     expect(within(dialog).getByRole("group", { name: "이동" })).toBeInTheDocument();
-    expect(options(dialog)).toEqual(expect.arrayContaining(["대시보드", "프로젝트", "데이터", "접근 관리", "활동", "설정"]));
+    expect(options(dialog)).toEqual(expect.arrayContaining(["대시보드", "데이터 허브", "전체 데이터", "프로젝트", "연구노트", "접근 관리", "활동", "설정"]));
     expect(options(dialog)).not.toContain("기관 관리");
     await userEvent.type(within(dialog).getByRole("combobox"), "활동");
     // The screen first; free-text search in data is always offered last-resort below it.

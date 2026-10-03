@@ -23,17 +23,24 @@
     "expired": "만료됨",
     "expiresInDays": "{count}일 후 만료",
     "expiresInHours": "{count}시간 후 만료",
-    "formErrors": "입력값 {count}개를 확인해 주세요."
+    "formErrors": "입력값 {count}개를 확인해 주세요.",
+    "leave": {
+      "title": "저장하지 않은 변경이 있습니다",
+      "leave": "계속",
+      "stay": "머무르기"
+    }
   },
   "nav": {
     "dashboard": "대시보드",
     "projects": "프로젝트",
-    "data": "데이터",
+    "data": "전체 데이터",
     "access": "접근 관리",
     "activity": "활동",
     "organization": "기관 관리",
     "settings": "설정",
-    "notebooks": "노트북"
+    "notebooks": "노트북",
+    "hub": "데이터 허브",
+    "notes": "연구노트"
   },
   "shell": {
     "mainNav": "주 메뉴",
@@ -843,7 +850,10 @@
         "aboutCrumb": "개요",
         "explorerCrumb": "파일·분포",
         "columnsCrumb": "스키마",
-        "metaCrumb": "출처·이용"
+        "metaCrumb": "출처·이용",
+        "projectsCrumb": "프로젝트",
+        "discussionCrumb": "질문·답변",
+        "historyCrumb": "버전·검증·활용"
       },
       "factsTitle": "한눈에",
       "sectionNav": "데이터 카드 섹션",
@@ -851,7 +861,37 @@
         "overview": "개요",
         "files": "파일·분포",
         "schema": "스키마",
-        "meta": "메타데이터"
+        "meta": "메타데이터",
+        "projects": "프로젝트",
+        "discussion": "토론",
+        "history": "이력"
+      },
+      "projectsTitle": "이 데이터를 쓴 프로젝트",
+      "discussionTitle": "토론",
+      "historyTitle": "이력",
+      "projects": {
+        "empty": "아직 이 데이터를 입력으로 쓴 프로젝트가 없습니다.",
+        "added": "입력 추가",
+        "hidden": "참여하지 않은 프로젝트 {count}곳에서도 사용 중입니다."
+      },
+      "history": {
+        "empty": "기록된 이력이 없습니다.",
+        "readiness": "결과 {status}",
+        "otherProject": "참여하지 않은 프로젝트"
+      },
+      "openInProject": {
+        "title": "프로젝트에서 열기",
+        "description": "선택한 프로젝트에 {version} 버전을 입력으로 고정합니다.",
+        "descriptionLatest": "선택한 프로젝트에 최신 발행 버전을 입력으로 고정합니다.",
+        "project": "프로젝트",
+        "alreadyUsed": "이미 입력으로 사용 중",
+        "note": "메모 (선택)",
+        "noteHint": "쓰는 목적이나 범위를 적어 두면 구성원이 참고할 수 있습니다.",
+        "submit": "입력으로 추가",
+        "noProject": "입력을 추가할 수 있는 프로젝트가 없습니다. 진행 중인 프로젝트에서 연구원 이상 역할이 필요합니다.",
+        "done": "\"{project}\"에 입력으로 추가했습니다",
+        "doneVersion": "고정 버전 {version}",
+        "usageFailed": "이 데이터를 쓰는 프로젝트를 확인하지 못했습니다. 잠시 후 다시 열어 주세요."
       }
     },
     "people": {
@@ -1289,7 +1329,9 @@
       "reviewLabel": "검토할 요청 ({count}건)",
       "requests": "내 요청",
       "grants": "내 권한",
-      "orgGrants": "기관 권한"
+      "orgGrants": "기관 권한",
+      "publish": "공개 요청",
+      "publishLabel": "공개 요청 ({count}건 결정 대기)"
     },
     "allStatuses": "모든 상태",
     "count": "{count}건",
@@ -1777,7 +1819,17 @@
     "READINESS_PROFILE_UNKNOWN": "알 수 없는 검증 프로파일입니다.",
     "READINESS_VALIDATION_IN_PROGRESS": "이미 검증이 진행 중입니다.",
     "READINESS_NOT_AVAILABLE": "아직 검증 결과가 없습니다.",
-    "NOTIFICATION_NOT_FOUND": "알림을 찾을 수 없습니다."
+    "NOTIFICATION_NOT_FOUND": "알림을 찾을 수 없습니다.",
+    "ACCESS_REQUIRED": "이 데이터를 쓰려면 접근 권한이 필요합니다. 접근 요청을 먼저 보내 주세요.",
+    "INPUT_ACCESS_LAPSED": "입력 데이터의 접근 권한이 회수되었거나 만료되어 실행하거나 내려받을 수 없습니다.",
+    "RECIPE_INVALID": "레시피 단계가 입력 데이터와 맞지 않습니다. 표시된 단계를 확인해 주세요.",
+    "RUN_NOT_ALLOWED": "이 레시피는 지금 실행할 수 없습니다. 진행 중인 실행이 끝난 뒤 다시 시도하세요.",
+    "OUTPUT_PUBLISH_PENDING": "이 산출물은 이미 허브 공개 검토 중이거나 승인되었습니다.",
+    "NOTE_LOCKED": "제출되었거나 서명된 연구노트는 수정할 수 없습니다.",
+    "NOTE_HAS_UNACCEPTED_AI": "수락하지 않은 AI 문장이 있습니다. 수락·수정·삭제 중 하나를 선택한 뒤 제출하세요.",
+    "NOTE_SIGNATURE_EXPIRED": "서명하려면 다시 로그인해야 합니다. 본인 확인 후 5분 안에 서명해 주세요.",
+    "NOTE_NOT_WITNESS": "이 연구노트의 확인자가 아닙니다.",
+    "LLM_UNAVAILABLE": "지금은 AI 초안을 만들 수 없습니다. 연구노트는 계속 직접 작성할 수 있습니다."
   },
   "enums": {
     "ActiveStatus": {
@@ -1902,7 +1954,14 @@
       "DATASET_FILE": "데이터 파일",
       "ACCESS_REQUEST": "접근 요청",
       "ACCESS_GRANT": "접근 권한",
-      "READINESS_VALIDATION": "AI-Ready 검증"
+      "READINESS_VALIDATION": "AI-Ready 검증",
+      "PROJECT_INPUT": "프로젝트 입력 데이터",
+      "RECIPE": "변환 레시피",
+      "RUN": "변환 실행",
+      "OUTPUT": "산출물",
+      "PUBLISH_REQUEST": "허브 공개 요청",
+      "THREAD": "토론",
+      "RESEARCH_NOTE": "연구노트"
     },
     "AuditAction": {
       "LOGIN": "로그인",
@@ -1928,7 +1987,21 @@
       "ACCESS_EXPIRED": "권한 만료",
       "FILE_DOWNLOADED": "파일 다운로드",
       "DOWNLOAD_DENIED": "다운로드 거부",
-      "READINESS_VALIDATION_COMPLETED": "AI-Ready 검증 완료"
+      "READINESS_VALIDATION_COMPLETED": "AI-Ready 검증 완료",
+      "PROJECT_INPUT_ADDED": "입력 데이터 추가",
+      "PROJECT_INPUT_VERSION_CHANGED": "입력 데이터 버전 변경",
+      "PROJECT_INPUT_REMOVED": "입력 데이터 제거",
+      "RECIPE_SAVED": "레시피 저장",
+      "RUN_SUCCEEDED": "변환 실행 성공",
+      "RUN_FAILED": "변환 실행 실패",
+      "OUTPUT_CREATED": "산출물 생성",
+      "OUTPUT_PUBLISH_REQUESTED": "허브 공개 요청",
+      "OUTPUT_PUBLISH_DECIDED": "허브 공개 결정",
+      "COMMENT_ADDED": "토론 댓글 작성",
+      "NOTE_SUBMITTED": "연구노트 제출",
+      "NOTE_SIGNED": "연구노트 서명",
+      "NOTE_REJECTED": "연구노트 반려",
+      "NOTE_VIEWED": "연구노트 열람"
     },
     "NotificationType": {
       "PROJECT_INVITATION": "프로젝트 초대",
@@ -1938,7 +2011,14 @@
       "ACCESS_CHANGES_REQUESTED": "수정 요청",
       "ACCESS_EXPIRING": "권한 만료 임박",
       "ACCESS_REVOKED": "권한 회수",
-      "DATASET_PUBLISHED": "데이터셋 게시"
+      "DATASET_PUBLISHED": "데이터셋 게시",
+      "OUTPUT_PUBLISH_REQUESTED": "허브 공개 검토 요청",
+      "OUTPUT_PUBLISH_DECIDED": "허브 공개 결정",
+      "NOTE_SUBMITTED": "연구노트 확인 요청",
+      "NOTE_REJECTED": "연구노트 반려",
+      "NOTE_SIGNED": "연구노트 서명 완료",
+      "DATASET_COMMENT_ADDED": "데이터 토론 새 댓글",
+      "RUN_FAILED": "변환 실행 실패"
     },
     "VocabularyScheme": {
       "SUBJECT": "연구 분야",
@@ -1962,9 +2042,688 @@
       "READY": "준비됨",
       "FAILED": "생성 실패",
       "UNSUPPORTED": "미리보기 미지원"
+    },
+    "DatasetActivityType": {
+      "VERSION_PUBLISHED": "버전 게시",
+      "METADATA_CHANGED": "정보 수정",
+      "POLICY_CHANGED": "접근 정책 변경",
+      "READINESS_COMPLETED": "AI-Ready 검증 완료",
+      "USED_IN_PROJECT": "프로젝트 입력으로 사용",
+      "OUTPUT_PUBLISHED": "파생 데이터 공개",
+      "DISCUSSION_STARTED": "토론 시작"
+    },
+    "RunStatus": {
+      "QUEUED": "대기 중",
+      "RUNNING": "실행 중",
+      "SUCCEEDED": "성공",
+      "FAILED": "실패"
+    },
+    "OutputKind": {
+      "DERIVED_DATASET": "파생 데이터",
+      "FILE": "파일"
+    },
+    "OutputPublishStatus": {
+      "NONE": "공개 안 함",
+      "PENDING": "공개 검토 중",
+      "APPROVED": "공개 승인됨",
+      "REJECTED": "공개 반려됨",
+      "PUBLISHED": "허브에 공개됨"
+    },
+    "PublishRequestStatus": {
+      "PENDING": "검토 중",
+      "APPROVED": "승인됨",
+      "REJECTED": "반려됨"
+    },
+    "PublishDecision": {
+      "APPROVE": "승인",
+      "REJECT": "반려"
+    },
+    "ThreadScope": {
+      "PROJECT": "프로젝트",
+      "DATASET": "데이터셋",
+      "OUTPUT": "산출물",
+      "RECIPE": "레시피"
+    },
+    "RecipeStepType": {
+      "select_columns": "열 선택",
+      "filter_rows": "행 필터",
+      "drop_missing": "결측 행 제거",
+      "fill_missing": "결측값 채우기",
+      "cast_type": "형 변환",
+      "convert_unit": "단위 변환",
+      "aggregate": "집계",
+      "join": "결합",
+      "sort": "정렬",
+      "limit": "행 수 제한"
+    },
+    "RecipeFilterOp": {
+      "eq": "같음",
+      "ne": "같지 않음",
+      "lt": "미만",
+      "le": "이하",
+      "gt": "초과",
+      "ge": "이상",
+      "contains": "포함",
+      "in": "목록 중 하나",
+      "is_null": "비어 있음",
+      "not_null": "비어 있지 않음"
+    },
+    "RecipeCastType": {
+      "int": "정수",
+      "float": "실수",
+      "string": "문자열",
+      "bool": "참/거짓",
+      "datetime": "날짜·시각"
+    },
+    "RecipeAggregateFn": {
+      "count": "개수",
+      "sum": "합계",
+      "mean": "평균",
+      "min": "최솟값",
+      "max": "최댓값"
+    },
+    "RecipeJoinHow": {
+      "inner": "양쪽 모두 있는 행",
+      "left": "왼쪽 기준 전체"
+    },
+    "NoteStatus": {
+      "DRAFT": "작성 중",
+      "SUBMITTED": "제출됨",
+      "SIGNED": "서명 완료"
+    },
+    "NoteDraftStatus": {
+      "NONE": "초안 없음",
+      "QUEUED": "초안 대기 중",
+      "RUNNING": "초안 작성 중",
+      "FAILED": "초안을 만들지 못했습니다",
+      "DONE": "초안 완료"
+    },
+    "NoteSection": {
+      "OBJECTIVE": "연구 목표",
+      "METHOD": "연구 방법·재료",
+      "PROCEDURE": "수행 내용",
+      "RESULTS": "결과 및 관찰",
+      "DISCUSSION": "고찰·문제점",
+      "NEXT": "향후 계획",
+      "REFERENCES": "참고 자료"
+    },
+    "NoteBlockOrigin": {
+      "HUMAN": "직접 작성",
+      "AI": "AI 초안"
+    },
+    "NoteSignerRole": {
+      "RECORDER": "기록자",
+      "WITNESS": "확인자"
+    },
+    "NoteEvidenceType": {
+      "INPUT_ADDED": "입력 데이터 추가",
+      "INPUT_VERSION_CHANGED": "입력 버전 변경",
+      "RECIPE_SAVED": "레시피 저장",
+      "RUN_SUCCEEDED": "실행 성공",
+      "RUN_FAILED": "실행 실패",
+      "OUTPUT_CREATED": "산출물 생성",
+      "PUBLISH_REQUESTED": "허브 공개 요청",
+      "DATASET_DOWNLOADED": "데이터 다운로드",
+      "ACCESS_DECIDED": "접근 요청 결정",
+      "NOTEBOOK": "노트북"
     }
   },
   "errorPage": {
     "message": "예기치 않은 오류로 화면을 표시하지 못했습니다. 다시 시도하거나 추적 ID와 함께 관리자에게 알려 주세요."
+  },
+  "hub": {
+    "title": "데이터 허브",
+    "context": "연구 데이터",
+    "allData": "전체 데이터",
+    "finder": "데이터 찾기",
+    "searchLabel": "데이터 허브 검색",
+    "search": "검색",
+    "subjects": "분야",
+    "organizations": "기관",
+    "empty": "아직 볼 수 있는 데이터가 없습니다.",
+    "card": {
+      "aiReady": "AI-ready {status}",
+      "updated": "{date} 갱신",
+      "requests": "최근 7일 접근 요청 {count}건",
+      "uses": "프로젝트 {count}곳에서 사용"
+    },
+    "rails": {
+      "trending": {
+        "crumb": "요청",
+        "title": "이번 주 많이 요청된 데이터",
+        "basis": "최근 7일 접근 요청 수"
+      },
+      "recent": {
+        "crumb": "공개",
+        "title": "새로 공개된 데이터",
+        "basis": "최근 발행 순"
+      },
+      "most_used": {
+        "crumb": "활용",
+        "title": "많이 쓰인 데이터",
+        "basis": "프로젝트 입력 수"
+      }
+    },
+    "orgs": {
+      "crumb": "기관",
+      "title": "기관별 데이터 현황",
+      "name": "기관",
+      "datasets": "데이터셋",
+      "public": "공개",
+      "controlled": "통제·민감",
+      "updated": "최근 갱신"
+    }
+  },
+  "discussion": {
+    "new": "새 토론",
+    "empty": "아직 토론이 없습니다.",
+    "emptyHint": "질문이나 확인할 내용을 남겨 주세요.",
+    "resolved": "해결됨",
+    "rowMeta": "{author} · 댓글 {count} · {date}",
+    "title": "제목",
+    "body": "내용",
+    "markdownHint": "마크다운을 쓸 수 있습니다.",
+    "start": "토론 시작",
+    "backToList": "토론 목록",
+    "resolve": "해결됨으로 표시",
+    "reopen": "다시 열기",
+    "comments": "댓글",
+    "edited": "(수정됨)",
+    "reply": "답글",
+    "send": "답글 달기",
+    "notFound": "목록에서 스레드를 찾지 못했습니다."
+  },
+  "workspace": {
+    "tabsLabel": "프로젝트 작업 공간",
+    "tabs": {
+      "overview": "개요",
+      "data": "데이터",
+      "recipes": "변환",
+      "outputs": "산출물",
+      "notes": "연구노트",
+      "discussion": "토론",
+      "members": "구성원",
+      "activity": "활동"
+    },
+    "overview": {
+      "all": "전체 보기",
+      "lapsed": "접근 권한이 끝난 입력 데이터가 {count}건 있습니다. 이 데이터를 읽는 실행과 내려받기가 막혀 있습니다.",
+      "noInputs": "아직 입력 데이터가 없습니다. 데이터 탭에서 허브의 데이터를 추가하세요.",
+      "recentRuns": "최근 실행",
+      "recentOutputs": "최근 산출물"
+    },
+    "inputs": {
+      "title": "입력 데이터",
+      "dataset": "데이터",
+      "version": "버전",
+      "versionHint": "버전을 바꾸면 기록에 남고, 다음 실행부터 새 버전을 읽습니다.",
+      "newer": "{version} 있음",
+      "level": "접근 등급",
+      "access": "내 접근",
+      "lapsed": "접근 권한 없음",
+      "usable": "사용 가능",
+      "requestAgain": "접근 요청",
+      "added": "추가",
+      "actions": "관리",
+      "editTitle": "입력 데이터 편집",
+      "editLabel": "{title} 편집",
+      "remove": "빼기",
+      "removeLabel": "{title} 빼기",
+      "removeTitle": "입력 데이터 빼기",
+      "removeWarning": "이 프로젝트의 입력에서 뺍니다: {title}. 이 입력을 쓰는 레시피는 고칠 때까지 저장·실행할 수 없습니다. 지난 실행과 산출물의 계보는 그대로 남습니다.",
+      "removed": "입력 데이터를 뺐습니다.",
+      "saved": "입력 데이터를 저장했습니다.",
+      "empty": "아직 입력 데이터가 없습니다.",
+      "emptyHint": "데이터 추가로 허브의 데이터셋을 이 프로젝트의 입력으로 고정하세요."
+    },
+    "addInput": {
+      "title": "데이터 추가",
+      "description": "허브에서 데이터셋을 찾아 최신 공개 버전을 이 프로젝트의 입력으로 고정합니다.",
+      "search": "데이터 검색",
+      "searchPlaceholder": "제목, 키워드, 기관",
+      "dataset": "데이터셋",
+      "alreadyUsed": "이미 입력으로 사용 중",
+      "noVersion": "공개된 버전 없음",
+      "noResults": "조건에 맞는 데이터가 없습니다.",
+      "submit": "입력으로 추가",
+      "done": "입력으로 추가했습니다: {title} {version}"
+    },
+    "recipes": {
+      "title": "변환 레시피",
+      "new": "새 레시피",
+      "newDescription": "이름과 기준 입력을 정하면 빈 레시피가 만들어지고 편집 화면이 열립니다.",
+      "create": "만들기",
+      "name": "이름",
+      "inputs": "입력",
+      "steps": "단계",
+      "version": "버전",
+      "updated": "저장",
+      "empty": "아직 레시피가 없습니다.",
+      "emptyHint": "새 레시피로 입력 데이터를 거르고, 바꾸고, 묶는 단계를 만드세요.",
+      "needInputs": "레시피를 만들려면 먼저 입력 데이터를 추가하세요."
+    },
+    "recipe": {
+      "kicker": "레시피",
+      "name": "레시피 이름",
+      "base": "기준 입력",
+      "baseHint": "단계는 이 데이터에서 시작합니다.",
+      "joinInputs": "결합에 쓸 입력",
+      "unsaved": "저장하지 않은 변경",
+      "preview": "미리보기",
+      "previewing": "미리보는 중…",
+      "run": "실행",
+      "more": "레시피 작업 더 보기",
+      "deleteEllipsis": "레시피 삭제…",
+      "delete": "삭제",
+      "deleteTitle": "레시피 삭제",
+      "deleteWarning": "레시피를 삭제합니다. 지난 실행과 산출물의 계보는 그대로 남습니다.",
+      "deleted": "레시피를 삭제했습니다.",
+      "saveFirst": "저장한 뒤 실행할 수 있습니다.",
+      "lapsedHint": "접근 권한이 끝난 입력이 있어 실행할 수 없습니다.",
+      "lapsed": "접근 권한이 끝난 입력: {inputs}. 권한을 다시 받기 전까지 미리보기와 실행이 막힙니다.",
+      "saved": "레시피를 저장했습니다 (v{version}).",
+      "runStarted": "v{version} 실행을 시작했습니다.",
+      "conflict": "다른 구성원이 이 레시피를 먼저 저장했습니다 (현재 v{version}). 화면의 변경은 저장되지 않았습니다. 최신 버전을 불러온 뒤 다시 고치세요.",
+      "reload": "최신 버전 불러오기",
+      "removedInput": "프로젝트에서 뺀 입력",
+      "stepsKicker": "단계",
+      "steps": "변환 단계",
+      "noSteps": "아직 단계가 없습니다. 미리보기는 기준 입력을 그대로 보여 줍니다.",
+      "stepType": "단계 종류",
+      "addStep": "단계 추가",
+      "moveUp": "{n}단계 위로",
+      "moveDown": "{n}단계 아래로",
+      "removeStep": "{n}단계 삭제",
+      "addColumn": "추가",
+      "addColumnPlaceholder": "열 이름",
+      "removeColumn": "{column} 빼기",
+      "addMetric": "집계 추가",
+      "removeMetric": "{n}번째 집계 삭제",
+      "valueHint": "숫자와 true/false는 그대로 읽고, 큰따옴표로 감싸면 텍스트로 비교합니다.",
+      "valuesHint": "쉼표로 구분합니다.",
+      "convertHint": "새 값 = 원래 값 × 배율 + 더할 값",
+      "joinHint": "결합하려면 위에서 결합에 쓸 입력을 고르세요.",
+      "previewKicker": "미리보기",
+      "previewTitle": "미리보기 결과",
+      "previewHint": "입력마다 처음 10,000행 기준, 결과는 처음 100행까지 표시",
+      "previewMeta": "입력 {read}행을 읽어 결과 {rows}행 · 처음 {shown}행 표시",
+      "previewTruncated": "결과가 100행을 넘습니다",
+      "previewNoColumns": "결과에 남은 열이 없습니다.",
+      "runsKicker": "실행",
+      "field": {
+        "column": "열",
+        "keepColumns": "남길 열",
+        "op": "조건",
+        "value": "값",
+        "values": "값 목록",
+        "anyColumn": "어느 열이든 비어 있으면 행 제거",
+        "missingIn": "비어 있는지 볼 열",
+        "fillWith": "채울 값",
+        "castTo": "바꿀 형식",
+        "unitLabel": "새 단위",
+        "factor": "배율",
+        "offset": "더할 값",
+        "groupBy": "묶을 열",
+        "metrics": "집계",
+        "metricColumn": "{n}번째 집계 열",
+        "fn": "{n}번째 집계 함수",
+        "right": "결합할 입력",
+        "how": "결합 방식",
+        "on": "맞출 열",
+        "pickInput": "입력 선택",
+        "sortBy": "정렬할 열",
+        "descending": "내림차순",
+        "n": "남길 행 수"
+      },
+      "missing": {
+        "columns": "열을 하나 이상 고르세요.",
+        "column": "열 이름을 입력하세요.",
+        "value": "값을 입력하세요.",
+        "number": "배율과 더할 값은 숫자여야 합니다.",
+        "unit": "새 단위를 입력하세요.",
+        "metrics": "집계마다 열을 입력하세요.",
+        "right": "결합할 입력을 고르세요. 결합에 쓸 입력으로 체크된 데이터만 고를 수 있습니다.",
+        "on": "맞출 열을 하나 이상 고르세요.",
+        "by": "정렬할 열을 하나 이상 고르세요.",
+        "n": "1 이상 5,000,000 이하의 정수를 입력하세요.",
+        "name": "레시피 이름을 입력하세요.",
+        "base": "기준 입력을 고르세요."
+      },
+      "reason": {
+        "UNKNOWN_COLUMN": "‘{column}’ 열이 이 단계 앞의 데이터에 없습니다.",
+        "TYPE_MISMATCH": "‘{column}’ 열의 형식이 이 단계와 맞지 않습니다.",
+        "INVALID_VALUE": "조건 값이 이 단계와 맞지 않습니다.",
+        "DUPLICATE_COLUMN": "결과에 ‘{column}’ 열이 두 번 생깁니다.",
+        "UNKNOWN_INPUT": "레시피 입력에 없는 데이터를 씁니다.",
+        "STEP_FAILED": "이 단계를 값에 적용하지 못했습니다.",
+        "TOO_MANY_ROWS": "결과 행이 너무 많습니다. 조건을 좁히세요.",
+        "CAST_FAILED": "‘{column}’ 열의 일부 값을 바꿀 형식으로 읽을 수 없습니다.",
+        "INPUT_UNAVAILABLE": "입력의 고정 버전이 더 이상 공개 상태가 아닙니다.",
+        "INPUT_NOT_TABULAR": "입력 버전에 읽을 수 있는 CSV·Parquet 파일이 없습니다.",
+        "INPUT_UNREADABLE": "입력 파일을 읽을 수 없습니다.",
+        "INPUT_TOO_LARGE": "입력 파일이 너무 커서 읽을 수 없습니다."
+      },
+      "quoteHint": "텍스트로 비교하려면 큰따옴표로 감싸세요.",
+      "columnType": "열 형식: {type}",
+      "type": {
+        "string": "텍스트",
+        "integer": "정수",
+        "number": "숫자",
+        "boolean": "참/거짓",
+        "date": "날짜",
+        "datetime": "날짜·시각"
+      }
+    },
+    "runs": {
+      "title": "실행 기록",
+      "status": "상태",
+      "recipe": "레시피",
+      "version": "버전",
+      "queuedAt": "요청",
+      "took": "소요",
+      "rows": "행 (입력 → 결과)",
+      "rowsValue": "{input} → {output}",
+      "result": "결과",
+      "openOutput": "산출물 보기",
+      "deletedRecipe": "삭제된 레시피",
+      "empty": "아직 실행이 없습니다.",
+      "emptyHint": "레시피를 저장한 뒤 실행하면 결과가 산출물로 남습니다.",
+      "error": {
+        "RECIPE_MISSING": "실행할 레시피 버전을 찾을 수 없습니다.",
+        "INPUT_ACCESS_LAPSED": "입력 데이터의 접근 권한이 회수되었거나 만료되었습니다.",
+        "RECIPE_INVALID": "레시피 단계가 입력 데이터와 맞지 않습니다. 레시피를 확인해 주세요.",
+        "RESULT_TOO_LARGE": "실행 결과의 행 수가 허용 한도를 넘었습니다. 필터나 행 제한 단계를 추가해 주세요.",
+        "INPUT_UNAVAILABLE": "입력 데이터 버전을 더 이상 사용할 수 없습니다.",
+        "INPUT_NOT_TABULAR": "입력 데이터에 읽을 수 있는 CSV·Parquet 파일이 없습니다.",
+        "INPUT_TOO_LARGE": "입력 데이터가 허용 크기를 넘었습니다.",
+        "INPUT_UNREADABLE": "입력 파일을 읽을 수 없습니다.",
+        "STORAGE_NOT_CONFIGURED": "과제 주관기관의 저장소가 설정되지 않았습니다. 관리자에게 문의해 주세요.",
+        "OUT_OF_MEMORY": "실행에 필요한 메모리가 부족합니다. 행 수를 줄여 다시 실행해 주세요.",
+        "STORAGE_UNAVAILABLE": "저장소에 일시적으로 접근할 수 없습니다. 잠시 후 다시 실행해 주세요.",
+        "INTERNAL_ERROR": "시스템 오류로 실행에 실패했습니다. 다시 실행해 주세요.",
+        "RUN_TIMEOUT": "실행 시간이 허용 한도를 넘었습니다.",
+        "STALE_RUN": "실행이 제때 진행되지 않아 중단되었습니다. 다시 실행해 주세요.",
+        "fallback": "실행에 실패했습니다."
+      }
+    },
+    "outputs": {
+      "title": "산출물",
+      "kindFilter": "산출물 종류",
+      "all": "전체",
+      "name": "이름",
+      "kind": "종류",
+      "publish": "허브 공개",
+      "size": "크기",
+      "created": "생성",
+      "empty": "아직 산출물이 없습니다.",
+      "emptyHint": "레시피를 실행하거나 파일을 올리면 여기에 쌓입니다."
+    },
+    "output": {
+      "download": "내려받기",
+      "files": "파일",
+      "file": "파일",
+      "mediaType": "형식",
+      "lapsed": "접근 권한이 끝난 입력 데이터에서 만든 산출물이라 내려받을 수 없습니다: {inputs}"
+    },
+    "upload": {
+      "title": "파일 올리기",
+      "description": "보고서, 그림, 결과 파일을 프로젝트 산출물로 올립니다.",
+      "name": "산출물 이름",
+      "level": "접근 등급",
+      "floorHint": "입력 데이터 중 가장 엄격한 등급: {level}. 이보다 낮은 등급은 고를 수 없습니다.",
+      "levelTooLoose": "접근 등급은 입력 데이터 중 가장 엄격한 등급({level}) 아래로 낮출 수 없습니다.",
+      "files": "파일",
+      "filesHint": "최대 {max}개, 파일당 5 GiB까지. 파일 이름은 영문·숫자와 . _ - 만 쓸 수 있습니다.",
+      "badName": "파일 이름을 바꿔 주세요: {names}",
+      "badSize": "빈 파일이나 5 GiB를 넘는 파일은 올릴 수 없습니다.",
+      "tooMany": "파일은 {max}개까지 올릴 수 있습니다.",
+      "hashing": "파일 확인 중 ({done}/{total})",
+      "uploading": "올리는 중 {percent}%",
+      "completing": "서버에서 확인하는 중…",
+      "progress": "업로드 진행률",
+      "submit": "올리기",
+      "done": "산출물로 올렸습니다: {title}",
+      "missingTarget": "업로드 세션에 {name} 파일의 업로드 주소가 없습니다. 다시 올려 주세요."
+    },
+    "lineage": {
+      "kicker": "계보",
+      "title": "데이터 계보",
+      "desc": "입력 {inputs} → {middle} → 산출물 {output}",
+      "inputs": "입력 데이터",
+      "recipe": "레시피",
+      "runId": "실행 ID",
+      "noInputs": "입력 없음",
+      "upload": "직접 올림",
+      "uploadSub": "업로드",
+      "uploaded": "레시피 없이 직접 올린 파일",
+      "run": "레시피 실행"
+    },
+    "publish": {
+      "kicker": "허브",
+      "section": "허브 공개",
+      "title": "허브 공개 요청",
+      "again": "다시 요청",
+      "description": "산출물을 주관 기관 소유의 새 데이터셋으로 허브에 공개하도록 요청합니다. 입력 데이터를 소유한 기관과 주관 기관의 데이터 관리자가 각각 승인해야 공개됩니다.",
+      "datasetTitle": "데이터셋 제목",
+      "datasetTitleHint": "허브에 보일 제목입니다. 3자 이상.",
+      "titleShort": "제목은 3자 이상이어야 합니다.",
+      "datasetDescription": "설명",
+      "datasetDescriptionHint": "무엇을 어떻게 만들었는지 적어 주세요. 계보는 자동으로 붙습니다.",
+      "levelNote": "공개되는 데이터셋의 접근 등급: {level} 이상",
+      "submit": "요청 보내기",
+      "sent": "공개 요청을 보냈습니다. 기관 {count}곳의 승인을 기다립니다.",
+      "noneHint": "허브에 공개하지 않은 산출물입니다.",
+      "requestedAt": "요청",
+      "openDataset": "허브 데이터 보기",
+      "failed": "공개하지 못했습니다: {reason}",
+      "approvals": "기관별 승인",
+      "org": "기관",
+      "decision": "결정",
+      "comment": "의견",
+      "decidedAt": "결정 일시",
+      "waiting": "결정 대기"
+    },
+    "review": {
+      "filter": "요청 상태",
+      "pending": "검토 중",
+      "all": "전체",
+      "listLabel": "공개 요청",
+      "slots": "승인 {decided}/{total}",
+      "mine": "우리 기관 {decision}",
+      "own": "본인이 요청한 공개는 결정할 수 없습니다.",
+      "decide": "검토",
+      "decideLabel": "{title} 검토",
+      "title": "허브 공개 검토",
+      "description": "{project}의 산출물 \"{title}\"",
+      "commentHint": "반려할 때는 사유를 꼭 적어 주세요. 요청자에게 전달됩니다.",
+      "commentRequired": "반려 사유를 입력하세요.",
+      "submit": "결정 기록",
+      "recorded": "결정을 기록했습니다. 다른 기관의 결정을 기다립니다.",
+      "done": {
+        "APPROVED": "모든 기관이 승인했습니다. 허브에 공개합니다.",
+        "REJECTED": "공개 요청을 반려했습니다.",
+        "PENDING": "결정을 기록했습니다."
+      },
+      "empty": "검토할 공개 요청이 없습니다.",
+      "emptyAll": "공개 요청이 없습니다.",
+      "emptyHint": "프로젝트가 우리 기관 데이터로 만든 산출물의 공개를 요청하면 여기에 표시됩니다."
+    },
+    "discussion": {
+      "title": "프로젝트 토론",
+      "recipeTitle": "이 레시피 토론",
+      "outputTitle": "이 산출물 토론"
+    },
+    "leave": {
+      "description": "이 화면을 떠나면 저장하지 않은 레시피 변경이 사라집니다.",
+      "reloadDescription": "최신 버전을 불러오면 화면의 저장하지 않은 변경이 사라집니다."
+    }
+  },
+  "notes": {
+    "context": "연구 기록",
+    "title": "연구노트",
+    "description": "날마다 표준 양식으로 기록하고, 제출·서명으로 내용을 고정합니다.",
+    "today": "오늘 노트 쓰기",
+    "todayDescription": "프로젝트를 고르면 오늘 날짜의 노트를 엽니다. 오늘 이미 쓰던 노트가 있으면 그 노트가 열립니다.",
+    "project": "프로젝트",
+    "open": "열기",
+    "noProjects": "참여 중인 프로젝트가 없습니다. 프로젝트에 참여하면 연구노트를 쓸 수 있습니다.",
+    "tabsLabel": "연구노트 구분",
+    "mine": "내 노트",
+    "witness": "확인할 노트",
+    "list": {
+      "date": "연구일자",
+      "project": "프로젝트",
+      "recorder": "기록자",
+      "status": "상태",
+      "review": "AI 검토",
+      "unreviewed": "검토 전 {count}",
+      "updated": "최근 수정",
+      "version": "v{version}",
+      "emptyMine": "아직 연구노트가 없습니다.",
+      "emptyMineHint": "오늘 노트 쓰기로 오늘의 연구 기록을 시작하세요.",
+      "emptyWitness": "확인을 기다리는 노트가 없습니다.",
+      "emptyWitnessHint": "확인자로 지정된 프로젝트에서 노트가 제출되면 여기에 나타납니다."
+    },
+    "search": {
+      "form": "노트 검색",
+      "label": "연구노트 검색",
+      "placeholder": "내용으로 찾기 (예: 온도 보정)",
+      "submit": "검색",
+      "results": "검색 결과",
+      "clear": "검색 지우기",
+      "empty": "찾는 내용이 있는 노트가 없습니다.",
+      "hint": "내가 쓴 노트와 확인자로 지정된 노트에서 찾습니다."
+    },
+    "back": "연구노트 목록",
+    "noteTitle": "{date} 연구노트",
+    "head": {
+      "label": "노트 정보",
+      "project": "과제명",
+      "date": "연구일자",
+      "recorder": "기록자",
+      "organization": "소속"
+    },
+    "form": {
+      "sentence": "{section} {n}번째 문장",
+      "remove": "{section} {n}번째 문장 삭제",
+      "add": "문장 추가",
+      "addLabel": "{section}에 문장 추가",
+      "empty": "기록 없음",
+      "placeholder": "이 항목에 기록할 내용을 쓰세요."
+    },
+    "ai": {
+      "label": "AI 초안",
+      "unreviewed": "검토 전",
+      "evidence": "근거",
+      "draft": "AI 초안 만들기",
+      "noSource": "오늘 저장한 노트북이 없습니다.",
+      "queued": "AI 초안 대기 중입니다. 노트북 {count}개를 읽습니다.",
+      "running": "AI 초안을 만들고 있습니다…",
+      "failed": "AI 초안을 만들지 못했습니다. 직접 쓴 문장은 그대로입니다.",
+      "rateLimited": "AI 초안은 1분에 한 번 만들 수 있습니다. 1분 뒤에 다시 시도하세요.",
+      "sourceUnavailable": "노트북 기록을 읽지 못했습니다. 잠시 후 다시 시도하세요.",
+      "pending": "검토하지 않은 AI 문장 {count}개가 있습니다. 문장을 고치면 그 문장은 확인한 것으로 기록됩니다. 그대로 둘 문장은 초안 확인 완료를 누르고, 필요 없는 문장은 삭제하세요. 확인을 마쳐야 제출하거나 서명할 수 있습니다.",
+      "accept": "초안 확인 완료"
+    },
+    "save": {
+      "label": "저장 상태",
+      "dirty": "저장하지 않은 변경",
+      "saving": "저장 중…",
+      "savedAt": "저장됨 · {time}",
+      "failed": "저장하지 못했습니다",
+      "retry": "다시 저장",
+      "conflictState": "저장되지 않음",
+      "conflict": "다른 곳에서 이 노트가 먼저 저장되었습니다. 화면의 변경은 저장되지 않았습니다. 아래 내용을 복사해 두고 다시 불러오세요.",
+      "reload": "다시 불러오기",
+      "rescued": "저장하지 못한 내 내용",
+      "rescuedHint": "다시 불러오기 전에 화면에 있던 내용입니다. 필요한 문장을 복사해 노트에 다시 넣으세요.",
+      "dismiss": "닫기",
+      "leave": "이 화면을 떠나면 아직 저장되지 않은 노트 내용이 사라집니다."
+    },
+    "signatures": {
+      "label": "서명",
+      "role": "구분",
+      "signer": "성명",
+      "signedAt": "서명 일시",
+      "notSigned": "서명 전",
+      "contentHash": "내용 해시",
+      "witnesses": "{name} 외 {count}명"
+    },
+    "rejected": {
+      "title": "반려 사유",
+      "hint": "고친 뒤 다시 제출하세요."
+    },
+    "actions": {
+      "submit": "제출",
+      "submitTitle": "연구노트 제출",
+      "submitDescription": "제출하면 내용이 고정되고 확인자에게 확인 요청이 갑니다. 확인자가 반려하면 다시 고칠 수 있습니다.",
+      "submitted": "노트를 제출했습니다.",
+      "sign": "서명",
+      "signDraft": "서명하고 확정",
+      "reject": "반려",
+      "revise": "새 버전 만들기",
+      "revised": "새 버전(v{version})을 만들었습니다. 고친 뒤 다시 서명하세요.",
+      "verify": "무결성 검증",
+      "export": "내보내기",
+      "exported": "ZIP 파일을 내려받았습니다."
+    },
+    "sign": {
+      "title": "연구노트 서명",
+      "description": "서명하면 내용이 고정되어 더 이상 고칠 수 없습니다. 고칠 일이 생기면 새 버전을 만듭니다.",
+      "draftDescription": "이 프로젝트는 확인자 서명이 없어 제출과 서명을 함께 합니다.",
+      "signer": "서명자",
+      "role": "역할",
+      "time": "서명 시각은 서버 시각으로 기록됩니다.",
+      "confirm": "서명",
+      "signed": "서명했습니다.",
+      "completed": "서명이 완료되어 노트가 확정되었습니다.",
+      "expired": "로그인한 지 5분이 지났습니다. 본인 확인을 다시 한 뒤 서명할 수 있습니다.",
+      "reauthInPlace": "다시 확인하고 서명",
+      "reauth": "다시 로그인하고 서명"
+    },
+    "reject": {
+      "title": "연구노트 반려",
+      "description": "기록자에게 노트를 돌려보냅니다. 기록자가 고친 뒤 다시 제출합니다.",
+      "reason": "반려 사유",
+      "confirm": "반려",
+      "done": "노트를 반려했습니다."
+    },
+    "verify": {
+      "title": "무결성 검증 결과",
+      "contentOk": "내용 해시 일치",
+      "contentBad": "내용 해시 불일치",
+      "chainOk": "체인 일치",
+      "chainBad": "체인 불일치",
+      "stored": "저장된 내용 해시",
+      "recomputed": "다시 계산한 해시",
+      "checkedAt": "검증 시각",
+      "again": "다시 검증",
+      "explainContentOkSigned": "이 노트의 내용은 서명할 때와 같습니다.",
+      "explainContentOkSubmitted": "이 노트의 내용은 제출할 때와 같습니다.",
+      "explainContentBad": "내용이 고정된 뒤 저장된 기록이 바뀌었습니다.",
+      "explainChainOk": "같은 과제·기관의 서명된 노트 체인도 처음부터 이어져 있습니다.",
+      "explainChainOkSubmitted": "같은 과제·기관의 서명된 노트 체인은 이어져 있습니다. 이 노트는 서명이 끝나면 체인에 들어갑니다.",
+      "explainChainBad": "같은 과제·기관의 서명된 노트 체인이 끊겼습니다. 서명된 노트가 바뀌었거나 빠졌을 수 있습니다.",
+      "report": "기관 연구노트 관리자에게 알리세요."
+    },
+    "export": {
+      "title": "연구노트 내보내기",
+      "description": "이 프로젝트에서 내가 쓴 노트를 JSON·HTML·해시 목록이 든 ZIP 파일로 내려받습니다. 기간을 비우면 전체를 내보냅니다.",
+      "from": "시작일",
+      "to": "종료일",
+      "download": "ZIP 내려받기"
+    },
+    "settings": {
+      "title": "확인자 설정",
+      "kicker": "설정",
+      "required": "제출한 노트에 확인자 서명 받기",
+      "hint": "켜면 노트는 제출 뒤 확인자 한 명의 서명까지 받아야 확정됩니다. 바꾼 설정은 이후 제출하는 노트부터 적용됩니다.",
+      "witnesses": "확인자",
+      "saved": "확인자 설정을 저장했습니다.",
+      "save": "저장"
+    },
+    "tab": {
+      "witness": "확인할 노트"
+    }
   }
 }
