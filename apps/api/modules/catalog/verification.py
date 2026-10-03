@@ -276,7 +276,8 @@ def verify_in_session(session: Session, deps: "CatalogDeps", f: Mapping[Any, Any
     if apply_outcome(session, f["file_id"], f["upload_session_id"], outcome) and outcome.failed:
         # The delete precedes the caller's commit. If the tx rolls back, a retry finds the object missing and ends
         # FAILED/OBJECT_MISSING, the same terminal outcome.
-        store.delete(f["storage_key"])  # M03 §5.2: a file that fails verification is removed from storage
+        # M03 §5.2: a file that fails verification is removed from storage.
+        store.delete(f["storage_key"])  # session-owned key (D-039): never shared with an inherited row
     logger.info(
         "catalog file verified",
         extra={"file_id": str(f["file_id"]), "status": outcome.status, "failure_code": outcome.failure_code},

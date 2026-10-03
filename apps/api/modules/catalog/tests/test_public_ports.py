@@ -20,7 +20,7 @@ from api.modules.catalog.public import (
 )
 from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import ORG_B, SHA_A, insert_version, rows
-from api.modules.catalog.tests.support_api import USERS, CatalogApi, create_dataset, new_draft
+from api.modules.catalog.tests.support_api import USERS, CatalogApi, create_dataset, new_draft, publish_draft
 from api.modules.catalog.tests.support_upload import upload_files
 from api.platform import clock, ports
 from api.platform.storage import StorageNotConfigured
@@ -32,7 +32,7 @@ FILES = {"data/b.csv": b"x,y\n3,4\n", "B.md": b"# B\n", "data/a.csv": b"x,y\n1,2
 def published_version(api: CatalogApi, db: PgUrls) -> tuple[str, str]:
     dataset_id, version_id = new_draft(api)
     upload_files(api, db, version_id, FILES)
-    assert api.post("b.steward", f"/dataset-versions/{version_id}/publish").status_code == 200
+    assert publish_draft(api, version_id).status_code == 200
     return dataset_id, version_id
 
 

@@ -2,7 +2,6 @@
 
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 from uuid import UUID
@@ -26,10 +25,14 @@ from api.modules.catalog.domain import (
 )
 from api.modules.catalog.errors import dependency_errors
 from api.modules.catalog.objects import MultipartFailed, ObjectStore, StorageUnavailable
+from api.modules.catalog.previews.store import drop_previews
 from api.modules.catalog.repo import load_dataset, load_version, must
 from api.modules.catalog.schemas import UploadFileIn, UploadSessionCreateIn
 from api.modules.catalog.settings import CatalogSettings
 from api.modules.catalog.tables import dataset_files, upload_sessions
+from api.modules.catalog.versioning.refs import StorageCleanup as StorageCleanup  # re-export
+from api.modules.catalog.versioning.refs import cleanup_target as cleanup_target  # re-export
+from api.modules.catalog.versioning.refs import release_objects
 from api.platform import clock
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
@@ -87,20 +90,6 @@ def _validate_files(files: Sequence[UploadFileIn], settings: CatalogSettings) ->
             "File exceeds the per-file limit.",
             {"files": too_large, "max_bytes": MAX_FILE_BYTES},
         )
-
-
-@dataclass(frozen=True)
-class StorageCleanup:
-    """An object (and optional multipart upload) to remove best-effort AFTER the transaction committed."""
-
-    bucket: str
-    key: str
-    multipart_upload_id: str | None = None
-
-
-def cleanup_target(f: Mapping[Any, Any]) -> StorageCleanup:
-    upload_id = f["multipart_upload_id"] if f["status"] in ("PENDING", "FAILED") else None
-    return StorageCleanup(f["storage_bucket"], f["storage_key"], upload_id)
 
 
 def run_cleanups(deps: CatalogDeps, targets: Sequence[StorageCleanup]) -> None:
@@ -189,7 +178,9 @@ def _existing_rows(session: Session, version_id: UUID, paths: Sequence[str]) -> 
         )
         .select_from(
             dataset_files.join(
-                upload_sessions, dataset_files.c.upload_session_id == upload_sessions.c.upload_session_id
+                upload_sessions,
+                dataset_files.c.upload_session_id == upload_sessions.c.upload_session_id,
+                isouter=True,  # inherited rows (spec §3.3b) have no upload session
             )
         )
         .where(dataset_files.c.dataset_version_id == version_id, dataset_files.c.path.in_(list(paths)))
@@ -200,7 +191,8 @@ def _existing_rows(session: Session, version_id: UUID, paths: Sequence[str]) -> 
 def create_upload_session(
     session: Session, deps: CatalogDeps, user: CurrentUser, version_id: UUID, body: UploadSessionCreateIn
 ) -> tuple[dict[str, Any], list[StorageCleanup]]:
-    """Returns the response and the old objects of re-used rows, to be removed after commit."""
+    """Returns the response and the old objects of re-used rows that nothing references any more, to be removed
+    after commit."""
     version, ds = steward_version(session, user, version_id, for_update=True)
     require_draft(version)
     settings = deps.settings
@@ -211,9 +203,15 @@ def create_upload_session(
     conflicts = sorted(
         path
         for path, row in existing.items()
-        if row["status"] in ("UPLOADED", "VERIFIED")
-        or (
-            row["status"] == "PENDING" and row["session_status"] == "OPEN" and row["session_expires_at"] > now
+        # An inherited row is replaceable: re-uploading its path is how a draft changes an inherited file.
+        if row["inherited_from_file_id"] is None
+        and (
+            row["status"] in ("UPLOADED", "VERIFIED")
+            or (
+                row["status"] == "PENDING"
+                and row["session_status"] == "OPEN"
+                and row["session_expires_at"] > now
+            )
         )
     )
     if conflicts:
@@ -229,7 +227,9 @@ def create_upload_session(
             f"A version holds at most {MAX_FILES_PER_VERSION} files.",
             {"fields": [{"field": "files", "reason": "TOO_MANY_FILES"}]},
         )
-    orphans: list[StorageCleanup] = []
+    replaced: list[RowMapping] = []
+    # Protocol (f): rows re-pointed in place below keep their file_id; their preview rows describe the old object.
+    drop_previews(session, [row["file_id"] for row in existing.values()])
     with dependency_errors():
         store = org_store(deps, ds)
         upload_session_id = new_id()
@@ -275,10 +275,14 @@ def create_upload_session(
                 )
                 continue
             if old["storage_key"] != key:
-                orphans.append(cleanup_target(old))
+                replaced.append(old)
             session.execute(
-                update(dataset_files).where(dataset_files.c.file_id == old["file_id"]).values(**values)
+                update(dataset_files)
+                .where(dataset_files.c.file_id == old["file_id"])
+                .values(**values, inherited_from_file_id=None)
             )
+        # The superseded object is removed after commit only if no other row (e.g. a published one) shares it.
+        orphans = release_objects(session, replaced)
         return upload_session_response(session, deps, upload_session_id), orphans
 
 

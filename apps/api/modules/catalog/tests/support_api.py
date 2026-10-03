@@ -133,3 +133,12 @@ def new_draft(api: CatalogApi, user: str = "b.steward", **dataset_overrides: Any
     response = api.post(user, f"/datasets/{dataset_id}/versions", json={"version_label": "v1"})
     assert response.status_code == 201, response.text
     return dataset_id, response.json()["dataset_version_id"]
+
+
+def publish_draft(
+    api: CatalogApi, version_id: str, user: str = "b.steward", note: str = "change note"
+) -> httpx.Response:
+    """publishDatasetVersion with the change note it requires (spec §3.3): PATCH the note as the same user first.
+    The PATCH result is ignored so callers still see publish's own errors (403/404/409)."""
+    api.patch(user, f"/dataset-versions/{version_id}", json={"change_note": note})
+    return api.post(user, f"/dataset-versions/{version_id}/publish")

@@ -9,6 +9,7 @@ from pydantic import (
     ConfigDict,
     EmailStr,
     Field,
+    StrictBool,
     StrictInt,
     StringConstraints,
     field_validator,
@@ -156,6 +157,24 @@ class DatasetUpdateIn(ResearchIn):
 class VersionCreateIn(StrictIn):
     version_label: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._-]{1,32}$")]
     change_note: Annotated[str, StringConstraints(max_length=2000)] | None = None
+    from_version_id: UUID | None = None
+    empty: StrictBool = False
+
+
+class VersionUpdateIn(StrictIn):
+    change_note: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=2000)]
+
+
+RebasePath = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._/-]{1,512}$")]
+MAX_REBASE_RESOLUTIONS = 10_000  # contract RebaseRequest.resolutions maxProperties
+
+
+class RebaseIn(StrictIn):
+    """rebaseDatasetVersion: path -> MINE | THEIRS, only for paths in conflict (others: 422 UNKNOWN_PATH)."""
+
+    resolutions: dict[RebasePath, Literal["MINE", "THEIRS"]] = Field(
+        default_factory=dict, max_length=MAX_REBASE_RESOLUTIONS
+    )
 
 
 class UploadFileIn(StrictIn):

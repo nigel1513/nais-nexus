@@ -6,11 +6,13 @@ import pyarrow.parquet as pq
 import pytest
 
 from api.modules.catalog.previews.profile import (
+    MAX_TOTAL_ROWS,
     FieldHint,
     PreviewLimits,
     PreviewTimeout,
     Unparseable,
     make_deadline,
+    parquet_total_rows,
     profile_table,
     table_format,
 )
@@ -49,6 +51,7 @@ def test_csv_profile_types_missing_distinct() -> None:
     result = run(CSV)
     cols = {c["name"]: c for c in result.column_profile}
     assert result.format == "csv" and result.rows_sampled == 1000 and not result.truncated
+    assert result.total_rows == 1000  # read to the end: the count is exact
     assert cols["temperature_c"]["type"] == "number" and cols["sample_id"]["type"] == "string"
     assert cols["note"]["missing_ratio"] == pytest.approx(0.1)
     assert cols["material"]["distinct_count"] == 3 and cols["material"]["distinct_capped"] is False
@@ -91,6 +94,7 @@ def test_cells_are_truncated_and_payload_capped() -> None:
 def test_limits_mark_truncation() -> None:
     result = run(CSV, limits=PreviewLimits(max_rows=50))
     assert result.truncated and result.rows_sampled == 50
+    assert result.total_rows is None  # a truncated CSV sample does not know the total
 
 
 def test_too_many_columns_are_dropped() -> None:
@@ -118,12 +122,13 @@ def test_long_line_is_unparseable_and_deadline_times_out() -> None:
 
 
 def test_tsv_and_parquet() -> None:
-    assert run(b"a\tb\n1\t2\n", path="t.tsv").column_profile[1]["type"] == "integer"
+    tsv = run(b"a\tb\n1\t2\n", path="t.tsv")
+    assert tsv.column_profile[1]["type"] == "integer" and tsv.total_rows == 1
     sink = io.BytesIO()
     pq.write_table(pa.table({"x": [1.5, 2.5, None], "y": ["a", "b", "a"]}), sink)
     result = run(sink.getvalue(), path="p.parquet")
     cols = {c["name"]: c for c in result.column_profile}
-    assert result.format == "parquet" and cols["x"]["type"] == "number"
+    assert result.format == "parquet" and cols["x"]["type"] == "number" and result.total_rows == 3
     assert cols["x"]["missing_ratio"] == pytest.approx(1 / 3)
     assert result.preview["rows"][2] == [None, "a"]
 
@@ -266,6 +271,7 @@ def test_corrupt_parquet_is_unparseable_and_storage_errors_propagate() -> None:
 def test_parquet_rows_are_capped() -> None:
     result = run(_parquet_bytes(), path="p.parquet", limits=PreviewLimits(max_rows=700))
     assert result.truncated and result.rows_sampled == 700
+    assert result.total_rows is not None and result.total_rows > 700  # parquet metadata knows the total
 
 
 def test_empty_and_header_only() -> None:
@@ -1040,3 +1046,22 @@ def test_uncompressed_dictionary_with_tiny_declared_size_stays_bounded(entry: in
     if entry > PreviewLimits().max_bytes // 4:
         assert kinds == ["other", "other"]
     assert grown_mb < 512
+
+
+@pytest.mark.parametrize(
+    ("num_rows", "sampled", "truncated", "expected"),
+    [
+        (10, 10, False, 10),  # a full read reports what was decoded
+        (99, 10, False, 10),  # ... whatever the footer claims
+        (2**63 - 1, 700, True, None),  # hostile: beyond a safe JSON integer
+        (MAX_TOTAL_ROWS, 700, True, MAX_TOTAL_ROWS),
+        (-5, 700, True, None),  # hostile: negative
+        (3, 700, True, 700),  # hostile: fewer rows than were decoded
+        (5000, 700, True, 5000),
+        ("5000", 700, True, None),  # not an int
+    ],
+)
+def test_parquet_total_rows_never_trusts_the_footer(
+    num_rows: object, sampled: int, truncated: bool, expected: int | None
+) -> None:
+    assert parquet_total_rows(num_rows, sampled, truncated) == expected

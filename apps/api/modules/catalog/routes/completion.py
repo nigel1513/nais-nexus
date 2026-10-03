@@ -41,5 +41,6 @@ def delete_draft_file(
     deps: CatalogDepsDep,
 ) -> Response:
     target = service.delete_draft_file(session, deps, user, version_id, file_id)
-    background.add_task(run_cleanups, deps, [target])  # after SessionDep committed
+    if target is not None:  # None: the object is still referenced by another row
+        background.add_task(run_cleanups, deps, [target])  # after SessionDep committed
     return Response(status_code=204)

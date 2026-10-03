@@ -60,7 +60,7 @@ def verify_file_job(file_id: UUID, *, deps: CatalogDeps) -> str | None:
         return None
     if outcome.failed:
         try:
-            store.delete(row["storage_key"])
+            store.delete(row["storage_key"])  # session-owned key (D-039): never shared with an inherited row
         except StorageUnavailable:
             logger.warning("could not delete failed object", extra={"file_id": str(file_id)}, exc_info=True)
     logger.info(
@@ -93,7 +93,7 @@ def _cleanup_partial_upload(deps: CatalogDeps, f: Mapping[Any, Any]) -> None:
         store = deps.storage.for_bucket(f["storage_bucket"])
         if f["multipart_upload_id"]:
             abort_quietly(store, f["storage_key"], f["multipart_upload_id"])
-        store.delete(f["storage_key"])
+        store.delete(f["storage_key"])  # session-owned key (D-039): never shared with an inherited row
     except Exception:
         logger.warning(
             "could not clean up an expired upload", extra={"file_id": str(f["file_id"])}, exc_info=True

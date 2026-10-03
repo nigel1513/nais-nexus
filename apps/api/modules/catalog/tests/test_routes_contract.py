@@ -30,6 +30,12 @@ EXPECTED = {
     "completeUploadSession",
     "deleteDraftFile",
     "publishDatasetVersion",
+    "updateDatasetVersion",
+    "discardDatasetVersion",
+    "compareDatasetVersions",
+    "rebaseDatasetVersion",
+    "getFileHistory",
+    "getDatasetCitation",
     "getFileProfile",
     "getFilePreview",
 }

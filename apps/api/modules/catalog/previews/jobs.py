@@ -164,6 +164,7 @@ def generate_preview_job(file_id: UUID, *, deps: CatalogDeps) -> str:
             "column_profile": {
                 "format": result["format"],
                 "rows_sampled": result["rows_sampled"],
+                "total_rows": result["total_rows"],
                 "truncated": result["truncated"],
                 "columns_truncated": result["columns_truncated"],
                 "columns": result["column_profile"],

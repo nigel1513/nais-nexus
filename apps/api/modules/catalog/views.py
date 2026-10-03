@@ -85,12 +85,19 @@ def file_view(f: Mapping[Any, Any]) -> dict[str, Any]:
         "sha256": f["sha256"],
         "media_type": f["media_type"],
         "status": f["status"],
+        "inherited": f["inherited_from_file_id"] is not None,
     }
 
 
 def version_view(
-    version: Mapping[Any, Any], files: Sequence[Mapping[Any, Any]], readiness: str | None
+    version: Mapping[Any, Any],
+    files: Sequence[Mapping[Any, Any]],
+    readiness: str | None,
+    *,
+    base_is_latest: bool | None = None,
+    change_summary: Mapping[str, int] | None = None,
 ) -> dict[str, Any]:
+    """`base_is_latest` is set for DRAFT versions only; `change_summary` is filled by the diff layer."""
     return {
         **version_summary(version, readiness),
         "dataset_id": version["dataset_id"],
@@ -100,4 +107,10 @@ def version_view(
         "total_bytes": sum(int(f["size_bytes"]) for f in files),
         "manifest_sha256": version["manifest_sha256"],
         "created_at": version["created_at"],
+        "created_by": version["created_by"],
+        "base_version_id": version["base_version_id"],
+        "source_version_id": version["source_version_id"],
+        "previous_version_id": version["previous_version_id"],
+        "base_is_latest": base_is_latest,
+        "change_summary": None if change_summary is None else dict(change_summary),
     }

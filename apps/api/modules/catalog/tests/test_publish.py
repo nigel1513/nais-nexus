@@ -9,7 +9,7 @@ from sqlalchemy.exc import DBAPIError
 from api.modules.catalog.domain import SNAPSHOT_FIELDS, manifest_sha256
 from api.modules.catalog.service import publish as publish_service
 from api.modules.catalog.tests.support import execute, outbox_events, rows
-from api.modules.catalog.tests.support_api import USERS, CatalogApi, new_draft
+from api.modules.catalog.tests.support_api import USERS, CatalogApi, new_draft, publish_draft
 from api.modules.catalog.tests.support_upload import (
     complete,
     file_spec,
@@ -25,7 +25,7 @@ FILES = {"data/b.csv": b"x,y\n3,4\n", "README.md": b"# Battery\n", "data/a.csv":
 
 
 def publish(api: CatalogApi, version_id: str, user: str = "b.steward"):  # type: ignore[no-untyped-def]
-    return api.post(user, f"/dataset-versions/{version_id}/publish")
+    return publish_draft(api, version_id, user)
 
 
 def test_publish_freezes_manifest_and_metadata(api: CatalogApi, db: PgUrls) -> None:
@@ -147,12 +147,14 @@ def test_at13_new_version_after_publish(api: CatalogApi, db: PgUrls) -> None:
 def test_at14_same_files_in_different_order_give_the_same_manifest(api: CatalogApi, db: PgUrls) -> None:
     dataset_id, first = new_draft(api)
     upload_files(api, db, first, FILES)
-    second = api.post("b.steward", f"/datasets/{dataset_id}/versions", json={"version_label": "v2"}).json()[
-        "dataset_version_id"
-    ]
+    manifests = [publish(api, first).json()["manifest_sha256"]]
+    # An empty draft on top of the first (a draft created before that publish would be stale, spec §3.3b).
+    second = api.post(
+        "b.steward", f"/datasets/{dataset_id}/versions", json={"version_label": "v2", "empty": True}
+    ).json()["dataset_version_id"]
     for path in reversed(list(FILES)):
         upload_files(api, db, second, {path: FILES[path]})
-    manifests = [publish(api, version_id).json()["manifest_sha256"] for version_id in (first, second)]
+    manifests.append(publish(api, second).json()["manifest_sha256"])
     assert manifests[0] == manifests[1]
 
 
@@ -188,6 +190,10 @@ def test_concurrent_update_waits_for_publish_and_snapshot_is_pre_patch(
 ) -> None:
     dataset_id, version_id = new_draft(api)
     upload_files(api, db, version_id, FILES)
+    assert (
+        api.patch("b.steward", f"/dataset-versions/{version_id}", json={"change_note": "first"}).status_code
+        == 200
+    )
     outcome: dict[str, object] = {}
 
     def patch() -> None:

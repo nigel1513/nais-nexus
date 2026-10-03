@@ -30,7 +30,8 @@ def _spec() -> dict[str, Any]:
 
 def test_version_and_new_operations() -> None:
     spec = _spec()
-    assert spec["info"]["version"] == "1.4.0"
+    major, minor, *_ = (int(x) for x in spec["info"]["version"].split("."))
+    assert (major, minor) >= (1, 4)  # Ruling S1: later contracts (1.5, 1.6) keep these operations
     for op_id, (method, path) in NEW_OPS.items():
         op = spec["paths"][path][method]
         assert op["operationId"] == op_id
@@ -145,3 +146,9 @@ def test_rebase_conflict_and_history_and_citation_match() -> None:
     assert_matches_response(
         "getDatasetCitation", 200, {"dataset_version_id": V1, "style": "bibtex", "content": "@misc{x}"}
     )
+
+
+def test_citation_declares_422() -> None:
+    """1.4.1: an unknown citation style is a 422 VALIDATION_FAILED."""
+    op = _spec()["paths"]["/dataset-versions/{version_id}/citation"]["get"]
+    assert op["responses"]["422"] == {"$ref": "#/components/responses/Error"}

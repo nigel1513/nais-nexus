@@ -2,7 +2,7 @@ import json
 from uuid import UUID
 
 from api.modules.catalog.tests.support import rows, seed_user_id
-from api.modules.catalog.tests.support_api import CatalogApi, dataset_body
+from api.modules.catalog.tests.support_api import CatalogApi, dataset_body, publish_draft
 from api.modules.catalog.tests.support_upload import upload_files
 from api.platform.testing.fixtures import PgUrls
 
@@ -12,7 +12,7 @@ def publish_with_file(api: CatalogApi, db: PgUrls, dataset_id: str) -> str:
         "b.steward", f"/datasets/{dataset_id}/versions", json={"version_label": "v1"}
     ).json()["dataset_version_id"]
     upload_files(api, db, version_id, {"data/a.csv": b"x,y\n1,2\n"})
-    assert api.post("b.steward", f"/dataset-versions/{version_id}/publish").status_code == 200
+    assert publish_draft(api, version_id).status_code == 200
     return version_id
 
 

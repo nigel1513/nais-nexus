@@ -127,6 +127,7 @@ def _run(pipe: _Pipe, job: dict[str, Any]) -> dict[str, Any]:
         "result": {
             "format": result.format,
             "rows_sampled": result.rows_sampled,
+            "total_rows": result.total_rows,
             "truncated": result.truncated,
             "columns_truncated": result.columns_truncated,
             "column_profile": result.column_profile,
