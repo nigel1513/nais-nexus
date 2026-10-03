@@ -15,6 +15,7 @@ import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
 import { ScreenTitle } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
+import { NotebookErrorAlert, OpenNotebookLink } from "@/features/notebooks/notebook-link";
 import { draftPending, useDraftNote, useNote, useNoteSettings, useReviseNote, useSubmitNote, type ResearchNote } from "./api";
 import { ExportButton } from "./export-button";
 import { NoteForm, useNoteEditor, type NoteEditorState } from "./note-editor";
@@ -103,6 +104,8 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
 
   const actions = (
     <>
+      {/* With drafting on, the link sits next to "AI 초안 만들기" (NoteStatusBar); without it, it leads the actions. */}
+      {editable && !settings.data?.llm_enabled ? <OpenNotebookLink projectId={note.project_id}>{t("notes.ai.openNotebook")}</OpenNotebookLink> : null}
       {editable ? (
         note.witness_required ? (
           <Button variant="primary" className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50" aria-disabled={blockedByAi || undefined} aria-describedby={blockedByAi ? ids.ai : undefined} onClick={() => (blockedByAi ? aiNotice.current?.focus() : setDialog("submit"))}>
@@ -178,6 +181,7 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
               ? {
                   show: true,
                   disabledReason: note.draft_source_count === 0 ? t("notes.ai.noSource") : null,
+                  notebook: <OpenNotebookLink projectId={note.project_id}>{t("notes.ai.openNotebook")}</OpenNotebookLink>,
                   busy: draft.isPending || draftPending(note),
                   onClick: () => void startDraft(),
                   reasonId: ids.reason,
@@ -186,6 +190,8 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
           }
           actions={actions}
         />
+
+        <NotebookErrorAlert />
 
         {editable && note.rejected_reason ? (
           <div className="flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft p-3 text-small text-fg">

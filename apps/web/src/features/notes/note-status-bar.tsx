@@ -31,7 +31,15 @@ function SaveStatus({ editor }: { editor: NoteEditorState }) {
   );
 }
 
-export type DraftButtonState = { show: boolean; disabledReason: string | null; busy: boolean; onClick: () => void; reasonId: string };
+export type DraftButtonState = {
+  show: boolean;
+  disabledReason: string | null;
+  busy: boolean;
+  onClick: () => void;
+  reasonId: string;
+  /** "노트북 열기" next to the AI draft button (the day's notebooks are its source). */
+  notebook?: ReactNode;
+};
 
 /**
  * The bar above the form: status, version and (while editing) the save state on the left; on the right the actions
@@ -53,6 +61,7 @@ export function NoteStatusBar({ note, editor, draft, actions }: { note: Research
             {t("notes.ai.draft")}
           </Button>
         ) : null}
+        {draft?.show ? draft.notebook : null}
         {actions}
       </div>
       {draft?.show && draft.disabledReason ? (

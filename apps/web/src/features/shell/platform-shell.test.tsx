@@ -39,7 +39,7 @@ describe("PlatformShell: sidebar", () => {
     setLocation("/commons/projects");
     renderWithProviders(<PlatformShell>{page}</PlatformShell>, { user: USER.aResearcher });
     const nav = await screen.findByRole("navigation", { name: "주 메뉴" });
-    expect(within(nav).getAllByRole("link").map((l) => l.textContent)).toEqual(["대시보드", "데이터 허브", "전체 데이터", "프로젝트", "연구노트", "접근 관리", "활동"]);
+    expect(within(nav).getAllByRole("link").map((l) => l.textContent)).toEqual(["대시보드", "데이터 허브", "전체 데이터", "프로젝트", "연구노트", "노트북", "접근 관리", "활동"]);
     expect(within(nav).getByRole("link", { name: "데이터 허브" })).toHaveAttribute("href", "/commons/hub");
     expect(within(nav).getByRole("link", { name: "연구노트" })).toHaveAttribute("href", "/commons/notes");
     expect(within(nav).getByRole("link", { name: "프로젝트" })).toHaveAttribute("aria-current", "page");
@@ -48,10 +48,9 @@ describe("PlatformShell: sidebar", () => {
     expect(within(nav).getByRole("list", { name: "작업" })).toBeInTheDocument();
     expect(within(nav).getByRole("list", { name: "거버넌스" })).toBeInTheDocument();
     expect(within(nav).queryByRole("list", { name: "관리" })).not.toBeInTheDocument();
-    // Notebooks are announced but not a link yet (no dead link).
-    const notebooks = within(nav).getByText("노트북").closest("[aria-disabled]");
-    expect(notebooks).toHaveAttribute("aria-disabled", "true");
-    expect(within(notebooks as HTMLElement).getByText("예정")).toBeInTheDocument();
+    // 노트북 (M07-lite): a real destination now, no "예정" badge.
+    expect(within(nav).getByRole("link", { name: "노트북" })).toHaveAttribute("href", "/commons/notebooks");
+    expect(within(nav).queryByText("예정")).not.toBeInTheDocument();
 
     expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(screen.getByRole("main")).toContainElement(screen.getByRole("heading", { name: "본문" }));
