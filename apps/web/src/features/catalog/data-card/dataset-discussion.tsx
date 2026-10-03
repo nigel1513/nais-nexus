@@ -41,7 +41,8 @@ export function DatasetDiscussion({ datasetId, steward, titleId }: { datasetId: 
         id={titleId}
         crumb={t("data.card.hero.discussionCrumb")}
         title={t("data.card.discussionTitle")}
-        count={threads.data ? rows.length : undefined}
+        // The count is the full total only once every page is loaded; otherwise it is left out.
+        count={threads.data && !threads.hasNextPage ? rows.length : undefined}
         right={
           !open && !composing ? (
             <Button onClick={() => setComposing(true)}>
@@ -74,6 +75,11 @@ export function DatasetDiscussion({ datasetId, steward, titleId }: { datasetId: 
                 openThread(th.thread_id);
               }}
             />
+          ) : null}
+          {openId && threads.isSuccess ? (
+            <p role="status" className="text-small text-fg-muted">
+              {t("discussion.notFound")}
+            </p>
           ) : null}
           <ThreadList selector={selector} onOpen={(th) => openThread(th.thread_id)} />
         </>

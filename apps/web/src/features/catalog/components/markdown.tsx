@@ -1,6 +1,7 @@
 "use client";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { ReactNode } from "react";
 
 /** Allow only http, https, mailto and relative/fragment links; everything else (javascript:, data:, tel:, ...) is dropped. */
 export function urlTransform(url: string): string {
@@ -42,10 +43,22 @@ const components: Components = {
  * Safe markdown: GFM, raw HTML skipped, urlTransform (http/https/mailto/relative only); headings demoted under the
  * page's single h1. Long-form type (15/26) capped at 72ch for comfortable reading.
  */
-export function Markdown({ source }: { source: string }) {
+const h6 = ({ children }: { children?: ReactNode }) => <h6 className="mt-4 mb-1 text-body font-semibold text-fg">{children}</h6>;
+/** One level deeper, for markdown inside a section that already has an h3 (a discussion thread). */
+const nested: Components = {
+  ...components,
+  h1: ({ children }) => <h4 className={sub}>{children}</h4>,
+  h2: ({ children }) => <h5 className="mt-4 mb-1 text-body font-semibold text-fg">{children}</h5>,
+  h3: h6,
+  h4: h6,
+  h5: h6,
+  h6: h6,
+};
+
+export function Markdown({ source, nestedHeadings = false }: { source: string; nestedHeadings?: boolean }) {
   return (
     <div className="max-w-[72ch] break-words text-long text-fg">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={urlTransform} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml urlTransform={urlTransform} components={nestedHeadings ? nested : components}>
         {source}
       </ReactMarkdown>
     </div>

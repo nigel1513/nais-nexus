@@ -4,7 +4,7 @@ import { Database, Search } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLocale, useTranslations } from "next-intl";
-import { useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 import { useListVocabulary } from "@/features/catalog/api";
 import { useMeData } from "@/shared/hooks/use-me";
 import { DateTime } from "@/shared/ui/date-text";
@@ -114,15 +114,29 @@ function ChipRow({ label, items }: { label: string; items: { key: string; label:
   );
 }
 
+/**
+ * HubCard.subject_labels are Korean (API). In Korean they show as is; otherwise the label is looked up in the SUBJECT
+ * vocabulary (the chips use the same terms) and left out when no translation is known.
+ */
+function useSubjectLabel(): (label: string) => string | null {
+  const locale = useLocale();
+  const subjects = useListVocabulary("SUBJECT");
+  return useCallback(
+    (label: string) => (locale === "ko" ? label : (subjects.data?.items.find((s) => s.label_ko === label)?.label_en ?? null)),
+    [locale, subjects.data],
+  );
+}
+
 function Rail({ rail, cards }: { rail: HubRail; cards: HubCardT[] }) {
   const t = useTranslations();
+  const subjectLabel = useSubjectLabel();
   const id = `hub-rail-${rail}`;
   return (
     <section aria-labelledby={id} className="flex flex-col gap-4">
       <PanelHead id={id} crumb={t(`hub.rails.${rail}.crumb`)} title={t(`hub.rails.${rail}.title`)} right={<span className="text-small text-fg-muted">{t(`hub.rails.${rail}.basis`)}</span>} />
       <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {cards.map((c) => (
-          <HubCard key={c.dataset_id} card={c} rail={rail} />
+          <HubCard key={c.dataset_id} card={c} rail={rail} subjectLabel={subjectLabel} />
         ))}
       </ul>
     </section>

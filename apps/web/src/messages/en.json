@@ -266,7 +266,8 @@
         "submit": "Add as input",
         "noProject": "No project to add it to. You need a researcher role or above in an active project.",
         "done": "Added to \"{project}\" as an input",
-        "doneVersion": "Pinned version {version}"
+        "doneVersion": "Pinned version {version}",
+        "usageFailed": "Could not check which projects already use this data. Try again shortly."
       }
     },
     "people": {
@@ -946,6 +947,10 @@
     "comments": "Comments",
     "edited": "(edited)",
     "reply": "Reply",
-    "send": "Post reply"
+    "send": "Post reply",
+    "notFound": "Thread not found in the list."
+  },
+  "reserved": {
+    "notes": "Research notes"
   }
 }

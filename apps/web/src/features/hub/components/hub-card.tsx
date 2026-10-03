@@ -12,11 +12,11 @@ export type HubRail = "trending" | "recent" | "most_used";
  * One dataset on a hub rail: the title (a stretched link over the card), one meta line — 기관 · 분야 · 접근 등급 ·
  * AI-ready · 최근 갱신 — and, when the rail counts something, the real figure. A missing value is left out, never padded.
  */
-export function HubCard({ card, rail }: { card: HubCardT; rail: HubRail }) {
+export function HubCard({ card, rail, subjectLabel }: { card: HubCardT; rail: HubRail; subjectLabel: (label: string) => string | null }) {
   const t = useTranslations();
   const meta = [
     card.owner_organization_name,
-    card.subject_labels[0],
+    card.subject_labels[0] ? subjectLabel(card.subject_labels[0]) : null,
     t(`enums.AccessLevel.${card.access_level}`),
     card.readiness_overall ? t("hub.card.aiReady", { status: t(`enums.ReadinessOverall.${card.readiness_overall}`) }) : null,
     t("hub.card.updated", { date: formatDate(card.updated_at) }),

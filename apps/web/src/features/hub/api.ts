@@ -4,6 +4,7 @@ import { useAuthReady } from "@/features/auth/use-auth-ready";
 import { api, unwrap } from "@/shared/api/client";
 import { nextCursor } from "@/shared/api/pagination";
 import type { Page, Schemas } from "@/shared/api/types";
+import { listProjectInputsKey } from "@/features/workspace/query-keys";
 
 export type HubOverview = Schemas["HubOverview"];
 export type HubCard = Schemas["HubCard"];
@@ -52,7 +53,7 @@ export function useAddProjectInput() {
     onSuccess: (input) => {
       void qc.invalidateQueries({ queryKey: ["listDatasetProjects", { datasetId: input.dataset_id }] });
       void qc.invalidateQueries({ queryKey: ["listDatasetActivity", { datasetId: input.dataset_id }] });
-      void qc.invalidateQueries({ queryKey: ["listProjectInputs", { projectId: input.project_id }] });
+      void qc.invalidateQueries({ queryKey: listProjectInputsKey(input.project_id) });
       void qc.invalidateQueries({ queryKey: ["getHubOverview"] });
     },
   });

@@ -73,7 +73,7 @@ export function ThreadView({ thread, onBack, canModerate, focusOnMount = false }
                   {c.edited_at ? <span className="text-fg-muted">{t("discussion.edited")}</span> : null}
                 </p>
                 <div className="[&_.text-long]:text-body">
-                  <Markdown source={c.body} />
+                  <Markdown source={c.body} nestedHeadings />
                 </div>
               </div>
             </li>

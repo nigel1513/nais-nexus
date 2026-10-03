@@ -49,6 +49,8 @@ function OpenForm({ dataset, version, onDone, onRequestAccess }: { dataset: Data
   const t = useTranslations();
   const errorText = useErrorText();
   const id = useId();
+  // One page of up to 100 active projects (the API maximum), as the access request dialog does: a researcher is in far
+  // fewer, so no paging here.
   const projects = useListProjects({ scope: "mine", status: "ACTIVE", limit: 100 });
   const using = useDatasetProjects(dataset.dataset_id);
   const add = useAddProjectInput();
@@ -74,7 +76,7 @@ function OpenForm({ dataset, version, onDone, onRequestAccess }: { dataset: Data
 
   const apiError = error ? asApiError(error) : null;
   const submit = () => {
-    if (!projectId) return;
+    if (!projectId || using.isError) return;
     setError(null);
     const project = writable.find((p) => p.project_id === projectId);
     add.mutate(
@@ -126,6 +128,11 @@ function OpenForm({ dataset, version, onDone, onRequestAccess }: { dataset: Data
       <FormField id={`${id}-note`} label={t("data.card.openInProject.note")} hint={t("data.card.openInProject.noteHint")}>
         {(a11y) => <Textarea {...a11y} rows={2} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} />}
       </FormField>
+      {using.isError ? (
+        <p role="alert" className="text-small text-danger">
+          {t("data.card.openInProject.usageFailed")}
+        </p>
+      ) : null}
       {apiError ? (
         <div role="alert" className="flex gap-2 rounded-sm bg-warning-soft p-3 text-small">
           <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
@@ -143,7 +150,7 @@ function OpenForm({ dataset, version, onDone, onRequestAccess }: { dataset: Data
         <Button variant="ghost" onClick={onDone}>
           {t("common.cancel")}
         </Button>
-        <Button type="submit" variant="primary" disabled={!projectId || add.isPending}>
+        <Button type="submit" variant="primary" disabled={!projectId || add.isPending || using.isError}>
           {t("data.card.openInProject.submit")}
         </Button>
       </DialogFooter>

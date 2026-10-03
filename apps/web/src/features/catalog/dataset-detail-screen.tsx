@@ -71,10 +71,15 @@ export function DatasetDetailScreen({ datasetId }: { datasetId: string }) {
   const [requesting, setRequesting] = useState(false);
   const contactRef = useRef<HTMLElement>(null);
   const linked = LINKED_SECTIONS.find((s) => s === params.get("tab"));
-  const landed = useRef(false);
+  // Land once per ?tab= value: a new value (another notification link on the same page) lands again.
+  const landed = useRef<CardSection | undefined>(undefined);
   useEffect(() => {
-    if (landed.current || !linked || !ds.isSuccess) return;
-    landed.current = true;
+    if (!linked) {
+      landed.current = undefined;
+      return;
+    }
+    if (!ds.isSuccess || landed.current === linked) return;
+    landed.current = linked;
     landOn(linked);
   }, [linked, ds.isSuccess]);
 

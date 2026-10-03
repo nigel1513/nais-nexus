@@ -1,12 +1,17 @@
-import { configure, screen, waitFor, within } from "@testing-library/react";
+import { act, configure, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 import { getDb } from "@/mocks/db";
 import { DATASET, PROJECT, THREAD, USER } from "@/mocks/fixtures";
+import { server } from "../../../tests/msw";
+import { setLocation } from "../../../tests/navigation";
 import { renderScreen } from "../../../tests/render";
 import { DatasetDetailScreen } from "./dataset-detail-screen";
 
 configure({ asyncUtilTimeout: 5000 });
+
+const API = "http://localhost:3000/mock-api/v1";
 
 const open = (dataset: string, user: string, query = "") => renderScreen(<DatasetDetailScreen datasetId={dataset} />, { user, path: `/commons/data/${dataset}${query}` });
 
@@ -107,5 +112,78 @@ describe("Data Card: 프로젝트에서 열기", () => {
     await userEvent.click(within(alert).getByRole("button", { name: "접근 요청" }));
     expect(await screen.findByRole("dialog", { name: "접근 요청" })).toBeInTheDocument();
     expect(getDb().inputs.some((i) => i.dataset_id === DATASET.sensors)).toBe(false);
+  });
+});
+
+describe("Data Card sections: review fixes", () => {
+  it("omits the thread count while more pages remain", async () => {
+    server.use(
+      http.get(`${API}/threads`, () =>
+        HttpResponse.json({
+          items: [
+            { thread_id: THREAD.dataset, scope: "DATASET", target_id: DATASET.battery, project_id: null, title: "temp_c 주기적 상승 구간 확인 요청", created_by: USER.aResearcher, created_by_display_name: "김민준", created_at: "2026-10-01T08:00:00Z", resolved: false, comment_count: 1, last_comment_at: "2026-10-01T08:00:00Z" },
+          ],
+          page: { next_cursor: "next", has_more: true },
+        }),
+      ),
+    );
+    open(DATASET.battery, USER.aResearcher);
+    const section = await screen.findByRole("region", { name: "토론" });
+    await within(section).findByRole("button", { name: /temp_c 주기적 상승 구간 확인 요청/ });
+    expect(section.querySelector(".sv-count")).toBeNull();
+  });
+
+  it("shows the count once the whole list is loaded", async () => {
+    open(DATASET.battery, USER.aResearcher);
+    const section = await screen.findByRole("region", { name: "토론" });
+    await within(section).findByRole("button", { name: /temp_c 주기적 상승 구간 확인 요청/ });
+    expect(section.querySelector(".sv-count")).toHaveTextContent("1");
+  });
+
+  it("an unknown ?thread= keeps the list and says the thread was not found", async () => {
+    open(DATASET.battery, USER.aResearcher, "?thread=00000000-0000-7000-8000-00000000ffff");
+    const section = await screen.findByRole("region", { name: "토론" });
+    expect(await within(section).findByText("목록에서 스레드를 찾지 못했습니다.")).toBeInTheDocument();
+    expect(within(section).getByRole("button", { name: /temp_c 주기적 상승 구간 확인 요청/ })).toBeInTheDocument();
+  });
+
+  it("lands again when ?tab= changes on the same page", async () => {
+    open(DATASET.battery, USER.aResearcher, "?tab=projects");
+    await waitFor(() => expect(document.getElementById("card-projects")).toHaveFocus());
+    act(() => setLocation(`/commons/data/${DATASET.battery}?tab=discussion`));
+    await waitFor(() => expect(document.getElementById("card-discussion")).toHaveFocus());
+  });
+
+  it("demotes markdown headings inside a thread below the thread title", async () => {
+    getDb().comments.push({ comment_id: "00000000-0000-7000-8000-00000000f399", thread_id: THREAD.dataset, body: "# 측정 조건\n\n## 챔버", author_id: USER.bSteward, created_at: "2026-10-02T09:00:00Z", edited_at: null });
+    open(DATASET.battery, USER.aResearcher, `?thread=${THREAD.dataset}`);
+    const thread = await screen.findByRole("article", { name: "temp_c 주기적 상승 구간 확인 요청" });
+    expect(await within(thread).findByRole("heading", { level: 4, name: "측정 조건" })).toBeInTheDocument();
+    expect(within(thread).getByRole("heading", { level: 5, name: "챔버" })).toBeInTheDocument();
+  });
+
+  it("shows an unknown validation result label as is", async () => {
+    server.use(
+      http.get(`${API}/datasets/:id/activity`, () =>
+        HttpResponse.json({
+          items: [{ activity_id: "00000000-0000-7000-8000-00000000f401", dataset_id: DATASET.battery, type: "READINESS_COMPLETED", label: "PARTIAL", ref_id: null, actor_display_name: null, project_id: null, occurred_at: "2026-10-01T08:00:00Z" }],
+          page: { next_cursor: null, has_more: false },
+        }),
+      ),
+    );
+    open(DATASET.battery, USER.aResearcher);
+    const section = await screen.findByRole("region", { name: "이력" });
+    expect(await within(section).findByText("PARTIAL")).toBeInTheDocument();
+  });
+
+  it("프로젝트에서 열기 stays disabled when the projects using the data cannot be checked", async () => {
+    server.use(http.get(`${API}/datasets/:id/projects`, () => HttpResponse.json({ error: { code: "INTERNAL_ERROR", message: "boom", trace_id: null } }, { status: 500 })));
+    open(DATASET.qcLogs, USER.bResearcher);
+    const header = (await screen.findByRole("heading", { level: 1, name: "소결 공정 배치별 품질관리 로그" })).closest("section")!;
+    await userEvent.click(within(header).getByRole("button", { name: "프로젝트에서 열기" }));
+    const dialog = await screen.findByRole("dialog", { name: "프로젝트에서 열기" });
+    await userEvent.click(await within(dialog).findByRole("radio", { name: /차세대 이차전지 소재 공동연구/ }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("확인하지 못했습니다");
+    expect(within(dialog).getByRole("button", { name: "입력으로 추가" })).toBeDisabled();
   });
 });

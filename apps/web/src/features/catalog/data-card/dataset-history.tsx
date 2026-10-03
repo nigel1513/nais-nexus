@@ -8,6 +8,9 @@ import { flattenPages } from "@/shared/api/pagination";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
 
+const READINESS = ["PASS", "WARNING", "FAIL"] as const;
+const isReadiness = (v: string): v is (typeof READINESS)[number] => (READINESS as readonly string[]).includes(v);
+
 const linkCls = cn("rounded-xs font-medium text-fg underline-offset-4 hover:underline", focusRing);
 
 /**
@@ -33,7 +36,8 @@ export function DatasetHistory({ datasetId, onOpenThread }: { datasetId: string;
           a.label
         );
       case "READINESS_COMPLETED":
-        return a.label ? t("data.card.history.readiness", { status: t(`enums.ReadinessOverall.${a.label as "PASS" | "WARNING" | "FAIL"}`) }) : null;
+        if (!a.label) return null;
+        return isReadiness(a.label) ? t("data.card.history.readiness", { status: t(`enums.ReadinessOverall.${a.label}`) }) : a.label;
       case "USED_IN_PROJECT":
         return a.project_id && a.label ? (
           <Link href={`/commons/projects/${a.project_id}`} className={linkCls}>
