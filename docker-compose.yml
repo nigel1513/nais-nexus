@@ -88,7 +88,9 @@ services:
       timeout: 3s
       retries: 20
 
+  # 2026-10-03: OpenSearch는 GPU PC(192.168.0.2:8005)로 옮김. 이 서비스는 기본으로 뜨지 않는다 (profile legacy-opensearch)
   opensearch:
+    profiles: ["legacy-opensearch"]
     build: infra/opensearch
     image: nais-opensearch:2.19.1-nori
     environment:
