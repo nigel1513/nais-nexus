@@ -105,6 +105,21 @@ describe("변환 (recipes)", () => {
     expect(await screen.findByRole("table", { name: "실행 기록" })).toHaveTextContent("성공");
   });
 
+  it("a failed run shows the Korean sentence for its error code, never the raw code", async () => {
+    const run = getDb().runs.find((r) => r.project_id === PROJECT.seed)!;
+    Object.assign(run, { status: "FAILED", error: "INPUT_TOO_LARGE", output_id: null });
+    const { unmount } = renderWorkspace(`${base}/recipes`, USER.aResearcher);
+    const table = await screen.findByRole("table", { name: "실행 기록" });
+    expect(await within(table).findByText("입력 데이터가 허용 크기를 넘었습니다.")).toBeInTheDocument();
+    expect(table).not.toHaveTextContent("INPUT_TOO_LARGE");
+    unmount();
+    run.error = "SOMETHING_NEW: English detail";
+    renderWorkspace(`${base}/recipes`, USER.aResearcher);
+    const again = await screen.findByRole("table", { name: "실행 기록" });
+    expect(await within(again).findByText("실행에 실패했습니다.")).toBeInTheDocument();
+    expect(again).not.toHaveTextContent("English");
+  });
+
   it("adds a step; a missing parameter and the server's RECIPE_INVALID are shown at the step", async () => {
     renderWorkspace(editor, USER.aResearcher);
     const steps = await screen.findByRole("region", { name: "변환 단계" });

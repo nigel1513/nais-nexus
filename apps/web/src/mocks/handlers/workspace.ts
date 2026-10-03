@@ -2,6 +2,9 @@ import { http, HttpResponse } from "msw";
 import type { Schemas } from "@/shared/api/types";
 import { getDb } from "../db";
 import { emptyResearch } from "../fixtures";
+import { lookup } from "@/i18n/messages";
+import ko from "@/messages/ko.json";
+import { runErrorKey, type RunErrorCode } from "@/shared/workspace/run-errors";
 import { API, body, currentUser, displayName, fail, ifMatch, isUuid, newestFirst, newId, notify, nowIso, only, optionalBody, orgName, paginate, projectName, publicOrigin, recordAudit, validationFailed } from "../http";
 import { applySteps, InputProblem, neededInputs, PREVIEW_INPUT_ROWS, PREVIEW_RESULT_ROWS, previewRows, readInput, schemaOnly, StepError, type Table, toCsv } from "../recipes";
 import { sha256Bytes, sha256Hex } from "../sha256";
@@ -20,6 +23,8 @@ import { memberOf } from "./projects";
  * Backend outcomes the mock never produces (no storage, timeouts or large files here):
  * - previewRecipe / createRecipe 503 DEPENDENCY_UNAVAILABLE (20 s read budget, storage outage);
  * - RECIPE_INVALID reasons INPUT_TOO_LARGE, TOO_MANY_ROWS and STEP_FAILED (integer overflow, join key widening);
+ * - run error codes other than INPUT_ACCESS_LAPSED, RECIPE_INVALID, INPUT_UNAVAILABLE, INPUT_NOT_TABULAR and
+ *   INPUT_UNREADABLE (RESULT_TOO_LARGE, INPUT_TOO_LARGE, OUT_OF_MEMORY, STORAGE_*, RUN_TIMEOUT, STALE_RUN, ...);
  * - createOutputUpload / completeOutputUpload / getOutputDownload 503 (lead organization without storage);
  * - publication retries after storage outages (MAX_FAILURES); the only terminal failure is the "corrupt" file stand-in.
  */
@@ -335,15 +340,14 @@ const runView = (r: StoredRun): Schemas["Run"] => ({
   output_id: r.output_id,
 });
 
-const summary = (code: string, text: string) => `${code}: ${text}`.slice(0, 500);
-
-function failRun(db: MockDb, run: StoredRun, recipeName: string, error: string) {
+/** jobs.fail_run: the run's error is a stable code (the English detail is only logged by the real worker). */
+function failRun(db: MockDb, run: StoredRun, recipeName: string, code: RunErrorCode) {
   run.status = "FAILED";
-  run.error = error.slice(0, 500);
+  run.error = code;
   run.finished_at = nowIso();
   const starter = db.users.find((u) => u.user_id === run.started_by) ?? null;
   recordAudit(db, { action: "RUN_FAILED", actor: starter, resource: { type: "RUN", id: run.run_id }, project_id: run.project_id, details: { error: run.error } });
-  notify(db, [run.started_by], "RUN_FAILED", `"${recipeName}" 레시피 실행이 실패했습니다`, `/commons/projects/${run.project_id}/recipes/${run.recipe_id}`, `오류: ${run.error}`);
+  notify(db, [run.started_by], "RUN_FAILED", `"${recipeName}" 레시피 실행이 실패했습니다`, `/commons/projects/${run.project_id}/recipes/${run.recipe_id}`, lookup(ko, runErrorKey(code))!);
 }
 
 /** jobs._execute: re-check the starter's access, read every needed input in full, apply, store the derived output. */
@@ -352,16 +356,16 @@ function executeRun(db: MockDb, run: StoredRun) {
   const version = recipe.history.find((h) => h.version === run.recipe_version)!;
   const starter = { user_id: run.started_by, organization_id: run.started_by_organization_id };
   const lapsed = run.pinned.filter((p) => !datasetAccess(db, starter, datasetOf(db, p.dataset_id))).length;
-  if (lapsed) return failRun(db, run, version.name, summary("INPUT_ACCESS_LAPSED", `access to ${lapsed} input(s) was revoked or expired before the run`));
+  if (lapsed) return failRun(db, run, version.name, "INPUT_ACCESS_LAPSED");
   const tables = new Map<string, Table>();
   for (const id of neededInputs(version.steps, version.input_ids)) {
     const pinned = run.pinned.find((p) => p.input_id === id);
-    if (!pinned) return failRun(db, run, version.name, summary("RECIPE_INVALID", "a join step reads an input that is not in the recipe"));
+    if (!pinned) return failRun(db, run, version.name, "RECIPE_INVALID");
     try {
       tables.set(id, readInput(db, pinned.dataset_version_id));
     } catch (e) {
       if (!(e instanceof InputProblem)) throw e;
-      return failRun(db, run, version.name, summary(e.reason, `${pinned.dataset_title}@${pinned.version_label}: ${INPUT_MESSAGES[e.reason]}`));
+      return failRun(db, run, version.name, e.reason);
     }
   }
   let result: Table;
@@ -369,7 +373,7 @@ function executeRun(db: MockDb, run: StoredRun) {
     result = applySteps(version.steps, tables, version.input_ids);
   } catch (e) {
     if (!(e instanceof StepError)) throw e;
-    return failRun(db, run, version.name, summary("RECIPE_INVALID", e.message));
+    return failRun(db, run, version.name, "RECIPE_INVALID");
   }
   const now = nowIso();
   const outputId = newId();

@@ -170,13 +170,39 @@ def _publish_decided(p: Payload) -> list[NotificationDraft]:
     return _drafts([UUID(p["requested_by"])], N.OUTPUT_PUBLISH_DECIDED, title, body, _output_link(p))
 
 
+# workspace.run.failed.v1 carries a stable code (workspace public RUN_ERROR_CODES); the body is its Korean sentence.
+RUN_ERROR_SENTENCES: dict[str, str] = {
+    "RECIPE_MISSING": "실행할 레시피 버전을 찾을 수 없습니다.",
+    "INPUT_ACCESS_LAPSED": "입력 데이터의 접근 권한이 회수되었거나 만료되었습니다.",
+    "RECIPE_INVALID": "레시피 단계가 입력 데이터와 맞지 않습니다. 레시피를 확인해 주세요.",
+    "RESULT_TOO_LARGE": "실행 결과의 행 수가 허용 한도를 넘었습니다. 필터나 행 제한 단계를 추가해 주세요.",
+    "INPUT_UNAVAILABLE": "입력 데이터 버전을 더 이상 사용할 수 없습니다.",
+    "INPUT_NOT_TABULAR": "입력 데이터에 읽을 수 있는 CSV·Parquet 파일이 없습니다.",
+    "INPUT_TOO_LARGE": "입력 데이터가 허용 크기를 넘었습니다.",
+    "INPUT_UNREADABLE": "입력 파일을 읽을 수 없습니다.",
+    "STORAGE_NOT_CONFIGURED": "과제 주관기관의 저장소가 설정되지 않았습니다. 관리자에게 문의해 주세요.",
+    "OUT_OF_MEMORY": "실행에 필요한 메모리가 부족합니다. 행 수를 줄여 다시 실행해 주세요.",
+    "STORAGE_UNAVAILABLE": "저장소에 일시적으로 접근할 수 없습니다. 잠시 후 다시 실행해 주세요.",
+    "INTERNAL_ERROR": "시스템 오류로 실행에 실패했습니다. 다시 실행해 주세요.",
+    "RUN_TIMEOUT": "실행 시간이 허용 한도를 넘었습니다.",
+    "STALE_RUN": "실행이 제때 진행되지 않아 중단되었습니다. 다시 실행해 주세요.",
+}
+RUN_ERROR_FALLBACK = "실행에 실패했습니다."
+
+
+def run_error_sentence(error: object) -> str:
+    # Older rows may still read `CODE: English text`; only the code is looked at.
+    code = str(error or "").split(":", 1)[0].strip()
+    return RUN_ERROR_SENTENCES.get(code, RUN_ERROR_FALLBACK)
+
+
 def _run_failed(p: Payload) -> list[NotificationDraft]:
     # The run starter (payload actor_id) learns the outcome of their asynchronous run.
     return _drafts(
         [UUID(p["actor_id"])],
         N.RUN_FAILED,
         f'"{p["recipe_name"]}" 레시피 실행이 실패했습니다',
-        f"오류: {p['error']}",
+        run_error_sentence(p.get("error")),
         f"/commons/projects/{p['project_id']}/recipes/{p['recipe_id']}",
     )
 

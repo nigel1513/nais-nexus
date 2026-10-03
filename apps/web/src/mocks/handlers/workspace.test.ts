@@ -159,8 +159,9 @@ describe("workspace mocks: recipes and runs", () => {
     await minjun.get(`${P}/runs/${started.body.run_id}`);
     const failed = (await minjun.get(`${P}/runs/${started.body.run_id}`)).body;
     expect(failed).toMatchObject({ status: "FAILED", output_id: null });
-    expect(failed.error).toMatch(/^INPUT_ACCESS_LAPSED: /);
-    expect(getDb().notifications.some((n) => n.user_id === USER.aResearcher && n.type === "RUN_FAILED")).toBe(true);
+    expect(failed.error).toBe("INPUT_ACCESS_LAPSED");
+    const note = getDb().notifications.find((n) => n.user_id === USER.aResearcher && n.type === "RUN_FAILED")!;
+    expect(note.body).toBe("입력 데이터의 접근 권한이 회수되었거나 만료되었습니다.");
   });
 });
 

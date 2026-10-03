@@ -949,5 +949,26 @@
     "reply": "Reply",
     "send": "Post reply",
     "notFound": "Thread not found in the list."
+  },
+  "workspace": {
+    "runs": {
+      "error": {
+        "RECIPE_MISSING": "The recipe version to run no longer exists.",
+        "INPUT_ACCESS_LAPSED": "Access to an input was revoked or expired.",
+        "RECIPE_INVALID": "A recipe step does not fit its input. Check the recipe.",
+        "RESULT_TOO_LARGE": "The result has more rows than allowed. Add a filter or limit step.",
+        "INPUT_UNAVAILABLE": "An input version is no longer available.",
+        "INPUT_NOT_TABULAR": "An input has no readable CSV or Parquet file.",
+        "INPUT_TOO_LARGE": "An input is larger than allowed.",
+        "INPUT_UNREADABLE": "An input file cannot be read.",
+        "STORAGE_NOT_CONFIGURED": "The project's lead organization has no storage. Contact an administrator.",
+        "OUT_OF_MEMORY": "The run ran out of memory. Use fewer rows and run again.",
+        "STORAGE_UNAVAILABLE": "Storage is temporarily unavailable. Try again later.",
+        "INTERNAL_ERROR": "The run failed because of a system error. Run it again.",
+        "RUN_TIMEOUT": "The run took longer than allowed.",
+        "STALE_RUN": "The run made no progress and was stopped. Run it again.",
+        "fallback": "The run failed."
+      }
+    }
   }
 }

@@ -5,8 +5,9 @@ the inputs the steps need (pinned dataset versions, row/byte caps) -> apply the 
 result as Parquet to a temporary file -> upload it to the project lead organization's bucket at
 workspace/{project_id}/outputs/{output_id}/result.parquet -> one transaction: DERIVED_DATASET output (READY, lineage =
 pinned inputs + recipe@version + run) + run SUCCEEDED + workspace.run.succeeded.v1 + workspace.output.created.v1.
-Failures end the run FAILED with a short summary (`CODE: text`, no stack trace, no data values, <= 500 chars) and
-workspace.run.failed.v1. Storage/database outages are retried (3 attempts in all) before failing.
+Failures end the run FAILED with a stable error code (RUN_ERROR_CODES, e.g. `INPUT_TOO_LARGE`) and
+workspace.run.failed.v1; the client and the notification turn the code into a Korean sentence, and the English detail
+(no stack trace, no data values) goes to the log only. Storage/database outages are retried (3 attempts in all) before failing.
 Sweeper (every 10 min): RUNNING past the time limit + 10 min -> FAILED; QUEUED with no message sent for 1 h -> the
 message is re-sent (duplicates are harmless); QUEUED for 24 h -> FAILED as a last resort.
 No database transaction is held while reading, computing or uploading.
@@ -37,6 +38,7 @@ from api.modules.catalog.public import DatasetPolicyView, ObjectMissing, Storage
 from api.modules.workspace import repo
 from api.modules.workspace.access import STRICTNESS, dataset_access
 from api.modules.workspace.deps import WorkspaceDeps
+from api.modules.workspace.public import RUN_ERROR_CODES
 from api.modules.workspace.recipes import reader, steps
 from api.modules.workspace.recipes.model import parse_steps
 from api.modules.workspace.service.outputs import NO_INPUTS_FLOOR
@@ -82,7 +84,14 @@ class RetryableInfraError(Exception):
 
 
 class RunFailed(Exception):  # noqa: N818
-    """A run ends FAILED with this summary (already free of data values)."""
+    """A run ends FAILED with `code` (one of RUN_ERROR_CODES); `detail` (English, no data values) is only logged."""
+
+    def __init__(self, code: str, detail: str = "") -> None:
+        if code not in RUN_ERROR_CODES:
+            raise ValueError(f"unknown run error code {code!r}")
+        super().__init__(code)
+        self.code = code
+        self.detail = detail
 
 
 class _Superseded(Exception):  # noqa: N818
@@ -93,8 +102,8 @@ def _session() -> Session:
     return session_factory(RUNTIME.database_url)()
 
 
-def summary(code: str, text: str) -> str:
-    return f"{code}: {text}"[:500]
+def step_error_code(exc: steps.StepError) -> str:
+    return "RESULT_TOO_LARGE" if exc.reason == "TOO_MANY_ROWS" else "RECIPE_INVALID"
 
 
 def _actor(run: RowMapping) -> EventActor:
@@ -154,15 +163,19 @@ def _failed_event(session: Session, run: RowMapping) -> None:
     )
 
 
-def fail_run(run_id: UUID, error: str) -> str:
-    """RUNNING -> FAILED + workspace.run.failed.v1. "FAILED", or "SKIPPED" when the run had already ended."""
+def fail_run(run_id: UUID, code: str, detail: str = "") -> str:
+    """RUNNING -> FAILED(error=code) + workspace.run.failed.v1. "FAILED", or "SKIPPED" when the run had already ended.
+    The English detail is logged, never stored (the run's error is a code the client localizes)."""
+    if code not in RUN_ERROR_CODES:
+        raise ValueError(f"unknown run error code {code!r}")
+    logger.warning("recipe run failed", extra={"run_id": str(run_id), "code": code, "detail": detail[:500]})
     with _session() as session, session.begin():
         row = repo.update_run(
             session,
             run_id,
             from_statuses=("RUNNING",),
             status="FAILED",
-            error=error[:500],
+            error=code,
             finished_at=clock.now(),
         )
         if row is None:
@@ -188,7 +201,7 @@ def _context(run: RowMapping) -> _Context:
         version = repo.load_recipe_version(session, run["recipe_id"], run["recipe_version"])
         pinned = repo.pinned_inputs(session, run["run_id"])
     if version is None:  # FK guarantees it; defensive
-        raise RunFailed(summary("RECIPE_MISSING", "the pinned recipe version does not exist"))
+        raise RunFailed("RECIPE_MISSING", "the pinned recipe version does not exist")
     return _Context(run, list(version["input_ids"]), parse_steps(version["steps"]), version["name"], pinned)
 
 
@@ -206,9 +219,7 @@ def _policies(deps: WorkspaceDeps, ctx: _Context) -> dict[UUID, DatasetPolicyVie
         policies[p["input_id"]] = policy
     if lapsed:
         raise RunFailed(
-            summary(
-                "INPUT_ACCESS_LAPSED", f"access to {lapsed} input(s) was revoked or expired before the run"
-            )
+            "INPUT_ACCESS_LAPSED", f"access to {lapsed} input(s) was revoked or expired before the run"
         )
     return policies
 
@@ -219,14 +230,14 @@ def _read_inputs(deps: WorkspaceDeps, ctx: _Context) -> dict[UUID, pa.Table]:
     for input_id in steps.needed_inputs(ctx.steps, ctx.input_ids):
         pin = by_id.get(input_id)
         if pin is None:
-            raise RunFailed(summary("RECIPE_INVALID", "a join step reads an input that is not in the recipe"))
+            raise RunFailed("RECIPE_INVALID", "a join step reads an input that is not in the recipe")
         label = f"input '{pin['dataset_title']}' {pin['version_label']}"
         version = deps.catalog.get_version(pin["dataset_version_id"])
         if version is None or version.status != "PUBLISHED":
-            raise RunFailed(summary("INPUT_UNAVAILABLE", f"{label} is no longer published"))
+            raise RunFailed("INPUT_UNAVAILABLE", f"{label} is no longer published")
         file = reader.primary_file(version)
         if file is None:
-            raise RunFailed(summary("INPUT_NOT_TABULAR", f"{label} has no CSV or Parquet file"))
+            raise RunFailed("INPUT_NOT_TABULAR", f"{label} has no CSV or Parquet file")
         try:
             tables[input_id] = reader.read_table(
                 deps.reader,
@@ -236,11 +247,11 @@ def _read_inputs(deps: WorkspaceDeps, ctx: _Context) -> dict[UUID, pa.Table]:
                 max_bytes=_SETTINGS.workspace_max_input_bytes,
             ).table
         except reader.InputTooLarge as exc:
-            raise RunFailed(summary("INPUT_TOO_LARGE", f"{label}: {exc}")) from exc
+            raise RunFailed("INPUT_TOO_LARGE", f"{label}: {exc}") from exc
         except reader.InputUnreadable as exc:
-            raise RunFailed(summary("INPUT_UNREADABLE", f"{label}: {exc}")) from exc
+            raise RunFailed("INPUT_UNREADABLE", f"{label}: {exc}") from exc
         except ObjectMissing as exc:
-            raise RunFailed(summary("INPUT_UNAVAILABLE", f"{label}: the file is missing in storage")) from exc
+            raise RunFailed("INPUT_UNAVAILABLE", f"{label}: the file is missing in storage") from exc
     return tables
 
 
@@ -256,7 +267,7 @@ def _lead_org_code(deps: WorkspaceDeps, project_id: UUID) -> str:
     summary_ = deps.projects.get_summary(project_id)
     code = deps.people.get_organization_code(summary_.lead_organization_id.root) if summary_ else None
     if code is None:
-        raise RunFailed(summary("STORAGE_NOT_CONFIGURED", "the project's lead organization has no storage"))
+        raise RunFailed("STORAGE_NOT_CONFIGURED", "the project's lead organization has no storage")
     return code
 
 
@@ -342,7 +353,7 @@ def _execute(run: RowMapping) -> None:
     try:
         result = steps.apply(ctx.steps, tables, ctx.input_ids, max_rows=_SETTINGS.workspace_max_rows)
     except steps.StepError as exc:
-        raise RunFailed(summary("RECIPE_INVALID", exc.message)) from exc
+        raise RunFailed(step_error_code(exc), exc.message) from exc
     del tables
     output_rows = result.num_rows
     org_code = _lead_org_code(deps, run["project_id"])
@@ -403,21 +414,19 @@ def run_recipe(run_id: UUID) -> str:
     try:
         _execute(run)
     except RunFailed as exc:
-        return fail_run(run_id, str(exc))
+        return fail_run(run_id, exc.code, exc.detail)
     except _Superseded:
         logger.warning("run left RUNNING during execution", extra={"run_id": str(run_id)})
         return "SKIPPED"
     except MemoryError:
-        return fail_run(
-            run_id, summary("OUT_OF_MEMORY", "the run needed more memory than available; use fewer rows")
-        )
+        return fail_run(run_id, "OUT_OF_MEMORY", "the run needed more memory than available; use fewer rows")
     except Exception as exc:
         if _retryable(exc):
             if run["attempt"] < MAX_ATTEMPTS:
                 _requeue(run_id)
                 raise RetryableInfraError(type(exc).__name__) from exc
             return fail_run(
-                run_id, summary("STORAGE_UNAVAILABLE", f"{type(exc).__name__} after {MAX_ATTEMPTS} attempts")
+                run_id, "STORAGE_UNAVAILABLE", f"{type(exc).__name__} after {MAX_ATTEMPTS} attempts"
             )
         # the exception message may quote data values: log its type and frames only
         logger.error(
@@ -428,7 +437,7 @@ def run_recipe(run_id: UUID) -> str:
                 "traceback": _frames(exc),
             },
         )
-        return fail_run(run_id, summary("INTERNAL_ERROR", type(exc).__name__))
+        return fail_run(run_id, "INTERNAL_ERROR", type(exc).__name__)
     return "SUCCEEDED"
 
 
@@ -458,7 +467,7 @@ def run_recipe_actor(run_id: str) -> None:
     try:
         run_recipe(rid)
     except TimeLimitExceeded:
-        fail_run(rid, summary("RUN_TIMEOUT", f"exceeded {_SETTINGS.workspace_run_timeout_seconds}s"))
+        fail_run(rid, "RUN_TIMEOUT", f"exceeded {_SETTINGS.workspace_run_timeout_seconds}s")
 
 
 # ---------------------------------------------------------------- enqueue after commit
@@ -524,7 +533,7 @@ def sweep_stale() -> int:
                 run_id,
                 queued_before=queued_before,
                 running_before=running_before,
-                error=summary("STALE_RUN", "no progress within the allowed time"),
+                error="STALE_RUN",  # no progress within the allowed time
                 at=now,
             )
             if row is not None:

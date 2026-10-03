@@ -7,6 +7,7 @@ import { flattenPages } from "@/shared/api/pagination";
 import { WorkspaceRunBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
+import { runErrorKey } from "@/shared/workspace/run-errors";
 import { usePendingRuns, useRecipes, useRuns, type Run } from "./api";
 import { projectHref } from "./workspace-layout";
 
@@ -18,7 +19,7 @@ function duration(run: Run): string | null {
 
 /**
  * Runs of the project (or of one recipe), newest first. Polls the in-flight runs every 2 s (usePendingRuns) and refreshes when one changes; a succeeded run
- * links its derived output, a failed one shows the server's short error summary.
+ * links its derived output, a failed one shows the Korean sentence for the server's error code.
  */
 export function RunsList({ projectId, recipeId, limit, caption }: { projectId: string; recipeId?: string; limit?: number; caption: string }) {
   const t = useTranslations();
@@ -74,7 +75,7 @@ export function RunsList({ projectId, recipeId, limit, caption }: { projectId: s
                   {t("workspace.runs.openOutput")}
                 </Link>
               ) : r.status === "FAILED" ? (
-                <span className="break-words text-small text-danger">{r.error ?? t("enums.RunStatus.FAILED")}</span>
+                <span className="break-words text-small text-danger">{t(runErrorKey(r.error))}</span>
               ) : (
                 <span className="text-fg-muted">—</span>
               ),

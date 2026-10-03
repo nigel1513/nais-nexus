@@ -1473,7 +1473,9 @@ class Run(BaseModel):
     input_rows: conint(ge=0) | None
     output_rows: conint(ge=0) | None
     error: str | None = Field(
-        ..., description='Short summary when FAILED (no stack trace, no data values)'
+        ...,
+        description='Stable failure code when FAILED (RECIPE_MISSING, INPUT_ACCESS_LAPSED, RECIPE_INVALID, RESULT_TOO_LARGE, INPUT_UNAVAILABLE, INPUT_NOT_TABULAR, INPUT_TOO_LARGE, INPUT_UNREADABLE, STORAGE_NOT_CONFIGURED, OUT_OF_MEMORY, STORAGE_UNAVAILABLE, INTERNAL_ERROR, RUN_TIMEOUT, STALE_RUN). Clients show a localized sentence and a generic one for an unknown code; the detail is only logged.',
+        examples=['INPUT_TOO_LARGE'],
     )
     output_id: Id | None = Field(
         ..., description='DERIVED_DATASET output when SUCCEEDED'

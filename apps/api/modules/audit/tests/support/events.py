@@ -275,7 +275,7 @@ PAYLOADS.update(
             "output_rows": 24,
             "output_id": S(OUTPUT_ID),
         },
-        "workspace.run.failed.v1": {**_recipe, "run_id": S(RUN_ID), "error": "column not found"},
+        "workspace.run.failed.v1": {**_recipe, "run_id": S(RUN_ID), "error": "RECIPE_INVALID"},
         "workspace.output.created.v1": {
             **_ws,
             "output_id": S(OUTPUT_ID),

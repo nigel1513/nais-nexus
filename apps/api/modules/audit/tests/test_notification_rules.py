@@ -349,9 +349,37 @@ def test_publication_failure_reason_in_body() -> None:
     assert draft.body == "사유: 카탈로그가 공개를 거부했습니다"
 
 
-def test_run_failure_error_summary_in_body() -> None:
+def test_run_failure_code_becomes_a_korean_sentence() -> None:
     [draft] = build_drafts(envelope("workspace.run.failed.v1"))
-    assert draft.body == "오류: column not found"
+    assert draft.body == "레시피 단계가 입력 데이터와 맞지 않습니다. 레시피를 확인해 주세요."
+
+
+@pytest.mark.parametrize(
+    ("code", "body"),
+    [
+        ("INPUT_TOO_LARGE", "입력 데이터가 허용 크기를 넘었습니다."),
+        ("STALE_RUN", "실행이 제때 진행되지 않아 중단되었습니다. 다시 실행해 주세요."),
+        ("NEW_UNKNOWN_CODE", "실행에 실패했습니다."),
+        (
+            "INPUT_TOO_LARGE: input 'x' v1: The input has more than 4 rows.",
+            "입력 데이터가 허용 크기를 넘었습니다.",
+        ),
+    ],
+)
+def test_run_failure_body_is_korean_only(code: str, body: str) -> None:
+    [draft] = build_drafts(envelope("workspace.run.failed.v1", error=code))
+    assert draft.body == body
+
+
+def test_every_run_error_code_has_a_korean_sentence() -> None:
+    import re
+
+    from api.modules.audit.notification_rules import RUN_ERROR_SENTENCES
+    from api.modules.workspace.public import RUN_ERROR_CODES
+
+    assert set(RUN_ERROR_SENTENCES) == set(RUN_ERROR_CODES)
+    for sentence in RUN_ERROR_SENTENCES.values():
+        assert not re.search(r"[A-Za-z]{2,}", sentence.replace("CSV", "").replace("Parquet", ""))
 
 
 def test_note_rejection_reason_in_body() -> None:

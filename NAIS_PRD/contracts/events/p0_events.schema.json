@@ -1933,7 +1933,7 @@
     },
     {
       "title": "workspace.run.failed.v1",
-      "description": "Recipe run failed; error is a short summary without data values (Audit RUN_FAILED; notifies the run starter; notes evidence RUN_FAILED).",
+      "description": "Recipe run failed; error is a stable failure code such as INPUT_TOO_LARGE, never text or data values (Audit RUN_FAILED; notifies the run starter; notes evidence RUN_FAILED).",
       "type": "object",
       "properties": {
         "event_type": {

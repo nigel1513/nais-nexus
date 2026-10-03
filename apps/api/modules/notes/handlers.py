@@ -88,7 +88,7 @@ def _recipe(p: dict[str, Any]) -> str:
 
 
 def _error_code(error: str) -> str:
-    """Run errors are `CODE: text`; only the code is kept (the text could still quote a value)."""
+    """Run errors are a stable code (older rows: `CODE: text`); only the code is kept (text could quote a value)."""
     code = error.split(":", 1)[0].strip()
     return code if code.replace("_", "").isalnum() and code.isupper() else "ERROR"
 

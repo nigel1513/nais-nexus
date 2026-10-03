@@ -243,8 +243,7 @@ def test_cast_failure_fails_the_run_without_data_values(
     )
     assert jobs.run_recipe(UUID(run_id)) == "FAILED"
     error = failed(api, s, run_id)
-    assert error.startswith("RECIPE_INVALID: Step 1 (cast_type)")
-    assert "C-0" not in error and "Traceback" not in error
+    assert error == "RECIPE_INVALID"  # a stable code; the client shows the sentence, the log keeps the detail
     [event] = events(db, "workspace.run.failed.v1")
     assert_valid_event(event)
     assert event["payload"]["error"] == error and event["payload"]["recipe_version"] == 1
@@ -257,22 +256,28 @@ def test_access_lapsing_after_start_fails_the_run(api: WorkspaceApi, world: Worl
     world.grants.revoke(USERS["a.researcher"], s.specs.dataset_id)
     reads = len(world.reader.opened)
     assert jobs.run_recipe(UUID(run_id)) == "FAILED"
-    assert failed(api, s, run_id).startswith("INPUT_ACCESS_LAPSED")
+    assert failed(api, s, run_id) == "INPUT_ACCESS_LAPSED"
     assert len(world.reader.opened) == reads  # nothing was read
 
 
-def test_row_limit(api: WorkspaceApi, s: Recipes, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_row_limit(
+    api: WorkspaceApi, s: Recipes, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
     _, run_id = started(api, s)
     monkeypatch.setattr(jobs._SETTINGS, "workspace_max_rows", 4)
-    assert jobs.run_recipe(UUID(run_id)) == "FAILED"
-    assert failed(api, s, run_id) == "INPUT_TOO_LARGE: input '셀 측정' v1: The input has more than 4 rows."
+    with caplog.at_level("WARNING", logger="nais.workspace"):
+        assert jobs.run_recipe(UUID(run_id)) == "FAILED"
+    assert failed(api, s, run_id) == "INPUT_TOO_LARGE"
+    [record] = [r for r in caplog.records if r.getMessage() == "recipe run failed"]
+    assert record.code == "INPUT_TOO_LARGE"  # type: ignore[attr-defined]
+    assert record.detail == "input '셀 측정' v1: The input has more than 4 rows."  # type: ignore[attr-defined]
 
 
 def test_input_byte_limit(api: WorkspaceApi, s: Recipes, monkeypatch: pytest.MonkeyPatch) -> None:
     _, run_id = started(api, s)
     monkeypatch.setattr(jobs._SETTINGS, "workspace_max_input_bytes", 10)
     assert jobs.run_recipe(UUID(run_id)) == "FAILED"
-    assert failed(api, s, run_id).startswith("INPUT_TOO_LARGE")
+    assert failed(api, s, run_id) == "INPUT_TOO_LARGE"
 
 
 def test_storage_outage_is_retried_then_fails(
@@ -289,7 +294,7 @@ def test_storage_outage_is_retried_then_fails(
         assert (row["status"], row["attempt"]) == ("QUEUED", attempt)
         assert row["queued_at"] > old and row["last_enqueued_at"] == row["queued_at"]  # waits afresh
     assert jobs.run_recipe(UUID(run_id)) == "FAILED"
-    assert failed(api, s, run_id) == "STORAGE_UNAVAILABLE: StorageUnavailable after 3 attempts"
+    assert failed(api, s, run_id) == "STORAGE_UNAVAILABLE"
 
 
 def test_upload_outage_is_retried(api: WorkspaceApi, world: World, s: Recipes, db: PgUrls) -> None:
@@ -315,7 +320,7 @@ def test_unexpected_errors_fail_with_the_type_only(
     monkeypatch.setattr(jobs.steps, "apply", boom)
     with caplog.at_level("ERROR", logger="nais.workspace"):
         assert jobs.run_recipe(UUID(run_id)) == "FAILED"
-    assert failed(api, s, run_id) == "INTERNAL_ERROR: ValueError"
+    assert failed(api, s, run_id) == "INTERNAL_ERROR"
     [record] = [r for r in caplog.records if r.getMessage() == "recipe run crashed"]
     assert record.error_type == "ValueError" and "in boom" in record.traceback  # type: ignore[attr-defined]
     logged = " ".join(f"{r.getMessage()} {r.__dict__} {r.exc_text or ''}" for r in caplog.records)
@@ -326,7 +331,7 @@ def test_input_without_a_table_at_run_time(api: WorkspaceApi, world: World, s: R
     _, run_id = started(api, s)
     world.reader.data.clear()  # objects gone from storage
     assert jobs.run_recipe(UUID(run_id)) == "FAILED"
-    assert failed(api, s, run_id).startswith("INPUT_UNAVAILABLE")
+    assert failed(api, s, run_id) == "INPUT_UNAVAILABLE"
 
 
 def test_timeout_fails_the_run(api: WorkspaceApi, s: Recipes, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -339,7 +344,7 @@ def test_timeout_fails_the_run(api: WorkspaceApi, s: Recipes, monkeypatch: pytes
 
     monkeypatch.setattr(jobs.steps, "apply", slow)
     jobs.run_recipe_actor.fn(run_id)
-    assert failed(api, s, run_id).startswith("RUN_TIMEOUT")
+    assert failed(api, s, run_id) == "RUN_TIMEOUT"
 
 
 # ---------------------------------------------------------------- reads
@@ -399,7 +404,7 @@ def test_sweeper_fails_runs_queued_for_a_day(api: WorkspaceApi, s: Recipes, db: 
     old = clock.now() - timedelta(hours=25)
     sql(db, "UPDATE workspace.runs SET queued_at = :at WHERE run_id = :id", at=old, id=stale)
     assert jobs.sweep_stale() == 1
-    assert failed(api, s, stale) == "STALE_RUN: no progress within the allowed time"
+    assert failed(api, s, stale) == "STALE_RUN"
     [event] = events(db, "workspace.run.failed.v1")
     assert_valid_event(event)
     assert jobs.run_recipe(UUID(stale)) == "SKIPPED"
@@ -419,7 +424,7 @@ def test_sweeper_fails_runs_stuck_in_running(api: WorkspaceApi, s: Recipes, db: 
             id=run_id,
         )
     assert jobs.sweep_stale() == 1
-    assert failed(api, s, stuck).startswith("STALE_RUN")
+    assert failed(api, s, stuck) == "STALE_RUN"
     assert api.get("a.researcher", f"{s.base}/runs/{busy}").json()["status"] == "RUNNING"
 
 
@@ -446,7 +451,7 @@ def test_a_run_swept_during_execution_keeps_no_result(
         upload(*args)
         sql(
             db,
-            "UPDATE workspace.runs SET status = 'FAILED', finished_at = now(), error = 'STALE_RUN: x' "
+            "UPDATE workspace.runs SET status = 'FAILED', finished_at = now(), error = 'STALE_RUN' "
             "WHERE run_id = :id",
             id=run_id,
         )
@@ -455,7 +460,7 @@ def test_a_run_swept_during_execution_keeps_no_result(
     assert jobs.run_recipe(UUID(run_id)) == "SKIPPED"
     assert sql(db, "SELECT count(*) AS n FROM workspace.outputs") == [{"n": 0}]
     assert events(db, "workspace.run.succeeded.v1") == []
-    assert failed(api, s, run_id) == "STALE_RUN: x"
+    assert failed(api, s, run_id) == "STALE_RUN"
 
 
 def test_worker_registration() -> None:
@@ -488,3 +493,34 @@ def test_database_rejects_inconsistent_runs(api: WorkspaceApi, s: Recipes, db: P
         sql(db, "UPDATE workspace.runs SET status = 'FAILED', error = 'x'")
     with pytest.raises(IntegrityError, match="fk_runs_recipe_version"):
         sql(db, "UPDATE workspace.runs SET recipe_version = 9")
+
+
+def test_run_error_codes_are_a_closed_set() -> None:
+    """Every code a run can end with is listed (web messages and the notification sentence key off this set)."""
+    assert (
+        frozenset(
+            {
+                "RECIPE_MISSING",
+                "INPUT_ACCESS_LAPSED",
+                "RECIPE_INVALID",
+                "RESULT_TOO_LARGE",
+                "INPUT_UNAVAILABLE",
+                "INPUT_NOT_TABULAR",
+                "INPUT_TOO_LARGE",
+                "INPUT_UNREADABLE",
+                "STORAGE_NOT_CONFIGURED",
+                "OUT_OF_MEMORY",
+                "STORAGE_UNAVAILABLE",
+                "INTERNAL_ERROR",
+                "RUN_TIMEOUT",
+                "STALE_RUN",
+            }
+        )
+        == jobs.RUN_ERROR_CODES
+    )
+    too_many = jobs.steps.StepError(0, "TOO_MANY_ROWS", "Step 1 (join): the result has more than 4 rows.")
+    assert jobs.step_error_code(too_many) == "RESULT_TOO_LARGE"
+    mismatch = jobs.steps.StepError(0, "TYPE_MISMATCH", "Step 1 (filter): column 'x' is text.")
+    assert jobs.step_error_code(mismatch) == "RECIPE_INVALID"
+    with pytest.raises(ValueError):
+        jobs.RunFailed("NOT_A_CODE", "x")
