@@ -7,7 +7,7 @@ import { flattenPages } from "@/shared/api/pagination";
 import { WorkspaceRunBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView, LoadMore } from "@/shared/ui/state-views";
-import { useRecipes, useRuns, type Run } from "./api";
+import { usePendingRuns, useRecipes, useRuns, type Run } from "./api";
 import { projectHref } from "./workspace-layout";
 
 function duration(run: Run): string | null {
@@ -17,13 +17,15 @@ function duration(run: Run): string | null {
 }
 
 /**
- * Runs of the project (or of one recipe), newest first. Polls every 2 s while a run is QUEUED/RUNNING; a succeeded run
+ * Runs of the project (or of one recipe), newest first. Polls the in-flight runs every 2 s (usePendingRuns) and refreshes when one changes; a succeeded run
  * links its derived output, a failed one shows the server's short error summary.
  */
 export function RunsList({ projectId, recipeId, limit, caption }: { projectId: string; recipeId?: string; limit?: number; caption: string }) {
   const t = useTranslations();
   const runs = useRuns(projectId, { ...(recipeId ? { recipe_id: recipeId } : {}), ...(limit ? { limit } : {}) });
   const recipes = useRecipes(projectId);
+  const shownPending = flattenPages(runs.data).some((r) => r.status === "QUEUED" || r.status === "RUNNING");
+  usePendingRuns(projectId, recipeId, { listed: shownPending });
   const names = new Map((recipes.data?.items ?? []).map((r) => [r.recipe_id, r.name]));
   if (runs.isPending) return <DelayedSkeleton lines={3} />;
   if (runs.isError) return <ErrorView error={runs.error} onRetry={() => void runs.refetch()} />;

@@ -53,7 +53,6 @@ export function InputsTab() {
           }
           className="mb-3"
         />
-        <p className="mb-4 max-w-[72ch] text-small text-fg-muted">{t("workspace.inputs.hint")}</p>
         {inputs.isPending ? (
           <DelayedSkeleton />
         ) : inputs.isError ? (

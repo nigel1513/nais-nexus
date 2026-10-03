@@ -10,7 +10,7 @@ import { renderScreen } from "../../../tests/render";
 import { renderWorkspace } from "../../../tests/workspace-routes";
 import { AccessScreen } from "../governance/access-screen";
 import { accessFloor } from "./upload-output-dialog";
-import { parseScalar, stepProblem } from "./recipe-steps";
+import { parseFor, parseScalar, stepProblem } from "./recipe-steps";
 
 // jsdom's XMLHttpRequest sends a File as text, so the presigned PUT goes through fetch with the file's bytes here
 // (the browser path — XHR with upload progress — is covered by the upload feature's transfer tests).
@@ -145,8 +145,11 @@ describe("변환 (recipes)", () => {
     await userEvent.clear(name);
     await userEvent.type(name, "용량 유지율 (내 수정)");
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
-    const alert = await screen.findByText(/다른 구성원이 이 레시피를 v2으로 먼저 저장했습니다/);
+    const alert = await screen.findByText(/다른 구성원이 이 레시피를 먼저 저장했습니다 \(현재 v2\)/);
     await userEvent.click(within(alert.closest("[role=alert]") as HTMLElement).getByRole("button", { name: "최신 버전 불러오기" }));
+    // The draft on screen would be lost: confirm first.
+    const confirm = await screen.findByRole("dialog", { name: "저장하지 않은 변경이 있습니다" });
+    await userEvent.click(within(confirm).getByRole("button", { name: "계속" }));
     await waitFor(() => expect(screen.getByLabelText("레시피 이름")).toHaveValue("용량 유지율 (동료 수정)"));
     expect(screen.getByRole("heading", { level: 2, name: "용량 유지율 (동료 수정)" })).toBeInTheDocument();
   });
@@ -157,7 +160,7 @@ describe("변환 (recipes)", () => {
     await userEvent.type(name, " 개정");
     expect(screen.getByRole("button", { name: "실행" })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: "저장" }));
-    expect(await screen.findByText("레시피를 v2으로 저장했습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("레시피를 저장했습니다 (v2).")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "실행" }));
     const runs = screen.getByRole("table", { name: "실행 기록" });
     const first = () => within(runs).getAllByRole("row")[1]!;
@@ -192,10 +195,23 @@ describe("산출물 (outputs)", () => {
     expect(screen.getByRole("region", { name: "이 산출물 토론" })).toBeInTheDocument();
   });
 
-  it("download is blocked with INPUT_ACCESS_LAPSED once access to an input lapsed", async () => {
+  it("download is disabled with a reason once access to a lineage input lapsed", async () => {
     revokeBatteryGrant();
     renderWorkspace(detail, USER.aResearcher);
-    await userEvent.click(await screen.findByRole("button", { name: "내려받기" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "내려받기" })).toBeDisabled());
+    expect(screen.getByText("접근 권한이 끝난 입력 데이터에서 만든 산출물이라 내려받을 수 없습니다: 리튬이온 배터리 셀 사이클 시험 데이터")).toBeInTheDocument();
+  });
+
+  it("download still reports the server's INPUT_ACCESS_LAPSED", async () => {
+    server.use(
+      http.post("*/mock-api/v1/projects/:project_id/outputs/:output_id/download", () =>
+        HttpResponse.json({ error: { code: "INPUT_ACCESS_LAPSED", message: "x", trace_id: "t" } }, { status: 409 }),
+      ),
+    );
+    renderWorkspace(detail, USER.aResearcher);
+    const button = await screen.findByRole("button", { name: "내려받기" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await userEvent.click(button);
     expect(await screen.findByText("입력 데이터의 접근 권한이 회수되었거나 만료되어 실행하거나 내려받을 수 없습니다.")).toBeInTheDocument();
   });
 
@@ -210,7 +226,7 @@ describe("산출물 (outputs)", () => {
     expect(within(dialog).getByRole("radio", { name: "공개" })).toHaveAttribute("aria-disabled", "true");
     expect(within(dialog).getByRole("radio", { name: "기관 내부" })).toHaveAttribute("aria-disabled", "true");
     expect(within(dialog).getByRole("radio", { name: "통제" })).toBeChecked();
-    expect(within(dialog).getByText(/가장 엄격한 등급이 통제이라/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/가장 엄격한 등급: 통제/)).toBeInTheDocument();
 
     // The server re-checks (e.g. an input added meanwhile raised the floor).
     server.use(
@@ -221,7 +237,7 @@ describe("산출물 (outputs)", () => {
     await userEvent.type(within(dialog).getByLabelText("산출물 이름"), "분석 보고서");
     await userEvent.upload(within(dialog).getByLabelText("파일"), new File(["report"], "report.txt", { type: "text/plain" }));
     await userEvent.click(within(dialog).getByRole("button", { name: "올리기" }));
-    expect(await within(dialog).findByText("접근 등급을 민감보다 낮출 수 없습니다. 입력 데이터 중 가장 엄격한 등급입니다.")).toBeInTheDocument();
+    expect(await within(dialog).findByText("접근 등급은 입력 데이터 중 가장 엄격한 등급(민감) 아래로 낮출 수 없습니다.")).toBeInTheDocument();
   });
 
   it("upload: hashes, PUTs and completes a file output, then opens it", async () => {
@@ -387,5 +403,138 @@ describe("recipe step helpers", () => {
     expect(stepProblem({ type: "join", right_input_id: INPUT.battery, on: ["cycle"], how: "left" }, [INPUT.battery])).toBe("right");
     expect(stepProblem({ type: "join", right_input_id: INPUT.openMaterials, on: [], how: "left" }, [INPUT.battery, INPUT.openMaterials])).toBe("on");
     expect(stepProblem({ type: "limit", n: 0 }, [INPUT.battery])).toBe("n");
+  });
+});
+
+describe("review fixes (Task 14 round 1)", () => {
+  const editor = `${base}/recipes/${RECIPE.capacity}`;
+  const makeDirty = async () => {
+    const name = await screen.findByLabelText("레시피 이름");
+    await userEvent.type(name, " 개정");
+    expect(screen.getByText("저장하지 않은 변경")).toBeInTheDocument();
+  };
+
+  it("leaving the editor with unsaved changes asks first (tab link, header edit, page unload)", async () => {
+    renderWorkspace(editor, USER.aResearcher);
+    await makeDirty();
+    const tabs = screen.getByRole("navigation", { name: "프로젝트 작업 공간" });
+    await userEvent.click(within(tabs).getByRole("link", { name: "산출물" }));
+    let dialog = await screen.findByRole("dialog", { name: "저장하지 않은 변경이 있습니다" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "머무르기" }));
+    expect(router.push).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("레시피 이름")).toHaveValue("용량 유지율 추이 (사이클 1~300) 개정");
+
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(true);
+
+    await userEvent.click(screen.getByRole("button", { name: "편집" }));
+    dialog = await screen.findByRole("dialog", { name: "저장하지 않은 변경이 있습니다" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "머무르기" }));
+    expect(router.push).not.toHaveBeenCalled();
+
+    await userEvent.click(within(tabs).getByRole("link", { name: "산출물" }));
+    dialog = await screen.findByRole("dialog", { name: "저장하지 않은 변경이 있습니다" });
+    await userEvent.click(within(dialog).getByRole("button", { name: "계속" }));
+    expect(router.push).toHaveBeenCalledWith(`${base}/outputs`);
+  });
+
+  it("a clean editor navigates and unloads without asking", async () => {
+    renderWorkspace(editor, USER.aResearcher);
+    await screen.findByLabelText("레시피 이름");
+    const unload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(unload);
+    expect(unload.defaultPrevented).toBe(false);
+  });
+
+  it("column suggestions come from each input's column profile, not from a preview", async () => {
+    let previews = 0;
+    server.events.on("request:start", ({ request }) => {
+      if (request.url.endsWith("/preview") && request.method === "POST") previews += 1;
+    });
+    const { container } = renderWorkspace(editor, USER.aResearcher);
+    await screen.findByRole("region", { name: "변환 단계" });
+    await waitFor(() => expect([...container.querySelectorAll("datalist option")].map((o) => o.getAttribute("value"))).toEqual(expect.arrayContaining(["cycle", "voltage_v", "temp_c"])));
+    // Joining a second input adds its columns too.
+    await userEvent.click(screen.getByLabelText(/구조용 세라믹·초내열합금 물성 DB/));
+    await waitFor(() => expect(container.querySelectorAll("datalist option").length).toBeGreaterThan(4));
+    expect(previews).toBe(0);
+    server.events.removeAllListeners();
+  });
+
+  it("filter values follow the column's type; quotes force text", () => {
+    expect(parseFor("string")("300")).toBe("300");
+    expect(parseFor("date")("2026-01-01")).toBe("2026-01-01");
+    expect(parseFor("integer")("300")).toBe(300);
+    expect(parseFor("number")("2.5")).toBe(2.5);
+    expect(parseFor("boolean")("true")).toBe(true);
+    expect(parseFor("integer")('"300"')).toBe("300");
+    expect(parseFor(undefined)("300")).toBe(300);
+  });
+
+  it("a TYPE_MISMATCH on a column of unknown type suggests quoting", async () => {
+    server.use(
+      http.post("*/mock-api/v1/projects/:project_id/recipes/:recipe_id/preview", () =>
+        HttpResponse.json({ error: { code: "RECIPE_INVALID", message: "x", trace_id: "t", details: { step_index: 1, reason: "TYPE_MISMATCH", column: "batch_code" } } }, { status: 422 }),
+      ),
+    );
+    renderWorkspace(editor, USER.aResearcher);
+    const steps = await screen.findByRole("region", { name: "변환 단계" });
+    await userEvent.click(screen.getByRole("button", { name: "미리보기" }));
+    const step2 = [...steps.querySelectorAll<HTMLElement>(":scope ol > li")][1]!;
+    expect(await within(step2).findByRole("alert")).toHaveTextContent("텍스트로 비교하려면 큰따옴표로 감싸세요");
+  });
+
+  it("VIEWER: the recipe editor, outputs and output detail are read-only", async () => {
+    getDb().projectMembers.find((m) => m.user_id === USER.bResearcher && m.project_id === PROJECT.seed)!.role = "VIEWER";
+    const view = renderWorkspace(editor, USER.bResearcher);
+    expect(await screen.findByLabelText("레시피 이름")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "저장" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "실행" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "단계 추가" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "미리보기" })).toBeInTheDocument();
+    view.unmount();
+
+    const outputs = renderWorkspace(`${base}/outputs`, USER.bResearcher);
+    await screen.findByRole("table", { name: "산출물" });
+    expect(screen.queryByRole("button", { name: "파일 올리기" })).not.toBeInTheDocument();
+    outputs.unmount();
+
+    renderWorkspace(`${base}/outputs/${OUTPUT.capacity}`, USER.bResearcher);
+    await screen.findByRole("region", { name: "데이터 계보" });
+    expect(screen.queryByRole("button", { name: "허브 공개 요청" })).not.toBeInTheDocument();
+  });
+
+  it("run polling stops once no run is queued or running", async () => {
+    let polls = 0;
+    server.events.on("request:start", ({ request }) => {
+      if (new URL(request.url).pathname.endsWith("/runs") && request.method === "GET") polls += 1;
+    });
+    renderWorkspace(editor, USER.aResearcher);
+    await userEvent.click(await screen.findByRole("button", { name: "실행" }));
+    const runs = screen.getByRole("table", { name: "실행 기록" });
+    await waitFor(() => expect(within(within(runs).getAllByRole("row")[1]!).getByRole("link", { name: "산출물 보기" })).toBeInTheDocument(), { timeout: 8000 });
+    await new Promise((r) => setTimeout(r, 300));
+    const settled = polls;
+    await new Promise((r) => setTimeout(r, 2600));
+    expect(polls).toBe(settled);
+    server.events.removeAllListeners();
+  }, 15_000);
+
+  it("upload fails clearly when the session has no upload target for a file", async () => {
+    server.use(
+      http.post("*/mock-api/v1/projects/:project_id/outputs", () =>
+        HttpResponse.json({ output_id: OUTPUT.capacity, expires_at: new Date(Date.now() + 60_000).toISOString(), files: [] }, { status: 201 }),
+      ),
+    );
+    renderWorkspace(`${base}/outputs`, USER.aResearcher);
+    const open = await screen.findByRole("button", { name: "파일 올리기" });
+    await waitFor(() => expect(open).toBeEnabled());
+    await userEvent.click(open);
+    const dialog = await screen.findByRole("dialog", { name: "파일 올리기" });
+    await userEvent.type(within(dialog).getByLabelText("산출물 이름"), "보고서");
+    await userEvent.upload(within(dialog).getByLabelText("파일"), new File(["x"], "report.txt", { type: "text/plain" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "올리기" }));
+    expect(await within(dialog).findByText("업로드 세션에 report.txt 파일의 업로드 주소가 없습니다. 다시 올려 주세요.")).toBeInTheDocument();
   });
 });

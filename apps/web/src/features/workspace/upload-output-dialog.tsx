@@ -4,7 +4,7 @@ import { TriangleAlert } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { ENUMS } from "@/generated/contracts";
 import { hashFile } from "@/features/upload/lib/hash-client";
 import { putWithProgress, withRetry } from "@/features/upload/lib/transfer";
@@ -35,18 +35,38 @@ type Phase = { kind: "idle" } | { kind: "hashing"; done: number } | { kind: "upl
  */
 export function UploadOutputDialog({ projectId, floor, open, onOpenChange }: { projectId: string; floor: AccessLevel; open: boolean; onOpenChange: (open: boolean) => void }) {
   const t = useTranslations();
+  // While files are being hashed or sent the dialog stays open (Escape / outside click / ×): closing would leave a
+  // half-made upload session behind.
+  const [busy, setBusy] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(o) => (o || !busy ? onOpenChange(o) : undefined)}>
       <DialogContent closeLabel={t("common.close")} className="max-w-xl">
         <DialogTitle>{t("workspace.upload.title")}</DialogTitle>
         <DialogDescription>{t("workspace.upload.description")}</DialogDescription>
-        {open ? <UploadForm projectId={projectId} floor={floor} onDone={() => onOpenChange(false)} /> : null}
+        {open ? (
+          <UploadForm
+            projectId={projectId}
+            floor={floor}
+            onBusy={setBusy}
+            onDone={() => {
+              setBusy(false);
+              onOpenChange(false);
+            }}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );
 }
 
-function UploadForm({ projectId, floor, onDone }: { projectId: string; floor: AccessLevel; onDone: () => void }) {
+/** A file the upload session has no target for: the server and this form disagree, so nothing is sent. */
+class MissingTarget extends Error {
+  constructor(readonly fileName: string) {
+    super(fileName);
+  }
+}
+
+function UploadForm({ projectId, floor, onDone, onBusy }: { projectId: string; floor: AccessLevel; onDone: () => void; onBusy: (busy: boolean) => void }) {
   const t = useTranslations();
   const errorText = useErrorText();
   const router = useRouter();
@@ -62,6 +82,7 @@ function UploadForm({ projectId, floor, onDone }: { projectId: string; floor: Ac
   const badNames = files.filter((f) => !NAME.test(f.name));
   const tooBig = files.filter((f) => f.size < 1 || f.size > MAX_BYTES);
   const busy = phase.kind !== "idle";
+  useEffect(() => onBusy(busy), [busy, onBusy]);
   const ready = title.trim() && files.length > 0 && files.length <= MAX_FILES && !badNames.length && !tooBig.length && !busy;
 
   const submit = async () => {
@@ -76,12 +97,13 @@ function UploadForm({ projectId, floor, onDone }: { projectId: string; floor: Ac
         setPhase({ kind: "hashing", done: i + 1 });
       }
       const session = await createOutputUpload(projectId, { title: title.trim(), access_level: level, files: declared });
+      const missing = files.find((f) => !session.files.some((x) => x.name === f.name));
+      if (missing) throw new MissingTarget(missing.name);
       const total = files.reduce((n, f) => n + f.size, 0);
       let sent = 0;
       setPhase({ kind: "uploading", sent, total });
       for (const f of files) {
-        const target = session.files.find((x) => x.name === f.name);
-        if (!target) continue;
+        const target = session.files.find((x) => x.name === f.name)!;
         await withRetry(() => putWithProgress(target.upload.url, f, target.upload.headers ?? {}, (n) => setPhase({ kind: "uploading", sent: sent + n, total })));
         sent += f.size;
       }
@@ -93,6 +115,10 @@ function UploadForm({ projectId, floor, onDone }: { projectId: string; floor: Ac
       router.push(`${projectHref(projectId, "outputs")}/${output.output_id}`);
     } catch (e) {
       setPhase({ kind: "idle" });
+      if (e instanceof MissingTarget) {
+        setError(t("workspace.upload.missingTarget", { name: e.fileName }));
+        return;
+      }
       const err = asApiError(e);
       if (err.code === "VALIDATION_FAILED" && err.details.field === "access_level") {
         const minimum = typeof err.details.minimum === "string" && (LEVELS as readonly string[]).includes(err.details.minimum) ? (err.details.minimum as AccessLevel) : floor;
@@ -170,7 +196,7 @@ function UploadForm({ projectId, floor, onDone }: { projectId: string; floor: Ac
       {error ? (
         <p role="alert" className="flex items-start gap-2 rounded-sm bg-warning-soft p-3 text-small text-fg">
           <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
-          {errorText(error)}
+          {typeof error === "string" ? error : errorText(error)}
         </p>
       ) : null}
       <DialogFooter className="mt-2">

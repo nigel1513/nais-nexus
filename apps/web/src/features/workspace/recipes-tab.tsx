@@ -45,7 +45,6 @@ export function RecipesTab() {
           }
           className="mb-3"
         />
-        <p className="mb-4 max-w-[72ch] text-small text-fg-muted">{t("workspace.recipes.hint")}</p>
         {recipes.isPending ? (
           <DelayedSkeleton />
         ) : recipes.isError ? (

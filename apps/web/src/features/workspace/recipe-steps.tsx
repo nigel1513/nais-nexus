@@ -2,7 +2,7 @@
 import { Button, Checkbox, Input, Label, Select, Tag } from "@nais/ui";
 import { Plus, X } from "lucide-react";
 import { useTranslations } from "next-intl";
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ENUMS } from "@/generated/contracts";
 import type { Schemas } from "@/shared/api/types";
 import type { RecipeStep } from "./api";
@@ -55,6 +55,24 @@ export function parseScalar(text: string): Scalar {
   return text;
 }
 
+export type ColumnType = Schemas["ColumnProfile"]["type"];
+
+/**
+ * Typed text → value for a column of a known type (the catalog's column profile): text and date columns take text,
+ * integer/number columns numbers, boolean columns true/false. Double quotes always force text. Unknown type (no
+ * profile): the parseScalar heuristic.
+ */
+export function parseFor(type: ColumnType | undefined): (text: string) => Scalar {
+  return (text) => {
+    const s = text.trim();
+    if (/^".*"$/.test(s) && s.length >= 2) return s.slice(1, -1);
+    if (!type) return parseScalar(text);
+    if (type === "integer" || type === "number") return s !== "" && Number.isFinite(Number(s)) ? Number(s) : text;
+    if (type === "boolean") return /^(true|false)$/i.test(s) ? s.toLowerCase() === "true" : text;
+    return text;
+  };
+}
+
 export const formatScalar = (v: unknown): string => (v === null || v === undefined ? "" : Array.isArray(v) ? v.map(formatScalar).join(", ") : String(v));
 
 /** Missing parameters, checked before a preview or a save (the server checks the rest against the data). */
@@ -102,8 +120,32 @@ function Field({ id, label, children, wide }: { id: string; label: string; child
 }
 
 /** Text field that keeps what was typed and reports the parsed value (so "3." or "-" can be typed on the way). */
-function TextValue({ id, value, onChange, disabled, inputMode, parse }: { id: string; value: unknown; onChange: (v: never) => void; disabled?: boolean; inputMode?: "decimal" | "numeric"; parse: (s: string) => unknown }) {
+function TextValue({
+  id,
+  value,
+  onChange,
+  disabled,
+  inputMode,
+  parse,
+  rule = "",
+}: {
+  id: string;
+  value: unknown;
+  onChange: (v: never) => void;
+  disabled?: boolean;
+  inputMode?: "decimal" | "numeric";
+  parse: (s: string) => unknown;
+  /** Names the parse rule (the column's type); when it changes, the typed text is read again under the new rule. */
+  rule?: string;
+}) {
   const [text, setText] = useState(formatScalar(value));
+  const lastRule = useRef(rule);
+  useEffect(() => {
+    if (lastRule.current === rule) return;
+    lastRule.current = rule;
+    if (text.trim() !== "") (onChange as (v: unknown) => void)(parse(text));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the rule changes
+  }, [rule]);
   return (
     <Input
       id={id}
@@ -205,6 +247,7 @@ export function StepForm({
   columnsListId,
   joinable,
   inputName,
+  columnType = () => undefined,
   disabled,
 }: {
   step: RecipeStep;
@@ -212,6 +255,8 @@ export function StepForm({
   columnsListId: string;
   joinable: string[];
   inputName: (inputId: string) => string;
+  /** The column's type from the inputs' column profiles, when known. */
+  columnType?: (column: string) => ColumnType | undefined;
   disabled?: boolean;
 }) {
   const t = useTranslations();
@@ -250,19 +295,25 @@ export function StepForm({
                 id={f("value")}
                 value={step.value}
                 disabled={disabled}
-                parse={(s) =>
-                  step.op === "in"
+                rule={columnType(step.column) ?? ""}
+                parse={(s) => {
+                  const read = parseFor(columnType(step.column));
+                  return step.op === "in"
                     ? s.split(",").map((x) => x.trim()).filter(Boolean).map((x) => {
-                        const v = parseScalar(x);
+                        const v = read(x);
                         return typeof v === "boolean" ? x : v;
                       })
                     : s.trim() === ""
                       ? ""
-                      : parseScalar(s)
-                }
+                      : read(s);
+                }}
                 onChange={((value: Schemas["RecipeStepFilterRows"]["value"]) => onChange({ ...step, value })) as (v: never) => void}
               />
-              <p className="text-small text-fg-muted">{step.op === "in" ? t("workspace.recipe.valuesHint") : t("workspace.recipe.valueHint")}</p>
+              <p className="text-small text-fg-muted">
+                {[step.op === "in" ? t("workspace.recipe.valuesHint") : null, columnType(step.column) ? t("workspace.recipe.columnType", { type: t(`workspace.recipe.type.${columnType(step.column)}`) }) : t("workspace.recipe.valueHint")]
+                  .filter(Boolean)
+                  .join(" ")}
+              </p>
             </Field>
           )}
         </>,
@@ -289,7 +340,8 @@ export function StepForm({
               id={f("value")}
               value={step.value}
               disabled={disabled}
-              parse={(s) => (s.trim() === "" ? "" : parseScalar(s))}
+              rule={columnType(step.column) ?? ""}
+              parse={(s) => (s.trim() === "" ? "" : parseFor(columnType(step.column))(s))}
               onChange={((value: Scalar) => onChange({ ...step, value })) as (v: never) => void}
             />
           </Field>
@@ -406,32 +458,5 @@ export function StepForm({
           <TextValue id={f("n")} value={step.n} inputMode="numeric" disabled={disabled} parse={(s) => (/^\d+$/.test(s.trim()) ? Number(s.trim()) : Number.NaN)} onChange={((n: number) => onChange({ ...step, n })) as (v: never) => void} />
         </Field>,
       );
-  }
-}
-
-/** One-line summary of a step for the collapsed list and the run history. */
-export function stepSummary(step: RecipeStep, t: (key: string, values?: Record<string, string | number>) => string, inputName: (id: string) => string): string {
-  const cols = (c: string[]) => c.join(", ") || "—";
-  switch (step.type) {
-    case "select_columns":
-      return cols(step.columns);
-    case "filter_rows":
-      return `${step.column || "—"} ${t(`enums.RecipeFilterOp.${step.op}`)} ${formatScalar(step.value)}`.trim();
-    case "drop_missing":
-      return step.columns === null ? t("workspace.recipe.field.anyColumn") : cols(step.columns);
-    case "fill_missing":
-      return `${step.column || "—"} ← ${formatScalar(step.value)}`;
-    case "cast_type":
-      return `${step.column || "—"} → ${t(`enums.RecipeCastType.${step.to}`)}`;
-    case "convert_unit":
-      return `${step.column || "—"} × ${step.factor} + ${step.offset} (${step.unit_label})`;
-    case "aggregate":
-      return `${cols(step.group_by)} · ${step.metrics.map((m) => `${t(`enums.RecipeAggregateFn.${m.fn}`)}(${m.column})`).join(", ")}`;
-    case "join":
-      return `${step.right_input_id ? inputName(step.right_input_id) : "—"} · ${cols(step.on)}`;
-    case "sort":
-      return `${cols(step.by)}${step.descending ? " ↓" : ""}`;
-    case "limit":
-      return String(step.n);
   }
 }

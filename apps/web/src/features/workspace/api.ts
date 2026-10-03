@@ -1,9 +1,9 @@
 "use client";
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthReady } from "@/features/auth/use-auth-ready";
 import { api, unwrap } from "@/shared/api/client";
 import { nextCursor } from "@/shared/api/pagination";
-import type { Page, Query, Schemas } from "@/shared/api/types";
+import type { DatasetVersion, Page, Query, Schemas } from "@/shared/api/types";
 import { listProjectInputsKey } from "./query-keys";
 
 export type ProjectInput = Schemas["ProjectInput"];
@@ -140,24 +140,48 @@ export function usePreviewRecipe(projectId: string, recipeId: string) {
   });
 }
 
-/** Columns of one input as read by the server (a preview without steps): suggestions for the step forms. */
-export function useInputColumns(projectId: string, recipeId: string, inputId: string | undefined, { enabled = true }: { enabled?: boolean } = {}) {
+export type ColumnInfo = { name: string; type: Schemas["ColumnProfile"]["type"] };
+
+/**
+ * The table a recipe reads from a dataset version, as the backend's reader.primary_file picks it: the largest VERIFIED
+ * CSV/Parquet file (ties: path order); files whose basename starts with "_" (codebooks, schemas) are never the table.
+ */
+export function primaryTabularFile(files: Schemas["DatasetFile"][]): Schemas["DatasetFile"] | undefined {
+  return files
+    .filter((f) => f.status === "VERIFIED" && /\.(csv|parquet)$/i.test(f.path) && !(f.path.split("/").pop() ?? "").startsWith("_"))
+    .sort((a, b) => b.size_bytes - a.size_bytes || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))[0];
+}
+
+/**
+ * Column names and types of each input's table, from the catalog's value-free column profile (no data is read). An
+ * input whose profile is missing, not computed yet or unreadable gives no columns: the step forms stay free text.
+ */
+export function useInputColumns(inputs: Pick<ProjectInput, "input_id" | "dataset_version_id">[]): Map<string, ColumnInfo[]> {
   const ready = useAuthReady();
-  return useQuery({
-    queryKey: ["inputColumns", { projectId, recipeId, inputId }],
-    enabled: ready && enabled && !!inputId,
-    staleTime: 5 * 60_000,
-    retry: false,
-    queryFn: async () =>
-      (
-        (await unwrap(
-          api.POST("/projects/{project_id}/recipes/{recipe_id}/preview", {
-            params: { path: { project_id: projectId, recipe_id: recipeId } },
-            body: { input_ids: [inputId!], steps: [] },
-          }),
-        )) as RecipePreview
-      ).header,
+  const versions = useQueries({
+    queries: inputs.map((i) => ({
+      // Same key and shape as the catalog's useGetDatasetVersion, so the cache is shared.
+      queryKey: ["getDatasetVersion", { versionId: i.dataset_version_id }],
+      enabled: ready,
+      retry: false,
+      queryFn: async () => (await unwrap(api.GET("/dataset-versions/{version_id}", { params: { path: { version_id: i.dataset_version_id } } }))) as DatasetVersion,
+    })),
   });
+  const fileIds = versions.map((v) => (v.data ? primaryTabularFile(v.data.files)?.file_id : undefined));
+  const profiles = useQueries({
+    queries: fileIds.map((fileId) => ({
+      queryKey: ["workspaceColumns", { fileId }],
+      enabled: ready && !!fileId,
+      staleTime: Infinity,
+      gcTime: 30 * 60_000,
+      retry: false,
+      queryFn: async (): Promise<ColumnInfo[]> => {
+        const p = (await unwrap(api.GET("/dataset-files/{file_id}/profile", { params: { path: { file_id: fileId! } } }))) as Schemas["FileProfile"];
+        return p.status === "READY" ? p.columns.map((c) => ({ name: c.name, type: c.type })) : [];
+      },
+    })),
+  });
+  return new Map(inputs.map((i, k) => [i.input_id, profiles[k]?.data ?? []]));
 }
 
 // ---------------------------------------------------------------- runs
@@ -166,11 +190,14 @@ export function useStartRun(projectId: string, recipeId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async () => (await unwrap(api.POST("/projects/{project_id}/recipes/{recipe_id}/runs", { params: { path: { project_id: projectId, recipe_id: recipeId } } }))) as Run,
-    onSuccess: () => void qc.invalidateQueries({ queryKey: runsKey(projectId) }),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: runsKey(projectId) });
+      void qc.invalidateQueries({ queryKey: outputsKey(projectId) });
+    },
   });
 }
 
-/** Runs newest first; polls every 2 s while one on the loaded pages is QUEUED/RUNNING, and refreshes outputs when one finishes. */
+/** Runs newest first (no polling of their own: usePendingRuns refreshes them while a run is in flight). */
 export function useRuns(projectId: string, query: Omit<Query<"listRuns">, "cursor"> = {}) {
   const ready = useAuthReady();
   const qc = useQueryClient();
@@ -180,18 +207,45 @@ export function useRuns(projectId: string, query: Omit<Query<"listRuns">, "curso
     enabled: ready,
     queryFn: async ({ pageParam }) => {
       const page = (await unwrap(api.GET("/projects/{project_id}/runs", { params: { path: { project_id: projectId }, query: { ...query, cursor: pageParam } } }))) as Page<Run>;
-      // A run that was pending and has finished: its derived output (or failure) shows up elsewhere in the workspace.
-      const before = qc.getQueryData<{ pages: Page<Run>[] }>(queryKey)?.pages.flatMap((p) => p.items) ?? [];
-      const wasPending = new Set(before.filter(pending).map((r) => r.run_id));
-      if (page.items.some((r) => wasPending.has(r.run_id) && !pending(r))) {
-        void qc.invalidateQueries({ queryKey: outputsKey(projectId) });
-        void qc.invalidateQueries({ queryKey: ["listAuditEvents"] });
+      // A run that finished since the last load (or is first seen already finished) may have made an output.
+      const before = qc.getQueryData<{ pages: Page<Run>[] }>(queryKey)?.pages.flatMap((p) => p.items);
+      if (before) {
+        const known = new Map(before.map((r) => [r.run_id, r.status]));
+        if (page.items.some((r) => !pending(r) && known.get(r.run_id) !== r.status)) {
+          void qc.invalidateQueries({ queryKey: outputsKey(projectId) });
+          void qc.invalidateQueries({ queryKey: ["listAuditEvents"] });
+        }
       }
       return page;
     },
     initialPageParam: undefined as string | undefined,
     getNextPageParam: nextCursor,
-    refetchInterval: (q) => (q.state.data?.pages.some((p) => p.items.some(pending)) ? RUN_POLL_MS : false),
+  });
+}
+
+/**
+ * The QUEUED/RUNNING runs only, polled every 2 s while there are any, or while a run list on screen still shows one
+ * (`listed`); nothing polls once every run is finished. When a listed run's status differs from what this query sees,
+ * the run lists (not this query) are refreshed once.
+ */
+export function usePendingRuns(projectId: string, recipeId: string | undefined, { listed }: { listed: boolean }) {
+  const ready = useAuthReady();
+  const qc = useQueryClient();
+  const lists = { queryKey: runsKey(projectId), predicate: (q: { queryKey: readonly unknown[] }) => q.queryKey[2] !== "pending" };
+  return useQuery({
+    queryKey: [...runsKey(projectId), "pending", recipeId ?? null],
+    enabled: ready,
+    queryFn: async () => {
+      const page = (await unwrap(
+        api.GET("/projects/{project_id}/runs", { params: { path: { project_id: projectId }, query: { status: ["QUEUED", "RUNNING"], ...(recipeId ? { recipe_id: recipeId } : {}), limit: 100 } } }),
+      )) as Page<Run>;
+      const now = new Map(page.items.map((r) => [r.run_id, r.status]));
+      const shown = qc.getQueriesData<{ pages: Page<Run>[] }>(lists).flatMap(([, d]) => d?.pages.flatMap((p) => p.items) ?? []);
+      const stale = shown.some((r) => (pending(r) && now.get(r.run_id) !== r.status) || (now.has(r.run_id) && now.get(r.run_id) !== r.status));
+      if (stale) void qc.invalidateQueries(lists);
+      return page.items;
+    },
+    refetchInterval: (q) => (q.state.data?.length || listed ? RUN_POLL_MS : false),
   });
 }
 

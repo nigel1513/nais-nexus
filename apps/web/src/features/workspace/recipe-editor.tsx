@@ -14,9 +14,9 @@ import {
   type ProjectInput, type Recipe, type RecipePreview, type RecipeStep, type RecipeWrite,
 } from "./api";
 import { TargetDiscussion } from "./discussion-tab";
-import { newStep, STEP_TYPES, stepProblem, StepForm, type StepType } from "./recipe-steps";
+import { newStep, STEP_TYPES, stepProblem, StepForm, type ColumnType, type StepType } from "./recipe-steps";
 import { RunsList } from "./runs-list";
-import { projectHref, useDetailCrumb, useWorkspace } from "./workspace-layout";
+import { projectHref, useDetailCrumb, useLeaveGuard, useWorkspace } from "./workspace-layout";
 
 type Draft = { key: string; step: RecipeStep };
 /** A problem shown at a step: from the client check (missing parameter) or the server's RECIPE_INVALID. */
@@ -89,14 +89,17 @@ function EditorBody({ recipe, onReload }: { recipe: Recipe; onReload: () => Prom
   const dirty = JSON.stringify(writeOf(name, inputIds, drafts)) !== JSON.stringify(writeOf(saved.name, saved.input_ids, saved.steps.map((s) => ({ key: "", step: s }))));
   const readOnly = !canWrite;
   const lapsed = inputIds.filter((i) => byId.get(i)?.access_lapsed);
+  useLeaveGuard(dirty && !readOnly);
+  const [confirmReload, setConfirmReload] = useState(false);
 
-  // Column suggestions: each input as the server reads it, plus the last preview's result columns.
-  const baseColumns = useInputColumns(projectId, recipe.recipe_id, baseId, { enabled: !!byId.get(baseId) && !byId.get(baseId)?.access_lapsed });
-  const joinColumns = useInputColumns(projectId, recipe.recipe_id, joinable[0], { enabled: !!joinable[0] && !byId.get(joinable[0])?.access_lapsed });
-  const columns = useMemo(
-    () => [...new Set([...(baseColumns.data ?? []), ...(joinColumns.data ?? []), ...(result?.header ?? [])])],
-    [baseColumns.data, joinColumns.data, result?.header],
-  );
+  // Column suggestions and types: every recipe input's column profile (base first), plus the last preview's result columns.
+  const profiled = useInputColumns(inputIds.map((i) => byId.get(i)).filter((i): i is ProjectInput => !!i));
+  const columnTypes = useMemo(() => {
+    const m = new Map<string, ColumnType>();
+    for (const i of inputIds) for (const c of profiled.get(i) ?? []) if (!m.has(c.name)) m.set(c.name, c.type);
+    return m;
+  }, [inputIds, profiled]);
+  const columns = useMemo(() => [...new Set([...columnTypes.keys(), ...(result?.header ?? [])])], [columnTypes, result?.header]);
 
   const edit = (fn: (d: Draft[]) => Draft[]) => {
     setDrafts(fn);
@@ -146,7 +149,9 @@ function EditorBody({ recipe, onReload }: { recipe: Recipe; onReload: () => Prom
     if (e.code !== "RECIPE_INVALID") return false;
     const reason = typeof e.details.reason === "string" && KNOWN_REASONS.has(e.details.reason) ? e.details.reason : null;
     const column = typeof e.details.column === "string" ? e.details.column : "";
-    const message = reason ? t(`workspace.recipe.reason.${reason}`, { column }) : t("errors.RECIPE_INVALID");
+    const base = reason ? t(`workspace.recipe.reason.${reason}`, { column }) : t("errors.RECIPE_INVALID");
+    // Without the column's type the value was guessed (number/true/false): say how to compare as text.
+    const message = reason === "TYPE_MISMATCH" && column && !columnTypes.has(column) ? `${base} ${t("workspace.recipe.quoteHint")}` : base;
     const index = typeof e.details.step_index === "number" ? e.details.step_index : null;
     const target = index !== null ? drafts[index] : undefined;
     if (target) {
@@ -262,7 +267,7 @@ function EditorBody({ recipe, onReload }: { recipe: Recipe; onReload: () => Prom
               <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
               {t("workspace.recipe.conflict", { version: conflict })}
             </p>
-            <Button size="sm" onClick={() => void onReload()}>
+            <Button size="sm" onClick={() => (dirty ? setConfirmReload(true) : void onReload())}>
               {t("workspace.recipe.reload")}
             </Button>
           </div>
@@ -386,7 +391,15 @@ function EditorBody({ recipe, onReload }: { recipe: Recipe; onReload: () => Prom
                       {issue.message}
                     </p>
                   ) : null}
-                  <StepForm step={d.step} onChange={(s) => updateStep(d.key, s)} columnsListId={columnsListId} joinable={joinable} inputName={inputName} disabled={readOnly} />
+                  <StepForm
+                    step={d.step}
+                    onChange={(s) => updateStep(d.key, s)}
+                    columnsListId={columnsListId}
+                    joinable={joinable}
+                    inputName={inputName}
+                    columnType={(c) => columnTypes.get(c)}
+                    disabled={readOnly}
+                  />
                 </li>
               );
             })}
@@ -464,6 +477,19 @@ function EditorBody({ recipe, onReload }: { recipe: Recipe; onReload: () => Prom
 
       <TargetDiscussion scope="RECIPE" targetId={recipe.recipe_id} />
 
+      <ConfirmDialog
+        open={confirmReload}
+        onOpenChange={setConfirmReload}
+        title={t("workspace.leave.title")}
+        description={t("workspace.leave.reloadDescription")}
+        confirmLabel={t("workspace.leave.leave")}
+        cancelLabel={t("workspace.leave.stay")}
+        closeLabel={t("common.close")}
+        onConfirm={() => {
+          setConfirmReload(false);
+          void onReload();
+        }}
+      />
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}

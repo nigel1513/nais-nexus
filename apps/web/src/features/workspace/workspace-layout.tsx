@@ -4,7 +4,7 @@ import { Archive, Ellipsis, Globe, Lock, Pencil } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { useArchiveProject, useGetProject } from "@/features/projects/api";
 import { asApiError } from "@/shared/api/errors";
 import type { Project } from "@/shared/api/types";
@@ -35,6 +35,10 @@ export type Workspace = {
   archived: boolean;
   /** A detail page under a tab (a recipe, an output) adds its own crumb after the tab's. */
   setDetailCrumb: (crumb: Crumb | null) => void;
+  /** Navigate in the app, asking first when a page holds unsaved changes (useLeaveGuard). */
+  navigate: (href: string) => void;
+  /** Register whether the page holds unsaved changes (the recipe editor). */
+  setDirty: (dirty: boolean) => void;
 };
 
 const WorkspaceContext = createContext<Workspace | null>(null);
@@ -53,6 +57,37 @@ export function useDetailCrumb(crumb: Crumb | null) {
     setDetailCrumb(key ? (JSON.parse(key) as Crumb) : null);
     return () => setDetailCrumb(null);
   }, [key, setDetailCrumb]);
+}
+
+/**
+ * While `dirty`: the browser asks before unload, and in-app navigation (links anywhere on the page, the workspace's own
+ * pushes) asks "저장하지 않은 변경이 있습니다" first.
+ */
+export function useLeaveGuard(dirty: boolean) {
+  const { setDirty } = useWorkspace();
+  useEffect(() => {
+    setDirty(dirty);
+    if (!dirty) return;
+    const onUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      setDirty(false);
+    };
+  }, [dirty, setDirty]);
+}
+
+/** The in-app target of a plain left click on a same-origin link, or null (new tab, download, other origin, hash only). */
+function linkTarget(e: MouseEvent): string | null {
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return null;
+  const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+  if (!a || a.target === "_blank" || a.hasAttribute("download")) return null;
+  const url = new URL(a.href, window.location.href);
+  if (url.origin !== window.location.origin) return null;
+  return `${url.pathname}${url.search}`;
 }
 
 function tabOf(pathname: string, projectId: string): WorkspaceTab {
@@ -74,6 +109,31 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
   const tab = tabOf(pathname, projectId);
   const legacy = tab === "overview" ? LEGACY_TABS[params.get("tab") ?? ""] : undefined;
   const [detail, setDetailCrumb] = useState<Crumb | null>(null);
+  const dirtyRef = useRef(false);
+  const [leaving, setLeaving] = useState<string | null>(null);
+  const setDirty = useCallback((d: boolean) => {
+    dirtyRef.current = d;
+  }, []);
+  const navigate = useCallback(
+    (href: string) => {
+      if (dirtyRef.current) setLeaving(href);
+      else router.push(href);
+    },
+    [router],
+  );
+  // Capture phase on the document: runs before Next's Link handler, so a guarded click never starts the navigation.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (!dirtyRef.current) return;
+      const href = linkTarget(e);
+      if (!href || href === `${window.location.pathname}${window.location.search}`) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setLeaving(href);
+    };
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, []);
 
   useEffect(() => {
     if (legacy) router.replace(projectHref(projectId, legacy));
@@ -102,6 +162,8 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
     canWrite: !!p.my_role && p.my_role !== "VIEWER" && !archived,
     archived,
     setDetailCrumb,
+    navigate,
+    setDirty,
   };
 
   return (
@@ -114,7 +176,8 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
         </p>
       ) : null}
       <nav aria-label={t("workspace.tabsLabel")} className="mb-6 border-b border-border">
-        <ul className="-mb-px flex gap-6 overflow-x-auto [scrollbar-width:none]">
+        {/* Thin scrollbar: on a phone the strip overflows and the bar shows there is more to the right. */}
+        <ul className="-mb-px flex gap-6 overflow-x-auto [scrollbar-width:thin]">
           {WORKSPACE_TABS.map((k) => {
             const current = k === tab;
             return (
@@ -139,6 +202,21 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
         </ul>
       </nav>
       {children}
+      <ConfirmDialog
+        open={leaving !== null}
+        onOpenChange={(o) => (o ? undefined : setLeaving(null))}
+        title={t("workspace.leave.title")}
+        description={t("workspace.leave.description")}
+        confirmLabel={t("workspace.leave.leave")}
+        cancelLabel={t("workspace.leave.stay")}
+        closeLabel={t("common.close")}
+        onConfirm={() => {
+          const href = leaving;
+          dirtyRef.current = false;
+          setLeaving(null);
+          if (href) router.push(href);
+        }}
+      />
     </WorkspaceContext.Provider>
   );
 }
@@ -146,8 +224,7 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
 function WorkspaceBand({ ws }: { ws: Workspace }) {
   const t = useTranslations();
   const errorText = useErrorText();
-  const router = useRouter();
-  const { project: p, manager, owner, archived } = ws;
+  const { project: p, manager, owner, archived, navigate } = ws;
   const archive = useArchiveProject(p.project_id);
   const [confirming, setConfirming] = useState(false);
   const lead = p.organizations.find((o) => o.role === "LEAD");
@@ -170,7 +247,7 @@ function WorkspaceBand({ ws }: { ws: Workspace }) {
           manager || owner ? (
             <>
               {manager ? (
-                <button type="button" className={cn("sv-hb sv-hb-w", focusRing)} onClick={() => router.push(`${projectHref(p.project_id)}?edit=1`)}>
+                <button type="button" className={cn("sv-hb sv-hb-w", focusRing)} onClick={() => navigate(`${projectHref(p.project_id)}?edit=1`)}>
                   <Pencil aria-hidden="true" strokeWidth={1.75} />
                   {t("common.edit")}
                 </button>

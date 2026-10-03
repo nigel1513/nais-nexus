@@ -13,7 +13,7 @@ import { CopyShaButton } from "@/shared/ui/copy-sha-button";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { PanelHead } from "@/shared/ui/work-hero";
-import { useOutput, useOutputDownload, usePublishRequests, useRecipes, type Output } from "./api";
+import { useOutput, useOutputDownload, useProjectInputs, usePublishRequests, useRecipes, type Output } from "./api";
 import { TargetDiscussion } from "./discussion-tab";
 import { PublishDialog } from "./publish-dialog";
 import { projectHref, useDetailCrumb, useWorkspace } from "./workspace-layout";
@@ -138,6 +138,8 @@ function LineageList({ output, recipeName }: { output: Output; recipeName: strin
 function PublishState({ output, onRequest, canRequest }: { output: Output; onRequest: () => void; canRequest: boolean }) {
   const t = useTranslations();
   const { project } = useWorkspace();
+  // One page of the project's requests (API maximum 100, newest first) is enough to find this output's latest one; a
+  // project with more than 100 publish requests would need a per-output filter, which the contract does not have.
   const requests = usePublishRequests({ role: "requester", project_id: project.project_id, limit: 100 });
   const latest = flattenPages(requests.data).find((r) => r.output_id === output.output_id);
   const again = output.publish_status === "NONE" || output.publish_status === "REJECTED";
@@ -228,6 +230,7 @@ export function OutputDetail({ outputId }: { outputId: string }) {
   const q = useOutput(projectId, outputId);
   const recipes = useRecipes(projectId);
   const download = useOutputDownload(projectId, outputId);
+  const inputs = useProjectInputs(projectId);
   const [publishing, setPublishing] = useState(false);
   useDetailCrumb(q.data ? { label: q.data.title } : null);
   if (q.isPending) return <DelayedSkeleton lines={6} />;
@@ -235,6 +238,9 @@ export function OutputDetail({ outputId }: { outputId: string }) {
   const o = q.data;
   const recipeName = o.lineage.recipe_id ? (recipes.data?.items.find((r) => r.recipe_id === o.lineage.recipe_id)?.name ?? null) : null;
   const session = download.data;
+  // The server blocks downloads (INPUT_ACCESS_LAPSED) while any lineage input is out of my reach: say so up front.
+  const lapsedIds = new Set((inputs.data?.items ?? []).filter((i) => i.access_lapsed).map((i) => i.dataset_id));
+  const lapsedLineage = o.lineage.inputs.filter((i) => lapsedIds.has(i.dataset_id));
 
   return (
     <div className="flex flex-col gap-10">
@@ -258,6 +264,8 @@ export function OutputDetail({ outputId }: { outputId: string }) {
           <Button
             variant="primary"
             loading={download.isPending}
+            disabled={lapsedLineage.length > 0}
+            aria-describedby={lapsedLineage.length ? "ws-download-blocked" : undefined}
             onClick={() =>
               download.mutate(undefined, {
                 onSuccess: (s) => {
@@ -270,6 +278,12 @@ export function OutputDetail({ outputId }: { outputId: string }) {
             {t("workspace.output.download")}
           </Button>
         </div>
+        {lapsedLineage.length ? (
+          <p id="ws-download-blocked" className="flex items-start gap-2 text-small text-fg">
+            <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
+            {t("workspace.output.lapsed", { inputs: lapsedLineage.map((i) => i.dataset_title).join(", ") })}
+          </p>
+        ) : null}
         {download.isError ? (
           <p role="alert" className="flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft p-3 text-small text-fg">
             <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />

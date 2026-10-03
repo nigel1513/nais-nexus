@@ -49,8 +49,7 @@ export function OutputsTab() {
         }
         className="mb-3"
       />
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-[72ch] text-small text-fg-muted">{t("workspace.outputs.hint")}</p>
+      <div className="mb-4 flex flex-wrap items-center justify-end gap-3">
         <SegmentedControl
           aria-label={t("workspace.outputs.kindFilter")}
           value={kind}
