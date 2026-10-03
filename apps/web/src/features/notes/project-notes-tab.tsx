@@ -6,7 +6,7 @@ import { useEffect, useId, useState } from "react";
 import { useWorkspace } from "@/features/workspace/workspace-layout";
 import { useListProjectMembers } from "@/features/projects/api";
 import { useErrorText } from "@/shared/api/use-error-text";
-import { DelayedSkeleton } from "@/shared/ui/state-views";
+import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
 import { PanelHead } from "@/shared/ui/work-hero";
 import { useNoteSettings, useTodayNote, useUpdateNoteSettings } from "./api";
@@ -83,6 +83,14 @@ function WitnessSettings({ projectId }: { projectId: string }) {
       <PanelHead id={headingId} crumb={t("notes.settings.kicker")} title={t("notes.settings.title")} className="mb-3" />
       {settings.isPending || members.isPending ? (
         <DelayedSkeleton />
+      ) : settings.isError || members.isError ? (
+        <ErrorView
+          error={settings.error ?? members.error}
+          onRetry={() => {
+            void settings.refetch();
+            void members.refetch();
+          }}
+        />
       ) : (
         <form
           className="flex max-w-2xl flex-col gap-4 rounded-md border border-border bg-bg-panel p-4"

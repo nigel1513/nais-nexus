@@ -112,7 +112,8 @@ export function useSaveBlocks(noteId: string) {
         api.PUT("/notes/{note_id}/blocks", { params: { path: { note_id: noteId }, header: { "If-Match": `"${revision}"` } }, body: { blocks } }),
       )) as ResearchNote,
     onSuccess: (note) => {
-      qc.setQueryData(noteKey(noteId), note);
+      // A poll may already hold a newer revision (a draft landed meanwhile): never step the cache back.
+      qc.setQueryData<ResearchNote>(noteKey(noteId), (old) => (old && old.revision > note.revision ? old : note));
       void qc.invalidateQueries({ queryKey: notesKey });
     },
   });

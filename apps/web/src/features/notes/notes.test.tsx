@@ -46,6 +46,19 @@ const seedNotebook = () =>
       { type: "code", source_head: "df.groupby('cell_id').temp_c.mean()", output_kinds: ["table"], output_count: 1, has_error: false },
     ],
   });
+/** The always-mounted save-state live region (no aria-label: its text is what is announced). */
+const saveStatus = () => document.querySelector<HTMLElement>("[data-save-state]")!;
+/** Drafts today's note from a seeded notebook and waits for the AI sentences. */
+async function draftWithAi() {
+  seedNotebook();
+  renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
+  const button = await screen.findByRole("button", { name: "AI 초안 만들기" });
+  await waitFor(() => expect(button).toBeEnabled());
+  await userEvent.click(button);
+  const procedure = screen.getByRole("group", { name: "수행 내용" });
+  return within(procedure).findByRole("listitem", { name: /AI 초안/ }, { timeout: 8000 });
+}
+const aiBlocks = () => draftNote().blocks.filter((b) => b.origin === "AI");
 const errorBody = (code: string, details: Record<string, unknown> = {}) => ({ error: { code, message: code, trace_id: "t", details } });
 
 describe("연구노트 목록·검색", () => {
@@ -113,6 +126,15 @@ describe("표준 양식 편집기", () => {
     expect(within(signatures).getByRole("rowheader", { name: "기록자" }).parentElement).toHaveTextContent("서명 전");
   });
 
+  it("names the witnesses in the signature block", async () => {
+    requireWitness();
+    renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
+    const signatures = await screen.findByRole("table", { name: "서명" });
+    const row = within(signatures).getByRole("rowheader", { name: "확인자" }).parentElement!;
+    await waitFor(() => expect(row).toHaveTextContent("최유진"));
+    expect(row).toHaveTextContent("서명 전");
+  });
+
   it("auto-saves a second after typing with If-Match, then shows it saved", async () => {
     const seen: (string | null)[] = [];
     server.events.on("request:start", ({ request }) => {
@@ -121,8 +143,8 @@ describe("표준 양식 편집기", () => {
     renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
     const objective = within(await screen.findByRole("group", { name: "연구 목표" })).getAllByRole("textbox")[0]!;
     await userEvent.type(objective, " 추가 관찰");
-    expect(screen.getByRole("status", { name: "저장 상태" })).toHaveTextContent("저장하지 않은 변경");
-    await waitFor(() => expect(screen.getByRole("status", { name: "저장 상태" })).toHaveTextContent("저장됨"), { timeout: 4000 });
+    expect(saveStatus()).toHaveTextContent("저장하지 않은 변경");
+    await waitFor(() => expect(saveStatus()).toHaveTextContent("저장됨"), { timeout: 4000 });
     expect(seen).toEqual(['"2"']);
     expect(draftNote().blocks.find((b) => b.section === "OBJECTIVE")!.text).toMatch(/추가 관찰$/);
     expect(draftNote().revision).toBe(3);
@@ -138,6 +160,27 @@ describe("표준 양식 편집기", () => {
     await userEvent.type(boxes[1]!, "챔버 로그를 받아 대조한다.");
     await userEvent.click(within(next).getByRole("button", { name: "향후 계획 1번째 문장 삭제" }));
     await waitFor(() => expect(draftNote().blocks.filter((b) => b.section === "NEXT").map((b) => b.text)).toEqual(["챔버 로그를 받아 대조한다."]), { timeout: 4000 });
+  });
+
+  it("a sentence cleared, saved, then typed again is saved as a new sentence", async () => {
+    renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
+    const box = () => within(screen.getByRole("group", { name: "향후 계획" })).getAllByRole("textbox")[0]!;
+    await userEvent.clear(await waitFor(() => box()));
+    await waitFor(() => expect(draftNote().blocks.some((b) => b.section === "NEXT")).toBe(false), { timeout: 4000 });
+    await waitFor(() => expect(saveStatus()).toHaveTextContent("저장됨"));
+    await userEvent.type(box(), "챔버 로그를 받아 대조한다.");
+    await waitFor(() => expect(draftNote().blocks.filter((b) => b.section === "NEXT").map((b) => b.text)).toEqual(["챔버 로그를 받아 대조한다."]), { timeout: 4000 });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("a failed save keeps my text copyable and offers to try again", async () => {
+    server.use(http.put("*/mock-api/v1/notes/:note_id/blocks", () => HttpResponse.json(errorBody("INTERNAL_ERROR"), { status: 500 })));
+    renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
+    const objective = within(await screen.findByRole("group", { name: "연구 목표" })).getAllByRole("textbox")[0]!;
+    await userEvent.type(objective, " 실패할 문장");
+    const alert = await screen.findByRole("alert", {}, { timeout: 4000 });
+    expect((within(alert).getByRole("textbox", { name: "저장하지 못한 내 내용" }) as HTMLTextAreaElement).value).toContain("실패할 문장");
+    expect(within(alert).getByRole("button", { name: "다시 저장" })).toBeInTheDocument();
   });
 
   it("a save conflict keeps my text copyable and offers to reload", async () => {
@@ -180,24 +223,54 @@ describe("AI 초안", () => {
     expect(screen.queryByRole("button", { name: "AI 초안 만들기" })).not.toBeInTheDocument();
   });
 
-  it("drafts from today's notebook: progress, marked AI sentences with evidence, reviewed by saving", async () => {
-    seedNotebook();
-    renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
-    const button = await screen.findByRole("button", { name: "AI 초안 만들기" });
-    await waitFor(() => expect(button).toBeEnabled());
-    await userEvent.click(button);
-    expect(await screen.findByText(/AI 초안을 만들고 있습니다|AI 초안 대기 중/)).toBeInTheDocument();
-    const procedure = screen.getByRole("group", { name: "수행 내용" });
-    const ai = await within(procedure).findByRole("listitem", { name: /AI 초안/ }, { timeout: 8000 });
+  it("drafts from today's notebook: progress, marked AI sentences with evidence; editing one accepts only that one", async () => {
+    const ai = await draftWithAi();
     expect(within(ai).getByText("temp_c 주기 분석 · 셀 2")).toBeInTheDocument();
     expect(screen.getByText(/검토하지 않은 AI 문장 \d+개/)).toBeInTheDocument();
-    // Submitting with unreviewed AI sentences is refused with the reason.
-    expect(screen.getByRole("button", { name: /서명/ })).toBeDisabled();
+    expect(aiBlocks().length).toBeGreaterThan(1);
 
     await userEvent.type(within(ai).getByRole("textbox"), " (평균)");
-    await waitFor(() => expect(draftNote().blocks.filter((b) => b.origin === "AI").every((b) => b.accepted)).toBe(true), { timeout: 4000 });
-    await waitFor(() => expect(screen.queryByText(/검토하지 않은 AI 문장/)).not.toBeInTheDocument());
-    expect(draftNote().blocks.find((b) => b.origin === "AI" && b.section === "PROCEDURE")!.evidence[0]).toMatchObject({ type: "NOTEBOOK", label: "temp_c 주기 분석 · 셀 2" });
+    await waitFor(() => expect(aiBlocks().filter((b) => b.accepted).map((b) => b.section)).toEqual(["PROCEDURE"]), { timeout: 4000 });
+    expect(aiBlocks().find((b) => b.section === "PROCEDURE")!.evidence[0]).toMatchObject({ type: "NOTEBOOK", label: "temp_c 주기 분석 · 셀 2" });
+    expect(screen.getByText(/검토하지 않은 AI 문장 \d+개/)).toBeInTheDocument();
+  });
+
+  it("editing a sentence I wrote leaves the AI sentences unaccepted on the server", async () => {
+    await draftWithAi();
+    const objective = within(screen.getByRole("group", { name: "연구 목표" })).getAllByRole("textbox")[0]!;
+    await userEvent.type(objective, " 추가");
+    await waitFor(() => expect(draftNote().blocks.find((b) => b.section === "OBJECTIVE" && b.origin === "HUMAN")!.text).toMatch(/추가$/), { timeout: 4000 });
+    expect(aiBlocks().every((b) => !b.accepted)).toBe(true);
+  });
+
+  it("submit and sign point to 초안 확인 완료, which accepts the remaining AI sentences and enables them", async () => {
+    requireWitness();
+    await draftWithAi();
+    const submit = screen.getByRole("button", { name: "제출" });
+    expect(submit).toHaveAttribute("aria-disabled", "true");
+    await userEvent.click(submit);
+    expect(screen.queryByRole("dialog", { name: "연구노트 제출" })).not.toBeInTheDocument();
+    const notice = screen.getByText(/검토하지 않은 AI 문장 \d+개/).closest("[tabindex]");
+    expect(notice).toHaveFocus();
+    await userEvent.click(screen.getByRole("button", { name: "초안 확인 완료" }));
+    await waitFor(() => expect(aiBlocks().every((b) => b.accepted)).toBe(true), { timeout: 4000 });
+    await waitFor(() => expect(screen.getByRole("button", { name: "제출" })).not.toHaveAttribute("aria-disabled"));
+    expect(screen.queryByText(/검토하지 않은 AI 문장/)).not.toBeInTheDocument();
+  });
+
+  it("a draft that lands on a stale editor is merged and saved without a conflict", async () => {
+    seedNotebook();
+    renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
+    const objective = within(await screen.findByRole("group", { name: "연구 목표" })).getAllByRole("textbox")[0]!;
+    // The draft finished on the server (revision + 1, AI sentences appended) without this screen polling it.
+    const n = draftNote();
+    n.blocks.push({ block_id: crypto.randomUUID(), section: "RESULTS", text: "셀 2 실행 결과로 table 1건을 확인했다.", origin: "AI", accepted: false, evidence: [] });
+    n.revision += 1;
+    await userEvent.type(objective, " 병합");
+    await waitFor(() => expect(draftNote().blocks.find((b) => b.section === "OBJECTIVE")!.text).toMatch(/병합$/), { timeout: 5000 });
+    expect(aiBlocks()).toEqual([expect.objectContaining({ section: "RESULTS", accepted: false })]);
+    expect(screen.queryByText(/다른 곳에서 이 노트가 먼저 저장되었습니다/)).not.toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "결과 및 관찰" })).getByRole("listitem", { name: /AI 초안/ })).toBeInTheDocument();
   });
 
   it("deleting an AI sentence removes it", async () => {
@@ -351,6 +424,21 @@ describe("검증·내보내기", () => {
     expect(within(panel).getByText("체인 불일치")).toBeInTheDocument();
   });
 
+  it("a broken chain with an intact note says which part failed", async () => {
+    server.use(
+      http.get("*/mock-api/v1/notes/:note_id/verify", ({ params }) =>
+        HttpResponse.json({ note_id: params.note_id, valid: true, content_hash: "a".repeat(64), recomputed_hash: "a".repeat(64), chain_valid: false, checked_at: new Date().toISOString() }),
+      ),
+    );
+    renderNotes(`/commons/notes/${NOTE.signed}`, USER.aResearcher);
+    await userEvent.click(await screen.findByRole("button", { name: "무결성 검증" }));
+    const panel = await screen.findByRole("region", { name: "무결성 검증 결과" });
+    expect(await within(panel).findByText("내용 해시 일치")).toBeInTheDocument();
+    expect(within(panel).getByText("체인 불일치")).toBeInTheDocument();
+    expect(panel).toHaveTextContent("이 노트의 내용은 서명할 때와 같습니다");
+    expect(panel).toHaveTextContent("같은 과제·기관의 서명된 노트 체인");
+  });
+
   it("exports the note's day as a ZIP download", async () => {
     const create = vi.fn(() => "blob:notes");
     const revoke = vi.fn();
@@ -387,6 +475,13 @@ describe("프로젝트 연구노트 탭", () => {
     await userEvent.click(within(settings).getByRole("checkbox", { name: /최유진/ }));
     await userEvent.click(within(settings).getByRole("button", { name: "저장" }));
     await waitFor(() => expect(getDb().noteSettings[PROJECT.seed]).toEqual({ witness_required: true, witness_user_ids: [USER.bResearcher] }));
+  });
+
+  it("witness settings show the error when the member list fails", async () => {
+    server.use(http.get("*/mock-api/v1/projects/:project_id/members", () => HttpResponse.json(errorBody("INTERNAL_ERROR"), { status: 500 })));
+    renderWorkspace(`${base}/notes`, USER.aResearcher);
+    const settings = await screen.findByRole("region", { name: "확인자 설정" });
+    expect(await within(settings).findByRole("button", { name: "다시 시도" })).toBeInTheDocument();
   });
 
   it("the notes list's 오늘 노트 쓰기 picks a project first", async () => {

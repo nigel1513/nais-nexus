@@ -21,10 +21,11 @@ function SaveStatus({ editor }: { editor: NoteEditorState }) {
             ? [<PencilLine key="i" />, t("notes.save.dirty")]
             : [<CloudCheck key="i" />, t("notes.save.savedAt", { time })];
   return (
-    <span role="status" aria-label={t("notes.save.label")} className="inline-flex items-center gap-1.5 text-small text-fg-muted [&_svg]:size-3.5 [&_svg]:shrink-0">
+    <span role="status" data-save-state={editor.state} className="inline-flex items-center gap-1.5 text-small text-fg-muted [&_svg]:size-3.5 [&_svg]:shrink-0">
       <span aria-hidden="true" className="contents">
         {icon}
       </span>
+      <span className="sr-only">{t("notes.save.label")}: </span>
       {text}
     </span>
   );

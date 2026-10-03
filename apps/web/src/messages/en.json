@@ -949,8 +949,5 @@
     "reply": "Reply",
     "send": "Post reply",
     "notFound": "Thread not found in the list."
-  },
-  "reserved": {
-    "notes": "Research notes"
   }
 }

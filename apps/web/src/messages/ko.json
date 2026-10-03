@@ -1499,8 +1499,7 @@
     "marketplace": "AI Marketplace",
     "compute": "Compute",
     "comingSoon": "준비 중입니다",
-    "description": "준비 중인 기능입니다.",
-    "notes": "연구노트"
+    "description": "준비 중인 기능입니다."
   },
   "validation": {
     "notClearable": "이 항목은 비울 수 없습니다. 값을 수정해 주세요.",
@@ -2357,7 +2356,6 @@
       "organization": "소속"
     },
     "form": {
-      "label": "연구 내용",
       "sentence": "{section} {n}번째 문장",
       "remove": "{section} {n}번째 문장 삭제",
       "add": "문장 추가",
@@ -2371,20 +2369,18 @@
       "evidence": "근거",
       "draft": "AI 초안 만들기",
       "noSource": "오늘 저장한 노트북이 없습니다.",
-      "sourceHint": "오늘 저장한 노트북 {count}개를 읽고 문장을 제안합니다.",
       "queued": "AI 초안 대기 중입니다. 노트북 {count}개를 읽습니다.",
       "running": "AI 초안을 만들고 있습니다…",
       "failed": "AI 초안을 만들지 못했습니다. 직접 쓴 문장은 그대로입니다.",
       "rateLimited": "AI 초안은 1분에 한 번 만들 수 있습니다. 1분 뒤에 다시 시도하세요.",
       "sourceUnavailable": "노트북 기록을 읽지 못했습니다. 잠시 후 다시 시도하세요.",
-      "pending": "검토하지 않은 AI 문장 {count}개가 있습니다. 고치거나 그대로 두고 저장하면 검토한 것으로 기록되고, 필요 없는 문장은 삭제하세요.",
-      "accept": "검토 완료로 저장"
+      "pending": "검토하지 않은 AI 문장 {count}개가 있습니다. 문장을 고치면 그 문장은 확인한 것으로 기록됩니다. 그대로 둘 문장은 초안 확인 완료를 누르고, 필요 없는 문장은 삭제하세요. 확인을 마쳐야 제출하거나 서명할 수 있습니다.",
+      "accept": "초안 확인 완료"
     },
     "save": {
       "label": "저장 상태",
       "dirty": "저장하지 않은 변경",
       "saving": "저장 중…",
-      "saved": "저장됨",
       "savedAt": "저장됨 · {time}",
       "failed": "저장하지 못했습니다",
       "retry": "다시 저장",
@@ -2402,7 +2398,8 @@
       "signer": "성명",
       "signedAt": "서명 일시",
       "notSigned": "서명 전",
-      "contentHash": "내용 해시"
+      "contentHash": "내용 해시",
+      "witnesses": "{name} 외 {count}명"
     },
     "rejected": {
       "title": "반려 사유",
@@ -2420,9 +2417,7 @@
       "revised": "새 버전(v{version})을 만들었습니다. 고친 뒤 다시 서명하세요.",
       "verify": "무결성 검증",
       "export": "내보내기",
-      "exported": "ZIP 파일을 내려받았습니다.",
-      "more": "노트 작업 더 보기",
-      "blockedByAi": "검토하지 않은 AI 문장이 있어 아직 제출하거나 서명할 수 없습니다."
+      "exported": "ZIP 파일을 내려받았습니다."
     },
     "sign": {
       "title": "연구노트 서명",
@@ -2455,8 +2450,13 @@
       "recomputed": "다시 계산한 해시",
       "checkedAt": "검증 시각",
       "again": "다시 검증",
-      "explainOk": "저장된 내용으로 다시 계산한 해시가 서명할 때의 해시와 같고, 같은 과제·기관의 서명 체인도 이어져 있습니다.",
-      "explainBad": "서명 이후 기록이 바뀌었거나 체인이 끊겼습니다. 기관 연구노트 관리자에게 알리세요."
+      "explainContentOkSigned": "이 노트의 내용은 서명할 때와 같습니다.",
+      "explainContentOkSubmitted": "이 노트의 내용은 제출할 때와 같습니다.",
+      "explainContentBad": "내용이 고정된 뒤 저장된 기록이 바뀌었습니다.",
+      "explainChainOk": "같은 과제·기관의 서명된 노트 체인도 처음부터 이어져 있습니다.",
+      "explainChainOkSubmitted": "같은 과제·기관의 서명된 노트 체인은 이어져 있습니다. 이 노트는 서명이 끝나면 체인에 들어갑니다.",
+      "explainChainBad": "같은 과제·기관의 서명된 노트 체인이 끊겼습니다. 서명된 노트가 바뀌었거나 빠졌을 수 있습니다.",
+      "report": "기관 연구노트 관리자에게 알리세요."
     },
     "export": {
       "title": "연구노트 내보내기",
@@ -2475,7 +2475,6 @@
       "save": "저장"
     },
     "tab": {
-      "title": "연구노트",
       "witness": "확인할 노트"
     }
   }

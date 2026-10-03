@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useOrgNames } from "@/features/organizations/api";
+import { useListProjectMembers } from "@/features/projects/api";
 import { asApiError } from "@/shared/api/errors";
 import { useErrorText } from "@/shared/api/use-error-text";
 import { useBeforeUnload, useNavigationGuard } from "@/shared/hooks/use-leave-guard";
@@ -58,6 +59,11 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
   useEffect(() => setDirty(leaving), [setDirty, leaving]);
 
   const settings = useNoteSettings(note.project_id);
+  const members = useListProjectMembers(note.project_id);
+  // 확인자: the note's snapshot once submitted; while DRAFT, the project's configured witnesses (never the recorder).
+  const witnessIds = (note.status === "DRAFT" ? (settings.data?.witness_user_ids ?? note.witness_user_ids) : note.witness_user_ids).filter((w) => w !== note.recorder_id);
+  const witnessNames = witnessIds.map((w) => members.data?.items.find((m) => m.user_id === w)?.display_name).filter((n): n is string => !!n);
+  const witnessLabel = witnessNames.length > 1 ? t("notes.signatures.witnesses", { name: witnessNames[0]!, count: witnessNames.length - 1 }) : (witnessNames[0] ?? null);
   const draft = useDraftNote(note.note_id);
   const submit = useSubmitNote(note.note_id);
   const revise = useReviseNote(note.note_id);
@@ -71,6 +77,7 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
   const recorderCanSign = isRecorder && (note.status === "SUBMITTED" ? !signed("RECORDER") : note.status === "DRAFT" && !note.witness_required);
   const witnessCanSign = isWitness && !signed("WITNESS");
   const blockedByAi = editable && editor.unreviewed > 0;
+  const aiNotice = useRef<HTMLDivElement>(null);
 
   // Back from a fresh login for signing (?sign=1): reopen the sign dialog once, and drop the flag from the URL.
   const reopened = useRef(false);
@@ -98,11 +105,11 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
     <>
       {editable ? (
         note.witness_required ? (
-          <Button variant="primary" disabled={blockedByAi} aria-describedby={blockedByAi ? ids.ai : undefined} onClick={() => setDialog("submit")}>
+          <Button variant="primary" className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50" aria-disabled={blockedByAi || undefined} aria-describedby={blockedByAi ? ids.ai : undefined} onClick={() => (blockedByAi ? aiNotice.current?.focus() : setDialog("submit"))}>
             {t("notes.actions.submit")}
           </Button>
         ) : (
-          <Button variant="primary" disabled={blockedByAi} aria-describedby={blockedByAi ? ids.ai : undefined} onClick={() => setDialog("sign")}>
+          <Button variant="primary" className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50" aria-disabled={blockedByAi || undefined} aria-describedby={blockedByAi ? ids.ai : undefined} onClick={() => (blockedByAi ? aiNotice.current?.focus() : setDialog("sign"))}>
             <Signature aria-hidden="true" strokeWidth={1.75} />
             {t("notes.actions.signDraft")}
           </Button>
@@ -191,10 +198,14 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
           </div>
         ) : null}
 
-        {editable && draftPending(note) ? (
-          <p role="status" className="flex items-center gap-2 text-small text-fg-muted">
-            <LoaderCircle aria-hidden="true" strokeWidth={1.75} className="size-4 animate-spin" />
-            {note.draft_status === "QUEUED" ? t("notes.ai.queued", { count: note.draft_source_count }) : t("notes.ai.running")}
+        {editable ? (
+          <p role="status" className={draftPending(note) ? "flex items-center gap-2 text-small text-fg-muted" : "sr-only"}>
+            {draftPending(note) ? (
+              <>
+                <LoaderCircle aria-hidden="true" strokeWidth={1.75} className="size-4 animate-spin" />
+                {note.draft_status === "QUEUED" ? t("notes.ai.queued", { count: note.draft_source_count }) : t("notes.ai.running")}
+              </>
+            ) : null}
           </p>
         ) : null}
         {editable && note.draft_status === "FAILED" ? (
@@ -214,21 +225,21 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
         ) : null}
 
         {blockedByAi ? (
-          <div className="flex flex-col items-start gap-2 rounded-md border border-accent/40 bg-accent-soft p-3 text-small text-fg sm:flex-row sm:items-center sm:justify-between">
+          <div ref={aiNotice} tabIndex={-1} className="flex flex-col items-start gap-2 rounded-md border border-accent/40 bg-accent-soft p-3 text-small text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus sm:flex-row sm:items-center sm:justify-between">
             <p id={ids.ai} className="flex items-start gap-2">
               <Sparkles aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-accent-fg" />
               {t("notes.ai.pending", { count: editor.unreviewed })}
             </p>
-            <Button size="sm" loading={editor.state === "saving"} onClick={() => void editor.saveNow()}>
+            <Button size="sm" loading={editor.state === "saving"} onClick={() => void editor.acceptAll()}>
               {t("notes.ai.accept")}
             </Button>
           </div>
         ) : null}
 
         {editable ? <SaveProblems editor={editor} /> : null}
-        {verifying ? <VerifyPanel noteId={note.note_id} /> : null}
+        {verifying ? <VerifyPanel noteId={note.note_id} status={note.status} /> : null}
 
-        <NoteForm note={note} editor={live} organizationName={orgNames[note.organization_id] ?? (me.organization.organization_id === note.organization_id ? me.organization.name : undefined)} />
+        <NoteForm note={note} editor={live} witnessLabel={witnessLabel} organizationName={orgNames[note.organization_id] ?? (me.organization.organization_id === note.organization_id ? me.organization.name : undefined)} />
       </div>
 
       {dialog === "sign" ? (
@@ -284,21 +295,7 @@ function SaveProblems({ editor }: { editor: NoteEditorState }) {
   const t = useTranslations();
   const errorText = useErrorText();
   const id = useId();
-  if (editor.failed && !editor.conflict) {
-    return (
-      <div role="alert" className="flex flex-col items-start gap-2 rounded-md border border-danger-line bg-danger-soft p-3 text-small text-fg">
-        <p className="flex items-start gap-2">
-          <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-danger" />
-          {errorText(editor.failed)}
-        </p>
-        <Button size="sm" onClick={editor.retry}>
-          <RotateCw aria-hidden="true" strokeWidth={1.75} />
-          {t("notes.save.retry")}
-        </Button>
-      </div>
-    );
-  }
-  if (!editor.conflict && editor.rescued === null) return null;
+  if (!editor.conflict && !editor.failed && editor.rescued === null) return null;
   const rescued = editor.rescued ? (
     <div className="flex w-full flex-col gap-1.5">
       <label htmlFor={`${id}-rescued`} className="text-small font-medium text-fg">
@@ -307,6 +304,21 @@ function SaveProblems({ editor }: { editor: NoteEditorState }) {
       <Textarea id={`${id}-rescued`} readOnly rows={6} value={editor.rescued} className="w-full font-mono text-mono" onFocus={(e) => e.currentTarget.select()} />
     </div>
   ) : null;
+  if (editor.failed && !editor.conflict) {
+    return (
+      <div role="alert" className="flex flex-col items-start gap-3 rounded-md border border-danger-line bg-danger-soft p-3 text-small text-fg">
+        <p className="flex items-start gap-2">
+          <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-danger" />
+          {errorText(editor.failed)}
+        </p>
+        {rescued}
+        <Button size="sm" onClick={editor.retry}>
+          <RotateCw aria-hidden="true" strokeWidth={1.75} />
+          {t("notes.save.retry")}
+        </Button>
+      </div>
+    );
+  }
   if (editor.conflict) {
     return (
       <div role="alert" className="flex flex-col items-start gap-3 rounded-md border border-warning-line bg-warning-soft p-3 text-small text-fg">
