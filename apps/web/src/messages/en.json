@@ -591,7 +591,9 @@
         "discardTitle": "Delete draft",
         "discardBody": "Deletes the {label} draft and the files uploaded to it. Inherited files stay in the published versions. This cannot be undone.",
         "discardConfirm": "Delete",
-        "discarded": "Draft deleted"
+        "discarded": "Draft deleted",
+        "staleNoLatestTitle": "The base version is no longer current",
+        "staleNoLatestBody": "The base version was withdrawn or replaced. Update to the latest before publishing; your uploads stay."
       },
       "conflict": {
         "title": "Resolve conflicts",

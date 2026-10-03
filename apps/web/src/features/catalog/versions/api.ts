@@ -58,6 +58,11 @@ export function useRebaseDraft(versionId: string) {
     onSuccess: (v) => {
       qc.setQueryData(["getDatasetVersion", { versionId }], v);
       invalidateVersionViews(qc, v.dataset_id);
+      // THEIRS re-points rows in place (same file_id): their profiles and previews now come from the latest file.
+      for (const f of v.files) {
+        void qc.invalidateQueries({ queryKey: ["getFileProfile", { fileId: f.file_id }] });
+        void qc.invalidateQueries({ queryKey: ["getFilePreview", { fileId: f.file_id }] });
+      }
     },
   });
 }

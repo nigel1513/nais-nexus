@@ -8,7 +8,13 @@ import { server } from "../../../../tests/msw";
 import { router } from "../../../../tests/navigation";
 import { renderScreen } from "../../../../tests/render";
 import { VersionDetailScreen } from "../version-detail-screen";
-import { seedStaleDraftWithConflict } from "./test-seeds";
+import { useGetFileProfile } from "../api";
+import { LATEST_V21, seedStaleDraftWithConflict } from "./test-seeds";
+
+function ProfileProbe({ fileId }: { fileId: string }) {
+  const p = useGetFileProfile(fileId);
+  return <p data-testid="probe">{p.data && "rows_sampled" in p.data ? String(p.data.rows_sampled) : "…"}</p>;
+}
 
 configure({ asyncUtilTimeout: 5000 });
 
@@ -124,6 +130,40 @@ describe("draft flow", () => {
     await screen.findByRole("region", { name: "AI-Ready 검증" });
     expect(screen.queryByRole("link", { name: /최신 버전이 아닙니다/ })).toBeNull();
     expect(screen.queryByRole("region", { name: /초안/ })).toBeNull();
+  });
+
+  it("a THEIRS rebase keeps the row id and refreshes a mounted profile of that file", async () => {
+    const { draftId } = seedStaleDraftWithConflict();
+    const db = getDb();
+    const draft = db.versions.find((v) => v.dataset_version_id === draftId)!;
+    const own = draft.files.find((f) => f.path === "data/measurements.csv")!;
+    const theirs = db.versions.find((v) => v.dataset_version_id === LATEST_V21)!.files.find((f) => f.path === "data/measurements.csv")!;
+    const profile = (rows: number) => ({ status: "READY" as const, column_profile: { format: "csv" as const, rows_sampled: rows, total_rows: rows, truncated: false, columns_truncated: false, columns: [] } });
+    db.previews[own.file_id] = profile(1200);
+    db.previews[theirs.file_id] = profile(777);
+    renderScreen(
+      <>
+        <VersionDetailScreen datasetId={DS} versionId={draftId} readinessPollMs={60_000} />
+        <ProfileProbe fileId={own.file_id} />
+      </>,
+      { user: USER.bSteward, path: `/commons/data/${DS}/versions/${draftId}` },
+    );
+    await waitFor(() => expect(screen.getByTestId("probe")).toHaveTextContent("1200"));
+    await userEvent.click(await within(await banner()).findByRole("button", { name: "최신 기준으로 갱신" }));
+    const dialog = await screen.findByRole("dialog", { name: "충돌 해결" });
+    await userEvent.click(within(dialog).getByRole("radio", { name: "최신 버전 파일 사용" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "갱신" }));
+    await waitFor(() => expect(screen.getByTestId("probe")).toHaveTextContent("777"));
+    expect(draft.files.find((f) => f.path === "data/measurements.csv")!.file_id).toBe(own.file_id);
+  });
+
+  it("stale with nothing published any more: a plain message, no endless placeholder", async () => {
+    seedStaleDraftWithConflict();
+    for (const v of getDb().versions) if (v.dataset_id === DS && v.status === "PUBLISHED") v.status = "WITHDRAWN";
+    open(VERSION.batteryDraft);
+    const b = await banner();
+    expect(await within(b).findByText("기준 버전이 더 이상 최신이 아닙니다")).toBeInTheDocument();
+    expect(within(b).getByRole("button", { name: "최신 기준으로 갱신" })).toBeInTheDocument();
   });
 
   it("rebase refused while an upload is open shows the reason", async () => {

@@ -1188,8 +1188,12 @@ export const catalogHandlers = [
     const user = currentUser(request);
     const db = getDb();
     const raw = await request.text();
-    const input = (raw ? JSON.parse(raw) : {}) as { resolutions?: Record<string, string> };
+    const input = (raw ? JSON.parse(raw) : {}) as { resolutions?: Record<string, string> } & Record<string, unknown>;
+    // RebaseRequest is StrictIn: unknown keys are 422, and resolutions hold at most 10,000 paths.
+    const extra = Object.keys(input).filter((k) => k !== "resolutions");
+    if (extra.length) invalid(extra.map((field) => ({ field, reason: "Extra inputs are not permitted" })));
     const resolutions = input.resolutions ?? {};
+    if (Object.keys(resolutions).length > 10_000) invalid([{ field: "resolutions", reason: "Dictionary should have at most 10000 items" }]);
     const bad = Object.entries(resolutions).filter(([path, choice]) => !/^[A-Za-z0-9._/-]{1,512}$/.test(path) || (choice !== "MINE" && choice !== "THEIRS"));
     if (bad.length) invalid([{ field: "resolutions", reason: "INVALID" }]);
     const { v } = stewardVersion(db, String(params.version_id), user);
@@ -1216,14 +1220,26 @@ export const catalogHandlers = [
         conflicts: plan.conflicts.map((c) => ({ path: c.path, base: find(baseRows, c.path), mine: find(v.files, c.path), theirs: find(theirsRows, c.path) })),
       });
     }
-    // In place: paths taken from the latest version become inherited copies (or disappear); draft-owned uploads stay.
+    // In place: a path taken from the latest version re-points its existing row (same file_id, as the backend does) at
+    // the latest file, a path only the latest has gets a new inherited row, one it dropped disappears. Draft-owned
+    // objects and previews of re-pointed rows are released; previews then resolve through inherited_from.
     const take = new Set(plan.takeTheirs);
+    const theirsByPath = new Map(theirsRows.map((f) => [f.path, f]));
+    const next: StoredFile[] = [];
     for (const f of v.files) {
-      if (!take.has(f.path) || f.inherited_from) continue;
-      delete db.objects[f.file_id];
-      delete db.previews[f.file_id];
+      if (!take.has(f.path)) {
+        next.push(f);
+        continue;
+      }
+      if (!f.inherited_from) {
+        delete db.objects[f.file_id];
+        delete db.previews[f.file_id];
+      }
+      const src = theirsByPath.get(f.path);
+      if (src) next.push({ ...f, size_bytes: src.size_bytes, sha256: src.sha256, media_type: src.media_type, status: "VERIFIED", inherited_from: src.file_id });
     }
-    v.files = [...v.files.filter((f) => !take.has(f.path)), ...theirsRows.filter((f) => take.has(f.path)).map(inheritedCopy)];
+    for (const path of take) if (!v.files.some((f) => f.path === path) && theirsByPath.has(path)) next.push(inheritedCopy(theirsByPath.get(path)!));
+    v.files = next;
     v.base_version_id = latest?.dataset_version_id ?? null;
     recompute(v);
     return HttpResponse.json(versionView(db, v, user));

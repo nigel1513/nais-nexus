@@ -51,7 +51,7 @@ export function DraftBanner({ version, datasetId }: { version: DatasetVersion; d
   const t = useTranslations("data.versioning");
   const errorText = useErrorText();
   const router = useRouter();
-  const { labels, latest } = useVersionLine(datasetId);
+  const { labels, latest, ready } = useVersionLine(datasetId);
   const rebase = useRebaseDraft(version.dataset_version_id);
   const discard = useDiscardDraft(datasetId);
   const [conflicts, setConflicts] = useState<RebaseConflict[] | null>(null);
@@ -62,7 +62,9 @@ export function DraftBanner({ version, datasetId }: { version: DatasetVersion; d
   const base = version.base_version_id ? (labels.get(version.base_version_id) ?? null) : null;
   const latestLabel = latest?.version_label ?? "";
   // The stale sentences name the latest label: hold them until the version list has it (no "최신 버전(…)" flash).
-  const waiting = stale && !latest;
+  // Once the list is in and nothing is published any more (all withdrawn), say it plainly without a label.
+  const waiting = stale && !latest && !ready;
+  const noLatest = stale && !latest && ready;
   const inherited = version.files.filter((f) => f.inherited).length;
   const own = version.files.length - inherited;
 
@@ -84,8 +86,8 @@ export function DraftBanner({ version, datasetId }: { version: DatasetVersion; d
     });
   };
 
-  const title = stale ? t("banner.staleTitle", { latest: latestLabel }) : base ? t("banner.latestTitle") : t("banner.firstTitle");
-  const body = stale ? t("banner.staleBody", { base: base ?? "", latest: latestLabel }) : base ? t("banner.latestBody") : t("banner.firstBody");
+  const title = noLatest ? t("banner.staleNoLatestTitle") : stale ? t("banner.staleTitle", { latest: latestLabel }) : base ? t("banner.latestTitle") : t("banner.firstTitle");
+  const body = noLatest ? t("banner.staleNoLatestBody") : stale ? t("banner.staleBody", { base: base ?? "", latest: latestLabel }) : base ? t("banner.latestBody") : t("banner.firstBody");
   const Icon = stale ? TriangleAlert : CircleCheck;
 
   return (

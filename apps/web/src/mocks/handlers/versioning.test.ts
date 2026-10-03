@@ -186,8 +186,21 @@ describe("rebase", () => {
     expect(session.status).toBe("OPEN");
     expect((await json(S, "POST", `/dataset-versions/${b}/rebase`, {}, 409)).error.code).toBe("CONFLICT");
     await json(S, "POST", `/upload-sessions/${session.upload_session_id}/complete`, {});
+    const mineId = (await get(b)).files.find((f: { path: string }) => f.path === "README.md").file_id;
     const theirs = await json(S, "POST", `/dataset-versions/${b}/rebase`, { resolutions: { "README.md": "THEIRS" } });
-    expect(theirs.files.find((f: { path: string }) => f.path === "README.md").inherited).toBe(true);
+    const readme = theirs.files.find((f: { path: string }) => f.path === "README.md");
+    expect(readme.inherited).toBe(true);
+    expect(readme.file_id).toBe(mineId); // re-pointed in place (backend keeps the row id)
+    expect(readme.sha256).toBe((await get(a)).files.find((f: { path: string }) => f.path === "README.md").sha256);
+  });
+
+  it("rejects extra body keys and more than 10,000 resolutions (422, StrictIn)", async () => {
+    const { b } = await twoDrafts();
+    const extra = await json(S, "POST", `/dataset-versions/${b}/rebase`, { resolutions: {}, force: true }, 422);
+    expect(extra.error.details.fields).toEqual([{ field: "force", reason: "Extra inputs are not permitted" }]);
+    const many = Object.fromEntries(Array.from({ length: 10_001 }, (_, i) => [`f${i}.csv`, "MINE"]));
+    const big = await json(S, "POST", `/dataset-versions/${b}/rebase`, { resolutions: many }, 422);
+    expect(big.error.details.fields[0]).toMatchObject({ field: "resolutions" });
   });
 
   it("is a no-op when the draft is already current", async () => {
