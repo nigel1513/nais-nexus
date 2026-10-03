@@ -64,7 +64,7 @@ export function SettingsLayout({ page, header, children }: { page: "account" | "
   return (
     <>
       {header}
-      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_minmax(0,48rem)] lg:items-start lg:gap-12 2xl:grid-cols-[14rem_minmax(0,64rem)] 2xl:gap-16 min-[2200px]:grid-cols-[14rem_minmax(0,1fr)]">
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[12rem_minmax(0,48rem)] lg:items-start lg:gap-12 2xl:grid-cols-[14rem_minmax(0,1fr)] 2xl:gap-16">
         <nav
           ref={navRef}
           aria-label={t("settings.nav.label")}
@@ -107,7 +107,7 @@ export function SettingsLayout({ page, header, children }: { page: "account" | "
           </ul>
         </nav>
         {/* Very wide screens: the section cards sit side by side instead of leaving the right of the page empty. */}
-        <div className="flex min-w-0 flex-col gap-6 min-[2200px]:grid min-[2200px]:grid-cols-2 min-[2200px]:items-start min-[3200px]:grid-cols-3">{children}</div>
+        <div className="flex min-w-0 flex-col gap-6 2xl:max-[2199px]:max-w-[64rem] min-[2200px]:grid min-[2200px]:grid-cols-2 min-[2200px]:items-start min-[3200px]:grid-cols-3">{children}</div>
       </div>
     </>
   );
