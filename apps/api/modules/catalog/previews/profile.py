@@ -93,6 +93,9 @@ class FieldHint:
     concept_iri: str | None = None
 
 
+MAX_TOTAL_ROWS = 2**53 - 1  # exact in a JSON number / JS double
+
+
 @dataclass
 class ProfileResult:
     format: str
@@ -101,9 +104,10 @@ class ProfileResult:
     columns_truncated: bool
     column_profile: list[dict[str, Any]]
     preview: dict[str, Any]
-    total_rows: int | None = (
-        None  # exact row count when known (parquet metadata, or a CSV/TSV read to the end)
-    )
+    # Exact row count when known (contract FileProfile.total_rows). CSV/TSV: the well-formed data records a read to
+    # EOF counted, i.e. rows_sampled of an untruncated sample (blank and malformed records are skipped everywhere,
+    # as in rows_sampled); None when the sample stopped early. Parquet: parquet_total_rows (footer, bounded).
+    total_rows: int | None = None
 
 
 @dataclass
@@ -901,7 +905,28 @@ def _profile_parquet(
         raise classify(exc) from exc
     if not truncated and meta.num_rows > sampled:
         truncated = True
-    return _finish("parquet", cols, rows, sampled, truncated, columns_truncated, limits, int(meta.num_rows))
+    return _finish(
+        "parquet",
+        cols,
+        rows,
+        sampled,
+        truncated,
+        columns_truncated,
+        limits,
+        parquet_total_rows(meta.num_rows, sampled, truncated),
+    )
+
+
+def parquet_total_rows(num_rows: Any, sampled: int, truncated: bool) -> int | None:
+    """The footer's row count is untrusted input: a full read reports what was decoded; otherwise the footer count
+    (never below the decoded rows), or None when it is negative, not an int or beyond MAX_TOTAL_ROWS. A hostile
+    footer therefore never fails an otherwise good preview."""
+    if not truncated:
+        return sampled
+    if isinstance(num_rows, bool) or not isinstance(num_rows, int) or num_rows < 0:
+        return None
+    total = max(num_rows, sampled)
+    return total if total <= MAX_TOTAL_ROWS else None
 
 
 def profile_table(

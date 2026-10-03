@@ -208,6 +208,9 @@ send(b"F", json.dumps({"storage": data.decode(), "op": op.decode()}).encode())
         lambda r: r["column_profile"][0].update(missing_ratio=1.5),
         lambda r: r["column_profile"][0].update(distinct_capped="yes"),  # strict types
         lambda r: r.update(rows_sampled=-1),
+        lambda r: r.update(total_rows=2**53),  # beyond a safe JSON integer
+        lambda r: r.update(total_rows=-1),
+        lambda r: r.update(total_rows=r["rows_sampled"] - 1),  # fewer rows than were sampled
         lambda r: r.update(format="xlsx"),
         lambda r: r["preview"].update(distributions_truncated=True),  # ruling P17: no such field
         lambda r: r["column_profile"].extend(
@@ -226,6 +229,9 @@ send(b"F", json.dumps({"storage": data.decode(), "op": op.decode()}).encode())
         "ratio",
         "strict-bool",
         "negative",
+        "total-huge",
+        "total-negative",
+        "total-below-sample",
         "format",
         "p17",
         "profile-bytes",
@@ -244,6 +250,17 @@ def test_parent_accepts_a_valid_result_relayed_by_a_child() -> None:
     import json
 
     result = _valid_result()
+    command = _hostile(f"send(b'F', {json.dumps({'result': result}).encode()!r})")
+    assert _run(CSV, command=command) == {"result": result}
+
+
+@pytest.mark.parametrize("total", [None, 500, 2**53 - 1])
+def test_parent_accepts_total_rows_in_bounds(total: int | None) -> None:
+    import json
+
+    result = _valid_result()
+    assert result["total_rows"] == result["rows_sampled"] == 500  # the CSV was read to the end
+    result["total_rows"] = total
     command = _hostile(f"send(b'F', {json.dumps({'result': result}).encode()!r})")
     assert _run(CSV, command=command) == {"result": result}
 

@@ -4,6 +4,7 @@ import threading
 from typing import Any
 
 import httpx
+import pytest
 
 from api.modules.catalog.tests.support import execute, rows
 from api.modules.catalog.tests.support_api import CatalogApi, assert_error, new_draft
@@ -192,12 +193,19 @@ def test_pending_source_profile_is_queued_not_copied(api: CatalogApi, db: PgUrls
     ]
 
 
-def test_failed_source_profile_is_copied(api: CatalogApi, db: PgUrls) -> None:
+@pytest.mark.parametrize(
+    ("failure", "copied"), [("UNPARSEABLE", True), ("TIMEOUT", False), ("GENERATION_FAILED", False)]
+)
+def test_only_deterministic_failures_are_copied(
+    api: CatalogApi, db: PgUrls, failure: str, copied: bool
+) -> None:
+    """The same bytes fail UNPARSEABLE again; a TIMEOUT or GENERATION_FAILED may be transient, so re-profile."""
     dataset_id, v1 = first_published(api, db)
     execute(
         db,
-        "UPDATE catalog.file_previews SET status = 'FAILED', failure_code = 'UNPARSEABLE', generated_at = now()"
+        "UPDATE catalog.file_previews SET status = 'FAILED', failure_code = :c, generated_at = now()"
         " WHERE dataset_version_id = :v",
+        c=failure,
         v=v1,
     )
     v2 = draft(api, dataset_id, "v2")["dataset_version_id"]
@@ -205,7 +213,7 @@ def test_failed_source_profile_is_copied(api: CatalogApi, db: PgUrls) -> None:
     [got] = rows(
         db, "SELECT status, failure_code FROM catalog.file_previews WHERE dataset_version_id = :v", v=v2
     )
-    assert (got["status"], got["failure_code"]) == ("FAILED", "UNPARSEABLE")
+    assert (got["status"], got["failure_code"]) == (("FAILED", failure) if copied else ("PENDING", None))
 
 
 def _plant_preview(db: PgUrls, version_id: str, path: str) -> Any:

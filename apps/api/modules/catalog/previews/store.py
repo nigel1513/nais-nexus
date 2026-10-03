@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, delete, func, literal, select
+from sqlalchemy import ColumnElement, and_, delete, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -28,10 +28,16 @@ def queue_previews(session: Session, version_id: UUID) -> int:
     return len(tabular)
 
 
+# The same bytes fail the same way again; TIMEOUT / GENERATION_FAILED may be transient (load, memory), so the
+# inherited file is profiled anew instead.
+DETERMINISTIC_FAILURES = ("UNPARSEABLE",)
+
+
 def inherit_previews(session: Session, version_id: UUID) -> int:
-    """Inherited files are the same stored object as their source: copy the source's finished (READY/FAILED)
-    preview row (spec §3.3b, Ruling S6). The copy belongs to the new version (`dataset_version_id`); a PENDING source
-    is not copied, so `queue_previews` queues the inherited file on its own. Returns the number of rows copied."""
+    """Inherited files are the same stored object as their source: copy the source's finished preview row (READY,
+    or FAILED with a deterministic failure code; spec §3.3b, Ruling S6). The copy belongs to the new version
+    (`dataset_version_id`). Any other source (PENDING, transient failure) is not copied, so `queue_previews` queues
+    the inherited file on its own. Returns the number of rows copied."""
     src = file_previews.alias("src")
     columns = [c.name for c in file_previews.c]
     values: list[ColumnElement[Any]] = []
@@ -50,7 +56,13 @@ def inherit_previews(session: Session, version_id: UUID) -> int:
             columns,
             select(*values)
             .select_from(dataset_files.join(src, src.c.file_id == dataset_files.c.inherited_from_file_id))
-            .where(dataset_files.c.dataset_version_id == version_id, src.c.status != "PENDING"),
+            .where(
+                dataset_files.c.dataset_version_id == version_id,
+                or_(
+                    src.c.status == "READY",
+                    and_(src.c.status == "FAILED", src.c.failure_code.in_(DETERMINISTIC_FAILURES)),
+                ),
+            ),
         )
         .on_conflict_do_nothing(index_elements=[file_previews.c.file_id])
         .returning(file_previews.c.file_id)

@@ -6,11 +6,13 @@ import pyarrow.parquet as pq
 import pytest
 
 from api.modules.catalog.previews.profile import (
+    MAX_TOTAL_ROWS,
     FieldHint,
     PreviewLimits,
     PreviewTimeout,
     Unparseable,
     make_deadline,
+    parquet_total_rows,
     profile_table,
     table_format,
 )
@@ -1044,3 +1046,22 @@ def test_uncompressed_dictionary_with_tiny_declared_size_stays_bounded(entry: in
     if entry > PreviewLimits().max_bytes // 4:
         assert kinds == ["other", "other"]
     assert grown_mb < 512
+
+
+@pytest.mark.parametrize(
+    ("num_rows", "sampled", "truncated", "expected"),
+    [
+        (10, 10, False, 10),  # a full read reports what was decoded
+        (99, 10, False, 10),  # ... whatever the footer claims
+        (2**63 - 1, 700, True, None),  # hostile: beyond a safe JSON integer
+        (MAX_TOTAL_ROWS, 700, True, MAX_TOTAL_ROWS),
+        (-5, 700, True, None),  # hostile: negative
+        (3, 700, True, 700),  # hostile: fewer rows than were decoded
+        (5000, 700, True, 5000),
+        ("5000", 700, True, None),  # not an int
+    ],
+)
+def test_parquet_total_rows_never_trusts_the_footer(
+    num_rows: object, sampled: int, truncated: bool, expected: int | None
+) -> None:
+    assert parquet_total_rows(num_rows, sampled, truncated) == expected

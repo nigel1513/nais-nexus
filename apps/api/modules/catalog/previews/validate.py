@@ -7,12 +7,13 @@ import json
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, ValidationError, model_validator
 
 from api.modules.catalog.previews.profile import (
     MAX_HISTOGRAM_BINS,
     MAX_IRI_CHARS,
     MAX_TOP_VALUES,
+    MAX_TOTAL_ROWS,
     PreviewLimits,
 )
 
@@ -75,11 +76,17 @@ def _models(limits: PreviewLimits) -> type[BaseModel]:
         model_config = _STRICT
         format: Literal["csv", "tsv", "parquet"]
         rows_sampled: Annotated[int, Field(ge=0, le=limits.max_rows)]
-        total_rows: Annotated[int, Field(ge=0)] | None = None
+        total_rows: Annotated[int, Field(ge=0, le=MAX_TOTAL_ROWS)] | None = None
         truncated: bool
         columns_truncated: bool
         column_profile: Annotated[list[ColumnProfile], Field(max_length=limits.max_columns)]
         preview: Preview
+
+        @model_validator(mode="after")
+        def _total_covers_sample(self) -> "Result":
+            if self.total_rows is not None and self.total_rows < self.rows_sampled:
+                raise ValueError("total_rows is below rows_sampled")
+            return self
 
     return Result
 
