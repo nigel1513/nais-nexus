@@ -234,8 +234,9 @@ def update_blocks(
             }
         )
     repo.replace_blocks(session, note_id, rows)
+    # No embedding per autosave (a GPU call each time): submit/sign/revise queue one, and the embed sweep picks up
+    # DRAFT edits (including accepted AI sentences) within EMBED_SWEEP_S.
     note = repo.update_note(session, note_id, revision=note["revision"] + 1, updated_at=clock.now())
-    jobs.embed_after_commit(session, deps, note_id)
     return note_view(session, deps, note, user.user_id)
 
 
@@ -279,6 +280,9 @@ def submit(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) 
             "The project requires a witness, but none of its configured witnesses can witness this note."
         )
     note = fix_content(session, note, witness_required=required, witness_user_ids=witnesses)
+    jobs.embed_after_commit(
+        session, deps, note_id
+    )  # the text is final now: make it searchable without waiting
     outbox.write(
         session,
         EventType.NOTES_NOTE_SUBMITTED_V1,

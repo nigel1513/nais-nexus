@@ -24,10 +24,10 @@ researcher failing does not stop the others. Nothing runs (and the day is not cl
 
 Embeddings (searchNotes, search.py): `notes.embed_notes` (same queue) embeds note versions whose searchable text changed
 (sha256 text_hash) in batches of EMBED_BATCH, with no transaction held while the shared GPU answers; an unchanged
-text is not embedded again (a SIGNED note, immutable, is embedded once). A save (updateNoteBlocks) or a revise queues
-its note EMBED_DELAY after commit, so an editing burst becomes one embedding; the sweep `notes.embed_sweep` (every
-EMBED_SWEEP_S) queues notes never embedded or changed since their vector was last checked (lost messages, notes
-saved while the service was off). Nothing is queued while the embedding service is off.
+text is not embedded again (a SIGNED note, immutable, is embedded once). Submit, sign and revise queue their note
+EMBED_DELAY after commit; an autosave (updateNoteBlocks, also how AI sentences are accepted) queues nothing, so typing
+never costs a GPU call per save. The sweep `notes.embed_sweep` (every EMBED_SWEEP_S) queues notes never embedded or
+changed since their vector was last checked: DRAFT edits, lost messages, notes saved while the service was off. Nothing is queued while the embedding service is off.
 
 The actor is defined at import time: the platform sets the broker BEFORE importing modules (D-036).
 """

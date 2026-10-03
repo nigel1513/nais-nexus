@@ -16,7 +16,7 @@ from uuid import UUID
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
-from api.modules.notes import repo
+from api.modules.notes import jobs, repo
 from api.modules.notes.access import DRAFT, SIGNED, Relation, load, readable, require_active, witness_snapshot
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.errors import conflict, locked, not_witness, signature_expired
@@ -83,6 +83,9 @@ def sign(session: Session, deps: NotesDeps, user: CurrentUser, note_id: UUID) ->
     final = RECORDER in signed_roles and (not note["witness_required"] or WITNESS in signed_roles)
     if final:
         note = _append_to_chain(session, note)
+    jobs.embed_after_commit(
+        session, deps, note_id
+    )  # unchanged text is only re-checked (text_hash), not re-embedded
     outbox.write(
         session,
         EventType.NOTES_NOTE_SIGNED_V1,

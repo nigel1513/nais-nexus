@@ -344,13 +344,40 @@ def test_embedding_service_down_leaves_notes_for_the_sweep(
     assert stored_embedding(db, note["note_id"]) is None
 
 
-def test_saving_queues_an_embedding_while_the_service_is_on(api: NotesApi, world: World) -> None:
-    api.written(world)  # service off: nothing queued
+def embedded_ids() -> list[str]:
+    return [n for m in embed_messages() for n in m["args"][0]]
+
+
+def test_autosave_queues_no_embedding_the_sweep_picks_the_draft_up(
+    api: NotesApi, semantic: World, db: PgUrls
+) -> None:
+    note = note_on(api, semantic, 2, "용량 측정")
+    with clock.frozen(datetime(2026, 10, 2, 3, 1, tzinfo=UTC)):
+        api.save(note, [{"section": "RESULTS", "text": "용량 측정 2"}])
+    assert embed_messages() == []  # autosaves (and accepting AI blocks) never queue a GPU call
+    assert jobs.embed_sweep() == 1
+    assert embedded_ids() == [note["note_id"]]
+    embed_all(note)
+    assert stored_embedding(db, note["note_id"]) is not None
+
+
+def test_submit_sign_and_revise_queue_an_embedding_while_the_service_is_on(
+    api: NotesApi, world: World
+) -> None:
+    api.submitted(world)  # service off: nothing queued
     assert embed_messages() == []
     world.embedder = FakeEmbedder()
     world.install()
-    note = note_on(api, world, 2, "용량 측정")
-    assert [m["args"] for m in embed_messages()] == [[[note["note_id"]]]]
+    with clock.frozen(datetime(2026, 10, 2, 3, 0, tzinfo=UTC)):
+        submitted = api.submitted(world, user="a.colleague")
+    assert embedded_ids() == [submitted["note_id"]]
+    with clock.frozen(datetime(2026, 10, 3, 3, 0, tzinfo=UTC)):
+        draft = api.written(world)
+        assert embedded_ids() == [submitted["note_id"]]
+        assert api.post("a.recorder", f"/notes/{draft['note_id']}/sign").status_code == 200
+        assert embedded_ids() == [submitted["note_id"], draft["note_id"]]
+        revised = api.post("a.recorder", f"/notes/{draft['note_id']}/revise").json()
+    assert embedded_ids() == [submitted["note_id"], draft["note_id"], revised["note_id"]]
 
 
 def test_sweep_queues_missing_and_stale_embeddings(api: NotesApi, world: World, db: PgUrls) -> None:
