@@ -117,7 +117,39 @@ def upgrade() -> None:
     )
     op.create_index("ix_files_object", "dataset_files", ["storage_bucket", "storage_key"], schema=S)
     op.create_index("ix_files_inherited_from", "dataset_files", ["inherited_from_file_id"], schema=S)
+    _backfill_lineage()
     op.execute(VERSIONS_FUNCTION)
+
+
+# Versions published before catalog_0004: previous = the version published just before in the same dataset
+# (published_at, tie: id; WITHDRAWN versions keep their place). PUBLISHED rows are immutable, so the trigger is off
+# for this one statement, inside the migration transaction.
+BACKFILL_PREVIOUS = """
+UPDATE catalog.dataset_versions v SET previous_version_id = p.prev
+FROM (
+  SELECT dataset_version_id,
+         lag(dataset_version_id) OVER (PARTITION BY dataset_id ORDER BY published_at, dataset_version_id) AS prev
+  FROM catalog.dataset_versions WHERE status IN ('PUBLISHED', 'WITHDRAWN')
+) p
+WHERE v.dataset_version_id = p.dataset_version_id AND p.prev IS NOT NULL AND v.previous_version_id IS NULL
+"""
+# Drafts created before catalog_0004 had no base: the latest PUBLISHED version published before the draft was
+# created (what it was branched from in spirit); none -> NULL (stale once anything is published, see README).
+BACKFILL_BASE = """
+UPDATE catalog.dataset_versions d SET base_version_id = (
+  SELECT p.dataset_version_id FROM catalog.dataset_versions p
+  WHERE p.dataset_id = d.dataset_id AND p.status = 'PUBLISHED' AND p.published_at <= d.created_at
+  ORDER BY p.published_at DESC, p.dataset_version_id DESC LIMIT 1
+)
+WHERE d.status = 'DRAFT' AND d.base_version_id IS NULL
+"""
+
+
+def _backfill_lineage() -> None:
+    op.execute("ALTER TABLE catalog.dataset_versions DISABLE TRIGGER trg_versions_immutable")
+    op.execute(BACKFILL_PREVIOUS)
+    op.execute("ALTER TABLE catalog.dataset_versions ENABLE TRIGGER trg_versions_immutable")
+    op.execute(BACKFILL_BASE)  # DRAFT rows are mutable under the trigger
 
 
 def downgrade() -> None:
