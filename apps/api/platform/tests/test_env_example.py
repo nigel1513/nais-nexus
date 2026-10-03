@@ -24,6 +24,7 @@ MODULE_KEYS = {
     "WORKSPACE_WORKER_CONCURRENCY": "1",
     # M14 notes
     "NAIS_SEARCH_TIMEOUT_S": "5",
+    "NAIS_INTERNAL_TOKEN": "",
     # M09 audit / notification
     "SMTP_FROM": '"NAIS AI-OS <no-reply@nais.local>"',
     "NOTIFICATION_EMAIL_ENABLED": "true",

@@ -47,8 +47,9 @@ from api.modules.notes import repo, search
 from api.modules.notes.access import DRAFT
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.drafting.apply import new_blocks
-from api.modules.notes.drafting.parse import DraftSentence, parse_draft
-from api.modules.notes.drafting.prompt import KST, PromptItem, build_messages, notebooks, plan
+from api.modules.notes.drafting.parse import DraftSentence
+from api.modules.notes.drafting.prompt import KST, PromptItem
+from api.modules.notes.drafting.run import MAX_TOKENS, UnusableAnswer, ask, prepare
 from api.modules.notes.wiring import build_default_deps
 from api.platform import clock, ports
 from api.platform.db import session_factory
@@ -61,10 +62,6 @@ logger = logging.getLogger("nais.notes")
 
 QUEUE = "notes"
 FAILED_MESSAGE = "초안을 만들지 못했습니다. 잠시 후 다시 시도하세요."
-MAX_ATTEMPTS = 2  # an unusable answer is asked again once
-# 7 sections x 6 sentences x 120 Korean characters inside JSON (~1 token per Hangul syllable plus keys/indexes); in
-# practice far fewer sections are filled.
-MAX_TOKENS = 3584
 TIME_LIMIT_MS = 10 * 60 * 1000  # waits for the shared GPU (one chat at a time per process) + two LLM timeouts
 STALE_AFTER = timedelta(milliseconds=TIME_LIMIT_MS) + timedelta(minutes=1)
 DAILY_INTERVAL_S = 900.0
@@ -131,8 +128,8 @@ def _claim(note_id: UUID) -> _Work | None:
     source = _deps().notebooks.list_notebook_activity(
         note["recorder_id"], note["project_id"], note["note_date"]
     )
-    prompt = plan(notebooks(source))
-    return _Work(note_id, note["draft_requested_at"], prompt.items, build_messages(note["note_date"], prompt))
+    items, messages = prepare(note["note_date"], source)
+    return _Work(note_id, note["draft_requested_at"], items, messages)
 
 
 def _finish(work: _Work, status: str, sentences: list[DraftSentence] | None = None) -> str:
@@ -169,23 +166,17 @@ def _ask(work: _Work) -> str:
     if llm is None:
         logger.warning("draft failed: the LLM is switched off", extra=log)
         return _finish(work, FAILED)
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            answer = llm.chat_json(work.messages, max_tokens=MAX_TOKENS)
-            sentences = parse_draft(answer, work.items)
-        except LlmUnavailable as exc:
-            logger.warning("draft failed: LLM unavailable", extra=log | {"error": str(exc)})
-            return _finish(work, FAILED)
-        except LlmTruncated:
-            logger.warning("draft failed: answer cut at max_tokens", extra=log | {"max_tokens": MAX_TOKENS})
-            return _finish(work, FAILED)
-        except ValueError as exc:  # the answer may quote the prompt: log the type only
-            logger.warning(
-                "unusable LLM answer", extra=log | {"attempt": attempt, "error_type": type(exc).__name__}
-            )
-            continue
-        return _finish(work, DONE, sentences)
-    return _finish(work, FAILED)
+    try:
+        sentences = ask(llm, work.messages, work.items, log)  # an unusable answer is asked again once
+    except LlmUnavailable as exc:
+        logger.warning("draft failed: LLM unavailable", extra=log | {"error": str(exc)})
+        return _finish(work, FAILED)
+    except LlmTruncated:
+        logger.warning("draft failed: answer cut at max_tokens", extra=log | {"max_tokens": MAX_TOKENS})
+        return _finish(work, FAILED)
+    except UnusableAnswer:
+        return _finish(work, FAILED)
+    return _finish(work, DONE, sentences)
 
 
 def draft_note(note_id: UUID) -> str:

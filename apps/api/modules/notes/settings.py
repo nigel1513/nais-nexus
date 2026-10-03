@@ -14,6 +14,10 @@ class NotesSettings(BaseSettings):
     # searchNotes waits at most this long for the query embedding and for the rerank (each), then falls back.
     nais_search_timeout_s: float = 5.0
 
+    # The web server's shared secret for /internal/notes/* (header X-NAIS-Internal-Token, D-049). Empty = those
+    # endpoints answer 404.
+    nais_internal_token: str = ""
+
 
 @lru_cache(maxsize=1)
 def get_notes_settings() -> NotesSettings:

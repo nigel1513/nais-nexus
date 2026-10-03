@@ -20,6 +20,9 @@ EXPECTED = {
     "searchNotes",
     "getNoteSettings",
     "updateNoteSettings",
+    # Internal (D-049): server-to-server, header X-NAIS-Internal-Token
+    "getInternalNotebookActivity",
+    "draftInternalNoteSections",
 }
 
 
@@ -28,7 +31,7 @@ def notes_operations() -> dict[str, tuple[str, str]]:
     found: dict[str, tuple[str, str]] = {}
     for path, item in app.openapi()["paths"].items():
         for method, op in item.items():
-            if "notes" in op.get("tags", []):
+            if {"notes", "Internal"} & set(op.get("tags", [])):
                 found[op["operationId"]] = (path, method)
     return found
 

@@ -2,6 +2,7 @@
 mirror the contract request schemas with plain UUIDs plus what the generated models cannot express: no explicit nulls,
 minProperties: 1, unique ids, and text PostgreSQL can store (no NUL characters)."""
 
+from datetime import date
 from typing import Annotated, Any, ClassVar
 from uuid import UUID
 
@@ -95,7 +96,18 @@ class NoteSettingsIn(StrictIn):
         return self
 
 
+class InternalDraftSectionsIn(StrictIn):
+    """openapi InternalDraftSectionsRequest (D-049). project_name is display context only: like the draft job, the
+    prompt carries the notebooks alone."""
+
+    user_id: UUID
+    project_id: UUID
+    day: date
+    project_name: Annotated[str, StringConstraints(max_length=200)] | None = None
+
+
 __all__ = [
+    "InternalDraftSectionsIn",
     "NoteBlockIn",
     "NoteBlocksIn",
     "NoteSettings",
