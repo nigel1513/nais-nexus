@@ -1,5 +1,10 @@
-"""searchDatasets (M03 §6.2): OpenSearch only; an outage is 503, there is no DB fallback."""
+"""searchDatasets (M03 §6.2): OpenSearch only; an outage is 503, there is no DB fallback.
 
+A text search is hybrid: BM25 over the metadata fields plus k-NN over the document embedding (bge-m3). The query
+embedding is best effort: without it (no embedding server, timeout, an index built before vectors) the search is
+lexical only."""
+
+import logging
 from typing import Any
 
 from api.modules.catalog.deps import CatalogDeps
@@ -18,6 +23,22 @@ from api.modules.catalog.service.vocabulary import labels
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
+from api.platform.search_index import embedding_text
+
+logger = logging.getLogger("nais.catalog.search")
+
+
+def query_vector(deps: CatalogDeps, q: str | None) -> list[float] | None:
+    text = embedding_text(q)
+    if not text or deps.query_embedder is None:
+        return None
+    try:
+        if not deps.search.supports_vectors():
+            return None
+        return deps.query_embedder.embed([text])[0]
+    except Exception as exc:
+        logger.warning("query embedding unavailable; lexical search only", extra={"error": str(exc)[:300]})
+        return None
 
 
 def search_datasets(deps: CatalogDeps, user: CurrentUser, params: SearchParams) -> dict[str, Any]:
@@ -29,7 +50,14 @@ def search_datasets(deps: CatalogDeps, user: CurrentUser, params: SearchParams) 
         )
     sort_name = resolve_sort(params)
     search_after = decode_search_cursor(params.cursor, sort_name) if params.cursor else None
-    body = build_search_body(user, params, sort_name, search_after)
+    body = build_search_body(
+        user,
+        params,
+        sort_name,
+        search_after,
+        vector=query_vector(deps, params.q),
+        min_score=deps.settings.catalog_semantic_min_score,
+    )
     try:
         raw = deps.search.search(body)
     except SearchRejected as exc:

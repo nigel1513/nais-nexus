@@ -24,6 +24,10 @@ class CatalogSettings(BaseSettings):
     malware_scanner: str = "noop"
     catalog_index_batch_size: int = Field(200, gt=0)
     catalog_opensearch_timeout_seconds: float = Field(5.0, gt=0)
+    # Hybrid search: how long a search waits for the query embedding before it falls back to lexical only, and the
+    # k-NN score (cosine: (1 + cos) / 2) a document needs to count as a semantic match.
+    catalog_embed_query_timeout_seconds: float = Field(2.0, gt=0)
+    catalog_semantic_min_score: float = Field(0.76, ge=0.5, le=1.0)
     catalog_preview_max_rows: int = Field(10_000, gt=0)
     catalog_preview_max_bytes: int = Field(64 * MIB, gt=0)
     catalog_preview_timeout_seconds: float = Field(30.0, gt=0)

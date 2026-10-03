@@ -184,3 +184,6 @@ class RecordingSearchIndex:
 
     def swap_alias(self, new_index: str) -> list[str]:
         return []
+
+    def supports_vectors(self, index: str | None = None) -> bool:
+        return True

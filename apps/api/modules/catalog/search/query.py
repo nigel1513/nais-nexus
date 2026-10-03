@@ -10,6 +10,7 @@ from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
 from api.platform.pagination import decode_cursor, encode_cursor
+from api.platform.search_index import EMBEDDING_FIELD
 
 MAX_TOTAL = 10_000
 DISCOVERABLE_LEVELS = ["PUBLIC", "CONTROLLED", "SENSITIVE"]
@@ -28,6 +29,10 @@ SEARCH_FIELDS = [
     "principal_investigator_name.text",
     "collecting_organization_name.text",
 ]
+# The semantic clause scores 0.5-1 (cosine), BM25 a few points per matching field: the boost keeps a document that
+# only matches by meaning below one that also contains the words, and above nothing.
+SEMANTIC_BOOST = 4.0
+SNIPPET_FRAGMENT_CHARS = 200
 VOCABULARY_FACETS = {"subject": "SUBJECT", "material": "MATERIAL", "method": "METHOD"}
 AGGREGATIONS: dict[str, Any] = {
     "access_level": {"terms": {"field": "access_level", "size": 4}},
@@ -156,8 +161,24 @@ def _temporal_filters(params: SearchParams) -> list[dict[str, Any]]:
     return filters
 
 
+def text_query(q: str, fields: list[str], vector: list[float] | None, min_score: float) -> dict[str, Any]:
+    """Hybrid match: the words (BM25 over the analyzed metadata fields) or the meaning (k-NN over the document
+    embedding, only neighbours at least `min_score` close). Without a query vector it is the lexical half alone."""
+    lexical: dict[str, Any] = {"multi_match": {"query": q, "fields": fields}}
+    if vector is None:
+        return lexical
+    semantic = {"knn": {EMBEDDING_FIELD: {"vector": vector, "min_score": min_score, "boost": SEMANTIC_BOOST}}}
+    return {"bool": {"should": [lexical, semantic], "minimum_should_match": 1}}
+
+
 def build_search_body(
-    user: CurrentUser, params: SearchParams, sort_name: str, search_after: list[Any] | None
+    user: CurrentUser,
+    params: SearchParams,
+    sort_name: str,
+    search_after: list[Any] | None,
+    *,
+    vector: list[float] | None = None,
+    min_score: float = 0.76,
 ) -> dict[str, Any]:
     filters: list[dict[str, Any]] = [{"term": {"status": "ACTIVE"}}, visibility_filter(user)]
     if params.access_level:
@@ -186,7 +207,7 @@ def build_search_body(
     filters.extend(_temporal_filters(params))
     query: dict[str, Any] = {"bool": {"filter": filters}}
     if params.q and params.q.strip():
-        query["bool"]["must"] = [{"multi_match": {"query": params.q.strip(), "fields": SEARCH_FIELDS}}]
+        query["bool"]["must"] = [text_query(params.q.strip(), SEARCH_FIELDS, vector, min_score)]
     body: dict[str, Any] = {
         "query": query,
         "size": params.limit + 1,
@@ -195,6 +216,13 @@ def build_search_body(
         "aggs": AGGREGATIONS,
         "_source": list(HIT_FIELDS),
     }
+    if params.q and params.q.strip():
+        # The snippet of a text search is the passage of the description that matched, not its first lines.
+        body["highlight"] = {
+            "pre_tags": [""],
+            "post_tags": [""],
+            "fields": {"description": {"fragment_size": SNIPPET_FRAGMENT_CHARS, "number_of_fragments": 1}},
+        }
     if search_after is not None:
         body["search_after"] = search_after
     return body
@@ -218,8 +246,10 @@ def _named_buckets(aggregations: Mapping[Any, Any], name: str) -> list[dict[str,
     return buckets
 
 
-def _hit(source: Mapping[Any, Any]) -> dict[str, Any]:
+def _hit(source: Mapping[Any, Any], highlight: Mapping[Any, Any] | None = None) -> dict[str, Any]:
     hit = {field: source.get(field) for field in HIT_FIELDS}
+    if fragments := (highlight or {}).get("description"):
+        hit["snippet"] = str(fragments[0]).strip()
     if not hit["owner_organization_name"]:
         hit.pop("owner_organization_name")
     if hit["snippet"] is None:
@@ -251,7 +281,7 @@ def map_search_response(raw: Mapping[Any, Any], *, limit: int, sort_name: str) -
     next_cursor = encode_cursor([sort_name, *page_hits[-1]["sort"]]) if has_more and page_hits else None
     aggregations = raw.get("aggregations", {})
     return {
-        "items": [_hit(hit["_source"]) for hit in page_hits],
+        "items": [_hit(hit["_source"], hit.get("highlight")) for hit in page_hits],
         "page": {"next_cursor": next_cursor, "has_more": has_more},
         "total": min(int(raw["hits"]["total"]["value"]), MAX_TOTAL),
         "facets": {

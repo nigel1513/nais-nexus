@@ -10,7 +10,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
 from api.modules.catalog.deps import CatalogDeps
-from api.modules.catalog.search.documents import build_documents
+from api.modules.catalog.search.documents import build_documents, embed_documents
 from api.modules.catalog.tables import index_queue
 from api.platform import clock
 
@@ -72,6 +72,8 @@ def drain_index_queue(deps: CatalogDeps, *, batch_size: int | None = None) -> Dr
         ids = [row["dataset_id"] for row in queued]
         try:
             docs, deletes = build_documents(session, deps.organizations, ids)
+            if deps.embedder is not None and deps.search.supports_vectors():
+                embed_documents(docs, deps.embedder)
             deps.search.bulk(docs, deletes)
         except Exception as exc:  # OpenSearch or identity down: keep the rows, retry later
             _record_failure(session, queued, now, exc)

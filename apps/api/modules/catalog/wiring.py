@@ -17,6 +17,7 @@ from api.modules.catalog.service.from_output import CatalogOutputPublisher
 from api.modules.catalog.settings import CatalogSettings, get_catalog_settings
 from api.platform import ports
 from api.platform.db import session_factory
+from api.platform.llm import get_embedding_client
 
 logger = logging.getLogger("nais.catalog")
 
@@ -48,6 +49,8 @@ def build_default_deps(settings: CatalogSettings | None = None) -> CatalogDeps:
             settings.catalog_index_alias,
             timeout=settings.catalog_opensearch_timeout_seconds,
         ),
+        embedder=get_embedding_client(),
+        query_embedder=get_embedding_client(settings.catalog_embed_query_timeout_seconds),
     )
 
 

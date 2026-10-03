@@ -1,5 +1,6 @@
 """DB -> nais-datasets document (M03 §10 mapping). The DB is the system of record; documents are rebuilt."""
 
+import logging
 from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any
@@ -13,7 +14,10 @@ from api.modules.catalog.interfaces import OrganizationLookup
 from api.modules.catalog.repo import readiness_overall
 from api.modules.catalog.service.vocabulary import labels
 from api.modules.catalog.tables import dataset_versions, datasets
+from api.platform.llm import EmbeddingClient
+from api.platform.search_index import EMBEDDING_FIELD, embedding_text
 
+logger = logging.getLogger("nais.catalog.index")
 SNIPPET_CHARS = 300
 CODE_FIELDS = (("SUBJECT", "subject_codes"), ("MATERIAL", "material_codes"), ("METHOD", "method_codes"))
 
@@ -118,3 +122,30 @@ def build_documents(
             }
         )
     return docs, deletes
+
+
+def embed_documents(docs: list[dict[str, Any]], embedder: EmbeddingClient | None) -> None:
+    """Adds `embedding` (title, subtitle, description, keywords, term labels) to each document. The embedding server
+    being down must not stop metadata from being searchable: the documents then go in lexical only, and the next
+    change or full reindex adds the vector."""
+    if embedder is None or not docs:
+        return
+    texts = [
+        embedding_text(
+            doc["title"],
+            doc["subtitle"],
+            doc["description"],
+            " ".join(doc["keywords"]),
+            doc["subject_labels"],
+        )
+        for doc in docs
+    ]
+    try:
+        vectors = embedder.embed(texts)
+    except Exception as exc:
+        logger.warning(
+            "embedding failed; indexing lexical only", extra={"docs": len(docs), "error": str(exc)[:300]}
+        )
+        return
+    for doc, vector in zip(docs, vectors, strict=True):
+        doc[EMBEDDING_FIELD] = vector

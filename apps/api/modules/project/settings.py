@@ -10,6 +10,13 @@ class ProjectSettings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     project_max_members: int = Field(default=200, ge=1)  # env PROJECT_MAX_MEMBERS
+    # Public project search (search.py). Without OPENSEARCH_URL in the environment there is no project index and
+    # scope=discover searches by name in the database.
+    opensearch_url: str | None = None
+    project_index_alias: str = "nais-projects"
+    project_opensearch_timeout_seconds: float = Field(default=5.0, gt=0)
+    project_embed_query_timeout_seconds: float = Field(default=2.0, gt=0)
+    project_semantic_min_score: float = Field(default=0.76, ge=0.5, le=1.0)
 
 
 @lru_cache(maxsize=1)

@@ -50,8 +50,8 @@ def make_doc(**overrides: Any) -> dict[str, Any]:
 
 
 def test_infra_templates_match_the_code() -> None:
-    assert json.loads((INFRA / "nais-datasets-v2.json").read_text(encoding="utf-8")) == index_body(nori=True)
-    assert json.loads((INFRA / "nais-datasets-v2.fallback.json").read_text(encoding="utf-8")) == index_body(
+    assert json.loads((INFRA / "nais-datasets-v3.json").read_text(encoding="utf-8")) == index_body(nori=True)
+    assert json.loads((INFRA / "nais-datasets-v3.fallback.json").read_text(encoding="utf-8")) == index_body(
         nori=False
     )
     assert "analysis-nori" in (INFRA / "Dockerfile").read_text(encoding="utf-8")
@@ -61,7 +61,7 @@ def test_ensure_creates_versioned_index_behind_alias_with_fallback_analyzer(
     search_index: OpenSearchIndex, opensearch_url: str
 ) -> None:
     search_index.ensure()
-    concrete = f"{search_index.alias}-v2"
+    concrete = f"{search_index.alias}-v3"
     assert list(httpx.get(f"{opensearch_url}/_alias/{search_index.alias}").json()) == [concrete]
     settings = httpx.get(f"{opensearch_url}/{concrete}/_settings").json()[concrete]["settings"]["index"]
     assert settings["analysis"]["analyzer"]["ko_en"]["tokenizer"] == "standard"  # stock image has no nori
@@ -120,13 +120,13 @@ def test_credentials_in_the_url_become_basic_auth() -> None:
 
 def test_next_index_name_and_atomic_alias_swap(search_index: OpenSearchIndex, opensearch_url: str) -> None:
     search_index.ensure()
-    assert search_index.next_index_name() == f"{search_index.alias}-v3"
-    search_index.create_index(f"{search_index.alias}-v3")
-    assert search_index.swap_alias(f"{search_index.alias}-v3") == [f"{search_index.alias}-v2"]
-    assert list(httpx.get(f"{opensearch_url}/_alias/{search_index.alias}").json()) == [
-        f"{search_index.alias}-v3"
-    ]
     assert search_index.next_index_name() == f"{search_index.alias}-v4"
+    search_index.create_index(f"{search_index.alias}-v4")
+    assert search_index.swap_alias(f"{search_index.alias}-v4") == [f"{search_index.alias}-v3"]
+    assert list(httpx.get(f"{opensearch_url}/_alias/{search_index.alias}").json()) == [
+        f"{search_index.alias}-v4"
+    ]
+    assert search_index.next_index_name() == f"{search_index.alias}-v5"
 
 
 @pytest.mark.skipif(

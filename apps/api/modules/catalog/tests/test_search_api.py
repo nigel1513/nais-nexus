@@ -484,3 +484,76 @@ def test_facet_filters_cannot_widen_visibility(search_api: CatalogApi, db: PgUrl
     ):
         body = search(search_api, "a.researcher", **params)
         assert body["total"] == 0 and all(buckets == [] for buckets in body["facets"].values()), params
+
+
+class ConceptEmbedder:
+    """Embedding double: texts about the same concept (in either language) get the same unit vector."""
+
+    CONCEPTS = (("연료전지", "fuel cell"), ("기후", "climate"))
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        from api.platform.search_index import EMBEDDING_DIMENSION
+
+        self.calls += 1
+        vectors = []
+        for text in texts:
+            vector = [0.0] * EMBEDDING_DIMENSION
+            lowered = text.lower()
+            axis = next(
+                (i for i, words in enumerate(self.CONCEPTS) if any(word in lowered for word in words)),
+                len(self.CONCEPTS),
+            )
+            vector[axis] = 1.0
+            vectors.append(vector)
+        return vectors
+
+
+class BrokenEmbedder:
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("embedding server down")
+
+
+def test_text_search_also_finds_datasets_by_meaning(search_api: CatalogApi, db: PgUrls) -> None:
+    embedder = ConceptEmbedder()
+    search_api.use(replace(search_api.deps, embedder=embedder, query_embedder=embedder))
+    korean = published(search_api, db, title="연료전지 막 온도 측정")
+    climate = published(search_api, db, title="기후 관측 기록")
+    index_now(search_api)
+    # No word in common with the Korean title: only the embedding connects them.
+    assert [item["dataset_id"] for item in search(search_api, "a.researcher", q="fuel cell")["items"]] == [
+        korean
+    ]
+    assert ids(search(search_api, "a.researcher", q="climate")) == {climate}
+    assert ids(search(search_api, "a.researcher", q="quantum")) == set()
+
+
+def test_semantic_search_keeps_the_visibility_filter(search_api: CatalogApi, db: PgUrls) -> None:
+    embedder = ConceptEmbedder()
+    search_api.use(replace(search_api.deps, embedder=embedder, query_embedder=embedder))
+    internal = published(search_api, db, title="연료전지 내부 시험", access_level="INTERNAL")
+    index_now(search_api)
+    assert ids(search(search_api, "a.researcher", q="fuel cell")) == set()
+    assert ids(search(search_api, "b.researcher", q="fuel cell")) == {internal}
+
+
+def test_search_is_lexical_when_the_embedding_server_is_down(search_api: CatalogApi, db: PgUrls) -> None:
+    search_api.use(replace(search_api.deps, embedder=BrokenEmbedder(), query_embedder=BrokenEmbedder()))
+    dataset_id = published(search_api, db, title="연료전지 막 온도 측정")
+    index_now(search_api)
+    assert ids(search(search_api, "a.researcher", q="연료전지")) == {dataset_id}
+    assert ids(search(search_api, "a.researcher", q="fuel cell")) == set()
+
+
+def test_text_search_snippet_is_the_matching_passage(search_api: CatalogApi, db: PgUrls) -> None:
+    description = "서두 문장입니다. " * 40 + "이 부분에 임피던스 분광 결과가 있습니다."
+    dataset_id = published(search_api, db, description=description)
+    index_now(search_api)
+    hit = next(
+        i for i in search(search_api, "a.researcher", q="임피던스")["items"] if i["dataset_id"] == dataset_id
+    )
+    assert "임피던스" in hit["snippet"] and len(hit["snippet"]) < len(description)
+    plain = next(i for i in search(search_api, "a.researcher")["items"] if i["dataset_id"] == dataset_id)
+    assert plain["snippet"] == description[:300]

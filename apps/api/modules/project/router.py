@@ -1,19 +1,27 @@
 """M02 HTTP surface (openapi tag `projects`). Handlers stay thin: service enforces rules, views shape bodies."""
 
+import logging
+from collections.abc import Sequence
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
+from sqlalchemy import RowMapping
+from sqlalchemy.orm import Session
 
 from api.modules.project import repository as repo
 from api.modules.project import service, views
 from api.modules.project.identity import IdentityQueryPort, get_identity_port
+from api.modules.project.query import get_project_search
 from api.modules.project.schemas import MemberAddIn, MemberRoleIn, ProjectCreateIn, ProjectUpdateIn
+from api.modules.project.search import search_public_project_ids
 from api.modules.project.settings import ProjectSettings, get_project_settings
 from api.platform.auth import CurrentUserDep
 from api.platform.db import SessionDep
 from api.platform.pagination import PageParams, build_page, page_params
+from api.platform.search_index import SearchRejected, SearchUnavailable
 
+logger = logging.getLogger("nais.project")
 router = APIRouter(tags=["projects"])
 
 IdentityDep = Annotated[IdentityQueryPort, Depends(get_identity_port)]
@@ -36,6 +44,24 @@ def get_project(
     return views.detail_view(session, identity, service.read_project(session, user, project_id))
 
 
+def _discover_by_search(
+    session: Session, q: str, status: str | None, limit: int
+) -> Sequence[RowMapping] | None:
+    """scope=discover with a search text: the public project index ranks (words + meaning), the database supplies
+    the rows and has the last word on what is public. None: no index, or it is down - the caller searches by name."""
+    search = get_project_search()
+    if search is None:
+        return None
+    if status == "ARCHIVED":
+        return []
+    try:
+        ids = search_public_project_ids(search, q, limit=limit)
+    except (SearchUnavailable, SearchRejected) as exc:
+        logger.warning("project search unavailable; searching by name", extra={"error": str(exc)[:300]})
+        return None
+    return repo.public_projects_in_order(session, ids)
+
+
 @router.get("/projects", operation_id="listProjects")
 def list_projects(
     user: CurrentUserDep,
@@ -45,15 +71,21 @@ def list_projects(
     status: Literal["ACTIVE", "ARCHIVED"] | None = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
 ) -> dict[str, Any]:
-    rows = repo.list_projects(
-        session,
-        user_id=user.user_id,
-        scope=scope,
-        status=status,
-        q=(q or "").strip() or None,
-        after=service.decode_after(page.cursor),
-        limit=page.limit,
-    )
+    text = (q or "").strip() or None
+    ranked = _discover_by_search(session, text, status, page.limit) if scope == "discover" and text else None
+    if ranked is not None:
+        # Search results are one page, best match first: there is no cursor into a relevance order.
+        rows = ranked
+    else:
+        rows = repo.list_projects(
+            session,
+            user_id=user.user_id,
+            scope=scope,
+            status=status,
+            q=text,
+            after=service.decode_after(page.cursor),
+            limit=page.limit,
+        )
     result = build_page(rows, page.limit, lambda row: [row["updated_at"].isoformat(), str(row["project_id"])])
     project_ids = [row["project_id"] for row in result.items]
     counts = repo.member_counts(session, project_ids)

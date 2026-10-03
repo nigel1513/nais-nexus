@@ -288,3 +288,17 @@ def project_ids_for_member(session: Session, user_id: UUID) -> list[UUID]:
         .all()
     )
     return list(rows)
+
+
+def public_projects_in_order(session: Session, project_ids: Sequence[UUID]) -> Sequence[RowMapping]:
+    """The PUBLIC + ACTIVE projects among `project_ids`, in that order (a search ranking). An id the index still
+    has but that is no longer public is dropped here: the database decides what is public."""
+    if not project_ids:
+        return []
+    found = {
+        row["project_id"]: row
+        for row in session.execute(
+            select(p).where(p.c.project_id.in_(project_ids), p.c.visibility == "PUBLIC", p.c.status == ACTIVE)
+        ).mappings()
+    }
+    return [found[project_id] for project_id in project_ids if project_id in found]

@@ -1,9 +1,10 @@
-"""nais-datasets-v2 definition (M03 §10). infra/opensearch/*.json are generated from this module."""
+"""nais-datasets-v3 definition (M03 §10 + discovery §1.1). infra/opensearch/*.json are generated from this module."""
 
-import copy
 from typing import Any
 
-INDEX_VERSION = 2
+from api.platform.search_index import body_for
+
+INDEX_VERSION = 3
 
 
 def _text() -> dict[str, Any]:
@@ -46,31 +47,5 @@ MAPPINGS: dict[str, Any] = {
 }
 
 
-def _analysis(nori: bool) -> dict[str, Any]:
-    normalizer = {"lc": {"type": "custom", "filter": ["lowercase"]}}
-    if nori:
-        return {
-            "analyzer": {
-                "ko_en": {
-                    "type": "custom",
-                    "tokenizer": "nori_mixed",
-                    "filter": ["lowercase", "nori_part_of_speech", "nori_readingform"],
-                }
-            },
-            "tokenizer": {"nori_mixed": {"type": "nori_tokenizer", "decompound_mode": "mixed"}},
-            "normalizer": normalizer,
-        }
-    # Fallback when analysis-nori is not installed: same index name, weaker Korean morphology (M03 §10).
-    return {
-        "analyzer": {
-            "ko_en": {"type": "custom", "tokenizer": "standard", "filter": ["lowercase", "cjk_bigram"]}
-        },
-        "normalizer": normalizer,
-    }
-
-
-def index_body(*, nori: bool) -> dict[str, Any]:
-    return {
-        "settings": {"number_of_shards": 1, "analysis": _analysis(nori)},
-        "mappings": copy.deepcopy(MAPPINGS),
-    }
+def index_body(*, nori: bool, vectors: bool = True) -> dict[str, Any]:
+    return body_for(MAPPINGS, nori=nori, vectors=vectors)

@@ -5,11 +5,18 @@
       "analyzer": {
         "ko_en": {
           "type": "custom",
-          "tokenizer": "standard",
+          "tokenizer": "nori_mixed",
           "filter": [
             "lowercase",
-            "cjk_bigram"
+            "nori_part_of_speech",
+            "nori_readingform"
           ]
+        }
+      },
+      "tokenizer": {
+        "nori_mixed": {
+          "type": "nori_tokenizer",
+          "decompound_mode": "mixed"
         }
       },
       "normalizer": {
@@ -20,6 +27,9 @@
           ]
         }
       }
+    },
+    "index": {
+      "knn": true
     }
   },
   "mappings": {
@@ -148,6 +158,15 @@
             "type": "text",
             "analyzer": "ko_en"
           }
+        }
+      },
+      "embedding": {
+        "type": "knn_vector",
+        "dimension": 1024,
+        "method": {
+          "name": "hnsw",
+          "engine": "lucene",
+          "space_type": "cosinesimil"
         }
       }
     }

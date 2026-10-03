@@ -10,7 +10,7 @@ from sqlalchemy import select
 
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.repo import enqueue_index
-from api.modules.catalog.search.documents import build_documents
+from api.modules.catalog.search.documents import build_documents, embed_documents
 from api.modules.catalog.tables import datasets
 
 
@@ -19,12 +19,15 @@ def reindex_all(deps: CatalogDeps, *, chunk: int = 200) -> str:
     index.ensure()
     new_index = index.next_index_name()
     index.create_index(new_index, exist_ok=False)
+    vectors = deps.embedder is not None and index.supports_vectors(new_index)
     with deps.session_factory() as session:
         ids: list[UUID] = list(
             session.execute(select(datasets.c.dataset_id).order_by(datasets.c.dataset_id)).scalars()
         )
         for start in range(0, len(ids), chunk):
             docs, _ = build_documents(session, deps.organizations, ids[start : start + chunk])
+            if vectors:
+                embed_documents(docs, deps.embedder)
             index.bulk(docs, [], index=new_index)
     index.swap_alias(new_index)
     # Changes committed while we were loading went to the old index: queue everything once more.

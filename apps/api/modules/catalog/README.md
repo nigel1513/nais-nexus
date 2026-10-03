@@ -75,7 +75,7 @@ Dramatiq actor `catalog.verify_file` (queue `catalog`). Full rebuild: `python -m
   not audited beyond the request log. Add an event type in a later contract revision.
 - JSON-LD: `GET /datasets/{id}/metadata.jsonld` (`application/ld+json`). Search v2 adds subject/material/method/PI/period
   filters and facets; the period filter uses overlap semantics (a dataset matches when its range intersects the query).
-- **Deploy order:** run `python -m api.modules.catalog.reindex` once, so the index `nais-datasets-v2` is built BEFORE the
+- **Deploy order:** run `python -m api.modules.catalog.reindex` once, so the index `nais-datasets-v3` is built BEFORE the
   new api/worker drain the index queue (the v1 index has a strict mapping without the new fields).
 - Seeding: `seed_data.RESEARCH` fills the five seed datasets; `seed` also backfills seed rows that have no principal
   investigator (only those) and calls `backfill_previews`, which queues `file_previews` rows for tabular files of
@@ -87,7 +87,7 @@ Dramatiq actor `catalog.verify_file` (queue `catalog`). Full rebuild: `python -m
   (JSONB cannot hold them).
 
 ## Search
-Index `nais-datasets-v2` behind alias `nais-datasets` (`infra/opensearch`). Without the `analysis-nori`
+Index `nais-datasets-v3` behind alias `nais-datasets` (`infra/opensearch`). Without the `analysis-nori`
 plugin the catalog creates the index with the fallback analyzer (`standard` + `cjk_bigram`). The compose
 `opensearch` service builds `infra/opensearch/Dockerfile` (nori); an index created earlier with the fallback
 analyzer is rebuilt with `python -m api.modules.catalog.reindex`.

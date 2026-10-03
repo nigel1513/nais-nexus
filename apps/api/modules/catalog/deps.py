@@ -20,6 +20,7 @@ from api.modules.catalog.settings import CatalogSettings
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
+from api.platform.llm import EmbeddingClient
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,9 @@ class CatalogDeps:
     verification: VerificationQueue
     search: SearchIndex
     grants: PreviewGrantLookup = field(default_factory=NoGrants)
+    # Semantic half of the hybrid search (bge-m3). None (NAIS_LLM_ENABLED off, no NAIS_EMBED_BASE_URL): lexical only.
+    embedder: EmbeddingClient | None = None  # worker: documents
+    query_embedder: EmbeddingClient | None = None  # request path: the search text, short timeout
 
 
 def get_deps() -> CatalogDeps:
