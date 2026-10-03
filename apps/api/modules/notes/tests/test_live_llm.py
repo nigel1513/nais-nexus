@@ -1,12 +1,13 @@
 """Opt-in smoke against the REAL shared GPU (skipped unless NAIS_LIVE_LLM=1; CI never runs it).
 
-The GPU is shared with another platform: each test makes one call. Run:
+The GPU is shared with another platform, so the calls are few: the draft test makes 1–2 chat calls (the job retries
+once on an unusable answer), the other test one embedding and one rerank call. Run:
 
     NAIS_LIVE_LLM=1 NAIS_LLM_ENABLED=true NAIS_LLM_BASE_URL=http://192.168.0.2:8001 \
     NAIS_EMBED_BASE_URL=http://192.168.0.2:8002 NAIS_RERANK_BASE_URL=http://192.168.0.2:8003 \
     uv run pytest apps/api/modules/notes/tests/test_live_llm.py -m live_llm -s -q
 
-1. `notes.draft_note` once on the testcontainer database: a fake NotebookActivityPort returns one realistic notebook
+1. `notes.draft_note` once (1–2 chat calls) on the testcontainer database: a fake NotebookActivityPort returns one realistic notebook
    (Korean markdown + code cells about battery capacity fade, output kinds/counts only) and the platform LLM client
    (api.platform.llm.get_llm_client, i.e. NAIS_LLM_*) answers. The produced AI blocks and the latency are printed.
 2. One embedding call and one rerank call through the platform clients.
@@ -25,12 +26,12 @@ from api.modules.notes import jobs
 from api.modules.notes.deps import NotesDeps
 from api.modules.notes.drafting.parse import NEEDS_EVIDENCE, parse_draft
 from api.modules.notes.drafting.prompt import notebooks, plan
-from api.modules.notes.interfaces import NotebookActivityPort, NotebookCell
+from api.modules.notes.interfaces import NotebookCell
 from api.modules.notes.settings import NotesSettings
 from api.modules.notes.tests.conftest import NotesApi, World
 from api.modules.notes.tests.fakes import USERS, notebook
 from api.modules.notes.wiring import install
-from api.platform import clock, ports
+from api.platform import clock
 from api.platform.llm import ChatMessage, get_embedding_client, get_llm_client, get_rerank_client
 from api.platform.settings import get_settings
 
@@ -107,12 +108,22 @@ class Timed:
         return answer
 
 
-def test_live_draft_note(api: NotesApi, world: World) -> None:
+@pytest.fixture
+def live_llm(request: pytest.FixtureRequest, api: NotesApi, world: World) -> Timed:
+    """The real chat client as the notes LLM (after `api` has installed the fakes); a finalizer puts the world's fake
+    deps and notebook port back, so nothing live leaks into a later test in the same process."""
     llm = Timed()
-    saved = notebook("NCM811 45도 사이클 분석", *CELLS, saved_at=NOW - timedelta(hours=2))
-    world.notebooks.add(USERS["a.recorder"], world.project_id, TODAY, saved)
-    ports.provide(NotebookActivityPort, world.notebooks)
     install(NotesDeps(settings=NotesSettings(), people=world.people, llm=lambda: llm))
+    request.addfinalizer(world.install)
+    return llm
+
+
+def test_live_draft_note(api: NotesApi, world: World, live_llm: Timed) -> None:
+    llm = live_llm
+    saved = notebook("NCM811 45도 사이클 분석", *CELLS, saved_at=NOW - timedelta(hours=2))
+    world.notebooks.add(
+        USERS["a.recorder"], world.project_id, TODAY, saved
+    )  # world.install provided this port
     with clock.frozen(NOW):
         note = api.today(world)
         response = api.post("a.recorder", f"/notes/{note['note_id']}/draft")
