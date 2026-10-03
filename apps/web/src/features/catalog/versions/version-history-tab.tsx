@@ -272,7 +272,8 @@ function VersionRow({
         </div>
         {draft ? null : (
           <div className="-mx-2 flex flex-wrap items-center gap-0.5 md:mx-0 md:-mr-2 md:justify-end">
-            {v.previous_version_id ? (
+            {/* Ruling S10: a null summary means no comparison target this viewer can see (none, or withdrawn). */}
+            {v.change_summary ? (
               <Link href={`/commons/data/${d.dataset_id}/versions/compare?to=${v.dataset_version_id}`} className={buttonClass("ghost", "sm")}>
                 <GitCompareArrows aria-hidden="true" strokeWidth={1.75} />
                 {t("compare")}

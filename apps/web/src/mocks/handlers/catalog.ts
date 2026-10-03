@@ -79,11 +79,16 @@ const filesOf = (db: MockDb, versionId: string | null | undefined): StoredFile[]
 /** service.diff.default_target: a DRAFT compares with its base, a published version with its predecessor. */
 const defaultTarget = (v: StoredVersion) => (v.status === "DRAFT" ? v.base_version_id : v.previous_version_id) ?? null;
 
-export function versionView(db: MockDb, v: StoredVersion): Schemas["DatasetVersion"] {
+export function versionView(db: MockDb, v: StoredVersion, user: MockUser): Schemas["DatasetVersion"] {
   const { files, metadata_snapshot: _snapshot, metadata_overrides: _overrides, ...rest } = v;
   void _snapshot;
   void _overrides;
-  const target = defaultTarget(v);
+  const targetId = defaultTarget(v);
+  // Ruling S10 (service.diff): no summary when the default target is not visible to the caller (e.g. a WITHDRAWN
+  // predecessor seen by someone outside the owner organization), exactly as when there is no target at all.
+  const targetRow = targetId ? db.versions.find((x) => x.dataset_version_id === targetId) : undefined;
+  const ds = db.datasets.find((d) => d.dataset_id === v.dataset_id);
+  const target = targetRow && ds && canSeeVersionRow(user, ds, targetRow) ? targetId : null;
   return {
     ...rest,
     files: files.map(({ inherited_from, ...f }): Schemas["DatasetFile"] => ({ ...f, inherited: inherited_from !== undefined })).sort(byPath),
@@ -933,7 +938,7 @@ export const catalogHandlers = [
     const items = db.versions
       .filter((v) => v.dataset_id === ds.dataset_id && (all || v.status === "PUBLISHED"))
       .sort(newestFirst("created_at"))
-      .map((v) => versionView(db, v));
+      .map((v) => versionView(db, v, user));
     return HttpResponse.json({ items });
   }),
 
@@ -974,7 +979,7 @@ export const catalogHandlers = [
     };
     recompute(v);
     db.versions.push(v);
-    return HttpResponse.json(versionView(db, v), { status: 201 });
+    return HttpResponse.json(versionView(db, v, user), { status: 201 });
   }),
 
   http.get(`${API}/dataset-versions/:version_id`, ({ request, params }) => {
@@ -990,7 +995,7 @@ export const catalogHandlers = [
         if (sf) Object.assign(sf, { status: f.status, failure_code: f.status === "FAILED" ? "CHECKSUM_MISMATCH" : null });
       }
     }
-    return HttpResponse.json(versionView(db, v));
+    return HttpResponse.json(versionView(db, v, user));
   }),
 
   http.post(`${API}/dataset-versions/:version_id/upload-session`, async ({ request, params }) => {
@@ -1146,7 +1151,7 @@ export const catalogHandlers = [
     // M09 §7.3: every holder of an ACTIVE grant on the dataset hears about the new version.
     const holders = db.grants.filter((g) => g.dataset_id === ds.dataset_id && g.status === "ACTIVE" && Date.parse(g.expires_at) > Date.now()).map((g) => g.subject_user_id);
     notify(db, holders, "DATASET_PUBLISHED", `"${ds.title}" 새 버전 ${v.version_label}이(가) 게시되었습니다`, `/commons/data/${ds.dataset_id}`);
-    return HttpResponse.json(versionView(db, v));
+    return HttpResponse.json(versionView(db, v, user));
   }),
 
   http.patch(`${API}/dataset-versions/:version_id`, async ({ request, params }) => {
@@ -1160,7 +1165,7 @@ export const catalogHandlers = [
     const { v } = stewardVersion(db, String(params.version_id), user);
     requireDraft(v);
     v.change_note = note;
-    return HttpResponse.json(versionView(db, v));
+    return HttpResponse.json(versionView(db, v, user));
   }),
 
   http.delete(`${API}/dataset-versions/:version_id`, ({ request, params }) => {
@@ -1190,7 +1195,7 @@ export const catalogHandlers = [
     const { v } = stewardVersion(db, String(params.version_id), user);
     requireDraft(v);
     const latest = latestPublishedVersion(db, v.dataset_id);
-    if ((v.base_version_id ?? null) === (latest?.dataset_version_id ?? null)) return HttpResponse.json(versionView(db, v));
+    if ((v.base_version_id ?? null) === (latest?.dataset_version_id ?? null)) return HttpResponse.json(versionView(db, v, user));
     if (db.uploadSessions.some((s) => s.dataset_version_id === v.dataset_version_id && s.status === "OPEN" && !sessionExpired(s) && s.files.some((f) => f.status === "PENDING"))) {
       fail("CONFLICT", "Finish or cancel the open upload before updating the draft.");
     }
@@ -1221,7 +1226,7 @@ export const catalogHandlers = [
     v.files = [...v.files.filter((f) => !take.has(f.path)), ...theirsRows.filter((f) => take.has(f.path)).map(inheritedCopy)];
     v.base_version_id = latest?.dataset_version_id ?? null;
     recompute(v);
-    return HttpResponse.json(versionView(db, v));
+    return HttpResponse.json(versionView(db, v, user));
   }),
 
   http.get(`${API}/dataset-versions/:version_id/diff`, ({ request, params }) => {
@@ -1241,7 +1246,7 @@ export const catalogHandlers = [
       return cp ? { total_rows: cp.total_rows !== undefined ? cp.total_rows : cp.truncated ? null : cp.rows_sampled, columns: cp.columns } : null;
     };
     const schema = changes
-      .filter((c) => c.status === "CHANGED" && /\.(csv|tsv|parquet)$/i.test(c.path))
+      .filter((c) => c.status === "CHANGED" && isTabular(c.path)) // previews.profile.table_format: _-prefixed names are metadata
       .map((c) => diffSchema(c.path, profile(before.find((f) => f.path === c.path)), profile(v.files.find((f) => f.path === c.path))));
     return HttpResponse.json({
       from_version_id: target?.dataset_version_id ?? null,

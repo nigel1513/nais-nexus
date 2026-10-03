@@ -233,6 +233,22 @@ describe("diff, file history, citation", () => {
     expect((await send(USER.aResearcher, "GET", `/dataset-versions/${VERSION.battery}/diff`)).status).toBe(404);
   });
 
+  it("change_summary is null when the default target is invisible to the caller (ruling S10)", async () => {
+    getDb().versions.find((x) => x.dataset_version_id === VERSION.batteryV11)!.status = "WITHDRAWN";
+    expect((await json(USER.aResearcher, "GET", `/dataset-versions/${VERSION.battery}`)).change_summary).toBeNull();
+    expect((await json(S, "GET", `/dataset-versions/${VERSION.battery}`)).change_summary).toEqual({ added: 2, removed: 0, changed: 2, unchanged: 1 });
+    const listed = (await json(USER.aResearcher, "GET", `/datasets/${DATASET.battery}/versions`)).items.find((v: { dataset_version_id: string }) => v.dataset_version_id === VERSION.battery);
+    expect(listed.change_summary).toBeNull();
+  });
+
+  it("the schema layer skips _-prefixed metadata tables, like table_format", async () => {
+    const d = await draft("v3-codebook");
+    await upload(d.dataset_version_id, { "_codebook.csv": "column,unit\ntemp_c,K\n" });
+    const diff = await json(S, "GET", `/dataset-versions/${d.dataset_version_id}/diff`);
+    expect(diff.files.find((f: { path: string }) => f.path === "_codebook.csv").status).toBe("CHANGED");
+    expect(diff.schema.map((c: { path: string }) => c.path)).not.toContain("_codebook.csv");
+  });
+
   it("rebase THEIRS releases the dropped draft upload's object", async () => {
     const a = await draft("v3-a");
     const b = await draft("v3-b");

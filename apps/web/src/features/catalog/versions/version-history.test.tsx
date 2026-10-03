@@ -130,6 +130,14 @@ describe("VersionHistoryTab", () => {
     await waitFor(() => expect(screen.queryByRole("link", { name: "다운로드" })).toBeNull());
   });
 
+  it("hides 비교 when the row has no visible comparison target (null change_summary, ruling S10)", async () => {
+    getDb().versions.find((v) => v.dataset_version_id === VERSION.batteryV11)!.status = "WITHDRAWN";
+    open(USER.aResearcher);
+    const rows = (await history()).getAllByRole("listitem");
+    expect(rows.map((r) => r.getAttribute("aria-label")?.split(" ")[0])).toEqual(["v2.0", "v1.0"]); // withdrawn v1.1 is not listed
+    expect(within(rows[0]!).queryByRole("link", { name: "비교" })).toBeNull();
+  });
+
   it("a grant holder sees download links", async () => {
     open(USER.aResearcher);
     expect(await within((await history()).getAllByRole("listitem")[0]!).findByRole("link", { name: "다운로드" })).toBeInTheDocument();
