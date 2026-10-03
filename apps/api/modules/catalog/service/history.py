@@ -1,8 +1,9 @@
 """getFileHistory and getDatasetCitation (spec §3.3b, §4)."""
 
-from datetime import UTC
+from datetime import datetime
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -20,6 +21,13 @@ from api.platform.generated.error_codes import ErrorCode
 # A dataset with more visible versions answers with the newest ones; the first entry's state still compares with
 # its real predecessor.
 MAX_HISTORY_VERSIONS = 1000
+
+# The publication year a Korean institute would write: 2026-01-01 03:00 KST is 2026, although it is 2025 in UTC.
+CITATION_TZ = ZoneInfo("Asia/Seoul")
+
+
+def citation_year(published_at: datetime) -> int:
+    return published_at.astimezone(CITATION_TZ).year
 
 
 def _state(sha: str | None, previous: str | None) -> str:
@@ -111,7 +119,7 @@ def citation(
         CitationInput(
             title=str(snapshot.get("title") or ds["title"]),
             version_label=version["version_label"],
-            year=(version["published_at"] or version["created_at"]).astimezone(UTC).year,
+            year=citation_year(version["published_at"] or version["created_at"]),
             publisher=publisher,
             uri=f"{base}/id/dataset-version/{version_id}",
             doi=ds["doi"],

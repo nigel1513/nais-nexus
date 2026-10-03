@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: NAIS AI-OS / Research Commons API
-  version: 1.4.0
+  version: 1.4.1
   description: |
     P0 contract. Owner: Agent 0 (Platform). Changes only via CONTRACT_CHANGE_REQUEST.md.
 
@@ -575,6 +575,7 @@ paths:
         "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
   /dataset-versions/{version_id}/upload-session:
     parameters: [ { $ref: "#/components/parameters/VersionId" } ]
     post:

@@ -183,10 +183,12 @@ def test_citation_styles_and_draft_refusal(api: CatalogApi, db: PgUrls) -> None:
     assert_error(
         "getDatasetCitation", api.get("a.researcher", f"/dataset-versions/{d}/citation"), 404, "NOT_FOUND"
     )
-    # An unknown style is a 422 (as in the web mock); the contract does not list 422 for this operation yet, so
-    # only the envelope is checked here (reported to the controller).
-    bad = api.get("b.researcher", f"/dataset-versions/{v1}/citation", params={"style": "apa"})
-    assert bad.status_code == 422 and bad.json()["error"]["code"] == "VALIDATION_FAILED"
+    assert_error(
+        "getDatasetCitation",
+        api.get("b.researcher", f"/dataset-versions/{v1}/citation", params={"style": "apa"}),
+        422,
+        "VALIDATION_FAILED",
+    )
 
 
 def test_withdrawn_citation_follows_visibility(api: CatalogApi, db: PgUrls) -> None:
@@ -258,3 +260,23 @@ def test_citation_without_people_falls_back_to_the_publisher(api: CatalogApi, db
     assert org is not None
     assert data["creators"] == [{"name": org.name, "nameType": "Organizational"}]
     assert "  author = {{" in _cite(api, v1, "bibtex")  # the organization is braced
+
+
+def test_citation_year_is_the_korean_calendar_year(api: CatalogApi, db: PgUrls) -> None:
+    """Published 2026-01-01 03:00 KST (2025-12-31 18:00 UTC): cited as 2026."""
+    _, v1 = first_published(api, db)
+    engine = create_engine(db.superuser)
+    try:
+        with engine.begin() as conn:  # published rows are immutable: bypass the trigger to set the instant
+            conn.execute(text("SET LOCAL session_replication_role = replica"))
+            conn.execute(
+                text(
+                    "UPDATE catalog.dataset_versions SET published_at = '2026-01-01 03:00:00+09'"
+                    " WHERE dataset_version_id = :v"
+                ),
+                {"v": v1},
+            )
+    finally:
+        engine.dispose()
+    assert json.loads(_cite(api, v1, "datacite-json"))["publicationYear"] == "2026"
+    assert " (2026). " in _cite(api, v1) and "  year = {2026},\n" in _cite(api, v1, "bibtex")

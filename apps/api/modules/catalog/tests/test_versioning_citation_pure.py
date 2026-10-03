@@ -84,7 +84,7 @@ def test_bibtex_braces_names_with_and_and_organizations() -> None:
 
 def test_datacite_json() -> None:
     data = json.loads(render("datacite-json", C))
-    assert data["types"] == {"resourceTypeGeneral": "Dataset"}
+    assert data["types"] == {"resourceType": "Dataset", "resourceTypeGeneral": "Dataset"}
     assert data["creators"][0] == {
         "name": "홍길동",
         "nameType": "Personal",

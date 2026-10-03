@@ -102,7 +102,7 @@ def render(style: str, c: CitationInput) -> str:
             "publisher": {"name": c.publisher},
             "publicationYear": str(c.year),
             "version": c.version_label,
-            "types": {"resourceTypeGeneral": "Dataset"},
+            "types": {"resourceType": "Dataset", "resourceTypeGeneral": "Dataset"},
             "identifiers": [{"identifier": c.uri, "identifierType": "URL"}]
             + ([{"identifier": c.doi, "identifierType": "DOI"}] if c.doi else []),
             "rightsList": [{"rights": c.license}] if c.license else [],
