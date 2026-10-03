@@ -61,7 +61,9 @@ def _base_is_latest(version: Mapping[Any, Any], latest_id: UUID | None) -> bool 
     return bool(version["base_version_id"] == latest_id)
 
 
-def version_response(session: Session, version: RowMapping) -> dict[str, Any]:
+def version_response(session: Session, version: RowMapping, *, sees_all_versions: bool) -> dict[str, Any]:
+    """`sees_all_versions`: the caller may see DRAFT/WITHDRAWN versions of this dataset (Ruling S10: otherwise a
+    change_summary against an invisible target is null)."""
     version_id = version["dataset_version_id"]
     files = files_of_versions(session, [version_id])[version_id]
     readiness = (
@@ -73,7 +75,7 @@ def version_response(session: Session, version: RowMapping) -> dict[str, Any]:
         files,
         readiness,
         base_is_latest=_base_is_latest(version, latest_id),
-        change_summary=summaries(session, [version])[version_id],
+        change_summary=summaries(session, [version], sees_all_versions=sees_all_versions)[version_id],
     )
 
 
@@ -135,13 +137,16 @@ def create_version(
         raise _label_exists() from exc
     if source_id is not None:
         copy_files(session, from_version_id=source_id, to_version_id=version_id, now=now)
-    return version_response(session, must(load_version(session, version_id), "version"))
+    return version_response(
+        session, must(load_version(session, version_id), "version"), sees_all_versions=True
+    )
 
 
 def list_versions(session: Session, user: CurrentUser, dataset_id: UUID) -> dict[str, Any]:
     ds = visible_dataset(session, user, dataset_id)
     stmt = select(dataset_versions).where(dataset_versions.c.dataset_id == dataset_id)
-    if not can_see_all_versions(user, ds["owner_organization_id"]):
+    sees_all = can_see_all_versions(user, ds["owner_organization_id"])
+    if not sees_all:
         stmt = stmt.where(dataset_versions.c.status == "PUBLISHED")
     versions = (
         session.execute(
@@ -157,7 +162,7 @@ def list_versions(session: Session, user: CurrentUser, dataset_id: UUID) -> dict
     )
     # base_is_latest is a DRAFT-only field: skip the query when the caller sees no drafts.
     latest_id = _latest_id(session, dataset_id) if any(v["status"] == "DRAFT" for v in versions) else None
-    changes = summaries(session, versions)
+    changes = summaries(session, versions, sees_all_versions=sees_all)
     return {
         "items": [
             version_view(
@@ -179,7 +184,9 @@ def get_version(session: Session, user: CurrentUser, version_id: UUID) -> dict[s
     ds = must(load_dataset(session, version["dataset_id"]), "dataset")
     if not can_see_version(user, ds, version):
         raise not_found("Dataset version")
-    return version_response(session, version)
+    return version_response(
+        session, version, sees_all_versions=can_see_all_versions(user, ds["owner_organization_id"])
+    )
 
 
 def update_version(
@@ -192,7 +199,9 @@ def update_version(
         .where(dataset_versions.c.dataset_version_id == version_id)
         .values(change_note=body.change_note, updated_at=clock.now())
     )
-    return version_response(session, must(load_version(session, version_id), "version"))
+    return version_response(
+        session, must(load_version(session, version_id), "version"), sees_all_versions=True
+    )
 
 
 def discard_version(

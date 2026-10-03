@@ -163,3 +163,18 @@ def test_metadata_people_lists_are_compared_whole_and_none_snapshot_is_empty() -
     ]
     assert diff_metadata(None, {"title": "T"}) == [{"field": "title", "before": None, "after": "T"}]
     assert diff_metadata({"title": "T"}, {"title": "T"}) == []
+
+
+def test_unknown_missing_ratio_is_not_a_change() -> None:
+    col = {"name": "x", "type": "integer", "unit": None, "missing_ratio": 0.5}
+    for b_ratio, a_ratio in ((None, 0.5), (0.5, None), (None, None)):
+        got = diff_schema(
+            "d.csv",
+            {"columns": [{**col, "missing_ratio": b_ratio}]},
+            {"columns": [{**col, "missing_ratio": a_ratio}]},
+        )
+        assert got["columns_changed"] == []
+    no_key = {k: v for k, v in col.items() if k != "missing_ratio"}
+    assert diff_schema("d.csv", {"columns": [no_key]}, {"columns": [{**no_key, "type": "number"}]})[
+        "columns_changed"
+    ] == [{"name": "x", "type": ["integer", "number"], "unit": None, "missing_ratio": None}]

@@ -18,7 +18,7 @@ from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.previews.profile import table_format
 from api.modules.catalog.repo import files_of_versions, load_dataset, load_version
 from api.modules.catalog.service.snapshot import live_snapshot
-from api.modules.catalog.tables import dataset_files, file_previews
+from api.modules.catalog.tables import dataset_files, dataset_versions, file_previews
 from api.modules.catalog.versioning.diff import (
     FileEntry,
     diff_files,
@@ -47,11 +47,25 @@ def _entries(files: Sequence[Mapping[Any, Any]]) -> dict[str, FileEntry]:
     return {f["path"]: FileEntry(f["path"], int(f["size_bytes"]), f["sha256"].strip()) for f in files}
 
 
-def summaries(session: Session, versions: Sequence[Mapping[Any, Any]]) -> dict[UUID, dict[str, int] | None]:
+def summaries(
+    session: Session, versions: Sequence[Mapping[Any, Any]], *, sees_all_versions: bool
+) -> dict[UUID, dict[str, int] | None]:
     """change_summary per version against its default target; None when there is nothing to compare with (a first
-    version, or a draft created before anything was published). One SQL statement for the whole list."""
+    version, or a draft created before anything was published) and, Ruling S10, when the caller cannot see the
+    target (`sees_all_versions` false and the target is not PUBLISHED, e.g. a WITHDRAWN predecessor); compare()
+    answers 404 for that target. One SQL statement for the whole list."""
     result: dict[UUID, dict[str, int] | None] = {v["dataset_version_id"]: None for v in versions}
     pairs = [(v["dataset_version_id"], target) for v in versions if (target := default_target(v)) is not None]
+    if pairs and not sees_all_versions:
+        published: set[UUID] = set(
+            session.execute(
+                select(dataset_versions.c.dataset_version_id).where(
+                    dataset_versions.c.dataset_version_id.in_({t for _, t in pairs}),
+                    dataset_versions.c.status == "PUBLISHED",
+                )
+            ).scalars()
+        )
+        pairs = [(v, t) for v, t in pairs if t in published]
     if not pairs:
         return result
     p = values(column("v", PG_UUID(as_uuid=True)), column("t", PG_UUID(as_uuid=True)), name="pairs").data(
@@ -184,7 +198,21 @@ def compare(
         "summary": summarize(changes),
         "files": changes,
         "schema": _schema_layer(session, changes, before_rows, after_rows),
-        "metadata": diff_metadata(
-            _snapshot(session, deps, target, ds), _snapshot(session, deps, version, ds)
-        ),
+        "metadata": _metadata_layer(session, deps, target, version, ds),
     }
+
+
+def _metadata_layer(
+    session: Session,
+    deps: CatalogDeps,
+    target: Mapping[Any, Any] | None,
+    version: Mapping[Any, Any],
+    ds: Mapping[Any, Any],
+) -> list[dict[str, Any]]:
+    """A published side without a frozen snapshot (data that predates D-029) is unknown: report nothing rather than
+    every field as added or removed (the contract has no marker for it). No target at all is "everything added"."""
+    before = _snapshot(session, deps, target, ds)
+    after = _snapshot(session, deps, version, ds)
+    if after is None or (target is not None and before is None):
+        return []
+    return diff_metadata(before, after)

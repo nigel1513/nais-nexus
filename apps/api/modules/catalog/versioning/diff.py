@@ -87,8 +87,14 @@ def diff_schema(
     for name in [n for n in acols if n in bcols]:
         b, a = bcols[name], acols[name]
         ratio: list[float] | None = None
-        if abs(float(a["missing_ratio"]) - float(b["missing_ratio"])) >= MISSING_RATIO_EPSILON:
-            ratio = [round(float(b["missing_ratio"]), 4), round(float(a["missing_ratio"]), 4)]
+        b_ratio, a_ratio = b.get("missing_ratio"), a.get("missing_ratio")
+        # An unknown ratio on either side (absent / null in an old or foreign profile) is not a change.
+        if (
+            isinstance(b_ratio, int | float)
+            and isinstance(a_ratio, int | float)
+            and abs(float(a_ratio) - float(b_ratio)) >= MISSING_RATIO_EPSILON
+        ):
+            ratio = [round(float(b_ratio), 4), round(float(a_ratio), 4)]
         entry = {
             "name": name,
             "type": _pair(b.get("type"), a.get("type")),

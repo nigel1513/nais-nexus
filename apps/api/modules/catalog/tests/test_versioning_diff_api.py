@@ -217,3 +217,44 @@ def test_withdrawn_predecessor_is_404_for_those_who_cannot_see_it(api: CatalogAp
     response = api.get("a.researcher", f"/dataset-versions/{v2}/diff", params={"against": v1})
     assert_error("compareDatasetVersions", response, 404, "NOT_FOUND")
     assert _diff(api, v2)["from_version_id"] == v1  # the owner's steward still sees it
+
+
+def test_summary_against_an_invisible_target_is_null_for_that_caller(api: CatalogApi, db: PgUrls) -> None:
+    """Ruling S10: v3's predecessor v2 is WITHDRAWN; a researcher cannot see it, so v3 has no change_summary for
+    them (and /diff with the default target is 404); the steward still sees the counts."""
+    dataset_id, v1 = first_published(api, db)
+    v2 = draft(api, dataset_id, "v2")["dataset_version_id"]
+    upload_files(api, db, v2, {"data/a.csv": b"x,y\n5,6\n"})
+    publish(api, v2)
+    v3 = draft(api, dataset_id, "v3")["dataset_version_id"]
+    upload_files(api, db, v3, {"data/c.csv": b"c\n1\n"})
+    publish(api, v3)
+    execute(
+        db, "UPDATE catalog.dataset_versions SET status = 'WITHDRAWN' WHERE dataset_version_id = :v", v=v2
+    )
+    expected = {"added": 1, "removed": 0, "changed": 0, "unchanged": 2}
+    for user, summary in (("b.researcher", None), ("a.researcher", None), ("b.steward", expected)):
+        items = {
+            v["dataset_version_id"]: v
+            for v in api.get(user, f"/datasets/{dataset_id}/versions").json()["items"]
+        }
+        assert items[v3]["change_summary"] == summary, user
+        assert api.get(user, f"/dataset-versions/{v3}").json()["change_summary"] == summary, user
+    assert_error(
+        "compareDatasetVersions", api.get("b.researcher", f"/dataset-versions/{v3}/diff"), 404, "NOT_FOUND"
+    )
+    assert _diff(api, v3)["summary"] == expected
+
+
+def test_published_side_without_snapshot_reports_no_metadata_changes() -> None:
+    """ck_versions_published forbids it today; a missing frozen snapshot is unknown, never "everything changed"."""
+    from api.modules.catalog.service.diff import _metadata_layer
+
+    published = {"status": "PUBLISHED", "metadata_snapshot": {"title": "T", "license": "CC0-1.0"}}
+    missing = {"status": "PUBLISHED", "metadata_snapshot": None}
+    assert _metadata_layer(None, None, missing, published, {}) == []  # type: ignore[arg-type]
+    assert _metadata_layer(None, None, published, missing, {}) == []  # type: ignore[arg-type]
+    assert _metadata_layer(None, None, None, published, {}) == [  # type: ignore[arg-type]
+        {"field": "license", "before": None, "after": "CC0-1.0"},
+        {"field": "title", "before": None, "after": "T"},
+    ]

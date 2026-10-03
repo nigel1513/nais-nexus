@@ -136,4 +136,7 @@ def publish_version(
         actor=EventActor.for_user(user),
         deps=deps,
     )
-    return version_response(session, must(load_version(session, version_id), "version"))
+    # Only an owner-org steward publishes: they see every version of the dataset.
+    return version_response(
+        session, must(load_version(session, version_id), "version"), sees_all_versions=True
+    )
