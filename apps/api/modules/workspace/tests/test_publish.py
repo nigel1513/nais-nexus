@@ -637,7 +637,10 @@ def test_failed_verification_rejects_the_request(
     out, req = approved(api, setup, world)
     world.publisher.status = "FAILED"
     assert publish_service.publish_approved(UUID(req["request_id"])) == "FAILED"
-    assert "verification" in assert_failed(api, setup, db, out, req)
+    assert (
+        assert_failed(api, setup, db, out, req)
+        == "카탈로그 파일 검증에 실패했습니다. 산출물 파일을 확인한 뒤 다시 요청하세요."
+    )
     [row] = sql(db, "SELECT publication_status, published_dataset_id FROM workspace.publish_requests")
     assert row["publication_status"] == "FAILED" and row["published_dataset_id"] is not None
 

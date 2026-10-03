@@ -421,7 +421,7 @@ def publish_approved(request_id: UUID) -> str:
     elif state.status == "FAILED":
         _fail(
             claimed,
-            "카탈로그 파일 검증에 실패했습니다(verification failed): 산출물 파일을 확인한 뒤 다시 요청하세요.",
+            "카탈로그 파일 검증에 실패했습니다. 산출물 파일을 확인한 뒤 다시 요청하세요.",
             state.dataset_id,
         )
     else:
