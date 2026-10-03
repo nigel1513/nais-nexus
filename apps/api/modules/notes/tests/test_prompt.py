@@ -28,7 +28,7 @@ EXPECTED_SYSTEM = """너는 국가연구개발 연구노트(표준 양식)의 �
 3) OBJECTIVE(연구 목표), DISCUSSION(고찰·문제점), NEXT(향후 계획)는 설명 셀에 근거가 있을 때만 그 셀 번호를 달아 쓴다. 없으면 빈 배열.
 4) METHOD(연구 방법·재료)는 노트북에 드러난 데이터·도구·방법만 쓴다. REFERENCES(참고 자료)는 사용한 노트북 제목 목록으로 쓴다.
 5) 한국어 평서문, 문장당 120자 이내, 섹션당 최대 6문장.
-6) 아래 7개 섹션 키의 JSON 하나만 출력한다: {"OBJECTIVE":[],"METHOD":[],"PROCEDURE":[],"RESULTS":[],"DISCUSSION":[],"NEXT":[],"REFERENCES":[]} 각 원소는 {"text": "...", "evidence": ["1.2", ...]}."""
+6) 아래 7개 섹션 키의 JSON 하나만 출력한다: {"OBJECTIVE":[],"METHOD":[],"PROCEDURE":[],"RESULTS":[],"DISCUSSION":[],"NEXT":[],"REFERENCES":[]} 각 섹션 값은 배열이고 각 원소는 문장 하나다: {"text": "...", "evidence": ["1.2", ...]}. 여러 문장을 한 text에 합치지 않는다."""
 
 
 def md(text: str = "## 목표: 고온 구간 용량 감소를 확인한다") -> NotebookCell:

@@ -67,7 +67,6 @@ def test_sections_wrapper_code_fence_and_extra_prose_are_tolerated() -> None:
         {"sections": []},
         {"STEPS": [{"text": "x", "evidence": ["1"]}]},
         {"PROCEDURE": "실행했다."},
-        {"PROCEDURE": ["실행했다."]},
         {"PROCEDURE": [{"evidence": ["1.2"]}]},
         {"PROCEDURE": [{"text": 3, "evidence": ["1.2"]}]},
         {"PROCEDURE": [{"text": "x", "evidence": "1.2"}]},
@@ -146,3 +145,39 @@ def test_integer_keys_mean_notebook_headers_and_strings_stay_exact() -> None:
         answer(REFERENCES=[{"text": "분석 노트북.", "evidence": [1, "01", "1.20", "1.2"]}]), ITEMS
     )
     assert parsed == [DraftSentence("REFERENCES", "분석 노트북.", ("1", "1.2"))]
+
+
+def test_a_single_element_object_in_place_of_an_array_is_salvaged() -> None:
+    """EXAONE 3.5 (the platform :8001 model) answered every section as one object instead of an array (live smoke,
+    Task 16); the object is read as a one-element array."""
+    parsed = parse_draft(
+        answer(
+            OBJECTIVE={"text": "고온 구간 용량 감소를 확인한다.", "evidence": ["1.1"]},  # type: ignore[arg-type]
+            PROCEDURE={"text": "데이터를 불러와 평균을 계산했다.", "evidence": ["1.2"]},  # type: ignore[arg-type]
+        ),
+        ITEMS,
+    )
+    assert parsed == [
+        DraftSentence("OBJECTIVE", "고온 구간 용량 감소를 확인한다.", ("1.1",)),
+        DraftSentence("PROCEDURE", "데이터를 불러와 평균을 계산했다.", ("1.2",)),
+    ]
+
+
+def test_bracketed_keys_as_written_in_the_listing_are_read() -> None:
+    parsed = parse_draft(
+        answer(REFERENCES=[{"text": "분석 노트북.", "evidence": ["[1]", " [1.2] ", "[[1.3]]"]}]), ITEMS
+    )
+    assert parsed == [DraftSentence("REFERENCES", "분석 노트북.", ("1", "1.2"))]
+
+
+def test_a_bare_string_element_is_a_sentence_without_evidence() -> None:
+    """EXAONE 3.5 wrote REFERENCES as plain strings (live smoke, Task 16): kept as text without evidence, so a
+    PROCEDURE/RESULTS string is still dropped and REFERENCES/METHOD survive."""
+    parsed = parse_draft(
+        answer(
+            PROCEDURE=["실행했다."],  # type: ignore[list-item]
+            REFERENCES=["노트북 '분석' ([1])", "  "],  # type: ignore[list-item]
+        ),
+        ITEMS,
+    )
+    assert parsed == [DraftSentence("REFERENCES", "노트북 '분석' ([1])", ())]

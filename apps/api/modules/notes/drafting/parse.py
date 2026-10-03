@@ -3,9 +3,11 @@ template sections; a {"sections": {...}} wrapper is tolerated) with elements {"t
 such as "1.2" or "1"]}.
 
 ValueError = the answer is unusable (no JSON object, none of the sections, wrong shape): the job retries once.
-Anything salvageable is salvaged instead: evidence keys the prompt does not have are dropped, then PROCEDURE/RESULTS
-sentences left without evidence are dropped, OBJECTIVE/DISCUSSION/NEXT sentences that cite no markdown (설명) cell are
-dropped, blank or over-long sentences are dropped and each section keeps its first SECTION_LIMIT sentences. Unknown
+Anything salvageable is salvaged instead: a section given as one element object instead of an array is read as a
+one-element array and a bare string element as a sentence without evidence (EXAONE 3.5 answers so), keys written as
+in the listing ("[1.2]") are read without the brackets, evidence keys the prompt does not have are dropped, then
+PROCEDURE/RESULTS sentences left without evidence are dropped, OBJECTIVE/DISCUSSION/NEXT sentences that cite no
+markdown (설명) cell are dropped, blank or over-long sentences are dropped and each section keeps its first SECTION_LIMIT sentences. Unknown
 sections are ignored. Sentences come out in template order.
 """
 
@@ -55,14 +57,15 @@ def _json_object(text: str) -> dict[str, Any]:
 
 
 def _key(value: Any) -> str | None:
-    """A prompt key: a string as written ("1.2", "1"; surrounding blanks ignored), or an integer n meaning the
+    """A prompt key: a string as written ("1.2", "1"; surrounding blanks and one pair of brackets ignored), or an integer n meaning the
     notebook header "n". Anything else (bools, floats, objects) is invalid."""
     if isinstance(value, bool):
         return None
     if isinstance(value, int):
         return str(value)
     if isinstance(value, str):
-        return value.strip()
+        key = value.strip()
+        return key[1:-1].strip() if key.startswith("[") and key.endswith("]") else key
     return None
 
 
@@ -86,10 +89,14 @@ def parse_draft(raw: Mapping[str, Any] | str, items: Sequence[PromptItem]) -> li
     dropped = 0
     for section in SECTIONS:
         elements = sections.get(section, [])
+        if isinstance(elements, Mapping):
+            elements = [elements]
         if not isinstance(elements, list):
             raise ValueError(f"{section} must be an array")
         kept: list[DraftSentence] = []
         for element in elements:
+            if isinstance(element, str):  # a bare sentence: no evidence
+                element = {"text": element, "evidence": []}
             if not isinstance(element, Mapping) or not isinstance(element.get("text"), str):
                 raise ValueError(f"{section} elements need a text")
             evidence = element.get("evidence", [])
