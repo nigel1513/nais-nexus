@@ -152,4 +152,68 @@ describe("draft flow", () => {
     expect(await screen.findByText(/진행 중인 업로드를 마치거나 취소한 뒤/)).toBeInTheDocument();
     expect(screen.queryByRole("dialog", { name: "충돌 해결" })).toBeNull();
   });
+  it("a second conflict set gets fresh choices, and only its paths are sent", async () => {
+    seedStaleDraftWithConflict();
+    const side = { size_bytes: 10, sha256: "a".repeat(64) };
+    const conflict = (path: string) => ({ path, base: side, mine: side, theirs: { ...side, sha256: "b".repeat(64) } });
+    const bodies: unknown[] = [];
+    server.use(
+      http.post("*/mock-api/v1/dataset-versions/:version_id/rebase", async ({ request }) => {
+        bodies.push(await request.json());
+        const conflicts = bodies.length === 1 ? [conflict("data/a.csv")] : bodies.length === 2 ? [conflict("data/b.csv")] : null;
+        return HttpResponse.json({ error: { code: conflicts ? "CONFLICT" : "INTERNAL_ERROR", message: "x", details: conflicts ? { conflicts } : {}, trace_id: "t" } }, { status: conflicts ? 409 : 500 });
+      }),
+    );
+    open(VERSION.batteryDraft);
+    await userEvent.click(await within(await banner()).findByRole("button", { name: "최신 기준으로 갱신" }));
+    let dialog = await screen.findByRole("dialog", { name: "충돌 해결" });
+    await userEvent.click(within(dialog).getByRole("radio", { name: "내 파일 유지" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "갱신" }));
+    dialog = await screen.findByRole("dialog", { name: "충돌 해결" });
+    expect(await within(dialog).findByText("data/b.csv")).toBeInTheDocument();
+    expect(within(dialog).queryByText("data/a.csv")).toBeNull();
+    expect(within(dialog).getByRole("button", { name: "갱신" })).toBeDisabled(); // no choice carried over
+    await userEvent.click(within(dialog).getByRole("radio", { name: "최신 버전 파일 사용" }));
+    await userEvent.click(within(dialog).getByRole("button", { name: "갱신" }));
+    await waitFor(() => expect(bodies).toHaveLength(3));
+    expect(bodies[1]).toEqual({ resolutions: { "data/a.csv": "MINE" } });
+    expect(bodies[2]).toEqual({ resolutions: { "data/b.csv": "THEIRS" } });
+  });
+
+  it("holds the stale sentences until the latest version label is known", async () => {
+    seedStaleDraftWithConflict();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    server.use(
+      http.get("*/mock-api/v1/datasets/:dataset_id/versions", async () => {
+        await gate;
+        return undefined; // fall through to the mock handler
+      }),
+    );
+    open(VERSION.batteryDraft);
+    const b = await banner();
+    expect(within(b).getByRole("button", { name: "최신 기준으로 갱신" })).toBeInTheDocument();
+    expect(within(b).queryByText(/그 사이 게시됐습니다/)).toBeNull();
+    release();
+    expect(await within(b).findByText("최신 버전(v2.1)이 그 사이 게시됐습니다")).toBeInTheDocument();
+  });
+
+  it("a publish refusal other than a stale base is shown once, inline", async () => {
+    server.use(
+      http.post("*/mock-api/v1/dataset-versions/:version_id/publish", () =>
+        HttpResponse.json({ error: { code: "DATASET_VERSION_INCOMPLETE", message: "x", details: { files: [{ file_id: "f9", path: "late/part.csv", status: "UPLOADED" }] }, trace_id: "t" } }, { status: 409 }),
+      ),
+    );
+    open(VERSION.batteryDraft);
+    await userEvent.click(await screen.findByRole("button", { name: "게시" }));
+    const dialog = await screen.findByRole("dialog", { name: "버전 게시" });
+    expect(dialog).toHaveTextContent("게시 후에는 버전 이름을 바꿀 수 없습니다.");
+    expect(dialog).not.toHaveTextContent("v3.0");
+    await userEvent.click(within(dialog).getByRole("button", { name: "게시" }));
+    const item = await screen.findByText("late/part.csv");
+    const message = item.closest('[role="alert"]')!.querySelector("p")!.textContent!;
+    await new Promise((r) => setTimeout(r, 300));
+    expect(screen.getAllByText(message)).toHaveLength(1);
+  });
 });
+

@@ -1,5 +1,5 @@
 "use client";
-import { Button, buttonClass, cn, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, Radio, RadioGroup } from "@nais/ui";
+import { Button, buttonClass, cn, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogTitle, Radio, RadioGroup, Skeleton } from "@nais/ui";
 import { CircleCheck, GitCompareArrows, RefreshCw, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -60,7 +60,9 @@ export function DraftBanner({ version, datasetId }: { version: DatasetVersion; d
 
   const stale = version.base_is_latest === false;
   const base = version.base_version_id ? (labels.get(version.base_version_id) ?? null) : null;
-  const latestLabel = latest?.version_label ?? "…";
+  const latestLabel = latest?.version_label ?? "";
+  // The stale sentences name the latest label: hold them until the version list has it (no "최신 버전(…)" flash).
+  const waiting = stale && !latest;
   const inherited = version.files.filter((f) => f.inherited).length;
   const own = version.files.length - inherited;
 
@@ -83,7 +85,7 @@ export function DraftBanner({ version, datasetId }: { version: DatasetVersion; d
   };
 
   const title = stale ? t("banner.staleTitle", { latest: latestLabel }) : base ? t("banner.latestTitle") : t("banner.firstTitle");
-  const body = stale ? t("banner.staleBody", { base: base ?? "…", latest: latestLabel }) : base ? t("banner.latestBody") : t("banner.firstBody");
+  const body = stale ? t("banner.staleBody", { base: base ?? "", latest: latestLabel }) : base ? t("banner.latestBody") : t("banner.firstBody");
   const Icon = stale ? TriangleAlert : CircleCheck;
 
   return (
@@ -98,8 +100,17 @@ export function DraftBanner({ version, datasetId }: { version: DatasetVersion; d
         <Icon aria-hidden="true" strokeWidth={1.75} className={cn("mt-0.5 size-[18px] shrink-0", stale ? "text-warning" : "text-success")} />
         <div className="flex min-w-0 flex-col gap-1">
           <p className="sv-kicker">{stale ? t("banner.staleKicker") : t("banner.kicker")}</p>
-          <h2 className="break-keep text-[15.5px] font-bold leading-snug tracking-[-0.02em] text-fg">{title}</h2>
-          <p className="max-w-[52em] break-keep text-small text-fg-muted [text-wrap:pretty]">{body}</p>
+          {waiting ? (
+            <div className="flex flex-col gap-2 py-1" aria-hidden="true">
+              <Skeleton className="h-5 w-72 max-w-full" />
+              <Skeleton className="h-4 w-[28rem] max-w-full" />
+            </div>
+          ) : (
+            <>
+              <h2 className="break-keep text-[15.5px] font-bold leading-snug tracking-[-0.02em] text-fg">{title}</h2>
+              <p className="max-w-[52em] break-keep text-small text-fg-muted [text-wrap:pretty]">{body}</p>
+            </>
+          )}
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-small text-fg-muted">
             {base ? (
               <span>
@@ -137,7 +148,11 @@ export function DraftBanner({ version, datasetId }: { version: DatasetVersion; d
         </Button>
       </div>
 
-      <ConflictDialog conflicts={conflicts} pending={rebase.isPending} onOpenChange={(open) => !open && setConflicts(null)} onApply={(resolutions) => runRebase(resolutions)} />
+      {/* A new conflict set remounts the dialog, so no choice from an earlier set survives. */}
+      <ConflictDialog
+        key={conflicts?.map((c) => c.path).join("\n") ?? ""}
+        conflicts={conflicts}
+        pending={rebase.isPending} onOpenChange={(open) => !open && setConflicts(null)} onApply={(resolutions) => runRebase(resolutions)} />
       <DiscardDialog
         open={discarding}
         onOpenChange={setDiscarding}
@@ -249,7 +264,13 @@ function ConflictDialog({
             {t("progress", { done, total: list.length })}
           </span>
           <DialogClose render={<Button variant="secondary" />}>{tc("cancel")}</DialogClose>
-          <Button variant="primary" loading={pending} disabled={!complete || pending} onClick={() => onApply(choices)}>
+          <Button
+            variant="primary"
+            loading={pending}
+            disabled={!complete || pending}
+            // Only the paths of the current conflict list: a second 409 may name a different set.
+            onClick={() => onApply(Object.fromEntries(list.map((c) => [c.path, choices[c.path]!])))}
+          >
             {t("apply")}
           </Button>
         </DialogFooter>

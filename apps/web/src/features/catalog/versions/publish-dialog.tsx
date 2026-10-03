@@ -11,7 +11,6 @@ import { usePublishDatasetVersion } from "../api";
 import { invalidateVersionViews, useUpdateVersionNote } from "./api";
 import { DiffStat } from "./diff-stat";
 import { useVersionLine } from "./draft-banner";
-import { suggestNextLabels } from "./version-label";
 
 const NOTE_MIN = 3;
 const NOTE_MAX = 2000;
@@ -61,7 +60,6 @@ function PublishForm({ version, datasetId, onClose, onError }: { version: Datase
   const [note, setNote] = useState(version.change_note ?? "");
   const [error, setError] = useState<string | undefined>();
   const base = version.base_version_id ? (labels.get(version.base_version_id) ?? null) : null;
-  const next = base ? suggestNextLabels(base) : null;
   const pending = saveNote.isPending || publish.isPending;
   const s = version.change_summary;
 
@@ -82,7 +80,8 @@ function PublishForm({ version, datasetId, onClose, onError }: { version: Datase
     } catch (e) {
       onClose();
       if (asApiError(e).code === "DATASET_VERSION_STALE_BASE") invalidateVersionViews(qc, datasetId, version.dataset_version_id);
-      notify.error(errorText(e));
+      // A stale base is told by the toast and the banner; other refusals by the screen's inline alert only.
+      if (asApiError(e).code === "DATASET_VERSION_STALE_BASE") notify.error(errorText(e));
       onError?.(e);
     }
   };
@@ -100,7 +99,7 @@ function PublishForm({ version, datasetId, onClose, onError }: { version: Datase
         <dt className="text-fg-muted">{t("label")}</dt>
         <dd className="flex min-w-0 flex-col gap-0.5">
           <span className="font-mono text-[13px] font-semibold text-fg">{version.version_label}</span>
-          <span className="break-keep text-caption text-fg-muted">{next ? t("labelHint", { minor: next.minor, major: next.major }) : t("labelFixed")}</span>
+          <span className="break-keep text-caption text-fg-muted">{t("labelFixed")}</span>
         </dd>
         <dt className="text-fg-muted">{tv("detail.change")}</dt>
         <dd className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
