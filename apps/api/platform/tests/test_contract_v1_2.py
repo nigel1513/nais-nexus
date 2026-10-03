@@ -60,6 +60,11 @@ def test_every_secured_operation_declares_401() -> None:
         if op.get("security") == []:
             assert op_id in {"healthLive", "healthReady"}
             assert "401" not in op["responses"], op_id
+        elif op.get("security") == [
+            {"internalToken": []}
+        ]:  # D-049: header token, 404 unset / 403 wrong, no 401
+            assert "Internal" in op["tags"], op_id
+            assert "401" not in op["responses"] and {"403", "404"} <= set(op["responses"]), op_id
         else:
             assert op["responses"]["401"] == {"$ref": "#/components/responses/Error"}, op_id
 

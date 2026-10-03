@@ -1,14 +1,17 @@
 """In-memory stand-ins for the ports the notes module consumes (project membership, display names, notebooks)."""
 
+import time
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import unquote
 from uuid import UUID
 
+import httpx
 from nais_contracts.api_models import ProjectSummary
 
-from api.modules.notes.interfaces import NotebookActivity, NotebookCell
+from api.modules.notes.interfaces import NotebookActivity, NotebookCell, NotebookSave
 from api.platform.auth import CurrentUser
 from api.platform.ids import new_id
 from api.platform.llm import ChatMessage
@@ -130,6 +133,7 @@ class FakeNotebooks:
 
     saved: dict[tuple[UUID, UUID, date], list[NotebookActivity]] = field(default_factory=dict)
     calls: list[tuple[UUID, UUID | None, date]] = field(default_factory=list)
+    counts: list[tuple[UUID, UUID, date]] = field(default_factory=list)  # count_notebooks lookups
 
     def add(self, user: CurrentUser, project_id: UUID, day: date, *notebooks: NotebookActivity) -> None:
         self.saved.setdefault((user.user_id, project_id, day), []).extend(notebooks)
@@ -147,6 +151,13 @@ class FakeNotebooks:
 
     def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
         return sorted({(u, p) for (u, p, d), notebooks in self.saved.items() if d == day and notebooks})
+
+    def count_notebooks(self, user_id: UUID, project_id: UUID, day: date) -> int:
+        self.counts.append((user_id, project_id, day))
+        return len(self.saved.get((user_id, project_id, day), []))
+
+    def list_notebook_saves(self, user_id: UUID, project_id: UUID, day: date) -> list[NotebookSave]:
+        return [NotebookSave(n.title, n.saved_at) for n in self.saved.get((user_id, project_id, day), [])]
 
 
 class FakeLlm:
@@ -218,3 +229,104 @@ class FakeReranker:
         if self.fail is not None:
             raise self.fail
         return [float(self.score(query, d)) for d in documents]
+
+
+JUPYTER_URL = "http://notebook:8888/notebooks"
+JUPYTER_TOKEN = "jupyter-test-token"
+_CONTENTS = "/notebooks/api/contents"
+
+
+class FakeJupyter:
+    """The Jupyter Server contents API (GET a directory or notebook, PUT a directory) over httpx.MockTransport.
+    Notebooks are stored by path with their last_modified; directories are implied by paths or created by PUT.
+    `down` makes every request fail to connect; `requests` records every request."""
+
+    def __init__(self, token: str = JUPYTER_TOKEN) -> None:
+        self.token = token
+        self.notebooks: dict[str, tuple[str, list[dict[str, Any]]]] = {}  # path -> (last_modified, cells)
+        self.files: dict[str, str] = {}  # other files: path -> last_modified
+        self.dirs: set[str] = set()
+        self.down = False
+        self.delay = 0.0  # seconds every request takes
+        self.requests: list[httpx.Request] = []
+        self.clients_closed = 0  # httpx.Client instances closed over this fake's transports
+
+    def add_notebook(self, path: str, last_modified: str, *cells: dict[str, Any]) -> None:
+        self.notebooks[path] = (last_modified, list(cells))
+
+    def add_file(self, path: str, last_modified: str = "2026-10-03T01:00:00Z") -> None:
+        self.files[path] = last_modified
+
+    def transport(self) -> httpx.MockTransport:
+        fake = self
+
+        class Counting(httpx.MockTransport):
+            def close(self) -> None:
+                fake.clients_closed += 1
+
+        return Counting(self._handle)
+
+    def contents_requests(self) -> list[tuple[str, str]]:
+        """(method, decoded path below the contents API) of every request."""
+        return [
+            (r.method, unquote(r.url.raw_path.decode().split("?", 1)[0][len(_CONTENTS) :]).strip("/"))
+            for r in self.requests
+        ]
+
+    def _is_dir(self, path: str) -> bool:
+        if path == "" or path in self.dirs:
+            return True
+        prefix = path + "/"
+        return any(p.startswith(prefix) for p in (*self.notebooks, *self.files, *self.dirs))
+
+    def _children(self, path: str) -> list[dict[str, Any]]:
+        prefix = f"{path}/" if path else ""
+        seen: dict[str, dict[str, Any]] = {}
+        for full in (*self.notebooks, *self.files, *self.dirs):
+            if not full.startswith(prefix):
+                continue
+            name = full[len(prefix) :].split("/", 1)[0]
+            child = prefix + name
+            if child in self.notebooks:
+                entry = {"type": "notebook", "last_modified": self.notebooks[child][0]}
+            elif child in self.files:
+                entry = {"type": "file", "last_modified": self.files[child]}
+            else:
+                entry = {"type": "directory", "last_modified": "2026-10-01T00:00:00Z"}
+            seen[name] = {"name": name, "path": child, "content": None, "format": None, **entry}
+        return [seen[name] for name in sorted(seen)]
+
+    def _handle(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(request)
+        if self.delay:
+            time.sleep(self.delay)
+        if self.down:
+            raise httpx.ConnectError("connection refused", request=request)
+        if request.headers.get("Authorization") != f"token {self.token}":
+            return httpx.Response(403, json={"message": "Forbidden"})
+        raw = request.url.raw_path.decode().split("?", 1)[0]
+        if not raw.startswith(_CONTENTS):
+            return httpx.Response(404, json={"message": "Not found"})
+        path = unquote(raw[len(_CONTENTS) :]).strip("/")
+        if request.method == "PUT":
+            self.dirs.add(path)
+            return httpx.Response(
+                201, json={"name": path.rsplit("/", 1)[-1], "path": path, "type": "directory"}
+            )
+        if path in self.notebooks:
+            last_modified, cells = self.notebooks[path]
+            return httpx.Response(
+                200,
+                json={
+                    "name": path.rsplit("/", 1)[-1],
+                    "path": path,
+                    "type": "notebook",
+                    "last_modified": last_modified,
+                    "content": {"cells": cells, "metadata": {}, "nbformat": 4, "nbformat_minor": 5},
+                },
+            )
+        if self._is_dir(path):
+            return httpx.Response(
+                200, json={"name": path, "path": path, "type": "directory", "content": self._children(path)}
+            )
+        return httpx.Response(404, json={"message": f"No such file or directory: {path}"})

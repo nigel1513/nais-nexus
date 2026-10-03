@@ -267,6 +267,9 @@ def test_notebook_port_failure_fails_the_draft(api: NotesApi, world: World, db: 
         def list_notebook_activity(self, *args: Any) -> list[NotebookActivity]:
             raise RuntimeError("notebook store down")
 
+        def count_notebooks(self, *args: Any) -> int:
+            raise RuntimeError("notebook store down")
+
         def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
             return []
 
@@ -626,6 +629,9 @@ def test_draft_source_count_fails_soft(api: NotesApi, world: World, caplog: pyte
         def list_notebook_activity(self, *args: Any) -> list[NotebookActivity]:
             raise RuntimeError("SECRET notebook store detail")
 
+        def count_notebooks(self, *args: Any) -> int:
+            raise RuntimeError("SECRET notebook store detail")
+
         def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
             return []
 
@@ -653,6 +659,9 @@ def test_notebook_source_failure_on_request_is_503(api: NotesApi, world: World, 
 
     class Broken:
         def list_notebook_activity(self, *args: Any) -> list[NotebookActivity]:
+            raise RuntimeError("down")
+
+        def count_notebooks(self, *args: Any) -> int:
             raise RuntimeError("down")
 
         def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:

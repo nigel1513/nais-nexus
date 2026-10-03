@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: NAIS AI-OS / Research Commons API
-  version: 1.7.0
+  version: 1.8.0
   description: |
     P0 contract. Owner: Agent 0 (Platform). Changes only via CONTRACT_CHANGE_REQUEST.md.
 
@@ -28,6 +28,8 @@ tags:
   - name: hub
   - name: workspace
   - name: notes
+  - name: Internal
+    description: Server-to-server operations for the web server (D-049). Not for browsers; header X-NAIS-Internal-Token.
 
 paths:
   /health/live:
@@ -1901,6 +1903,57 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
+  # ---------------------------------------------------------------- internal (D-049, server-to-server only)
+  /internal/notes/notebook-activity:
+    get:
+      tags: [Internal]
+      operationId: getInternalNotebookActivity
+      security: [ { internalToken: [] } ]
+      description: |
+        The notebooks a researcher saved in a project on a day (Asia/Seoul) in the shared Jupyter (title, save time; with detail=true also the cell
+        count, read like the drafting source; never cell outputs). The default reads file listings only. For the web server's mock mode (draft_source_count). Header X-NAIS-Internal-Token must equal NAIS_INTERNAL_TOKEN:
+        404 NOT_FOUND while the setting is empty, 403 FORBIDDEN on a missing or wrong token. Jupyter unreachable -> 503 DEPENDENCY_UNAVAILABLE.
+      parameters:
+        - { name: user_id, in: query, required: true, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: project_id, in: query, required: true, schema: { $ref: "#/components/schemas/Id" } }
+        - { name: day, in: query, required: true, schema: { type: string, format: date } }
+        - { name: detail, in: query, required: false, schema: { type: boolean, default: false }, description: "false (default): from file listings only, cell_count null; true: read the notebooks (cell_count filled, slower)" }
+      responses:
+        "200":
+          description: The day's notebooks
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InternalNotebookActivity" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /internal/notes/draft-sections:
+    post:
+      tags: [Internal]
+      operationId: draftInternalNoteSections
+      security: [ { internalToken: [] } ]
+      description: |
+        Drafts the standard template sections from the researcher's notebooks of the day, through the same prompt, local LLM and answer policing as
+        draftNote's job, and returns them without writing anything (the web server's mock mode appends them as AI blocks). Evidence keeps label and time
+        only. No notebook that day -> 422 VALIDATION_FAILED with details.reason NO_NOTEBOOK_ACTIVITY; LLM off, unreachable or unusable -> 503
+        LLM_UNAVAILABLE; Jupyter unreachable -> 503 DEPENDENCY_UNAVAILABLE. Token rule as getInternalNotebookActivity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InternalDraftSectionsRequest" }
+      responses:
+        "200":
+          description: Drafted sentences per section (possibly all empty)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InternalDraftSections" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1908,6 +1961,11 @@ components:
       scheme: bearer
       bearerFormat: JWT
       description: Keycloak realm `nais` access token. Required claims sub, email, name, org_code; audience nais-api.
+    internalToken:
+      type: apiKey
+      in: header
+      name: X-NAIS-Internal-Token
+      description: Shared server-to-server secret NAIS_INTERNAL_TOKEN (D-049); Internal operations only.
 
   parameters:
     Cursor: { name: cursor, in: query, schema: { type: string } }
@@ -3644,6 +3702,56 @@ components:
     NoteEvidenceType:
       type: string
       enum: [INPUT_ADDED, INPUT_VERSION_CHANGED, RECIPE_SAVED, RUN_SUCCEEDED, RUN_FAILED, OUTPUT_CREATED, PUBLISH_REQUESTED, DATASET_DOWNLOADED, ACCESS_DECIDED, NOTEBOOK]
+    InternalNotebookActivity:
+      type: object
+      required: [count, notebooks]
+      properties:
+        count: { type: integer, minimum: 0 }
+        notebooks: { type: array, items: { $ref: "#/components/schemas/InternalNotebookSummary" } }
+    InternalNotebookSummary:
+      type: object
+      required: [title, saved_at, cell_count]
+      properties:
+        title: { type: string, description: "File name without .ipynb (display only)" }
+        saved_at: { $ref: "#/components/schemas/Timestamp" }
+        cell_count: { type: [integer, "null"], minimum: 0, description: "null unless detail=true" }
+    InternalDraftSectionsRequest:
+      type: object
+      required: [user_id, project_id, day]
+      properties:
+        user_id: { $ref: "#/components/schemas/Id" }
+        project_id: { $ref: "#/components/schemas/Id" }
+        day: { type: string, format: date }
+        project_name: { type: string, maxLength: 200, description: "Display context only; like draftNote's job, the prompt carries the notebooks alone" }
+    InternalDraftSentence:
+      type: object
+      required: [text, evidence]
+      properties:
+        text: { type: string }
+        evidence: { type: array, items: { $ref: "#/components/schemas/InternalDraftEvidence" } }
+    InternalDraftEvidence:
+      type: object
+      required: [label, at]
+      properties:
+        label: { type: string }
+        at: { $ref: "#/components/schemas/Timestamp" }
+    InternalDraftSections:
+      type: object
+      required: [sections]
+      properties:
+        sections: { $ref: "#/components/schemas/InternalDraftSectionMap" }
+    InternalDraftSectionMap:
+      type: object
+      description: "Keyed by NoteSection, in template order"
+      required: [OBJECTIVE, METHOD, PROCEDURE, RESULTS, DISCUSSION, NEXT, REFERENCES]
+      properties:
+        OBJECTIVE: { type: array, items: { $ref: "#/components/schemas/InternalDraftSentence" } }
+        METHOD: { type: array, items: { $ref: "#/components/schemas/InternalDraftSentence" } }
+        PROCEDURE: { type: array, items: { $ref: "#/components/schemas/InternalDraftSentence" } }
+        RESULTS: { type: array, items: { $ref: "#/components/schemas/InternalDraftSentence" } }
+        DISCUSSION: { type: array, items: { $ref: "#/components/schemas/InternalDraftSentence" } }
+        NEXT: { type: array, items: { $ref: "#/components/schemas/InternalDraftSentence" } }
+        REFERENCES: { type: array, items: { $ref: "#/components/schemas/InternalDraftSentence" } }
     NoteEvidence:
       type: object
       required: [type, ref_id, label, at]

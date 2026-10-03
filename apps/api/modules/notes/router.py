@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter
 
-from api.modules.notes.routes import notes, settings
+from api.modules.notes.routes import internal, notes, settings
 
 router = APIRouter()
-for sub in (notes.router, settings.router):
+for sub in (notes.router, settings.router, internal.router):
     router.include_router(sub)

@@ -1696,6 +1696,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/notes/notebook-activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description The notebooks a researcher saved in a project on a day (Asia/Seoul) in the shared Jupyter (title, save time; with detail=true also the cell
+         *     count, read like the drafting source; never cell outputs). The default reads file listings only. For the web server's mock mode (draft_source_count). Header X-NAIS-Internal-Token must equal NAIS_INTERNAL_TOKEN:
+         *     404 NOT_FOUND while the setting is empty, 403 FORBIDDEN on a missing or wrong token. Jupyter unreachable -> 503 DEPENDENCY_UNAVAILABLE.
+         */
+        get: operations["getInternalNotebookActivity"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/notes/draft-sections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description Drafts the standard template sections from the researcher's notebooks of the day, through the same prompt, local LLM and answer policing as
+         *     draftNote's job, and returns them without writing anything (the web server's mock mode appends them as AI blocks). Evidence keeps label and time
+         *     only. No notebook that day -> 422 VALIDATION_FAILED with details.reason NO_NOTEBOOK_ACTIVITY; LLM off, unreachable or unusable -> 503
+         *     LLM_UNAVAILABLE; Jupyter unreachable -> 503 DEPENDENCY_UNAVAILABLE. Token rule as getInternalNotebookActivity.
+         */
+        post: operations["draftInternalNoteSections"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2967,6 +3010,46 @@ export interface components {
         NoteSignerRole: "RECORDER" | "WITNESS";
         /** @enum {string} */
         NoteEvidenceType: "INPUT_ADDED" | "INPUT_VERSION_CHANGED" | "RECIPE_SAVED" | "RUN_SUCCEEDED" | "RUN_FAILED" | "OUTPUT_CREATED" | "PUBLISH_REQUESTED" | "DATASET_DOWNLOADED" | "ACCESS_DECIDED" | "NOTEBOOK";
+        InternalNotebookActivity: {
+            count: number;
+            notebooks: components["schemas"]["InternalNotebookSummary"][];
+        };
+        InternalNotebookSummary: {
+            /** @description File name without .ipynb (display only) */
+            title: string;
+            saved_at: components["schemas"]["Timestamp"];
+            /** @description null unless detail=true */
+            cell_count: number | null;
+        };
+        InternalDraftSectionsRequest: {
+            user_id: components["schemas"]["Id"];
+            project_id: components["schemas"]["Id"];
+            /** Format: date */
+            day: string;
+            /** @description Display context only; like draftNote's job, the prompt carries the notebooks alone */
+            project_name?: string;
+        };
+        InternalDraftSentence: {
+            text: string;
+            evidence: components["schemas"]["InternalDraftEvidence"][];
+        };
+        InternalDraftEvidence: {
+            label: string;
+            at: components["schemas"]["Timestamp"];
+        };
+        InternalDraftSections: {
+            sections: components["schemas"]["InternalDraftSectionMap"];
+        };
+        /** @description Keyed by NoteSection, in template order */
+        InternalDraftSectionMap: {
+            OBJECTIVE: components["schemas"]["InternalDraftSentence"][];
+            METHOD: components["schemas"]["InternalDraftSentence"][];
+            PROCEDURE: components["schemas"]["InternalDraftSentence"][];
+            RESULTS: components["schemas"]["InternalDraftSentence"][];
+            DISCUSSION: components["schemas"]["InternalDraftSentence"][];
+            NEXT: components["schemas"]["InternalDraftSentence"][];
+            REFERENCES: components["schemas"]["InternalDraftSentence"][];
+        };
         NoteEvidence: {
             type: components["schemas"]["NoteEvidenceType"];
             /** @description Input, recipe, run, output, publish request, dataset version or access request id; for NOTEBOOK the notebook version id (the notebook id when unversioned) */
@@ -6239,6 +6322,64 @@ export interface operations {
             403: components["responses"]["Error"];
             404: components["responses"]["Error"];
             409: components["responses"]["Error"];
+        };
+    };
+    getInternalNotebookActivity: {
+        parameters: {
+            query: {
+                user_id: components["schemas"]["Id"];
+                project_id: components["schemas"]["Id"];
+                day: string;
+                /** @description false (default): from file listings only, cell_count null; true: read the notebooks (cell_count filled, slower) */
+                detail?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The day's notebooks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalNotebookActivity"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    draftInternalNoteSections: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalDraftSectionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Drafted sentences per section (possibly all empty) */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalDraftSections"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
 }

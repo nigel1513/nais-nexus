@@ -32,7 +32,7 @@ export function useNavGroups(me: Me): NavGroup[] {
           { href: "/commons/data", label: t("nav.data"), icon: Database },
           { href: "/commons/projects", label: t("nav.projects"), icon: FolderKanban },
           { href: "/commons/notes", label: t("nav.notes"), icon: BookText },
-          { href: "/commons/notebooks", label: t("nav.notebooks"), icon: NotebookPen, soon: true },
+          { href: "/commons/notebooks", label: t("nav.notebooks"), icon: NotebookPen },
         ],
       },
       {

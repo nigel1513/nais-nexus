@@ -3,7 +3,7 @@ import type { Schemas } from "@/shared/api/types";
 import { getDb } from "../db";
 import { API, body, currentUser, displayName, fail, ifMatch, mockAuthTime, newId, notify, nowIso, only, orgName, paginate, projectName, recordAudit, UUID_PATTERN as UUID, validationFailed } from "../http";
 import { contentHash, inTemplateOrder, nextChainHash, noteDocument, canonicalJson, SECTION_LABELS, SECTIONS, seoulDate } from "../note-hash";
-import { appendDraftBlocks, draftSentences, listNotebookActivity } from "../notebook-activity";
+import { appendDraftBlocks, BridgeError, bridgeConfig, bridgedDrafts, cachedSourceCount, draftSentences, fetchDraftSentences, fetchNotebookCount, listNotebookActivity, refreshSourceCount, type BridgeConfig } from "../notebook-activity";
 import type { MockDb, MockUser, StoredNote } from "../types";
 import { zip } from "../zip";
 import { isActiveMember, memberProjectIds, roleOf } from "./workspace";
@@ -15,13 +15,16 @@ import { isActiveMember, memberProjectIds, roleOf } from "./workspace";
  * a new DRAFT version. Hashes follow hashing.py (canonical JSON, sha256, project × organization chain).
  * Signing needs a fresh login (auth_time within 5 minutes, 60 s clock skew): the mock reads the login time mock-login
  * stores in a cookie; a caller without that cookie (header-only test clients) counts as freshly signed in.
- * Drafting reads only the recorder's Jupyter notebooks of the note's day (notebook-activity.ts, empty until M07):
- * no notebook → 422 NO_NOTEBOOK_ACTIVITY. A queued draft advances on reads (QUEUED → RUNNING → DONE) and appends
- * deterministic AI blocks with NOTEBOOK evidence; the mock never calls a model.
+ * Drafting reads only the recorder's Jupyter notebooks of the note's day. Seeded (default): the stand-in of
+ * notebook-activity.ts; no notebook → 422 NO_NOTEBOOK_ACTIVITY; a queued draft advances on reads (QUEUED → RUNNING → DONE)
+ * and appends deterministic AI blocks with NOTEBOOK evidence; no model is called. Bridged (NAIS_INTERNAL_API_URL and
+ * NAIS_INTERNAL_TOKEN set, M07-lite): draft_source_count is the shared Jupyter's real count (2 s, cached 10 s, 0 on
+ * error) and draftNote drafts through the api's internal draft-sections (the real local LLM): the note stays RUNNING
+ * until the answer arrives, then DONE with the AI blocks appended, or FAILED with draft_error; the notebook source
+ * failing answers 503 DEPENDENCY_UNAVAILABLE.
  *
- * Backend outcomes the mock never produces: exportNotes 422 TOO_MANY_NOTES (more than 5,000 notes), draftNote 503
- * DEPENDENCY_UNAVAILABLE (notebook source failing), a draft ending FAILED with draft_error (LLM timeout or invalid
- * output), semantic search scores (the mock searches by keyword with score null, as when the embedder is off).
+ * Backend outcomes the mock never produces: exportNotes 422 TOO_MANY_NOTES (more than 5,000 notes), semantic search
+ * scores (the mock searches by keyword with score null, as when the embedder is off).
  */
 type Relation = "RECORDER" | "WITNESS" | "MEMBER" | "HIDDEN";
 
@@ -99,7 +102,7 @@ function noteView(db: MockDb, note: StoredNote, viewerId: string): Schemas["Rese
     blocks: note.blocks.map((b) => ({ ...b, evidence: b.evidence.map((e) => ({ ...e })) })),
     draft_status: note.draft_status,
     draft_error: note.draft_error,
-    draft_source_count: viewerId === note.recorder_id ? listNotebookActivity(note.recorder_id, note.project_id, note.note_date).length : 0,
+    draft_source_count: viewerId === note.recorder_id ? sourceCount(note) : 0,
     signatures: note.signatures.map((s) => ({ ...s, signer_display_name: displayName(db, s.signer_id) })),
     witness_required: witnessRequired,
     witness_user_ids: witnessIds,
@@ -156,8 +159,52 @@ function witnessNotes(db: MockDb, user: MockUser): StoredNote[] {
 
 // ---------------------------------------------------------------- drafting (service/drafting.py, jobs.draft_note)
 
+/** Notebooks of the note's day: the real shared Jupyter's (last known count) when bridged, else the seeded stand-in. */
+function sourceCount(note: StoredNote): number {
+  return bridgeConfig() ? cachedSourceCount(note.recorder_id, note.project_id, note.note_date) : listNotebookActivity(note.recorder_id, note.project_id, note.note_date).length;
+}
+
+/** Bridged: refresh the recorder's count (≤ 2 s, cached 10 s, 0 on error) before a view of the note is built. */
+async function primeSourceCount(note: StoredNote, viewerId: string) {
+  const cfg = bridgeConfig();
+  if (cfg && viewerId === note.recorder_id && note.status === "DRAFT") await refreshSourceCount(cfg, note.recorder_id, note.project_id, note.note_date);
+}
+
+const LLM_DOWN_MESSAGE = "로컬 LLM에 연결할 수 없습니다. 잠시 후 다시 시도하세요.";
+const DRAFT_FAILED_MESSAGE = "초안을 만들지 못했습니다. 잠시 후 다시 시도하세요.";
+
+/** jobs.draft_note through the api's internal draft-sections: RUNNING until the LLM answers, then DONE (blocks appended) or FAILED. */
+function runBridgedDraft(cfg: BridgeConfig, db: MockDb, note: StoredNote) {
+  const drafts = bridgedDrafts();
+  Object.assign(note, { draft_status: "RUNNING", draft_error: null });
+  const run = fetchDraftSentences(cfg, { userId: note.recorder_id, projectId: note.project_id, day: note.note_date, projectName: projectName(db, note.project_id) })
+    .then((sentences) => {
+      if (note.status !== "DRAFT") {
+        note.draft_status = "NONE";
+        return;
+      }
+      if (appendDraftBlocks(note, sentences)) {
+        note.revision += 1;
+        note.updated_at = nowIso();
+      }
+      Object.assign(note, { draft_status: "DONE", draft_error: null });
+    })
+    .catch((e: unknown) => {
+      if (note.status !== "DRAFT") {
+        note.draft_status = "NONE";
+        return;
+      }
+      const err = e instanceof BridgeError ? e : new BridgeError("INTERNAL_ERROR");
+      const message = err.reason === "NO_NOTEBOOK_ACTIVITY" ? NO_NOTEBOOK_MESSAGE : err.code === "LLM_UNAVAILABLE" ? LLM_DOWN_MESSAGE : DRAFT_FAILED_MESSAGE;
+      Object.assign(note, { draft_status: "FAILED", draft_error: message });
+    })
+    .finally(() => drafts.delete(note.note_id));
+  drafts.set(note.note_id, run);
+}
+
 /** The draft worker: QUEUED → RUNNING (1st read) → DONE (2nd read), appending AI blocks (revision + 1); a note no longer DRAFT drops the draft. */
 function advanceDraft(note: StoredNote) {
+  if (bridgedDrafts().has(note.note_id)) return; // a bridged draft settles on its own
   if (note.draft_status === "QUEUED") {
     note.draft_status = "RUNNING";
     return;
@@ -399,7 +446,7 @@ export const noteHandlers = [
     return HttpResponse.json({ items: hits });
   }),
 
-  http.post(`${API}/projects/:project_id/notes/today`, ({ request, params }) => {
+  http.post(`${API}/projects/:project_id/notes/today`, async ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
     const projectId = String(params.project_id);
@@ -409,6 +456,7 @@ export const noteHandlers = [
     const existing = latestVersions(db.notes.filter((n) => n.project_id === projectId && n.recorder_id === user.user_id && n.note_date === today))[0];
     if (existing) {
       if (existing.recorder_id === user.user_id) advanceDraft(existing);
+      await primeSourceCount(existing, user.user_id);
       return HttpResponse.json(noteView(db, existing, user.user_id));
     }
     const now = nowIso();
@@ -439,6 +487,7 @@ export const noteHandlers = [
       updated_at: now,
     };
     db.notes.push(note);
+    await primeSourceCount(note, user.user_id);
     return HttpResponse.json(noteView(db, note, user.user_id), { status: 201 });
   }),
 
@@ -478,12 +527,13 @@ export const noteHandlers = [
     return HttpResponse.json({ project_id: projectId, ...next, witness_user_ids: [...next.witness_user_ids], llm_enabled: db.llmEnabled } satisfies Schemas["NoteSettings"]);
   }),
 
-  http.get(`${API}/notes/:note_id`, ({ request, params }) => {
+  http.get(`${API}/notes/:note_id`, async ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
     const [note, relation] = readable(db, user, String(params.note_id));
     if (relation === "RECORDER") advanceDraft(note);
     else emitViewed(db, user, note);
+    await primeSourceCount(note, user.user_id);
     return HttpResponse.json(noteView(db, note, user.user_id));
   }),
 
@@ -528,17 +578,34 @@ export const noteHandlers = [
     return HttpResponse.json(noteView(db, note, user.user_id));
   }),
 
-  http.post(`${API}/notes/:note_id/draft`, ({ request, params }) => {
+  http.post(`${API}/notes/:note_id/draft`, async ({ request, params }) => {
     const user = currentUser(request);
     const db = getDb();
     const note = recorderNote(db, user, String(params.note_id));
     if (note.status !== "DRAFT") locked();
     if (!db.llmEnabled) fail("LLM_UNAVAILABLE", "Drafting is unavailable: the local LLM is switched off.");
-    if (!listNotebookActivity(note.recorder_id, note.project_id, note.note_date).length) fail("VALIDATION_FAILED", NO_NOTEBOOK_MESSAGE, { reason: "NO_NOTEBOOK_ACTIVITY" });
     const now = Date.now();
-    if (note.draft_requested_at && now - Date.parse(note.draft_requested_at) < MIN_DRAFT_INTERVAL_MS) fail("RATE_LIMITED", "A draft of this note was requested less than a minute ago.");
+    const rateLimited = !!note.draft_requested_at && now - Date.parse(note.draft_requested_at) < MIN_DRAFT_INTERVAL_MS;
+    const cfg = bridgeConfig();
+    // Bridged: rate limit first, so a refused request never reaches the shared Jupyter (the seeded path keeps the backend's order).
+    if (cfg && rateLimited) fail("RATE_LIMITED", "A draft of this note was requested less than a minute ago.");
+    if (cfg) {
+      // Bridged: a fresh read of the day's notebooks (not the cached count); Jupyter or api down → 503 as the backend.
+      let count = 0;
+      try {
+        count = await fetchNotebookCount(cfg, note.recorder_id, note.project_id, note.note_date);
+      } catch (e) {
+        if (e instanceof BridgeError && e.reason === "NO_NOTEBOOK_ACTIVITY") count = 0;
+        else fail("DEPENDENCY_UNAVAILABLE", "The notebook source is unavailable.");
+      }
+      if (!count) fail("VALIDATION_FAILED", NO_NOTEBOOK_MESSAGE, { reason: "NO_NOTEBOOK_ACTIVITY" });
+    } else if (!listNotebookActivity(note.recorder_id, note.project_id, note.note_date).length) {
+      fail("VALIDATION_FAILED", NO_NOTEBOOK_MESSAGE, { reason: "NO_NOTEBOOK_ACTIVITY" });
+    }
+    if (rateLimited) fail("RATE_LIMITED", "A draft of this note was requested less than a minute ago.");
     if (note.draft_status !== "QUEUED" && note.draft_status !== "RUNNING") {
       Object.assign(note, { draft_status: "QUEUED", draft_error: null, draft_requested_at: new Date(now).toISOString() });
+      if (cfg) runBridgedDraft(cfg, db, note);
     }
     return HttpResponse.json(noteView(db, note, user.user_id), { status: 202 });
   }),

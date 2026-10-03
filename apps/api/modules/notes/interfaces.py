@@ -15,9 +15,9 @@ from collections.abc import Sequence
 from typing import Protocol
 from uuid import UUID
 
-from api.modules.notes.public import NotebookActivity, NotebookActivityPort, NotebookCell
+from api.modules.notes.public import NotebookActivity, NotebookActivityPort, NotebookCell, NotebookSave
 
-__all__ = ["DisplayNameLookup", "NotebookActivity", "NotebookActivityPort", "NotebookCell"]
+__all__ = ["DisplayNameLookup", "NotebookActivity", "NotebookActivityPort", "NotebookCell", "NotebookSave"]
 
 
 class DisplayNameLookup(Protocol):

@@ -1855,6 +1855,27 @@ class NoteEvidenceType(StrEnum):
     NOTEBOOK = 'NOTEBOOK'
 
 
+class InternalNotebookSummary(BaseModel):
+    title: str = Field(..., description='File name without .ipynb (display only)')
+    saved_at: Timestamp
+    cell_count: conint(ge=0) | None = Field(..., description='null unless detail=true')
+
+
+class InternalDraftSectionsRequest(BaseModel):
+    user_id: Id
+    project_id: Id
+    day: date_aliased
+    project_name: constr(max_length=200) | None = Field(
+        None,
+        description="Display context only; like draftNote's job, the prompt carries the notebooks alone",
+    )
+
+
+class InternalDraftEvidence(BaseModel):
+    label: str
+    at: Timestamp
+
+
 class NoteEvidence(BaseModel):
     type: NoteEvidenceType
     ref_id: Id = Field(
@@ -2078,3 +2099,27 @@ class DatasetVersion(DatasetVersionSummary):
 class AccessDecisionResult(BaseModel):
     access_request: AccessRequest
     access_grant: AccessGrant | None = None
+
+
+class InternalNotebookActivity(BaseModel):
+    count: conint(ge=0)
+    notebooks: list[InternalNotebookSummary]
+
+
+class InternalDraftSentence(BaseModel):
+    text: str
+    evidence: list[InternalDraftEvidence]
+
+
+class InternalDraftSectionMap(BaseModel):
+    OBJECTIVE: list[InternalDraftSentence]
+    METHOD: list[InternalDraftSentence]
+    PROCEDURE: list[InternalDraftSentence]
+    RESULTS: list[InternalDraftSentence]
+    DISCUSSION: list[InternalDraftSentence]
+    NEXT: list[InternalDraftSentence]
+    REFERENCES: list[InternalDraftSentence]
+
+
+class InternalDraftSections(BaseModel):
+    sections: InternalDraftSectionMap

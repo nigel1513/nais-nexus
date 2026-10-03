@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     nais_embed_model: str = "bge-m3"
     nais_rerank_base_url: str | None = None
     nais_rerank_model: str = "bge-reranker"
+    # The shared JupyterLab (M07-lite, D-049): contents API base URL and its one shared token. Unset URL = no notebook
+    # source (research-note drafting has nothing to draft from).
+    nais_jupyter_url: str | None = None
+    nais_jupyter_token: str = ""
 
     @property
     def storage_org_code_list(self) -> list[str]:

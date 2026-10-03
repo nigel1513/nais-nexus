@@ -15,6 +15,7 @@ import { DateTime } from "@/shared/ui/date-text";
 import { BandTag, SummaryBand } from "@/shared/ui/screen-v2";
 import { DelayedSkeleton, ErrorView } from "@/shared/ui/state-views";
 import { notify } from "@/shared/ui/toast";
+import { NotebookErrorAlert, OpenNotebookLink } from "@/features/notebooks/notebook-link";
 import { PublicSummary } from "./overview-tab";
 
 /** Workspace tabs, in order; each is its own route under /commons/projects/{id}. */
@@ -130,6 +131,7 @@ export function WorkspaceLayout({ projectId, children }: { projectId: string; ch
   return (
     <WorkspaceContext.Provider value={ws}>
       <WorkspaceBand ws={ws} />
+      <NotebookErrorAlert className="mb-6" />
       {archived ? (
         <p role="status" className="mb-6 flex items-center gap-2 rounded-md border border-warning-line bg-warning-soft px-3 py-2 text-small text-fg">
           <Archive aria-hidden="true" className="size-4 shrink-0 text-warning" strokeWidth={1.75} />
@@ -191,8 +193,11 @@ function WorkspaceBand({ ws }: { ws: Workspace }) {
           </>
         }
         actions={
-          manager || owner ? (
+          manager || owner || p.my_role ? (
             <>
+              {p.my_role && !archived ? (
+                <OpenNotebookLink projectId={p.project_id} className={cn("sv-hb sv-hb-g", focusRing)} />
+              ) : null}
               {manager ? (
                 <button type="button" className={cn("sv-hb sv-hb-w", focusRing)} onClick={() => navigate(`${projectHref(p.project_id)}?edit=1`)}>
                   <Pencil aria-hidden="true" strokeWidth={1.75} />

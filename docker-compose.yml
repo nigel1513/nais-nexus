@@ -20,6 +20,7 @@ services:
       - ./infra/nginx/htpasswd:/etc/nginx/htpasswd:ro
       - ./infra/nginx/opensearch-auth.conf:/etc/nginx/opensearch-auth.conf:ro
     depends_on: [api]
+    networks: [default, notebooks]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:21051/healthz"]
@@ -29,6 +30,7 @@ services:
 
   api:
     <<: *api-image
+    networks: [default, notebooks]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health/live', timeout=2)"]
       interval: 10s
@@ -37,6 +39,7 @@ services:
 
   worker:
     <<: *api-image
+    networks: [default, notebooks]
     command: ["python", "-m", "api.worker"]
 
   web:
@@ -53,12 +56,47 @@ services:
       AUTH_TRUST_HOST: "true"
       NAIS_EXTERNAL_HOST: ${NAIS_EXTERNAL_HOST:-localhost}
       AUTH_ALLOWED_HOSTS: ${AUTH_ALLOWED_HOSTS:-localhost:21051}
+      # NAIS_JUPYTER_* / NAIS_INTERNAL_TOKEN come from env_file (.env); only the in-network api URL is fixed here.
+      NAIS_INTERNAL_API_URL: http://api:8000
+    networks: [default, notebooks]
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/robots.txt"]
       interval: 10s
       timeout: 3s
       retries: 10
+
+  # One shared JupyterLab (M07-lite). Only reachable through the gateway at /notebooks/ (no published port), behind the
+  # gateway's basic auth. Kernels run arbitrary code, so the container sits alone on the internal-only `notebooks`
+  # network: no route to postgres/redis/storage/keycloak, the LAN or the internet (no pip install).
+  # Fails closed: an empty NAIS_JUPYTER_TOKEN would disable Jupyter auth, so the container refuses to start.
+  notebook:
+    image: quay.io/jupyter/scipy-notebook:lab-4.6.4
+    environment:
+      NAIS_JUPYTER_TOKEN: ${NAIS_JUPYTER_TOKEN:-}
+    command:
+      - sh
+      - -c
+      - >-
+        test -n "$$NAIS_JUPYTER_TOKEN" || { echo "NAIS_JUPYTER_TOKEN is empty (set it in .env)" >&2; exit 1; };
+        exec start-notebook.py
+        --ServerApp.base_url=/notebooks/
+        --IdentityProvider.token="$$NAIS_JUPYTER_TOKEN"
+        --ServerApp.terminals_enabled=False
+        --ServerApp.allow_remote_access=True
+        --ServerApp.trust_xheaders=True
+        --ServerApp.root_dir=/home/jovyan
+    volumes:
+      - notebookwork:/home/jovyan/work
+    networks: [notebooks]
+    mem_limit: 4g
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/notebooks/api', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
   postgres:
     image: postgres:16
@@ -170,8 +208,14 @@ services:
     ports: ["21052:8025"]
     restart: unless-stopped
 
+networks:
+  default:
+  notebooks:
+    internal: true
+
 volumes:
   pgdata:
   osdata:
   storage-a:
   storage-b:
+  notebookwork:
