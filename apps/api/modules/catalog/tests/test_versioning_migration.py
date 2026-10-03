@@ -180,3 +180,77 @@ def test_downgrade_is_clean_without_inherited_rows_and_guarded_with_them(db: PgU
     assert rows(db, "SELECT 1 FROM information_schema.columns WHERE column_name = 'base_version_id'") == []
     command.upgrade(config, "head")
     assert rows(db, "SELECT version_num FROM catalog.alembic_version") == [{"version_num": "catalog_0004"}]
+
+
+def _catalog_config(db: PgUrls):  # type: ignore[no-untyped-def]
+    from api.modules.catalog import MODULE
+    from api.platform.migrate import alembic_config, migration_targets
+
+    (target,) = [t for t in migration_targets([MODULE]) if t.name == "catalog"]
+    return alembic_config(db.migrator, target)
+
+
+def test_upgrade_backfills_lineage_on_populated_0003_data(db: PgUrls) -> None:
+    """Versions published before catalog_0004 get previous_version_id (per dataset, by published_at, tie: id);
+    a DRAFT with no base gets the latest PUBLISHED version published before it was created (none: stays NULL)."""
+    from datetime import UTC, datetime
+
+    config = _catalog_config(db)
+    command.downgrade(config, "catalog_0003")
+    t = lambda day, hour=0: datetime(2026, 1, day, hour, tzinfo=UTC)  # noqa: E731
+    ds = insert_dataset(db)
+    v1 = insert_version(
+        db, ds, label="v1", published=True, files=[("a.csv", 10, "a" * 64)], published_at=t(1)
+    )
+    # v2a / v2b share one instant: the tie is broken by id
+    v2a = insert_version(
+        db, ds, label="v2a", published=True, files=[("a.csv", 10, "b" * 64)], published_at=t(2)
+    )
+    v2b = insert_version(
+        db, ds, label="v2b", published=True, files=[("a.csv", 10, "c" * 64)], published_at=t(2)
+    )
+    first, second = sorted([v2a, v2b], key=str)
+    v3 = insert_version(
+        db, ds, label="v3", published=True, files=[("a.csv", 10, "d" * 64)], published_at=t(4)
+    )
+    execute(
+        db, "UPDATE catalog.dataset_versions SET status = 'WITHDRAWN' WHERE dataset_version_id = :v", v=v3
+    )
+    early = insert_version(db, ds, label="d-early")  # created before anything was published
+    mid = insert_version(db, ds, label="d-mid")  # created on day 3: base = the later of v2a/v2b
+    for draft, created in ((early, t(1, 0).replace(year=2025)), (mid, t(3))):
+        execute(
+            db,
+            "UPDATE catalog.dataset_versions SET created_at = :c WHERE dataset_version_id = :v",
+            c=created,
+            v=draft,
+        )
+    late = insert_version(db, ds, label="d-late")  # created now: base = latest PUBLISHED (v3 is WITHDRAWN)
+    other = insert_dataset(db)
+    lonely = insert_version(db, other, label="d-only")  # nothing published in its dataset
+    command.upgrade(config, "head")
+    lineage = {
+        r["dataset_version_id"]: (r["previous_version_id"], r["base_version_id"], r["source_version_id"])
+        for r in rows(
+            db,
+            "SELECT dataset_version_id, previous_version_id, base_version_id, source_version_id"
+            " FROM catalog.dataset_versions",
+        )
+    }
+    assert lineage[v1] == (None, None, None)
+    assert lineage[first] == (v1, None, None)
+    assert lineage[second] == (first, None, None)
+    assert lineage[v3] == (second, None, None)  # WITHDRAWN keeps its place in the chain
+    assert lineage[early] == (None, None, None)
+    assert lineage[mid] == (None, second, None)
+    assert lineage[late] == (None, second, None)
+    assert lineage[lonely] == (None, None, None)
+    # The immutability trigger is back on and covers the new columns.
+    with pytest.raises(DBAPIError):
+        execute(
+            db,
+            "UPDATE catalog.dataset_versions SET previous_version_id = NULL WHERE dataset_version_id = :v",
+            v=first,
+        )
+    [trigger] = rows(db, "SELECT tgenabled FROM pg_trigger WHERE tgname = 'trg_versions_immutable'")
+    assert trigger["tgenabled"] == "O"

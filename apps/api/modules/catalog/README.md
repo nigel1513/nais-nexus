@@ -138,6 +138,11 @@ Code: `versioning/` (pure rules and the shared-object helpers), `service/version
   older PUBLISHED version for a revert, and NULL for an empty draft.
 - `previous_version_id`: set at publish to the version that was the latest just before. The default "compare with
   the previous version" uses it.
+- Backfill (catalog_0004 upgrade): versions published earlier get `previous_version_id` per dataset in
+  `published_at` order (tie: id; WITHDRAWN versions keep their place). The immutability trigger is disabled for that
+  one statement inside the migration transaction. A DRAFT without a base gets the latest PUBLISHED version published
+  at or before its `created_at`; if there is none, the base stays NULL, and the draft is stale once anything is
+  published.
 - `dataset_files.inherited_from_file_id`: an inherited row points at the same stored object as a PUBLISHED row
   of the same dataset. It has no upload session (`upload_session_id` is nullable since catalog_0004).
 
@@ -202,6 +207,8 @@ versions. A DRAFT is 409 `DATASET_VERSION_NOT_PUBLISHED`; a version the caller c
 - No DOI registration: citations carry the URL identifier only, and a DOI only when the dataset row has one.
 - The DataCite `nameIdentifierScheme` "NTIS" (national researcher number) is not a registered DataCite scheme.
 - File history is capped at the newest 1,000 visible versions, with no truncation flag in the response.
+- If every version of a dataset has been withdrawn, there is no latest PUBLISHED version. A rebase then treats
+  "theirs" as empty: unchanged inherited files are dropped from the draft (the latest version "removed" them).
 
 ## Known limitations (P0)
 Archive (zip) checks are header-only and archives are never extracted (ruling M03-R4); nested archives are therefore not

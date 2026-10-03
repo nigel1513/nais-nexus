@@ -16,6 +16,7 @@ from api.modules.catalog.access import can_see_version, not_found
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.previews.profile import table_format
 from api.modules.catalog.repo import load_dataset, load_version, must
+from api.modules.catalog.service.diff import MAX_INHERIT_HOPS
 from api.modules.catalog.tables import dataset_files, file_previews
 from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
@@ -32,8 +33,34 @@ def _load(
     ds = must(load_dataset(session, version["dataset_id"]), "dataset")
     if not can_see_version(user, ds, version):
         raise not_found("File")
-    row = session.execute(select(file_previews).where(file_previews.c.file_id == file_id)).mappings().first()
-    return f, ds, row
+    return f, ds, _preview_row(session, f)
+
+
+def _preview_row(session: Session, f: Mapping[Any, Any]) -> RowMapping | None:
+    """The file's own preview row, or, for an inherited file (spec §3.3b: same stored object), the first READY row
+    along its inherited_from_file_id chain (bounded hops, as diff._profiles). Without a READY one the nearest existing
+    row is used (own first), so a queued or failed state still shows. Access was checked on the requested file."""
+    nearest: RowMapping | None = None
+    current: UUID | None = f["file_id"]
+    source: UUID | None = f["inherited_from_file_id"]
+    for _ in range(MAX_INHERIT_HOPS):
+        if current is None:
+            break
+        row = (
+            session.execute(select(file_previews).where(file_previews.c.file_id == current))
+            .mappings()
+            .first()
+        )
+        if row is not None and row["status"] == "READY":
+            return row
+        nearest = nearest or row
+        if source is None:
+            break
+        current = source
+        source = session.execute(
+            select(dataset_files.c.inherited_from_file_id).where(dataset_files.c.file_id == current)
+        ).scalar_one_or_none()
+    return nearest
 
 
 def can_preview(user: CurrentUser, ds: Mapping[Any, Any], deps: CatalogDeps) -> bool:

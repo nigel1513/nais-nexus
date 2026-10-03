@@ -263,3 +263,37 @@ def test_backfill_queues_published_tabular_files_without_rows_idempotently(
         assert backfill_previews(session) == 0
     [row] = rows(db, "SELECT file_id, status FROM catalog.file_previews")
     assert (str(row["file_id"]), row["status"]) == (ids["data/m.csv"], "PENDING")
+
+
+def test_draft_inherited_file_shows_the_source_profile_and_preview(api: CatalogApi, db: PgUrls) -> None:
+    """Spec §3.3b: an inherited row is the same stored object; until its own version is published it has no preview
+    row, so the source's state is shown (PENDING, then READY). Access stays on the draft."""
+    files = published_with_preview(api, db)
+    [published] = rows(
+        db,
+        "SELECT dataset_id FROM catalog.dataset_files f JOIN catalog.dataset_versions v"
+        " USING (dataset_version_id) WHERE f.file_id = :f",
+        f=files["data/m.csv"],
+    )
+    created = api.post(
+        "b.steward", f"/datasets/{published['dataset_id']}/versions", json={"version_label": "v2"}
+    )
+    assert created.status_code == 201, created.text
+    inherited = {f["path"]: f["file_id"] for f in created.json()["files"]}["data/m.csv"]
+    assert rows(db, "SELECT 1 FROM catalog.file_previews WHERE file_id = :f", f=inherited) == []
+    assert api.get("b.steward", f"/dataset-files/{inherited}/profile").json()["status"] == "PENDING"
+    assert generate_preview_job(UUID(files["data/m.csv"]), deps=api.deps) == "READY"
+    profile = api.get("b.steward", f"/dataset-files/{inherited}/profile").json()
+    assert_matches_response("getFileProfile", 200, profile)
+    assert (
+        profile["status"] == "READY" and profile["file_id"] == inherited and profile["path"] == "data/m.csv"
+    )
+    assert profile["rows_sampled"] == 300
+    preview = api.get("b.steward", f"/dataset-files/{inherited}/preview").json()
+    assert_matches_response("getFilePreview", 200, preview)
+    assert preview["status"] == "READY" and len(preview["rows"]) == 100
+    # The draft stays invisible to others even though its source is published and visible.
+    assert_error(
+        "getFileProfile", api.get("a.researcher", f"/dataset-files/{inherited}/profile"), 404, "NOT_FOUND"
+    )
+    assert api.get("b.researcher", f"/dataset-files/{inherited}/preview").status_code == 404
