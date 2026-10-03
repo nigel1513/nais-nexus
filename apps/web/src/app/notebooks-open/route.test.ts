@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { server } from "../../../tests/msw";
+import { getDb } from "@/mocks/db";
 import { PROJECT, USER } from "@/mocks/fixtures";
 import { GET } from "./route";
 
@@ -89,6 +90,12 @@ describe("GET /notebooks-open (mock mode)", () => {
     expect(outsider.headers.get("location")).toBe(`/commons/projects/${PROJECT.seed}?x=1&notebook_error=forbidden`);
     // A Referer outside /commons (or another origin) is never followed.
     expect((await open(PROJECT.seed, { user: USER.aSteward, referer: "http://evil.test/phish" })).headers.get("location")).toBe("/commons/notebooks?notebook_error=forbidden");
+  });
+
+  it("refuses an archived project with notebook_error=archived", async () => {
+    fakeJupyter();
+    getDb().projects.find((p) => p.project_id === PROJECT.seed)!.status = "ARCHIVED";
+    expect((await open(PROJECT.seed)).headers.get("location")).toBe("/commons/notebooks?notebook_error=archived");
   });
 
   it("sends a caller without a session to the notebooks screen (which asks for a login)", async () => {

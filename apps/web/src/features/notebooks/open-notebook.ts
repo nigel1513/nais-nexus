@@ -19,7 +19,7 @@ export const BUDGET_MS = 20_000;
 /** Kept back from the copy budget for README.md. */
 const README_RESERVE_MS = 3_000;
 
-export type NotebookError = "unavailable" | "forbidden";
+export type NotebookError = "unavailable" | "forbidden" | "archived";
 export type OpenResult = { ok: true; location: string; copied: string[]; skipped: SkippedInput[] } | { ok: false; error: NotebookError | "unauthenticated" };
 export type SkippedInput = { name: string; reason: string };
 
@@ -72,6 +72,17 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
   const deadline = started + budget - README_RESERVE_MS;
   const left = () => deadline - now();
   const signal = (cap = Infinity) => AbortSignal.timeout(Math.max(1, Math.min(cap, left())));
+  /** An API call bounded by `cap` and the overall budget; it settles on timeout even if the transport ignores the signal. */
+  const call = (path: string, init: RequestInit = {}, cap = 5_000): Promise<Response> => {
+    const s = signal(cap);
+    return Promise.race([
+      deps.api(path, { ...init, signal: s }),
+      new Promise<never>((_, reject) => {
+        if (s.aborted) reject(new Error("timeout"));
+        s.addEventListener("abort", () => reject(new Error("timeout")), { once: true });
+      }),
+    ]);
+  };
 
   if (!projectId || !UUID_RE.test(projectId)) return { ok: false, error: "forbidden" };
   if (!deps.jupyter?.base || !deps.jupyter.token) return { ok: false, error: "unavailable" };
@@ -81,11 +92,11 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
   let me: Schemas["Me"];
   let project: Project;
   try {
-    const meRes = await deps.api("/me");
+    const meRes = await call("/me");
     if (meRes.status === 401) return { ok: false, error: "unauthenticated" };
     if (!meRes.ok) return { ok: false, error: meRes.status === 403 ? "forbidden" : "unavailable" };
     me = (await meRes.json()) as Schemas["Me"];
-    const res = await deps.api(`/projects/${projectId}`);
+    const res = await call(`/projects/${projectId}`);
     if (res.status === 401) return { ok: false, error: "unauthenticated" };
     if (res.status === 403 || res.status === 404) return { ok: false, error: "forbidden" };
     if (!res.ok) return { ok: false, error: "unavailable" };
@@ -94,6 +105,7 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
     return { ok: false, error: "unavailable" };
   }
   if (!UUID_RE.test(me.user_id) || !project.my_role || project.project_id !== projectId) return { ok: false, error: "forbidden" };
+  if (project.status === "ARCHIVED") return { ok: false, error: "archived" };
   const folder = `work/${me.user_id}/${projectId}`;
 
   // Jupyter contents API (token header; never logged).
@@ -135,7 +147,7 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
   let inputs: Schemas["ProjectInput"][] = [];
   let inputsFailed = false;
   try {
-    const res = await deps.api(`/projects/${projectId}/inputs`);
+    const res = await call(`/projects/${projectId}/inputs`);
     if (res.ok) inputs = ((await res.json()) as { items: Schemas["ProjectInput"][] }).items ?? [];
     else inputsFailed = true;
   } catch {
@@ -143,12 +155,9 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
   }
   const used = new Set<string>();
   let jupyterDown = false;
-  for (const [i, input] of inputs.entries()) {
+  for (const input of inputs) {
     const label = `${input.dataset_title} ${input.version_label}`;
-    if (left() <= 0 || jupyterDown) {
-      for (const rest of inputs.slice(i)) skipped.push({ name: `${rest.dataset_title} ${rest.version_label}`, reason: "복사 중 건너뜀" });
-      break;
-    }
+    // Policy reasons first, so an input is never reported as "복사 중 건너뜀" when it would not be copied at all.
     if (input.access_level !== "PUBLIC" && input.access_level !== "INTERNAL") {
       skipped.push({ name: label, reason: `접근 등급 ${input.access_level}: 노트북으로 복사하지 않습니다` });
       continue;
@@ -157,8 +166,12 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
       skipped.push({ name: label, reason: "접근 권한이 만료되었습니다" });
       continue;
     }
+    if (left() <= 0 || jupyterDown) {
+      skipped.push({ name: label, reason: "복사 중 건너뜀" });
+      continue;
+    }
     try {
-      const vRes = await deps.api(`/dataset-versions/${input.dataset_version_id}`, { signal: signal() });
+      const vRes = await call(`/dataset-versions/${input.dataset_version_id}`, {}, Infinity);
       if (!vRes.ok) {
         skipped.push({ name: label, reason: "데이터 버전을 읽지 못했습니다" });
         continue;
@@ -175,8 +188,10 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
         continue;
       }
       const base = file.path.split("/").pop() ?? "data.csv";
-      let name = safeName(`${input.dataset_title}_${input.version_label}_${base}`, 120);
-      if (used.has(name)) name = safeName(`${input.dataset_title}_${input.version_label}_${input.input_id.slice(0, 8)}_${base}`, 120);
+      // Only the title is shortened: the label, the id suffix and the extension always survive.
+      const stem = `${safeName(input.dataset_title, 60)}_${safeName(input.version_label, 40)}`;
+      let name = `${stem}_${safeName(base, 80)}`;
+      if (used.has(name)) name = `${stem}_${input.input_id.slice(0, 8)}_${safeName(base, 80)}`;
       used.add(name);
       const target = `${folder}/data/${name}`;
       let existing: Awaited<ReturnType<typeof stat>>;
@@ -191,12 +206,11 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
         unchanged.push(name);
         continue;
       }
-      const sRes = await deps.api(`/dataset-versions/${input.dataset_version_id}/download-session`, {
-        method: "POST",
-        body: JSON.stringify({ project_id: projectId, file_ids: [file.file_id] }),
-        headers: { "content-type": "application/json" },
-        signal: signal(),
-      });
+      const sRes = await call(
+        `/dataset-versions/${input.dataset_version_id}/download-session`,
+        { method: "POST", body: JSON.stringify({ project_id: projectId, file_ids: [file.file_id] }), headers: { "content-type": "application/json" } },
+        Infinity,
+      );
       if (!sRes.ok) {
         skipped.push({ name: label, reason: "다운로드 권한이 없거나 세션을 만들지 못했습니다" });
         continue;

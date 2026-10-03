@@ -45,7 +45,8 @@ async function realDeps(): Promise<Pick<OpenDeps, "api" | "sizeOf" | "readFile">
   return {
     api: (path, init = {}) => {
       if (!base) return Promise.resolve(new Response(null, { status: 503 }));
-      return fetch(`${base.replace(/\/+$/, "")}/api/v1${path}`, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` }, cache: "no-store" });
+      // init.signal (set by open-notebook for every call) bounds the request by the 20 s budget.
+      return fetch(`${base.replace(/\/+$/, "")}/api/v1${path}`, { ...init, signal: init.signal, headers: { ...(init.headers as Record<string, string> | undefined), Authorization: `Bearer ${token}` }, cache: "no-store" });
     },
     sizeOf: (_version, file) => file.size_bytes,
     readFile: async (_version, file, url, signal) => {

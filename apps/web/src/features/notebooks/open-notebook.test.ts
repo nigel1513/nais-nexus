@@ -134,6 +134,48 @@ describe("openNotebook", () => {
   });
 });
 
+describe("openNotebook (review fixes)", () => {
+  it("bounds /me, /projects and /inputs by the budget: a hanging api is unavailable, not a hung redirect", async () => {
+    const { deps } = harness({ inputs: [], versions: {} });
+    const hangs: OpenDeps["api"] = (path, init) =>
+      new Promise((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error(`aborted ${path}`))));
+    const started = Date.now();
+    expect(await openNotebook(P, { ...deps, api: hangs, budgetMs: 3_300 })).toEqual({ ok: false, error: "unavailable" });
+    // Even an api that ignores the signal cannot hold the redirect.
+    expect(await openNotebook(P, { ...deps, api: () => new Promise(() => {}), budgetMs: 3_300 })).toEqual({ ok: false, error: "unavailable" });
+    expect(Date.now() - started).toBeLessThan(2_000);
+    const slowInputs: OpenDeps["api"] = (path, init) => (path.endsWith("/inputs") ? new Promise(() => {}) : deps.api(path, init));
+    const r = await openNotebook(P, { ...deps, api: slowInputs, budgetMs: 3_300 });
+    expect(r.ok).toBe(true);
+  });
+
+  it("refuses an archived project (archived)", async () => {
+    const { deps } = harness({ inputs: [], versions: {} });
+    const archived: OpenDeps = { ...deps, api: async (path, init) => (path === `/projects/${P}` ? Response.json({ project_id: P, name: "x", my_role: "PROJECT_OWNER", status: "ARCHIVED" }) : deps.api(path, init)) };
+    expect(await openNotebook(P, archived)).toEqual({ ok: false, error: "archived" });
+  });
+
+  it("never truncates the label, extension or id suffix of a copied file name", async () => {
+    const long = "가".repeat(150);
+    const { deps, puts } = harness({ inputs: [input(1, "PUBLIC", { dataset_title: long }), input(2, "PUBLIC", { dataset_title: long })], versions: { v1: [file("a.csv", 1)], v2: [file("a.csv", 1)] } });
+    await openNotebook(P, deps);
+    const names = puts.filter((p) => p.includes("/data/")).map((p) => p.split("/").pop()!);
+    expect(names[0]).toBe(`${"가".repeat(60)}_v1_a.csv`);
+    expect(names[1]).toBe(`${"가".repeat(60)}_v1_${input(2, "PUBLIC").input_id.slice(0, 8)}_a.csv`);
+  });
+
+  it("gives access-level and lapsed reasons even after the budget ran out", async () => {
+    const clock = { t: 0, step: 9_000 };
+    const { deps } = harness({ inputs: [input(1, "PUBLIC"), input(2, "PUBLIC"), input(3, "CONTROLLED"), input(4, "INTERNAL", { access_lapsed: true })], versions: { v1: [file("a.csv", 1)], v2: [file("b.csv", 1)] }, clock });
+    const r = await openNotebook(P, deps);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.skipped.find((s) => s.name === "데이터 3 v1")?.reason).toBe("접근 등급 CONTROLLED: 노트북으로 복사하지 않습니다");
+    expect(r.skipped.find((s) => s.name === "데이터 4 v1")?.reason).toBe("접근 권한이 만료되었습니다");
+    expect(r.skipped.some((s) => s.reason === "복사 중 건너뜀")).toBe(true);
+  });
+});
+
 describe("readmeText", () => {
   it("names the project, the copied files and why others were skipped", () => {
     const text = readmeText("프로젝트\n이름", ["a.csv"], [{ name: "데이터 3 v1", reason: "복사 중 건너뜀" }], false, Date.UTC(2026, 9, 3, 1, 0));

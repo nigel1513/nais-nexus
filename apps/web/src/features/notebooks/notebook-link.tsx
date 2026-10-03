@@ -22,12 +22,21 @@ export function OpenNotebookLink({ projectId, variant = "secondary", size, class
   );
 }
 
-/** ?notebook_error=unavailable|forbidden, set by /notebooks-open when it sends the browser back: an inline alert. */
+/** ?notebook_error=unavailable|forbidden|archived, set by /notebooks-open when it sends the browser back: an inline alert. */
 export function NotebookErrorAlert({ className }: { className?: string }) {
   const t = useTranslations();
   const [params, setParams] = useUrlQuery();
   const error = params.get("notebook_error");
-  if (error !== "unavailable" && error !== "forbidden") return null;
+  if (error !== "unavailable" && error !== "forbidden" && error !== "archived") return null;
+  const dismiss = () => {
+    setParams({ notebook_error: null });
+    // The alert (and its button) disappears: keep keyboard users on the page by focusing its heading.
+    const heading = document.querySelector<HTMLElement>("main h1") ?? document.querySelector<HTMLElement>("h1");
+    if (heading) {
+      if (!heading.hasAttribute("tabindex")) heading.setAttribute("tabindex", "-1");
+      heading.focus();
+    }
+  };
   return (
     <div role="alert" className={cn("flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft p-3 text-small text-fg", className)}>
       <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
@@ -35,7 +44,7 @@ export function NotebookErrorAlert({ className }: { className?: string }) {
         <p className="font-medium">{t(`notebooks.error.${error}`)}</p>
         {error === "unavailable" ? <p className="text-fg-muted">{t("notebooks.error.unavailableHint")}</p> : null}
       </div>
-      <Button variant="ghost" size="sm" aria-label={t("notebooks.dismiss")} onClick={() => setParams({ notebook_error: null })}>
+      <Button variant="ghost" size="sm" aria-label={t("notebooks.dismiss")} onClick={dismiss}>
         <X aria-hidden="true" strokeWidth={1.75} />
       </Button>
     </div>

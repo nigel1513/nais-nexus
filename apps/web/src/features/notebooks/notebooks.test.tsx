@@ -1,6 +1,7 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
+import { getDb } from "@/mocks/db";
 import { NOTE, PROJECT, USER } from "@/mocks/fixtures";
 import { seoulDate } from "@/mocks/note-hash";
 import { seedNotebookActivity } from "@/mocks/notebook-activity";
@@ -25,6 +26,15 @@ describe("/commons/notebooks", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("explains the — count when today's note does not exist yet", async () => {
+    getDb().notes = getDb().notes.filter((n) => n.note_date !== seoulDate());
+    renderScreen(<NotebooksScreen />, { user: USER.aResearcher, path: "/commons/notebooks" });
+    const [link] = await screen.findAllByRole("link", { name: "차세대 이차전지 소재 공동연구 노트북 열기" });
+    const row = link!.closest("tr")!;
+    expect(within(row).getByText("오늘 연구노트를 열면 표시됩니다")).toHaveClass("sr-only");
+    expect(within(row).getByTitle("오늘 연구노트를 열면 표시됩니다")).toHaveTextContent("—");
+  });
+
   it("shows the empty state to a user without projects", async () => {
     renderScreen(<NotebooksScreen />, { user: USER.aSteward, path: "/commons/notebooks" });
     expect(await screen.findByText("참여 중인 진행 프로젝트가 없습니다")).toBeInTheDocument();
@@ -33,12 +43,14 @@ describe("/commons/notebooks", () => {
   it.each([
     ["unavailable", "노트북 서버에 연결할 수 없습니다"],
     ["forbidden", "이 프로젝트의 노트북을 열 권한이 없습니다"],
+    ["archived", "보관된 프로젝트는 노트북을 열 수 없습니다"],
   ])("explains ?notebook_error=%s inline, and the alert can be dismissed", async (code, text) => {
     renderScreen(<NotebooksScreen />, { user: USER.aResearcher, path: `/commons/notebooks?notebook_error=${code}` });
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(text);
     await userEvent.click(within(alert).getByRole("button", { name: "알림 닫기" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "노트북" })).toHaveFocus(); // focus is not lost with the alert
   });
 });
 

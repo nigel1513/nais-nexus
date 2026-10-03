@@ -106,6 +106,14 @@ describe("notes mocks: bridged to the api's internal endpoints", () => {
     expect(Date.now() - started).toBeLessThan(2_900);
   });
 
+  it("checks the rate limit before reading the notebooks", async () => {
+    const calls = vi.fn();
+    server.use(http.get(ACTIVITY, () => (calls(), HttpResponse.json({ count: 1, notebooks: [] }))));
+    getDb().notes.find((n) => n.note_id === NOTE.draft)!.draft_requested_at = new Date().toISOString();
+    expect((await minjun.post(`/notes/${NOTE.draft}/draft`)).body.error.code).toBe("RATE_LIMITED");
+    expect(calls).not.toHaveBeenCalled();
+  });
+
   it("answers 422 NO_NOTEBOOK_ACTIVITY when the real count is 0", async () => {
     server.use(http.get(ACTIVITY, () => HttpResponse.json({ count: 0, notebooks: [] })));
     const res = await minjun.post(`/notes/${NOTE.draft}/draft`);

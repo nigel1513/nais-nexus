@@ -584,7 +584,11 @@ export const noteHandlers = [
     const note = recorderNote(db, user, String(params.note_id));
     if (note.status !== "DRAFT") locked();
     if (!db.llmEnabled) fail("LLM_UNAVAILABLE", "Drafting is unavailable: the local LLM is switched off.");
+    const now = Date.now();
+    const rateLimited = !!note.draft_requested_at && now - Date.parse(note.draft_requested_at) < MIN_DRAFT_INTERVAL_MS;
     const cfg = bridgeConfig();
+    // Bridged: rate limit first, so a refused request never reaches the shared Jupyter (the seeded path keeps the backend's order).
+    if (cfg && rateLimited) fail("RATE_LIMITED", "A draft of this note was requested less than a minute ago.");
     if (cfg) {
       // Bridged: a fresh read of the day's notebooks (not the cached count); Jupyter or api down → 503 as the backend.
       let count = 0;
@@ -598,8 +602,7 @@ export const noteHandlers = [
     } else if (!listNotebookActivity(note.recorder_id, note.project_id, note.note_date).length) {
       fail("VALIDATION_FAILED", NO_NOTEBOOK_MESSAGE, { reason: "NO_NOTEBOOK_ACTIVITY" });
     }
-    const now = Date.now();
-    if (note.draft_requested_at && now - Date.parse(note.draft_requested_at) < MIN_DRAFT_INTERVAL_MS) fail("RATE_LIMITED", "A draft of this note was requested less than a minute ago.");
+    if (rateLimited) fail("RATE_LIMITED", "A draft of this note was requested less than a minute ago.");
     if (note.draft_status !== "QUEUED" && note.draft_status !== "RUNNING") {
       Object.assign(note, { draft_status: "QUEUED", draft_error: null, draft_requested_at: new Date(now).toISOString() });
       if (cfg) runBridgedDraft(cfg, db, note);

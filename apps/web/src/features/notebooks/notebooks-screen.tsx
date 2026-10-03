@@ -86,7 +86,15 @@ export function NotebooksScreen() {
 
 /** Notebooks saved today in this project (today's note draft_source_count); "—" without a note of today. */
 function TodayCount({ noteId }: { noteId: string | undefined }) {
-  return noteId ? <NoteSourceCount noteId={noteId} /> : <span className="text-fg-muted">—</span>;
+  const t = useTranslations();
+  if (noteId) return <NoteSourceCount noteId={noteId} />;
+  // No note of today yet: the count is not fetched (opening a note would create it), only explained.
+  return (
+    <span className="text-fg-muted" title={t("notebooks.todayHint")}>
+      <span aria-hidden="true">—</span>
+      <span className="sr-only">{t("notebooks.todayHint")}</span>
+    </span>
+  );
 }
 
 function NoteSourceCount({ noteId }: { noteId: string }) {
