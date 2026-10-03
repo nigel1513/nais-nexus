@@ -2,6 +2,8 @@
 API (httpx.MockTransport). No database."""
 
 import json
+import time
+from collections.abc import Iterator
 from datetime import UTC, date, datetime
 from typing import Any
 from uuid import UUID
@@ -367,3 +369,46 @@ def test_jupyter_requests_are_not_logged_but_other_clients_are(caplog: pytest.Lo
     messages = [r.getMessage() for r in caplog.records if r.name == "httpx"]
     assert not any("notebook" in m for m in messages)
     assert any("llm.internal" in m for m in messages)
+
+
+# ---------------------------------------------------------------- fix round 2: slow bodies, log filter boundary
+
+
+class _Drip(httpx.SyncByteStream):
+    """A body that trickles out: each chunk after a pause (the transport enforces no timeout)."""
+
+    def __init__(self, chunks: list[bytes], pause: float) -> None:
+        self.chunks = chunks
+        self.pause = pause
+
+    def __iter__(self) -> Iterator[bytes]:
+        for chunk in self.chunks:
+            time.sleep(self.pause)
+            yield chunk
+
+
+def test_a_slow_body_cannot_outlast_the_budget() -> None:
+    body = json.dumps({"type": "directory", "content": []}).encode()
+    chunks = [body[i : i + 4] for i in range(0, len(body), 4)]
+
+    def drip(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "application/json"}, stream=_Drip(chunks, 0.05))
+
+    port = JupyterClient(JUPYTER_URL, JUPYTER_TOKEN, transport=httpx.MockTransport(drip))
+    started = time.monotonic()
+    with pytest.raises(JupyterUnavailable, match="budget"), port.session(0.2) as session:
+        session.list_dir("work")
+    assert time.monotonic() - started < 0.5  # stopped about one chunk after the deadline, not after ~0.9 s
+
+
+def test_the_log_filter_matches_the_jupyter_base_on_a_path_boundary(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="httpx")
+    client(FakeJupyter())  # registers JUPYTER_URL (http://notebook:8888/notebooks)
+    other = httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+    with httpx.Client(transport=other) as http:
+        http.get("http://notebook:8888/notebooks-archive/x")
+        http.get("http://notebook:8888/notebooks")
+        http.get("http://notebook:8888/notebooks/api/contents")
+    messages = [r.getMessage() for r in caplog.records if r.name == "httpx"]
+    assert any("notebooks-archive" in m for m in messages)
+    assert not any(m.endswith('/notebooks "HTTP/1.1 200 OK"') or "/notebooks/api" in m for m in messages)

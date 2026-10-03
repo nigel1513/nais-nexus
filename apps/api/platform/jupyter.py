@@ -6,12 +6,12 @@ NAIS_JUPYTER_TOKEN sent as `Authorization: token ...` (never logged). Paths are 
 before any request.
 
 Work happens in a session (`JupyterClient.session(budget_s)`): one httpx.Client (connections reused) and one monotonic
-deadline checked before every request; each request waits at most min(timeout, time left). A spent budget, network
+deadline checked before every request and while a body streams in; each request waits at most min(timeout, time left). A spent budget, network
 errors, timeouts, refused tokens (401/403), 5xx and non-JSON answers raise JupyterUnavailable; a missing path is an empty
 listing / None; an answer over max_bytes (default 20 MiB, read streamed) raises JupyterTooLarge.
 
 httpx logs every request at INFO on the shared "httpx" logger; a filter on that logger drops those below-WARNING records
-for Jupyter URLs only (other clients' request logs are unchanged).
+for URLs at or below a Jupyter base URL only (other clients' request logs are unchanged).
 """
 
 import json
@@ -49,7 +49,12 @@ class _QuietJupyterRequests(logging.Filter):
         if record.levelno >= logging.WARNING:
             return True
         args = record.args if isinstance(record.args, tuple) else ()
-        return not any(str(a).startswith(base) for a in args for base in self.bases)
+        return not any(self._under(str(a), base) for a in args for base in self.bases)
+
+    @staticmethod
+    def _under(url: str, base: str) -> bool:
+        """url is the base itself or below it (".../notebooks" does not match ".../notebooks-archive")."""
+        return url == base or url.startswith(base + "/") or url.startswith(base + "?")
 
 
 _QUIET = _QuietJupyterRequests()
@@ -91,6 +96,10 @@ class JupyterSession:
             raise JupyterUnavailable("jupyter: time budget spent")
         return min(self._timeout, left)
 
+    def _in_budget(self) -> None:
+        if time.monotonic() > self._deadline:
+            raise JupyterUnavailable("jupyter: time budget spent")
+
     def _url(self, path: str) -> str:
         return f"{self._base}/api/contents/{_safe(path)}"
 
@@ -100,6 +109,9 @@ class JupyterSession:
             raise JupyterUnavailable(f"jupyter {method} -> HTTP {status}")
 
     def _read(self, response: httpx.Response) -> bytes:
+        """The body, within max_bytes and the deadline (checked after the headers and after every chunk: the httpx
+        timeout bounds each read, not a body that keeps trickling in)."""
+        self._in_budget()
         declared = response.headers.get("Content-Length", "")
         if declared.isdigit() and int(declared) > self._max_bytes:
             raise JupyterTooLarge(f"{declared} bytes")
@@ -110,6 +122,7 @@ class JupyterSession:
             if size > self._max_bytes:
                 raise JupyterTooLarge(f"over {self._max_bytes} bytes")
             chunks.append(chunk)
+            self._in_budget()
         return b"".join(chunks)
 
     def _get(self, path: str) -> dict[str, Any] | None:
