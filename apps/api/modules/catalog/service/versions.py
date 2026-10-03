@@ -30,6 +30,7 @@ from api.modules.catalog.repo import (
     readiness_overall,
 )
 from api.modules.catalog.schemas import VersionCreateIn, VersionUpdateIn
+from api.modules.catalog.service.diff import summaries
 from api.modules.catalog.tables import dataset_files, dataset_versions, file_previews, upload_sessions
 from api.modules.catalog.versioning.inherit import copy_files
 from api.modules.catalog.versioning.refs import StorageCleanup, release_objects
@@ -67,7 +68,13 @@ def version_response(session: Session, version: RowMapping) -> dict[str, Any]:
         readiness_overall(session, [version_id])[version_id] if version["status"] == "PUBLISHED" else None
     )
     latest_id = _latest_id(session, version["dataset_id"]) if version["status"] == "DRAFT" else None
-    return version_view(version, files, readiness, base_is_latest=_base_is_latest(version, latest_id))
+    return version_view(
+        version,
+        files,
+        readiness,
+        base_is_latest=_base_is_latest(version, latest_id),
+        change_summary=summaries(session, [version])[version_id],
+    )
 
 
 def _not_published_source() -> ApiError:
@@ -150,6 +157,7 @@ def list_versions(session: Session, user: CurrentUser, dataset_id: UUID) -> dict
     )
     # base_is_latest is a DRAFT-only field: skip the query when the caller sees no drafts.
     latest_id = _latest_id(session, dataset_id) if any(v["status"] == "DRAFT" for v in versions) else None
+    changes = summaries(session, versions)
     return {
         "items": [
             version_view(
@@ -157,6 +165,7 @@ def list_versions(session: Session, user: CurrentUser, dataset_id: UUID) -> dict
                 files[v["dataset_version_id"]],
                 readiness.get(v["dataset_version_id"]),
                 base_is_latest=_base_is_latest(v, latest_id),
+                change_summary=changes[v["dataset_version_id"]],
             )
             for v in versions
         ]

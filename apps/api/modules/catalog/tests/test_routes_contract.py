@@ -32,6 +32,7 @@ EXPECTED = {
     "publishDatasetVersion",
     "updateDatasetVersion",
     "discardDatasetVersion",
+    "compareDatasetVersions",
     "getFileProfile",
     "getFilePreview",
 }
