@@ -100,9 +100,9 @@
 - 권리는 기관(지침 제9조): 기록자가 기관을 옮겨도 노트의 `organization_id`는 바뀌지 않는다.
 
 ### 6.2 내용 구조
-- 섹션: `방향·결정`, `수행 단계`, `결과`, `다음 할 일`, `메모`(자유).
+- 섹션(표준 연구노트 양식 7개, Amendment A1 — 이 순서로 표시·해시·내보내기): `OBJECTIVE` 연구 목표, `METHOD` 연구 방법·재료, `PROCEDURE` 수행 내용, `RESULTS` 결과 및 관찰, `DISCUSSION` 고찰·문제점, `NEXT` 향후 계획, `REFERENCES` 참고 자료.
 - 문장 단위 블록: `Block { block_id, section, text, origin(HUMAN|AI), accepted(bool), evidence[] }`.
-- `evidence`: 근거 이벤트 참조 — `{ type: DATASET_VIEW|DOWNLOAD|INPUT_ADDED|RECIPE_SAVED|RUN|OUTPUT|ACCESS_DECISION, ref_id, label, at }`.
+- `evidence`: 근거 참조 — `{ type, ref_id, label, at }`. AI 블록의 근거는 `NOTEBOOK`(그날 저장한 노트북 · 셀), 작업 공간 이벤트(입력 추가·레시피 저장·실행·산출물 등)는 화면의 "오늘 활동" 목록으로만 쓴다.
 
 ### 6.3 상태와 불변성
 ```
@@ -111,7 +111,7 @@ DRAFT(본인만) ──제출──▶ SUBMITTED(잠금, 확인자에게 보임)
    └─────────────────────────┘
 SIGNED 이후 수정 = 새 버전(DRAFT, previous_version_id 연결), 이전 버전은 그대로.
 ```
-- 제출 조건: `origin=AI && accepted=false` 블록이 없어야 함(회색 문장은 수락·수정·삭제 중 하나).
+- 제출 조건: `origin=AI && accepted=false` 블록이 없어야 함. AI 문장은 고치면 그 문장이 확인한 것으로 기록되고, 그대로 둘 문장은 "초안 확인 완료"를 누르며, 필요 없는 문장은 삭제한다.
 - 확인자: 프로젝트 정책(`notes_witness_required`, 기본 false). 꺼져 있으면 기록자 본인 서명으로 SIGNED.
 - 서명 = SSO 재인증 직후 발급되는 서명 토큰(5분 유효) + 서명 레코드 `{ signer, role(RECORDER|WITNESS), signed_at(서버 시각), content_hash }`.
 - 위·변조 확인: `content_hash = sha256(정규화 JSON(내용+메타))`, `chain_hash = sha256(이전 chain_hash + content_hash)` 를 프로젝트×기관 단위 체인으로 저장. `GET /notes/{id}/verify` 가 다시 계산해 비교.
@@ -120,10 +120,10 @@ SIGNED 이후 수정 = 새 버전(DRAFT, previous_version_id 연결), 이전 버
 - 내보내기: `GET /notes/export?project_id&from&to` → ZIP(노트 JSON + 사람이 읽는 HTML + 해시 목록).
 
 ### 6.4 자동 초안 (로컬 LLM)
-- 재료: 그날 그 프로젝트에서 기록자 본인의 감사 이벤트(데이터 열람·다운로드@버전, 입력 추가·버전 변경, 레시피 저장, 실행 결과 요약(행 수·오류), 산출물, 접근 결정) + 기록자가 그날 쓴 메모.
-- **원본 데이터·파일 내용은 보내지 않는다.** 데이터셋 제목·버전·열 이름까지만.
-- 호출: 워커가 OpenAI 호환 `POST {NAIS_LLM_BASE_URL}/v1/chat/completions`, 모델 `NAIS_LLM_MODEL`(기본 `llm`), `temperature 0.2`, JSON 출력 지시(섹션별 문장 배열 + 각 문장의 evidence 인덱스). 응답 검증 실패 시 1회 재시도 후 실패 기록.
-- 시점: (a) 매일 19:00 KST 배치 — 그날 이벤트가 있고 노트가 없거나 DRAFT인 기록자만, (b) "지금 초안 만들기" 버튼(1분에 1회 제한).
+- 재료(Amendment A1): 그날 그 프로젝트에서 기록자가 저장한 **Jupyter 노트북**(`NotebookActivityPort`, 노트북 최대 10개·셀 120개)만. 셀마다 앞부분(≤400자)과 출력 종류·개수·오류 여부만 보낸다. 작업 공간 감사 이벤트는 LLM에 보내지 않는다. 그날 노트북이 없으면 `draftNote` → 422 `VALIDATION_FAILED`(reason `NO_NOTEBOOK_ACTIVITY`). Jupyter(M07) 전까지 포트 기본값은 빈 목록이다.
+- **출력 값·원본 데이터·파일 내용은 보내지 않는다.**
+- 호출: 워커가 OpenAI 호환 `POST {NAIS_LLM_BASE_URL}/v1/chat/completions`, 모델 `NAIS_LLM_MODEL`(기본 `llm`), `temperature 0.2`, JSON 출력 지시(위 7개 섹션 키별 문장 배열 + 각 문장의 근거 번호; PROCEDURE·RESULTS는 근거 필수, 노트북에 없는 사실·수치 금지). 응답 검증 실패 시 1회 재시도 후 실패 기록.
+- 시점: (a) 매일 19:00 KST 배치 — 그날 노트북을 저장했고 노트가 없거나 DRAFT인 기록자만, (b) "지금 초안 만들기" 버튼(1분에 1회 제한).
 - 반영: 새 AI 블록은 `accepted=false`로 DRAFT에 덧붙인다. 사람이 쓴 블록은 절대 덮어쓰지 않는다. 같은 근거로 이미 만든 문장은 다시 만들지 않는다(evidence 중복 제거).
 - 장애: LLM 연결 실패 → 노트에 "초안을 만들지 못했습니다" 상태만, 기능은 정상. `NAIS_LLM_ENABLED=false`면 버튼 숨김.
 - 부하: GPU를 규정 플랫폼과 함께 쓰므로 동시 요청 1, 요청당 최대 출력 800토큰, 입력 이벤트 최대 60개(넘으면 요약 집계).
@@ -131,7 +131,7 @@ SIGNED 이후 수정 = 새 버전(DRAFT, previous_version_id 연결), 이전 버
 ### 6.5 화면
 - `/commons/notes`: 내 노트(프로젝트·날짜·상태 필터), 확인할 노트(확인자).
 - 프로젝트 `연구노트` 탭: 날짜별 목록 + 오늘 노트 열기.
-- 노트 편집기: 섹션별 블록, AI 문장 회색 + "수락 / 수정 / 삭제", 근거 칩(누르면 그 데이터·실행으로), 하단 상태 바(상태, 해시 일부, 제출/서명 버튼).
+- 노트 편집기: 표준 양식 7개 섹션, AI 문장 회색(문장을 고치거나 "초안 확인 완료"로 확인, 또는 삭제), 근거 칩(누르면 그 데이터·실행으로), 하단 상태 바(상태, 해시 일부, 제출/서명 버튼).
 - SIGNED 노트: 읽기 전용, 서명 목록, "위·변조 확인" 결과, "새 버전으로 수정".
 
 ## 7. 아키텍처
@@ -140,10 +140,10 @@ SIGNED 이후 수정 = 새 버전(DRAFT, previous_version_id 연결), 이전 버
   - `workspace` (`workspace.*`): 입력, 레시피, 실행, 산출물, 계보, 토론, 허브 집계.
   - `notes` (`notes.*`): 노트, 블록, 버전, 서명, 체인, 초안 작업.
 - 다른 모듈은 공개 인터페이스로만 호출: 구성원 여부(project), 활성 권한(governance), 데이터셋·버전 조회(catalog), 감사 기록·조회(audit), 객체 저장소(platform).
-- 워커 작업: `workspace.run_recipe`, `notes.draft_daily`(크론), `notes.draft_now`.
+- 워커 작업: `workspace.run_recipe`, `workspace.publish_output`(허브 공개), `notes.draft_note`(버튼·저녁 일정 `notes.daily_drafts` 공용), `notes.embed_notes`(+ `notes.embed_sweep`).
 - LLM 클라이언트: `platform` 아래 얇은 OpenAI 호환 httpx 클라이언트, 설정 `NAIS_LLM_BASE_URL`, `NAIS_LLM_MODEL`, `NAIS_LLM_ENABLED`, `NAIS_LLM_TIMEOUT_S`.
 - 계약: `NAIS_PRD/contracts/openapi.yaml`에 경로·스키마·오류 코드 추가 → TS 생성 → 웹 MSW mock(백엔드와 같은 규칙) → 웹 화면.
-- 데모(mock) 모드: 웹 서버 안의 mock API(`app/mock-api`, MSW 핸들러가 서버에서 실행)가 백엔드와 같은 규칙을 흉내 낸다. 초안 핸들러는 서버 환경변수 `NAIS_LLM_BASE_URL`이 있으면 실제 `:8001`을 호출하고, 없으면(단위 테스트) 근거 이벤트로 만든 결정적 문장을 쓴다. 그래서 21051 데모에서도 실제 LLM 초안이 나온다.
+- 데모(mock) 모드: 웹 서버 안의 mock API(`app/mock-api`, MSW 핸들러가 서버에서 실행)가 백엔드와 같은 규칙을 흉내 낸다. mock 초안은 LLM(`:8001`)을 부르지 않고 시드 노트북 활동으로 만든 결정적 문장을 쓴다(web 컨테이너는 LLM을 부르지 않는다). 실제 LLM 초안은 api/worker가 `NAIS_LLM_*`로 켜졌을 때만 나온다.
 - 웹: 기존 기능 폴더 규칙(`features/hub`, `features/workspace`, `features/notes`), 디자인 시스템 토큰, 담백한 업무 화면.
 
 ## 8. 오류 코드 (추가)
@@ -158,4 +158,4 @@ SIGNED 이후 수정 = 새 버전(DRAFT, previous_version_id 연결), 이전 버
 - API: 모듈 단위 테스트(권한 경계: 비구성원·권한 없음·회수 후), 상태 전이 테스트(노트 잠금·서명·새 버전), 해시 체인 검증, LLM 클라이언트는 가짜 서버로(실제 :8001 호출은 수동 스모크 1회).
 - 웹: 화면 단위 테스트(MSW), e2e 시나리오: 허브 → 데이터 카드 → 프로젝트에 입력 추가 → 레시피 저장·실행 → 산출물 → 연구노트 초안 수락 → 제출 → 서명 → 위·변조 확인.
 - 접근성 axe 0건, 390px 가로 스크롤 없음, 라이트/다크.
-- 21051(mock 모드) 반영 및 실제 :8001 초안 스모크.
+- 21051(mock 모드) 반영. 실제 :8001 초안 스모크는 api 쪽 `test_live_llm.py`(`NAIS_LIVE_LLM=1`, 사설망에서 수동).
