@@ -381,6 +381,41 @@ def list_requests(
 
 # ---------------------------------------------------------------- publication (worker)
 
+# failure_reason is a fixed Korean sentence per cause (CatalogPublishRejected.code, or a cause of this worker); the
+# English detail goes to the log only.
+FAILURE_REASONS: dict[str, str] = {
+    "NO_FILES": "산출물에 공개할 파일이 없습니다.",
+    "TOO_MANY_FILES": "산출물 파일 수가 카탈로그 허용 한도를 넘었습니다.",
+    "FILE_TYPE_NOT_ALLOWED": "카탈로그에 올릴 수 없는 형식의 파일이 있습니다.",
+    "FILE_TOO_LARGE": "카탈로그 허용 크기를 넘는 파일이 있습니다.",
+    "EMPTY_FILE": "비어 있는 파일이 있어 공개할 수 없습니다.",
+    "INVALID_PATH": "파일 이름이나 경로가 카탈로그 규칙에 맞지 않습니다.",
+    "STORAGE_NOT_CONFIGURED": "주관기관의 저장소가 설정되지 않아 공개할 수 없습니다. 관리자에게 문의해 주세요.",
+    "STORAGE_MISMATCH": "산출물 파일이 주관기관 저장소에 있지 않아 공개할 수 없습니다. 관리자에게 문의해 주세요.",
+    "INVALID_POLICY": "공개 정책이 올바르지 않아 공개할 수 없습니다.",
+    "DATASET_ID_CONFLICT": "공개할 데이터셋 식별자가 이미 다른 데이터셋에 쓰이고 있습니다. 다시 요청해 주세요.",
+    "ACCESS_LEVEL_TIGHTENED": (
+        "입력 데이터의 공개 수준이 더 엄격해져 처음 정한 수준으로는 공개할 수 없습니다. 다시 요청해 주세요."
+    ),
+    "VERSION_UNAVAILABLE": "카탈로그의 데이터셋 버전이 더 이상 공개할 수 있는 상태가 아닙니다.",
+    "FILES_CHANGED": "산출물 파일이 공개를 처음 시작할 때와 달라졌습니다. 다시 요청해 주세요.",
+    "DATASET_WITHDRAWN": "첫 버전이 공개되기 전에 데이터셋이 회수되었습니다.",
+    "OUTPUT_MISSING": "공개할 산출물을 찾을 수 없습니다.",
+    "VERIFICATION_FAILED": "카탈로그 파일 검증에 실패했습니다. 산출물 파일을 확인한 뒤 다시 요청하세요.",
+    "ATTEMPTS_EXHAUSTED": (
+        f"저장소나 서비스 장애로 카탈로그 공개를 {MAX_FAILURES}번 시도했지만 실패했습니다. 잠시 후 다시 요청해 주세요."
+    ),
+}
+FAILURE_FALLBACK = "카탈로그가 공개를 거부했습니다."
+
+
+def failure_reason(code: str) -> str:
+    return FAILURE_REASONS.get(code, FAILURE_FALLBACK)
+
+
+class _OutputMissing(Exception):  # noqa: N818
+    """The approved output is gone (outputs are never deleted; defensive)."""
+
 
 def claim_publication(request_id: UUID) -> RowMapping | None:
     now = clock.now()
@@ -406,9 +441,14 @@ def publish_approved(request_id: UUID) -> str:
         state = _create_in_catalog(claimed)
     except CatalogPublishRejected as exc:
         logger.error(
-            "catalog refused the publication", extra={"request_id": str(request_id), "reason": str(exc)[:300]}
+            "catalog refused the publication",
+            extra={"request_id": str(request_id), "code": exc.code, "detail": exc.detail[:300]},
         )
-        _fail(claimed, f"카탈로그가 공개를 거부했습니다: {exc}", None)
+        _fail(claimed, exc.code, None)
+        return "FAILED"
+    except _OutputMissing:
+        logger.error("the output to publish no longer exists", extra={"request_id": str(request_id)})
+        _fail(claimed, "OUTPUT_MISSING", None)
         return "FAILED"
     except (StorageUnavailable, ports.PortNotProvided, OperationalError, InterfaceError) as exc:
         return _retry(claimed, type(exc).__name__)
@@ -419,11 +459,7 @@ def publish_approved(request_id: UUID) -> str:
     if state.status == "PUBLISHED":
         _published(claimed, state.dataset_id)
     elif state.status == "FAILED":
-        _fail(
-            claimed,
-            "카탈로그 파일 검증에 실패했습니다. 산출물 파일을 확인한 뒤 다시 요청하세요.",
-            state.dataset_id,
-        )
+        _fail(claimed, "VERIFICATION_FAILED", state.dataset_id)
     else:
         _release(claimed["request_id"], published_dataset_id=state.dataset_id)
     return state.status
@@ -437,19 +473,16 @@ def _retry(req: RowMapping, error_type: str) -> str:
         extra={"request_id": str(req["request_id"]), "error_type": error_type, "failures": failures},
     )
     if failures >= MAX_FAILURES:
-        _fail(
-            req,
-            f"카탈로그 공개를 {failures}번 시도했지만 저장소·서비스 장애로 실패했습니다(attempts exhausted).",
-            None,
-        )
+        _fail(req, "ATTEMPTS_EXHAUSTED", None)
         return "FAILED"
     _release(req["request_id"], publication_failures=failures)
     return "RETRY"
 
 
-def _fail(req: RowMapping, reason: str, dataset_id: UUID | None) -> None:
+def _fail(req: RowMapping, code: str, dataset_id: UUID | None) -> None:
     """Terminal failure: the request and the output become REJECTED (the output may be requested again; the partial
-    unique index no longer holds the output), with the reason as failure_reason and a system decided event. Guarded:
+    unique index no longer holds the output), with the Korean sentence for `code` as failure_reason and a system
+    decided event. Guarded:
     only while the request is APPROVED with its publication PENDING under this worker's lease, so a worker that
     stalled past its lease cannot reject a request another worker has since published or re-leased."""
     now = clock.now()
@@ -458,7 +491,7 @@ def _fail(req: RowMapping, reason: str, dataset_id: UUID | None) -> None:
         "decided_at": now,
         "publication_claimed_until": None,
         "publication_status": "FAILED",
-        "publication_error": reason[:500],
+        "publication_error": failure_reason(code),
     }
     if dataset_id is not None:
         values["published_dataset_id"] = dataset_id
@@ -499,7 +532,7 @@ def _create_in_catalog(req: RowMapping) -> OutputDatasetState:
         files = repo.files_of(session, [output_id])[output_id]
         lineage = repo.lineage_of(session, [output_id])[output_id]
     if output is None:  # outputs are never deleted
-        raise CatalogPublishRejected("the output no longer exists")
+        raise _OutputMissing()
     dataset_ids = [i["dataset_id"] for i in lineage]
     level = max(output["access_level"], current_floor(deps, dataset_ids), key=STRICTNESS.index)
     return deps.publisher.create_dataset_from_output(

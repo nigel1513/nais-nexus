@@ -173,18 +173,27 @@ def test_output_file_problems_apply_the_upload_rules(api: CatalogApi) -> None:
 
 
 def test_rejects_files_that_break_the_upload_rules(api: CatalogApi, db: PgUrls) -> None:
-    with pytest.raises(CatalogPublishRejected):
+    with pytest.raises(CatalogPublishRejected) as refused:
         create([source("report.pdf", b"%PDF", media_type="application/pdf")])
+    assert refused.value.code == "FILE_TYPE_NOT_ALLOWED"
+    with pytest.raises(CatalogPublishRejected) as refused:
+        create([])
+    assert refused.value.code == "NO_FILES"
+    with pytest.raises(CatalogPublishRejected) as refused:
+        create([source("../x.csv", CSV)])
+    assert refused.value.code == "INVALID_PATH"
     assert rows(db, "SELECT 1 FROM catalog.datasets") == []
 
 
 def test_rejects_sources_outside_the_owner_storage(api: CatalogApi, db: PgUrls) -> None:
     src = source("result.csv", CSV, org="inst-a")
     put(api, src.storage_key, CSV, org="inst-a")
-    with pytest.raises(CatalogPublishRejected):
+    with pytest.raises(CatalogPublishRejected) as refused:
         create([src])
-    with pytest.raises(CatalogPublishRejected):
+    assert refused.value.code == "STORAGE_MISMATCH"
+    with pytest.raises(CatalogPublishRejected) as refused:
         create([source("result.csv", CSV)], owner_organization_id=ORG_A, publisher_organization_id=ORG_A)
+    assert refused.value.code == "STORAGE_MISMATCH"
     assert rows(db, "SELECT 1 FROM catalog.datasets") == []
 
 
@@ -200,8 +209,9 @@ def test_a_resume_with_a_stricter_level_is_refused(api: CatalogApi, db: PgUrls) 
     put(api, src.storage_key, CSV)
     dataset_id = new_id()
     assert create([src], dataset_id).status == "DRAFT"  # waiting for the verify worker
-    with pytest.raises(CatalogPublishRejected, match="stricter"):
+    with pytest.raises(CatalogPublishRejected, match="stricter") as refused:
         create([src], dataset_id, access_level="SENSITIVE")
+    assert refused.value.code == "ACCESS_LEVEL_TIGHTENED"
     assert (
         create([src], dataset_id, access_level="INTERNAL").status == "DRAFT"
     )  # looser is the caller's floor issue
@@ -219,5 +229,16 @@ def test_a_withdrawn_v1_is_not_reported_published(api: CatalogApi, db: PgUrls) -
         "UPDATE catalog.dataset_versions SET status = 'WITHDRAWN' WHERE dataset_version_id = :v",
         v=state.dataset_version_id,
     )
-    with pytest.raises(CatalogPublishRejected):
+    with pytest.raises(CatalogPublishRejected) as refused:
         create([src], dataset_id)
+    assert refused.value.code == "VERSION_UNAVAILABLE"
+
+
+def test_rejection_codes_are_a_closed_set() -> None:
+    from api.modules.catalog.public import PUBLISH_REJECTION_CODES
+
+    assert CatalogPublishRejected("NO_FILES", "x").code == "NO_FILES"
+    assert str(CatalogPublishRejected("NO_FILES", "x")) == "NO_FILES: x"
+    with pytest.raises(ValueError, match="unknown"):
+        CatalogPublishRejected("files")
+    assert "DATASET_ID_CONFLICT" in PUBLISH_REJECTION_CODES

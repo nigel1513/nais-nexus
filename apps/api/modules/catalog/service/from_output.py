@@ -62,6 +62,16 @@ CHANGE_NOTE = "프로젝트 산출물에서 공개"
 DERIVED_LICENSE = "원본 데이터셋의 라이선스를 따름 (파생 데이터)"
 
 
+_FILE_PROBLEM_CODES = frozenset(
+    {"NO_FILES", "TOO_MANY_FILES", "FILE_TYPE_NOT_ALLOWED", "FILE_TOO_LARGE", "EMPTY_FILE"}
+)
+
+
+def _problem_code(reason: str) -> str:
+    """output_file_problems reason -> CatalogPublishRejected code (path reasons and duplicates are INVALID_PATH)."""
+    return reason if reason in _FILE_PROBLEM_CODES else "INVALID_PATH"
+
+
 class CatalogOutputPublisher:
     def __init__(self, deps: CatalogDeps) -> None:
         self._deps = deps
@@ -108,16 +118,22 @@ class CatalogOutputPublisher:
         deps = self._deps
         problems = self.output_file_problems(files)
         if problems:
-            raise CatalogPublishRejected(f"files break the catalog upload rules: {problems}")
+            raise CatalogPublishRejected(
+                _problem_code(problems[0]["reason"]), f"files break the catalog upload rules: {problems}"
+            )
         org = deps.organizations.get_organization_summary(owner_organization_id)
         if org is None or not deps.storage.is_configured(org.code):
-            raise CatalogPublishRejected("the owner organization has no storage configured")
+            raise CatalogPublishRejected(
+                "STORAGE_NOT_CONFIGURED", "the owner organization has no storage configured"
+            )
         if any(f.storage_org_code != org.code for f in files):
-            raise CatalogPublishRejected("the output objects are not in the owner organization's storage")
+            raise CatalogPublishRejected(
+                "STORAGE_MISMATCH", "the output objects are not in the owner organization's storage"
+            )
         try:
             policy = build_policy(access_level, allowed_purposes, None)
         except InvalidPolicy as exc:
-            raise CatalogPublishRejected(str(exc)) from exc
+            raise CatalogPublishRejected("INVALID_POLICY", str(exc)) from exc
         actor = EventActor(type="USER", user_id=published_by, organization_id=publisher_organization_id)
         sources = {f.path: f for f in files}
         try:
@@ -141,11 +157,13 @@ class CatalogOutputPublisher:
                 self._verify(self._copy_pending(store, version_id, sources))
                 return self._publish_if_ready(dataset_id, version_id, published_by, actor)
             if version["status"] != "PUBLISHED":
-                raise CatalogPublishRejected(f"version {VERSION_LABEL} is {version['status']}")
+                raise CatalogPublishRejected(
+                    "VERSION_UNAVAILABLE", f"version {VERSION_LABEL} is {version['status']}"
+                )
         except InternalStorageUnavailable as exc:
             raise StorageUnavailable(str(exc)) from exc
         except StorageNotConfigured as exc:
-            raise CatalogPublishRejected(str(exc)) from exc
+            raise CatalogPublishRejected("STORAGE_NOT_CONFIGURED", str(exc)) from exc
         return OutputDatasetState(dataset_id, version_id, "PUBLISHED")
 
     def _ensure_draft(
@@ -177,13 +195,16 @@ class CatalogOutputPublisher:
                 .first()
             )
             if ds["owner_organization_id"] != owner or version is None:
-                raise CatalogPublishRejected("dataset_id is already used by another dataset")
+                raise CatalogPublishRejected(
+                    "DATASET_ID_CONFLICT", "dataset_id is already used by another dataset"
+                )
             stricter = ACCESS_LEVELS.index(policy_args.access_level) > ACCESS_LEVELS.index(ds["access_level"])
             if version["status"] == "DRAFT" and stricter:
                 # an input was tightened since the dataset was created: v1 may not publish at the older level
                 raise CatalogPublishRejected(
+                    "ACCESS_LEVEL_TIGHTENED",
                     f"the required access level {policy_args.access_level} is stricter than the dataset's"
-                    f" {ds['access_level']}"
+                    f" {ds['access_level']}",
                 )
             return version
         insert_dataset(
@@ -274,7 +295,9 @@ class CatalogOutputPublisher:
         for f in pending:
             source = sources.get(f["path"])
             if source is None:
-                raise CatalogPublishRejected("the files differ from the ones the dataset was created with")
+                raise CatalogPublishRejected(
+                    "FILES_CHANGED", "the files differ from the ones the dataset was created with"
+                )
             status, failure = _copy(store, source.storage_key, f)
             with self._deps.session_factory() as session, session.begin():
                 _lock_version(session, version_id)
@@ -333,7 +356,7 @@ class CatalogOutputPublisher:
             ds = must(load_dataset(session, dataset_id, for_update=True), "dataset")
             if ds["status"] != "ACTIVE":
                 raise CatalogPublishRejected(
-                    "the dataset was withdrawn before its first version was published"
+                    "DATASET_WITHDRAWN", "the dataset was withdrawn before its first version was published"
                 )
             finalize_publish(
                 session, ds=ds, version=version, published_by=published_by, actor=actor, deps=deps

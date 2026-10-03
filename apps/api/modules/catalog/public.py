@@ -87,9 +87,39 @@ class StorageUnavailable(RuntimeError):  # noqa: N818
     """CatalogReadPort.open_stream: connection refused, timeout or 5xx. Retryable (M05 retries the run)."""
 
 
+# Why CatalogPublishPort refused a publication for good (CatalogPublishRejected.code). Callers show their own sentence
+# per code; the English detail is for logs only.
+PUBLISH_REJECTION_CODES: frozenset[str] = frozenset(
+    {
+        "NO_FILES",  # the output has no file
+        "TOO_MANY_FILES",
+        "FILE_TYPE_NOT_ALLOWED",
+        "FILE_TOO_LARGE",
+        "EMPTY_FILE",
+        "INVALID_PATH",  # an unsafe or duplicate manifest path
+        "STORAGE_NOT_CONFIGURED",  # the owner organization has no storage
+        "STORAGE_MISMATCH",  # the source objects are outside the owner's storage
+        "INVALID_POLICY",
+        "DATASET_ID_CONFLICT",  # dataset_id is already used by another dataset
+        "ACCESS_LEVEL_TIGHTENED",  # a resume asks for a stricter level than the draft dataset's
+        "VERSION_UNAVAILABLE",  # v1 is neither DRAFT nor PUBLISHED (withdrawn)
+        "FILES_CHANGED",  # the files differ from the ones the dataset was created with
+        "DATASET_WITHDRAWN",  # the dataset was withdrawn before v1 was published
+    }
+)
+
+
 class CatalogPublishRejected(ValueError):  # noqa: N818
     """CatalogPublishPort: the request can never succeed as given (files break the upload rules, the owner organization
-    has no storage, the source objects are outside the owner's storage, or dataset_id is already used otherwise)."""
+    has no storage, the source objects are outside the owner's storage, or dataset_id is already used otherwise).
+    `code` is one of PUBLISH_REJECTION_CODES; `detail` is English for logs."""
+
+    def __init__(self, code: str, detail: str = "") -> None:
+        if code not in PUBLISH_REJECTION_CODES:
+            raise ValueError(f"unknown publish rejection code {code!r}")
+        super().__init__(f"{code}: {detail}" if detail else code)
+        self.code = code
+        self.detail = detail
 
 
 @dataclass(frozen=True)
@@ -187,6 +217,7 @@ __all__ = [
     "CatalogNotFound",
     "CatalogPublishPort",
     "CatalogPublishRejected",
+    "PUBLISH_REJECTION_CODES",
     "CatalogQueryPort",
     "CatalogReadPort",
     "DatasetPolicyView",

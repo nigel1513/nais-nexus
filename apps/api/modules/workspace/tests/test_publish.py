@@ -6,6 +6,7 @@ the requester; any REJECT rejects, all APPROVE approves and the catalog dataset 
 
 import hashlib
 import json
+import re
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -614,10 +615,12 @@ def test_catalog_refusal_rejects_the_request_and_allows_a_new_one(
     api: WorkspaceApi, setup: Setup, world: World, db: PgUrls
 ) -> None:
     out, req = approved(api, setup, world)
-    world.publisher.fail_with = CatalogPublishRejected("the owner organization has no storage configured")
+    world.publisher.fail_with = CatalogPublishRejected(
+        "STORAGE_NOT_CONFIGURED", "the owner organization has no storage configured"
+    )
     assert publish_service.publish_approved(UUID(req["request_id"])) == "FAILED"
     reason = assert_failed(api, setup, db, out, req)
-    assert "storage" in reason
+    assert reason == "주관기관의 저장소가 설정되지 않아 공개할 수 없습니다. 관리자에게 문의해 주세요."
     world.publisher.fail_with = None
     again = request(api, setup.project_id, out["output_id"])
     assert again.status_code == 201, again.text
@@ -658,7 +661,9 @@ def test_repeated_retryable_failures_end_in_rejection(
     assert output_status(api, setup.project_id, out["output_id"]) == "APPROVED"
     with clock.frozen(at):
         assert publish_service.publish_approved(UUID(req["request_id"])) == "FAILED"
-    assert "attempts" in assert_failed(api, setup, db, out, req)
+    assert assert_failed(api, setup, db, out, req) == (
+        "저장소나 서비스 장애로 카탈로그 공개를 5번 시도했지만 실패했습니다. 잠시 후 다시 요청해 주세요."
+    )
 
 
 def decided_events(db: PgUrls) -> list[dict[str, Any]]:
@@ -676,7 +681,7 @@ def test_a_stale_worker_cannot_reject_a_published_request(
     with clock.frozen(T + publish_service.LEASE + timedelta(minutes=1)):
         assert publish_service.publish_approved(request_id) == "PUBLISHED"
     before = len(decided_events(db))
-    publish_service._fail(stale, "late failure from the stalled worker", None)
+    publish_service._fail(stale, "VERIFICATION_FAILED", None)
     assert output_status(api, setup.project_id, out["output_id"]) == "PUBLISHED"
     [listed] = api.get("a.researcher", "/publish-requests").json()["items"]
     assert (listed["status"], listed["failure_reason"]) == ("APPROVED", None)
@@ -696,7 +701,7 @@ def test_a_stale_worker_cannot_reject_a_publication_leased_by_another(
         )  # the lease expired; another worker holds it now
     assert stale is not None and fresh is not None
     before = len(decided_events(db))
-    publish_service._fail(stale, "late failure from the stalled worker", None)
+    publish_service._fail(stale, "VERIFICATION_FAILED", None)
     [row] = sql(
         db, "SELECT status, publication_status, publication_claimed_until FROM workspace.publish_requests"
     )
@@ -704,8 +709,55 @@ def test_a_stale_worker_cannot_reject_a_publication_leased_by_another(
     assert row["publication_claimed_until"] == fresh["publication_claimed_until"]
     assert output_status(api, setup.project_id, out["output_id"]) == "APPROVED"
     assert len(decided_events(db)) == before
-    publish_service._fail(fresh, "카탈로그가 공개를 거부했습니다: the lease holder fails", None)
-    assert assert_failed(api, setup, db, out, req).endswith("the lease holder fails")
+    publish_service._fail(fresh, "FILES_CHANGED", None)
+    assert (
+        assert_failed(api, setup, db, out, req)
+        == "산출물 파일이 공개를 처음 시작할 때와 달라졌습니다. 다시 요청해 주세요."
+    )
+
+
+_ENGLISH = re.compile(r"[A-Za-z]{2,}")
+
+
+def test_every_rejection_cause_has_a_fixed_korean_sentence() -> None:
+    from api.modules.catalog.public import PUBLISH_REJECTION_CODES
+
+    codes = set(PUBLISH_REJECTION_CODES) | {"OUTPUT_MISSING", "VERIFICATION_FAILED", "ATTEMPTS_EXHAUSTED"}
+    assert set(publish_service.FAILURE_REASONS) == codes
+    for code in codes:
+        sentence = publish_service.failure_reason(code)
+        assert sentence and not _ENGLISH.search(sentence), code
+    assert publish_service.failure_reason("SOMETHING_NEW") == "카탈로그가 공개를 거부했습니다."
+
+
+@pytest.mark.parametrize(
+    ("code", "reason"),
+    [
+        ("FILE_TYPE_NOT_ALLOWED", "카탈로그에 올릴 수 없는 형식의 파일이 있습니다."),
+        ("NO_FILES", "산출물에 공개할 파일이 없습니다."),
+        (
+            "ACCESS_LEVEL_TIGHTENED",
+            "입력 데이터의 공개 수준이 더 엄격해져 처음 정한 수준으로는 공개할 수 없습니다. 다시 요청해 주세요.",
+        ),
+    ],
+)
+def test_catalog_refusal_reason_is_korean_only(
+    api: WorkspaceApi,
+    setup: Setup,
+    world: World,
+    db: PgUrls,
+    code: str,
+    reason: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    out, req = approved(api, setup, world)
+    world.publisher.fail_with = CatalogPublishRejected(code, "English detail for the log")
+    with caplog.at_level("ERROR", logger="nais.workspace"):
+        assert publish_service.publish_approved(UUID(req["request_id"])) == "FAILED"
+    stored = assert_failed(api, setup, db, out, req)
+    assert stored == reason and not _ENGLISH.search(stored)
+    [record] = [r for r in caplog.records if r.getMessage() == "catalog refused the publication"]
+    assert record.code == code and record.detail == "English detail for the log"  # type: ignore[attr-defined]
 
 
 def test_publication_never_loosens_the_inputs_current_level(

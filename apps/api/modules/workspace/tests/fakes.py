@@ -334,7 +334,7 @@ class FakePublisher:
         if self.fail_with is not None:
             raise self.fail_with
         if self.output_file_problems(kwargs["files"]):
-            raise CatalogPublishRejected("files")
+            raise CatalogPublishRejected("FILE_TYPE_NOT_ALLOWED", "files")
         return OutputDatasetState(kwargs["dataset_id"], VERSION_ID, self.status)
 
 
