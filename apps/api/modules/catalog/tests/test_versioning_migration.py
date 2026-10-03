@@ -86,6 +86,50 @@ def test_published_lineage_is_frozen(db: PgUrls) -> None:
     )
 
 
+@pytest.mark.parametrize("column", ["base_version_id", "source_version_id", "previous_version_id"])
+def test_published_base_and_source_are_frozen(db: PgUrls, column: str) -> None:
+    ds = insert_dataset(db)
+    v1 = insert_version(db, ds, label="v1", published=True)
+    v2 = insert_version(db, ds, label="v2", published=True)
+    with pytest.raises(DBAPIError, match="immutable"):
+        execute(
+            db, f"UPDATE catalog.dataset_versions SET {column} = :p WHERE dataset_version_id = :v", p=v1, v=v2
+        )
+    with pytest.raises(DBAPIError, match="immutable"):  # nor in the same UPDATE as a withdrawal
+        execute(
+            db,
+            f"UPDATE catalog.dataset_versions SET status = 'WITHDRAWN', {column} = :p WHERE dataset_version_id = :v",
+            p=v1,
+            v=v2,
+        )
+
+
+def test_publishing_a_draft_may_set_previous_version(db: PgUrls) -> None:
+    """DRAFT -> PUBLISHED is the one transition that records lineage (Task 5 sets previous_version_id)."""
+    ds = insert_dataset(db)
+    v1 = insert_version(db, ds, label="v1", published=True)
+    draft = insert_version(db, ds, label="v2")
+    assert (
+        execute(
+            db,
+            "UPDATE catalog.dataset_versions SET status = 'PUBLISHED', published_at = now(), published_by = :d,"
+            " metadata_snapshot = '{}'::jsonb, manifest_sha256 = :m, file_count = 0, total_bytes = 0,"
+            " base_version_id = :p, previous_version_id = :p WHERE dataset_version_id = :v",
+            d=ds,
+            m="0" * 64,
+            p=v1,
+            v=draft,
+        )
+        == 1
+    )
+    [row] = rows(
+        db,
+        "SELECT status, previous_version_id FROM catalog.dataset_versions WHERE dataset_version_id = :v",
+        v=draft,
+    )
+    assert (row["status"], row["previous_version_id"]) == ("PUBLISHED", UUID(str(v1)))
+
+
 def test_draft_lineage_is_editable(db: PgUrls) -> None:
     ds = insert_dataset(db)
     v1 = insert_version(db, ds, label="v1", published=True)

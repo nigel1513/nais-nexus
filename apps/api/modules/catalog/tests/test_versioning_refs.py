@@ -13,7 +13,12 @@ from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import execute, insert_dataset, insert_version, rows
 from api.modules.catalog.tests.support_api import CatalogApi, new_draft
 from api.modules.catalog.tests.support_upload import complete, put_uploaded, start_upload, upload_files
-from api.modules.catalog.versioning.refs import InheritanceViolation, release_objects, require_inheritable
+from api.modules.catalog.versioning.refs import (
+    InheritanceViolation,
+    IsolationViolation,
+    release_objects,
+    require_inheritable,
+)
 from api.platform.db import session_factory
 from api.platform.ids import new_id
 from api.platform.testing.fixtures import PgUrls
@@ -156,11 +161,16 @@ def test_concurrent_releases_of_one_object_serialize(db: PgUrls, api: CatalogApi
         id=twin,
         f=row["file_id"],
     )
-    results: list[int] = []
+    # T1 deletes its row and releases (sees the twin: keeps the object), then stays open holding the object lock.
+    # T2 deletes the twin and must block in release_objects until T1 commits; it then sees zero references.
+    # Without the lock T2 would not block and, still seeing T1's uncommitted-deleted row, would also keep the
+    # object: [0, 0] and a leaked object.
+    results: dict[str, int] = {}
     errors: list[BaseException] = []
-    barrier = threading.Barrier(2)
+    t1_released = threading.Event()
+    t1_may_commit = threading.Event()
 
-    def remove(file_id: UUID) -> None:
+    def remove(name: str, file_id: UUID) -> None:
         try:
             with session_factory(db.app)() as session, session.begin():
                 [old] = (
@@ -171,18 +181,42 @@ def test_concurrent_releases_of_one_object_serialize(db: PgUrls, api: CatalogApi
                     .all()
                 )
                 session.execute(text("DELETE FROM catalog.dataset_files WHERE file_id = :f"), {"f": file_id})
-                barrier.wait(10)  # both deletes are in flight, neither committed
-                results.append(len(release_objects(session, [old])))
+                results[name] = len(release_objects(session, [old]))
+                if name == "t1":
+                    t1_released.set()
+                    assert t1_may_commit.wait(20)
         except BaseException as exc:  # surfaced below; a thread exception would otherwise be lost
             errors.append(exc)
+            t1_released.set()
 
-    threads = [threading.Thread(target=remove, args=(fid,)) for fid in (row["file_id"], twin)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(20)
+    t1 = threading.Thread(target=remove, args=("t1", row["file_id"]))
+    t1.start()
+    assert t1_released.wait(20)
+    t2 = threading.Thread(target=remove, args=("t2", twin))
+    t2.start()
+    t2.join(1.0)
+    blocked = t2.is_alive() and "t2" not in results  # waiting on T1's object lock
+    t1_may_commit.set()
+    t1.join(20)
+    t2.join(20)
     assert errors == []
-    assert sorted(results) == [0, 1]
+    assert blocked, "T2 finished its reference check while T1 held the object lock"
+    assert results == {"t1": 0, "t2": 1}
+
+
+def test_release_objects_requires_read_committed(db: PgUrls, api: CatalogApi) -> None:
+    """Protocol (g): the post-lock reference check needs a fresh snapshot per statement."""
+    _, version_id = new_draft(api)
+    upload_files(api, db, version_id, DATA)
+    [row] = rows(db, "SELECT * FROM catalog.dataset_files WHERE dataset_version_id = :v", v=version_id)
+    for level in ("REPEATABLE READ", "SERIALIZABLE"):
+        with session_factory(db.app)() as session, session.begin():
+            session.connection(execution_options={"isolation_level": level})
+            with pytest.raises(IsolationViolation, match=level.lower()):
+                release_objects(session, [row])
+            session.rollback()
+    with session_factory(db.app)() as session, session.begin():
+        assert release_objects(session, [row]) == []  # READ COMMITTED (default); the row still exists
 
 
 def test_require_inheritable_accepts_published_rows_of_the_same_dataset(db: PgUrls, api: CatalogApi) -> None:

@@ -79,9 +79,24 @@ def lock_objects(session: Session, objects: Iterable[tuple[str, str]]) -> None:
         )
 
 
+class IsolationViolation(RuntimeError):
+    """`release_objects` ran in a transaction that is not READ COMMITTED (a programming error)."""
+
+
+def require_read_committed(session: Session) -> None:
+    """Shared-object protocol (g): the reference check after the advisory lock must see rows committed by the
+    transaction that held the lock before us. Under REPEATABLE READ / SERIALIZABLE the snapshot is taken at the
+    first statement, so a concurrent last-reference delete would stay invisible and the object would leak (or,
+    worse, two releasers would both see the other's row)."""
+    level: str = session.execute(text("SHOW transaction_isolation")).scalar_one()
+    if level != "read committed":
+        raise IsolationViolation(f"release_objects needs READ COMMITTED, the transaction runs at {level}")
+
+
 def release_objects(session: Session, old_rows: Sequence[Mapping[Any, Any]]) -> list[StorageCleanup]:
-    """Call after `old_rows` were deleted or re-pointed in this transaction. Returns the cleanups (to run after
-    commit) for objects that no row references any more; a still-shared object is kept."""
+    """Call after `old_rows` were deleted or re-pointed in this transaction, exactly once and last. Returns the
+    cleanups (to run after commit) for objects that no row references any more; a still-shared object is kept."""
+    require_read_committed(session)
     by_object = {(r["storage_bucket"], r["storage_key"]): r for r in old_rows}
     lock_objects(session, by_object)
     cleanups: list[StorageCleanup] = []
