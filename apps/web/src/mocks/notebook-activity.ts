@@ -116,10 +116,11 @@ export function resetBridge() {
   state().drafts.clear();
 }
 
-async function internalCall<T>(cfg: BridgeConfig, path: string, init: RequestInit, timeoutMs: number): Promise<T> {
+/** One call to the api's /api/v1/internal/{path} with the shared token. Throws BridgeError. */
+export async function internalCall<T>(cfg: BridgeConfig, path: string, init: RequestInit, timeoutMs: number): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(`${cfg.url}/api/v1/internal/notes/${path}`, {
+    res = await fetch(`${cfg.url}/api/v1/internal/${path}`, {
       ...init,
       headers: { "content-type": "application/json", ...init.headers, "X-NAIS-Internal-Token": cfg.token },
       signal: AbortSignal.timeout(timeoutMs),
@@ -150,7 +151,7 @@ async function internalCall<T>(cfg: BridgeConfig, path: string, init: RequestIni
 /** GET /internal/notes/notebook-activity (listings only): the number of notebooks saved that day. Throws BridgeError. */
 export async function fetchNotebookCount(cfg: BridgeConfig, userId: string, projectId: string, day: string, timeoutMs = COUNT_TIMEOUT_MS): Promise<number> {
   const q = new URLSearchParams({ user_id: userId, project_id: projectId, day });
-  const body = await internalCall<Schemas["InternalNotebookActivity"]>(cfg, `notebook-activity?${q}`, { method: "GET" }, timeoutMs);
+  const body = await internalCall<Schemas["InternalNotebookActivity"]>(cfg, `notes/notebook-activity?${q}`, { method: "GET" }, timeoutMs);
   if (!Number.isInteger(body?.count) || body.count < 0) throw new BridgeError("DEPENDENCY_UNAVAILABLE");
   const count = body.count;
   state().counts.set(countKey(userId, projectId, day), { value: count, at: Date.now() });
@@ -191,7 +192,7 @@ export function notebookRefId(userId: string, projectId: string, label: string):
 /** POST /internal/notes/draft-sections → sentences in template order, each citing its notebook cells as NOTEBOOK evidence. Throws BridgeError. */
 export async function fetchDraftSentences(cfg: BridgeConfig, req: { userId: string; projectId: string; day: string; projectName: string }, timeoutMs = DRAFT_TIMEOUT_MS): Promise<Sentence[]> {
   const payload: Schemas["InternalDraftSectionsRequest"] = { user_id: req.userId, project_id: req.projectId, day: req.day, project_name: req.projectName.slice(0, 200) };
-  const body = await internalCall<Schemas["InternalDraftSections"]>(cfg, "draft-sections", { method: "POST", body: JSON.stringify(payload) }, timeoutMs);
+  const body = await internalCall<Schemas["InternalDraftSections"]>(cfg, "notes/draft-sections", { method: "POST", body: JSON.stringify(payload) }, timeoutMs);
   const sections = body?.sections;
   if (!sections || typeof sections !== "object") throw new BridgeError("LLM_UNAVAILABLE");
   const out: Sentence[] = [];

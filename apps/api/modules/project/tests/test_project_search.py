@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
 from api.modules.catalog.tests.fixtures_search import opensearch_url  # noqa: F401
 from api.modules.project.identity_fake import FakeIdentityQueryPort
@@ -32,7 +33,8 @@ class ConceptEmbedder:
             axis = next(
                 (i for i, words in enumerate(self.CONCEPTS) if any(word in lowered for word in words)),
                 # Anything else is its own direction: unrelated to every other text.
-                len(self.CONCEPTS) + zlib.crc32(lowered.encode()) % (EMBEDDING_DIMENSION - len(self.CONCEPTS)),
+                len(self.CONCEPTS)
+                + zlib.crc32(lowered.encode()) % (EMBEDDING_DIMENSION - len(self.CONCEPTS)),
             )
             vector[axis] = 1.0
             vectors.append(vector)
@@ -47,7 +49,9 @@ def search(api: ProjectApi, opensearch_url: str) -> Iterator[ProjectSearch]:  # 
     ports.provide(ProjectSearchSlot, ProjectSearchSlot(project_search))
     yield project_search
     ports.provide(ProjectSearchSlot, ProjectSearchSlot(None))
-    listed = httpx.get(f"{opensearch_url}/_cat/indices/{index.alias}-v*", params={"format": "json"}, timeout=10)
+    listed = httpx.get(
+        f"{opensearch_url}/_cat/indices/{index.alias}-v*", params={"format": "json"}, timeout=10
+    )
     for item in listed.json() if listed.status_code == 200 else []:
         httpx.delete(f"{opensearch_url}/{item['index']}", timeout=10)
 
@@ -145,3 +149,52 @@ def test_discover_search_falls_back_to_names_when_the_index_is_down(
         assert discover(api, "solar") == ["Open Solar Study"]
     finally:
         ports.provide(ProjectSearchSlot, ProjectSearchSlot(None))
+
+
+TOKEN = {"X-NAIS-Internal-Token": "s3cret"}
+
+
+def demo_project(name: str) -> dict[str, object]:
+    return {
+        "project_id": str(uuid.uuid4()),
+        "name": name,
+        "lead_organization_id": str(uuid.uuid4()),
+        "lead_organization_name": "한국에너지기술연구원",
+        "member_count": 3,
+        "updated_at": "2026-10-01T00:00:00+00:00",
+    }
+
+
+def test_internal_demo_projects_are_searched_through_their_own_index(
+    app: FastAPI, api: ProjectApi, search: ProjectSearch
+) -> None:
+    from api.modules.project.settings import ProjectSettings, get_project_settings
+
+    client = api.client
+    fuel, climate = demo_project("연료전지 스택 공동연구"), demo_project("기후 관측 자료 정비")
+    body = {"documents": [fuel, climate]}
+    # Without NAIS_INTERNAL_TOKEN the endpoints do not exist; with it, the header is required.
+    assert client.put("/api/v1/internal/demo/projects", json=body, headers=TOKEN).status_code == 404
+    app.dependency_overrides[get_project_settings] = lambda: ProjectSettings(nais_internal_token="s3cret")
+    assert client.put("/api/v1/internal/demo/projects", json=body).status_code == 403
+    assert client.put("/api/v1/internal/demo/projects", content=b"{").status_code == 403
+
+    ports.provide(ProjectSearchSlot, ProjectSearchSlot(None, search))
+    response = client.put("/api/v1/internal/demo/projects", json=body, headers=TOKEN)
+    assert response.status_code == 200, response.text
+    assert response.json() == {"indexed": 2, "removed": 0}
+    assert_matches_response("syncDemoProjects", 200, response.json())
+
+    def find(q: str) -> list[str]:
+        found = client.post("/api/v1/internal/demo/projects/search", json={"q": q}, headers=TOKEN)
+        assert found.status_code == 200, found.text
+        assert_matches_response("searchDemoProjects", 200, found.json())
+        ids: list[str] = found.json()["project_ids"]
+        return ids
+
+    assert find("스택") == [fuel["project_id"]]
+    assert find("fuel cell") == [fuel["project_id"]]
+    assert find("에너지기술연구원") != []
+    replaced = client.put("/api/v1/internal/demo/projects", json={"documents": [climate]}, headers=TOKEN)
+    assert replaced.json() == {"indexed": 1, "removed": 1}
+    assert find("fuel cell") == [] and find("climate") == [climate["project_id"]]

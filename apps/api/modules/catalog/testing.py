@@ -187,3 +187,6 @@ class RecordingSearchIndex:
 
     def supports_vectors(self, index: str | None = None) -> bool:
         return True
+
+    def document_ids(self) -> list[str]:
+        return sorted(self.docs)

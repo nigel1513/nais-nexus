@@ -3,10 +3,9 @@
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
-from api.platform.auth import CurrentUser
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
 from api.platform.pagination import decode_cursor, encode_cursor
@@ -117,7 +116,16 @@ def decode_search_cursor(cursor: str, sort_name: str) -> list[Any]:
     return values[1:]
 
 
-def visibility_filter(user: CurrentUser) -> dict[str, Any]:
+class Viewer(Protocol):
+    """Who is searching: CurrentUser, or the demo viewer of the mock-mode web server."""
+
+    @property
+    def organization_id(self) -> UUID: ...
+    @property
+    def is_platform_admin(self) -> bool: ...
+
+
+def visibility_filter(user: Viewer) -> dict[str, Any]:
     """Same rule as access.can_see_dataset, restricted to ACTIVE datasets (status is filtered separately)."""
     if user.is_platform_admin:
         return {"match_all": {}}
@@ -172,7 +180,7 @@ def text_query(q: str, fields: list[str], vector: list[float] | None, min_score:
 
 
 def build_search_body(
-    user: CurrentUser,
+    user: Viewer,
     params: SearchParams,
     sort_name: str,
     search_after: list[Any] | None,

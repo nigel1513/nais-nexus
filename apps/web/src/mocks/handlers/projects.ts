@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import type { Schemas } from "@/shared/api/types";
+import { searchProjectsBridged } from "../search-bridge";
 import { getDb } from "../db";
 import { API, body, currentUser, fail, newestFirst, newId, notify, nowIso, orgName, paginate, recordAudit, validationFailed } from "../http";
 import { canManageMember, dropsAnOwner } from "../roles";
@@ -70,22 +71,44 @@ function validateProjectFields(input: Partial<Schemas["ProjectCreate"]> | Schema
 }
 
 export const projectHandlers = [
-  http.get(`${API}/projects`, ({ request }) => {
+  http.get(`${API}/projects`, async ({ request }) => {
     const user = currentUser(request);
     const db = getDb();
     const url = new URL(request.url);
     const scope = url.searchParams.get("scope") ?? "mine";
     const status = url.searchParams.get("status");
-    const q = (url.searchParams.get("q") ?? "").toLowerCase();
+    const q = (url.searchParams.get("q") ?? "").trim().toLowerCase();
+    // Public projects: a text search goes to the real search engine when the api is there (search-bridge.ts), over
+    // the public summary fields only (name, lead organization). My projects, or no api: the name contains the text.
+    const ranked =
+      scope === "discover" && q
+        ? await searchProjectsBridged(
+            () =>
+              db.projects
+                .filter((p) => p.visibility === "PUBLIC" && p.status === "ACTIVE")
+                .map((p) => ({
+                  project_id: p.project_id,
+                  name: p.name,
+                  lead_organization_id: p.lead_organization_id,
+                  lead_organization_name: orgName(db, p.lead_organization_id),
+                  member_count: projectView(db, p, user.user_id).member_count ?? 0,
+                  updated_at: p.updated_at ?? p.created_at,
+                })),
+            q,
+            100,
+          )
+        : null;
+    const rank = ranked ? new Map(ranked.map((id, i) => [id, i])) : null;
     const items = db.projects
       .filter((p) => (scope === "discover" ? p.visibility === "PUBLIC" && p.status === "ACTIVE" : !!memberOf(db, p.project_id, user.user_id)))
       .filter((p) => !status || p.status === status)
-      .filter((p) => !q || p.name.toLowerCase().includes(q))
+      .filter((p) => (rank ? rank.has(p.project_id) : !q || p.name.toLowerCase().includes(q)))
       .map((p) => projectView(db, p, user.user_id))
       .map(({ project_id, name, status: s, visibility, lead_organization_id, my_role, member_count, updated_at }) => ({
         project_id, name, status: s, visibility, lead_organization_id, lead_organization_name: orgName(db, lead_organization_id), my_role, member_count, updated_at,
       }))
       .sort(newestFirst("updated_at"));
+    if (rank) items.sort((a, b) => rank.get(a.project_id)! - rank.get(b.project_id)!); // best match first
     return HttpResponse.json(paginate(items, url));
   }),
 

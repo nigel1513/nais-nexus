@@ -1739,6 +1739,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/internal/demo/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * @description Demo catalogue search for the web server's mock mode: makes the demo dataset index (alias nais-demo-datasets, never the real nais-datasets) equal
+         *     to the given documents. A document has the fields of a search index document (dataset_id, title, status, access_level,
+         *     owner_organization_id required); the api adds the embedding. Unknown or missing fields -> 422. Token rule as getInternalNotebookActivity.
+         *     Index not configured or unreachable -> 503 DEPENDENCY_UNAVAILABLE.
+         */
+        put: operations["syncDemoDatasets"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/demo/datasets/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * @description searchDatasets over the demo dataset index for the given viewer: the same query (BM25 + k-NN over the bge-m3 embedding), filters, facets,
+         *     visibility rule (D-012) and paging. Vocabulary facet labels are omitted (the caller labels them). Token rule as getInternalNotebookActivity.
+         */
+        post: operations["searchDemoDatasets"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/demo/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * @description Makes the demo project index (alias nais-demo-projects, never the real nais-projects) equal to the given public project summaries; the api adds
+         *     the embedding. Token rule as getInternalNotebookActivity. Index not configured or unreachable -> 503 DEPENDENCY_UNAVAILABLE.
+         */
+        put: operations["syncDemoProjects"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/internal/demo/projects/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Ids of the demo projects that match q by words (BM25) or by meaning (k-NN), best first. Token rule as getInternalNotebookActivity. */
+        post: operations["searchDemoProjects"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -3020,6 +3099,63 @@ export interface components {
             saved_at: components["schemas"]["Timestamp"];
             /** @description null unless detail=true */
             cell_count: number | null;
+        };
+        InternalDemoDatasetsRequest: {
+            documents: {
+                [key: string]: unknown;
+            }[];
+        };
+        InternalDemoSyncResult: {
+            indexed: number;
+            removed: number;
+        };
+        InternalDemoDatasetSearchRequest: {
+            viewer: {
+                organization_id: components["schemas"]["Id"];
+                /** @default false */
+                platform_admin: boolean;
+            };
+            q?: string | null;
+            access_level?: components["schemas"]["AccessLevel"][];
+            owner_organization_id?: components["schemas"]["Id"][];
+            purpose?: components["schemas"]["Purpose"][];
+            keyword?: string[];
+            readiness_status?: ("PASS" | "WARNING" | "FAIL")[];
+            subject?: string[];
+            material?: string[];
+            method?: string[];
+            collecting_organization_id?: components["schemas"]["Id"][];
+            principal_investigator_id?: components["schemas"]["Id"] | null;
+            /** Format: date */
+            temporal_from?: string | null;
+            /** Format: date */
+            temporal_to?: string | null;
+            /**
+             * @default relevance
+             * @enum {string}
+             */
+            sort: "relevance" | "updated_desc" | "title_asc";
+            cursor?: string | null;
+            /** @default 20 */
+            limit: number;
+        };
+        InternalDemoProjectsRequest: {
+            documents: {
+                project_id: components["schemas"]["Id"];
+                name: string;
+                lead_organization_id: components["schemas"]["Id"];
+                lead_organization_name?: string;
+                member_count?: number;
+                updated_at: components["schemas"]["Timestamp"];
+            }[];
+        };
+        InternalDemoProjectSearchRequest: {
+            q: string;
+            /** @default 20 */
+            limit: number;
+        };
+        InternalDemoProjectSearchResult: {
+            project_ids: components["schemas"]["Id"][];
         };
         InternalDraftSectionsRequest: {
             user_id: components["schemas"]["Id"];
@@ -6374,6 +6510,118 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["InternalDraftSections"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    syncDemoDatasets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalDemoDatasetsRequest"];
+            };
+        };
+        responses: {
+            /** @description What was written */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalDemoSyncResult"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    searchDemoDatasets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalDemoDatasetSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSearchResult"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    syncDemoProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalDemoProjectsRequest"];
+            };
+        };
+        responses: {
+            /** @description What was written */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalDemoSyncResult"];
+                };
+            };
+            403: components["responses"]["Error"];
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    searchDemoProjects: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InternalDemoProjectSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Ranked project ids */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InternalDemoProjectSearchResult"];
                 };
             };
             403: components["responses"]["Error"];

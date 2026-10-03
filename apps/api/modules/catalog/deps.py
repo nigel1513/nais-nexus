@@ -36,6 +36,7 @@ class CatalogDeps:
     # Semantic half of the hybrid search (bge-m3). None (NAIS_LLM_ENABLED off, no NAIS_EMBED_BASE_URL): lexical only.
     embedder: EmbeddingClient | None = None  # worker: documents
     query_embedder: EmbeddingClient | None = None  # request path: the search text, short timeout
+    demo_search: SearchIndex | None = None  # the mock-mode web server's demo catalogue (service/demo.py)
 
 
 def get_deps() -> CatalogDeps:

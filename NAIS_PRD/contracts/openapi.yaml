@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: NAIS AI-OS / Research Commons API
-  version: 1.8.0
+  version: 1.9.0
   description: |
     P0 contract. Owner: Agent 0 (Platform). Changes only via CONTRACT_CHANGE_REQUEST.md.
 
@@ -1953,6 +1953,99 @@ paths:
         "404": { $ref: "#/components/responses/Error" }
         "422": { $ref: "#/components/responses/Error" }
         "503": { $ref: "#/components/responses/Error" }
+  /internal/demo/datasets:
+    put:
+      tags: [Internal]
+      operationId: syncDemoDatasets
+      security: [ { internalToken: [] } ]
+      description: |
+        Demo catalogue search for the web server's mock mode: makes the demo dataset index (alias nais-demo-datasets, never the real nais-datasets) equal
+        to the given documents. A document has the fields of a search index document (dataset_id, title, status, access_level,
+        owner_organization_id required); the api adds the embedding. Unknown or missing fields -> 422. Token rule as getInternalNotebookActivity.
+        Index not configured or unreachable -> 503 DEPENDENCY_UNAVAILABLE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InternalDemoDatasetsRequest" }
+      responses:
+        "200":
+          description: What was written
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InternalDemoSyncResult" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /internal/demo/datasets/search:
+    post:
+      tags: [Internal]
+      operationId: searchDemoDatasets
+      security: [ { internalToken: [] } ]
+      description: |
+        searchDatasets over the demo dataset index for the given viewer: the same query (BM25 + k-NN over the bge-m3 embedding), filters, facets,
+        visibility rule (D-012) and paging. Vocabulary facet labels are omitted (the caller labels them). Token rule as getInternalNotebookActivity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InternalDemoDatasetSearchRequest" }
+      responses:
+        "200":
+          description: Results
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DatasetSearchResult" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /internal/demo/projects:
+    put:
+      tags: [Internal]
+      operationId: syncDemoProjects
+      security: [ { internalToken: [] } ]
+      description: |
+        Makes the demo project index (alias nais-demo-projects, never the real nais-projects) equal to the given public project summaries; the api adds
+        the embedding. Token rule as getInternalNotebookActivity. Index not configured or unreachable -> 503 DEPENDENCY_UNAVAILABLE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InternalDemoProjectsRequest" }
+      responses:
+        "200":
+          description: What was written
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InternalDemoSyncResult" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
+  /internal/demo/projects/search:
+    post:
+      tags: [Internal]
+      operationId: searchDemoProjects
+      security: [ { internalToken: [] } ]
+      description: |
+        Ids of the demo projects that match q by words (BM25) or by meaning (k-NN), best first. Token rule as getInternalNotebookActivity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/InternalDemoProjectSearchRequest" }
+      responses:
+        "200":
+          description: Ranked project ids
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InternalDemoProjectSearchResult" }
+        "403": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "422": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
 
 components:
   securitySchemes:
@@ -3715,6 +3808,74 @@ components:
         title: { type: string, description: "File name without .ipynb (display only)" }
         saved_at: { $ref: "#/components/schemas/Timestamp" }
         cell_count: { type: [integer, "null"], minimum: 0, description: "null unless detail=true" }
+    InternalDemoDatasetsRequest:
+      type: object
+      required: [documents]
+      properties:
+        documents:
+          type: array
+          maxItems: 2000
+          items: { type: object, additionalProperties: true, description: "Search index document of a demo dataset (public metadata only)" }
+    InternalDemoSyncResult:
+      type: object
+      required: [indexed, removed]
+      properties:
+        indexed: { type: integer, minimum: 0 }
+        removed: { type: integer, minimum: 0 }
+    InternalDemoDatasetSearchRequest:
+      type: object
+      required: [viewer]
+      properties:
+        viewer:
+          type: object
+          required: [organization_id]
+          properties:
+            organization_id: { $ref: "#/components/schemas/Id" }
+            platform_admin: { type: boolean, default: false }
+        q: { type: [string, "null"], maxLength: 500 }
+        access_level: { type: array, items: { $ref: "#/components/schemas/AccessLevel" } }
+        owner_organization_id: { type: array, items: { $ref: "#/components/schemas/Id" } }
+        purpose: { type: array, items: { $ref: "#/components/schemas/Purpose" } }
+        keyword: { type: array, items: { type: string } }
+        readiness_status: { type: array, items: { type: string, enum: [PASS, WARNING, FAIL] } }
+        subject: { type: array, items: { type: string } }
+        material: { type: array, items: { type: string } }
+        method: { type: array, items: { type: string } }
+        collecting_organization_id: { type: array, items: { $ref: "#/components/schemas/Id" } }
+        principal_investigator_id: { oneOf: [ { $ref: "#/components/schemas/Id" }, { type: "null" } ] }
+        temporal_from: { type: [string, "null"], format: date }
+        temporal_to: { type: [string, "null"], format: date }
+        sort: { type: string, enum: [relevance, updated_desc, title_asc], default: relevance }
+        cursor: { type: [string, "null"] }
+        limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    InternalDemoProjectsRequest:
+      type: object
+      required: [documents]
+      properties:
+        documents:
+          type: array
+          maxItems: 2000
+          items:
+            type: object
+            required: [project_id, name, lead_organization_id, updated_at]
+            properties:
+              project_id: { $ref: "#/components/schemas/Id" }
+              name: { type: string, minLength: 1, maxLength: 200 }
+              lead_organization_id: { $ref: "#/components/schemas/Id" }
+              lead_organization_name: { type: string }
+              member_count: { type: integer, minimum: 0 }
+              updated_at: { $ref: "#/components/schemas/Timestamp" }
+    InternalDemoProjectSearchRequest:
+      type: object
+      required: [q]
+      properties:
+        q: { type: string, minLength: 1, maxLength: 200 }
+        limit: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    InternalDemoProjectSearchResult:
+      type: object
+      required: [project_ids]
+      properties:
+        project_ids: { type: array, items: { $ref: "#/components/schemas/Id" } }
     InternalDraftSectionsRequest:
       type: object
       required: [user_id, project_id, day]

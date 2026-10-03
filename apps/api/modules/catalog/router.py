@@ -9,6 +9,7 @@ from api.modules.catalog.routes import (
     datasets,
     diff,
     history,
+    internal_demo,
     jsonld,
     previews,
     publish,
@@ -22,6 +23,7 @@ from api.modules.catalog.routes import (
 router = APIRouter()
 for sub in (
     search.router,
+    internal_demo.router,
     datasets.router,
     dataset_update.router,
     jsonld.router,

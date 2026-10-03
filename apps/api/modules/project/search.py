@@ -185,3 +185,25 @@ def reconcile_job(
             logger.exception("project index reconciliation failed; will retry")
 
     return run
+
+
+DEMO_FIELDS = (
+    "project_id",
+    "name",
+    "lead_organization_id",
+    "lead_organization_name",
+    "member_count",
+    "updated_at",
+)
+
+
+def replace_documents(search: ProjectSearch, documents: list[dict[str, Any]]) -> tuple[int, int]:
+    """Makes the index equal to `documents` (the public summary fields). Used for the demo index only: the real
+    one is reconciled from the database. Returns (written, removed)."""
+    docs = [{field: doc.get(field) for field in DEMO_FIELDS} | {"sync_key": "demo"} for doc in documents]
+    wanted = {str(doc["project_id"]) for doc in docs}
+    removed = sorted(set(search.index.document_ids()) - wanted)
+    _embed(search, docs)
+    search.index.bulk(docs, removed)
+    search.index.refresh()
+    return len(docs), len(removed)

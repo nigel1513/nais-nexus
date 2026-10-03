@@ -53,16 +53,19 @@ class ProjectSearchSlot:
     """The public project index of this process, or None when OPENSEARCH_URL is not configured."""
 
     search: ProjectSearch | None
+    demo: ProjectSearch | None = None  # the mock-mode web server's demo projects (internal.py)
 
 
-def build_project_search(settings: ProjectSettings | None = None) -> ProjectSearch | None:
+def build_project_search(
+    settings: ProjectSettings | None = None, *, demo: bool = False
+) -> ProjectSearch | None:
     settings = settings or get_project_settings()
     if not settings.opensearch_url:
         return None
     return ProjectSearch(
         index=project_index(
             settings.opensearch_url,
-            settings.project_index_alias,
+            settings.project_demo_index_alias if demo else settings.project_index_alias,
             timeout=settings.project_opensearch_timeout_seconds,
         ),
         embedder=get_embedding_client(),
@@ -78,6 +81,15 @@ def get_project_search() -> ProjectSearch | None:
         return None
 
 
+def get_demo_project_search() -> ProjectSearch | None:
+    try:
+        return ports.get(ProjectSearchSlot).demo
+    except ports.PortNotProvided:
+        return None
+
+
 def wire() -> None:
     ports.provide(ProjectQueryPort, SqlProjectQueryPort())
-    ports.provide(ProjectSearchSlot, ProjectSearchSlot(build_project_search()))
+    ports.provide(
+        ProjectSearchSlot, ProjectSearchSlot(build_project_search(), build_project_search(demo=True))
+    )

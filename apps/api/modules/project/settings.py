@@ -14,6 +14,9 @@ class ProjectSettings(BaseSettings):
     # scope=discover searches by name in the database.
     opensearch_url: str | None = None
     project_index_alias: str = "nais-projects"
+    # Demo projects of the mock-mode web server (internal.py): their own index, never the real one.
+    project_demo_index_alias: str = "nais-demo-projects"
+    nais_internal_token: str = ""  # D-049: empty -> the internal endpoints do not exist
     project_opensearch_timeout_seconds: float = Field(default=5.0, gt=0)
     project_embed_query_timeout_seconds: float = Field(default=2.0, gt=0)
     project_semantic_min_score: float = Field(default=0.76, ge=0.5, le=1.0)

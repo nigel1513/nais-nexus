@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import RowMapping
 from sqlalchemy.orm import Session
 
+from api.modules.project import internal, service, views
 from api.modules.project import repository as repo
-from api.modules.project import service, views
 from api.modules.project.identity import IdentityQueryPort, get_identity_port
 from api.modules.project.query import get_project_search
 from api.modules.project.schemas import MemberAddIn, MemberRoleIn, ProjectCreateIn, ProjectUpdateIn
@@ -159,3 +159,6 @@ def remove_project_member(
 ) -> Response:
     service.remove_member(session, user, project_id, user_id)
     return Response(status_code=204)
+
+
+router.include_router(internal.router)

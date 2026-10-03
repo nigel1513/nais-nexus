@@ -132,11 +132,11 @@ def embed_documents(docs: list[dict[str, Any]], embedder: EmbeddingClient | None
         return
     texts = [
         embedding_text(
-            doc["title"],
-            doc["subtitle"],
-            doc["description"],
-            " ".join(doc["keywords"]),
-            doc["subject_labels"],
+            doc.get("title"),
+            doc.get("subtitle"),
+            doc.get("description"),
+            " ".join(doc.get("keywords") or ()),
+            doc.get("subject_labels"),
         )
         for doc in docs
     ]

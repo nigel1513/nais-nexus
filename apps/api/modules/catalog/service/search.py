@@ -8,10 +8,12 @@ import logging
 from typing import Any
 
 from api.modules.catalog.deps import CatalogDeps
+from api.modules.catalog.interfaces import SearchIndex
 from api.modules.catalog.search.opensearch import SearchRejected, SearchUnavailable
 from api.modules.catalog.search.query import (
     VOCABULARY_FACETS,
     SearchParams,
+    Viewer,
     build_search_body,
     decode_search_cursor,
     invalid_cursor,
@@ -28,12 +30,12 @@ from api.platform.search_index import embedding_text
 logger = logging.getLogger("nais.catalog.search")
 
 
-def query_vector(deps: CatalogDeps, q: str | None) -> list[float] | None:
+def query_vector(deps: CatalogDeps, index: SearchIndex, q: str | None) -> list[float] | None:
     text = embedding_text(q)
     if not text or deps.query_embedder is None:
         return None
     try:
-        if not deps.search.supports_vectors():
+        if not index.supports_vectors():
             return None
         return deps.query_embedder.embed([text])[0]
     except Exception as exc:
@@ -42,6 +44,12 @@ def query_vector(deps: CatalogDeps, q: str | None) -> list[float] | None:
 
 
 def search_datasets(deps: CatalogDeps, user: CurrentUser, params: SearchParams) -> dict[str, Any]:
+    return run_search(deps, deps.search, user, params)
+
+
+def run_search(
+    deps: CatalogDeps, index: SearchIndex, user: Viewer, params: SearchParams, *, label_facets: bool = True
+) -> dict[str, Any]:
     if params.temporal_from and params.temporal_to and params.temporal_from > params.temporal_to:
         raise ApiError(
             ErrorCode.VALIDATION_FAILED,
@@ -55,11 +63,11 @@ def search_datasets(deps: CatalogDeps, user: CurrentUser, params: SearchParams) 
         params,
         sort_name,
         search_after,
-        vector=query_vector(deps, params.q),
+        vector=query_vector(deps, index, params.q),
         min_score=deps.settings.catalog_semantic_min_score,
     )
     try:
-        raw = deps.search.search(body)
+        raw = index.search(body)
     except SearchRejected as exc:
         if search_after is not None:
             raise invalid_cursor() from exc
@@ -69,7 +77,7 @@ def search_datasets(deps: CatalogDeps, user: CurrentUser, params: SearchParams) 
             ErrorCode.DEPENDENCY_UNAVAILABLE, "Dataset search is temporarily unavailable."
         ) from exc
     result = map_search_response(raw, limit=params.limit, sort_name=sort_name)
-    if any(result["facets"].get(name) for name in VOCABULARY_FACETS):
+    if label_facets and any(result["facets"].get(name) for name in VOCABULARY_FACETS):
         with deps.session_factory() as session:
 
             def labels_for(scheme: str, codes: list[str]) -> dict[str, str]:

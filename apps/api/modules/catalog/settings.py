@@ -14,6 +14,9 @@ class CatalogSettings(BaseSettings):
     nais_public_base_url: str = "http://localhost:21051"
     opensearch_url: str = "http://nais:nais@localhost:21056"
     catalog_index_alias: str = "nais-datasets"
+    # Demo catalogue of the mock-mode web server (routes/internal_demo.py): its own index, never the real one.
+    catalog_demo_index_alias: str = "nais-demo-datasets"
+    nais_internal_token: str = ""  # D-049: empty -> the internal endpoints do not exist
     storage_org_codes: str = "nais,inst-a,inst-b"
     storage_presign_ttl_seconds: int = Field(300, gt=0)
     upload_url_ttl_seconds: int = Field(3600, gt=0)

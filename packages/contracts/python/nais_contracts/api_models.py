@@ -1861,6 +1861,74 @@ class InternalNotebookSummary(BaseModel):
     cell_count: conint(ge=0) | None = Field(..., description='null unless detail=true')
 
 
+class InternalDemoDatasetsRequest(BaseModel):
+    documents: list[dict[str, Any]] = Field(..., max_length=2000)
+
+
+class InternalDemoSyncResult(BaseModel):
+    indexed: conint(ge=0)
+    removed: conint(ge=0)
+
+
+class Viewer(BaseModel):
+    organization_id: Id
+    platform_admin: bool | None = False
+
+
+class ReadinessStatu(StrEnum):
+    PASS = 'PASS'
+    WARNING = 'WARNING'
+    FAIL = 'FAIL'
+
+
+class Sort(StrEnum):
+    relevance = 'relevance'
+    updated_desc = 'updated_desc'
+    title_asc = 'title_asc'
+
+
+class InternalDemoDatasetSearchRequest(BaseModel):
+    viewer: Viewer
+    q: constr(max_length=500) | None = None
+    access_level: list[AccessLevel] | None = None
+    owner_organization_id: list[Id] | None = None
+    purpose: list[Purpose] | None = None
+    keyword: list[str] | None = None
+    readiness_status: list[ReadinessStatu] | None = None
+    subject: list[str] | None = None
+    material: list[str] | None = None
+    method: list[str] | None = None
+    collecting_organization_id: list[Id] | None = None
+    principal_investigator_id: Id | None = None
+    temporal_from: date_aliased | None = None
+    temporal_to: date_aliased | None = None
+    sort: Sort | None = 'relevance'
+    cursor: str | None = None
+    limit: conint(ge=1, le=100) | None = 20
+
+
+class Document(BaseModel):
+    project_id: Id
+    name: constr(min_length=1, max_length=200)
+    lead_organization_id: Id
+    lead_organization_name: str | None = None
+    member_count: conint(ge=0) | None = None
+    updated_at: Timestamp
+
+
+class InternalDemoProjectsRequest(BaseModel):
+    documents: list[Document] = Field(..., max_length=2000)
+
+
+class InternalDemoProjectSearchRequest(BaseModel):
+    q: constr(min_length=1, max_length=200)
+    limit: conint(ge=1, le=100) | None = 20
+
+
+class InternalDemoProjectSearchResult(BaseModel):
+    project_ids: list[Id]
+
+
 class InternalDraftSectionsRequest(BaseModel):
     user_id: Id
     project_id: Id

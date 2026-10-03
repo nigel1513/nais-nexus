@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import type { Schemas } from "@/shared/api/types";
+import { searchDatasetsBridged } from "../search-bridge";
 import { getDb } from "../db";
 import { API, body, currentUser, fail, newestFirst, newId, notify, nowIso, orgName, paginate, publicOrigin, recordAudit } from "../http";
 import { buildResult } from "../readiness-results";
@@ -549,6 +550,47 @@ function searchText(db: MockDb, ds: StoredDataset): string[] {
   return [ds.title, ds.description, ...(ds.keywords ?? []), orgName(db, ds.owner_organization_id), ds.subtitle ?? "", ...labels, pi ?? "", orgRef(db, ds)?.name ?? ""];
 }
 
+/** documents.build_documents: the dataset as a search index document (public metadata only), for the demo index. */
+function searchDocument(db: MockDb, ds: StoredDataset): Record<string, unknown> {
+  const latest = latestPublished(db, ds.dataset_id);
+  const labels = (["subject_codes", "material_codes", "method_codes"] as const).flatMap((field) =>
+    (ds[field] ?? []).flatMap((code) => {
+      const t = db.vocabulary.find((x) => x.scheme === SCHEME_OF[field] && x.code === code);
+      return t ? [`${t.label_ko} ${t.label_en}`] : [];
+    }),
+  );
+  const pi = ds.principal_investigator_id ? db.users.find((u) => u.user_id === ds.principal_investigator_id)?.display_name : undefined;
+  return {
+    dataset_id: ds.dataset_id,
+    title: ds.title,
+    description: ds.description,
+    snippet: ds.description.slice(0, 300),
+    keywords: ds.keywords ?? [],
+    access_level: ds.access_level,
+    owner_organization_id: ds.owner_organization_id,
+    owner_organization_name: orgName(db, ds.owner_organization_id),
+    allowed_purposes: ds.policy.allowed_purposes,
+    status: ds.status,
+    has_published_version: latest !== null,
+    latest_version_id: latest?.dataset_version_id ?? null,
+    latest_version_label: latest?.version_label ?? null,
+    readiness_overall: latest?.readiness_overall ?? null,
+    published_at: latest?.published_at ?? null,
+    updated_at: ds.updated_at,
+    subtitle: ds.subtitle ?? null,
+    subject_codes: ds.subject_codes ?? [],
+    material_codes: ds.material_codes ?? [],
+    method_codes: ds.method_codes ?? [],
+    subject_labels: labels.join(" "),
+    temporal_start: ds.temporal_start ?? null,
+    temporal_end: ds.temporal_end ?? null,
+    collecting_organization_id: ds.collecting_organization_id ?? null,
+    collecting_organization_name: orgRef(db, ds)?.name ?? null,
+    principal_investigator_id: ds.principal_investigator_id ?? null,
+    principal_investigator_name: pi ?? null,
+  };
+}
+
 const SCHEMES = ["SUBJECT", "METHOD", "MATERIAL"];
 const CONTRIBUTOR_ROLES = ["CO_INVESTIGATOR", "DATA_COLLECTOR", "DATA_CURATOR"];
 const IRI_PATTERN = /^https?:\/\/\S+$/;
@@ -649,7 +691,7 @@ function datasetJsonLd(db: MockDb, ds: StoredDataset, base: string): Record<stri
 }
 
 export const catalogHandlers = [
-  http.get(`${API}/datasets`, ({ request }) => {
+  http.get(`${API}/datasets`, async ({ request }) => {
     const user = currentUser(request);
     const db = getDb();
     const url = new URL(request.url);
@@ -671,6 +713,32 @@ export const catalogHandlers = [
     const sort = url.searchParams.get("sort") ?? "relevance";
     if (!["relevance", "updated_desc", "title_asc"].includes(sort)) invalid([{ field: "sort", reason: "INVALID" }]);
     const effectiveSort = sort === "relevance" && !q ? "updated_desc" : sort;
+
+    // A text search goes to the real search engine when the api is there (search-bridge.ts): words and meaning over
+    // the demo catalogue's public metadata, same filters, facets and visibility rule. Otherwise: substrings, below.
+    if (q) {
+      const limitRaw = Number(url.searchParams.get("limit") ?? "20");
+      const found = await searchDatasetsBridged(() => db.datasets.map((ds) => searchDocument(db, ds)), {
+        viewer: { organization_id: user.organization_id, platform_admin: isPlatformAdmin(user) },
+        q: url.searchParams.get("q"),
+        access_level: levels as Schemas["AccessLevel"][],
+        owner_organization_id: owners,
+        purpose: purposes as Schemas["Purpose"][],
+        keyword: keywords,
+        readiness_status: readiness as ("PASS" | "WARNING" | "FAIL")[],
+        subject: subjects,
+        material: materials,
+        method: methods,
+        collecting_organization_id: collecting,
+        principal_investigator_id: piId,
+        temporal_from: from,
+        temporal_to: to,
+        sort: sort as "relevance" | "updated_desc" | "title_asc",
+        cursor: url.searchParams.get("cursor"),
+        limit: Number.isInteger(limitRaw) && limitRaw >= 1 && limitRaw <= 100 ? limitRaw : 20,
+      });
+      if (found) return HttpResponse.json(found);
+    }
 
     // query.build_search_body: every filter (and the visibility rule) narrows both the hits and the facet counts.
     const matches = db.datasets

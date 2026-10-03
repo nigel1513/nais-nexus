@@ -16,7 +16,14 @@ const PENDING_MOCK_OPERATIONS: ReadonlySet<string> = new Set<string>([]);
 
 // Server-to-server operations (tag Internal, D-049): the web server calls them with a shared header token, never the
 // browser through openapi-fetch, so the in-app mock API has no handlers for them.
-const INTERNAL_OPERATIONS: ReadonlySet<string> = new Set<string>(["getInternalNotebookActivity", "draftInternalNoteSections"]);
+const INTERNAL_OPERATIONS: ReadonlySet<string> = new Set<string>([
+  "getInternalNotebookActivity",
+  "draftInternalNoteSections",
+  "syncDemoDatasets",
+  "searchDemoDatasets",
+  "syncDemoProjects",
+  "searchDemoProjects",
+]);
 
 async function call(user: string | null, method: string, pathKey: string, opts: { path?: Record<string, string>; query?: string; body?: unknown; headers?: Record<string, string>; status: number }) {
   const url = pathKey.replace(/\{(\w+)\}/g, (_, k: string) => opts.path![k]!) + (opts.query ? `?${opts.query}` : "");
@@ -250,7 +257,7 @@ describe("mock API ↔ openapi.yaml", () => {
 
     const METHODS = ["get", "post", "put", "patch", "delete"];
     const all = Object.values(doc.paths).flatMap((item) => Object.entries(item).filter(([m]) => METHODS.includes(m)).map(([, op]) => op.operationId));
-    expect(all).toHaveLength(110);
+    expect(all).toHaveLength(114);
     expect([...PENDING_MOCK_OPERATIONS].filter((id) => !all.includes(id) || exercised.has(id))).toEqual([]);
     expect([...INTERNAL_OPERATIONS].filter((id) => !all.includes(id) || exercised.has(id))).toEqual([]);
     expect(all.filter((id) => !exercised.has(id) && !PENDING_MOCK_OPERATIONS.has(id) && !INTERNAL_OPERATIONS.has(id))).toEqual([]);
