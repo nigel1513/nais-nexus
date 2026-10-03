@@ -166,6 +166,11 @@ export function creatorsFromSnapshot(snapshot: Record<string, unknown>, fallback
 }
 
 const BIB_WORDS: Record<string, string> = { "\\": "\\textbackslash{}", "~": "\\textasciitilde{}", "^": "\\textasciicircum{}" };
+/** The citation year is the publication year in Korea (Asia/Seoul), as the backend renders it. */
+export function seoulYear(iso: string): number {
+  return Number(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric" }).format(new Date(iso)));
+}
+
 const bib = (v: string) => v.replace(/[\\{}&%$#_~^]/g, (c) => BIB_WORDS[c] ?? `\\${c}`);
 /** A name with " and " in it (or an organization) is braced, so BibTeX keeps it as one author. */
 const bibName = (c: Creator) => (c.kind === "organization" || / and /i.test(c.name) ? `{${bib(c.name)}}` : bib(c.name));
@@ -199,7 +204,7 @@ export function renderCitation(style: Schemas["CitationStyle"], c: CitationInput
       publisher: { name: c.publisher },
       publicationYear: String(c.year),
       version: c.version_label,
-      types: { resourceTypeGeneral: "Dataset" },
+      types: { resourceType: "Dataset", resourceTypeGeneral: "Dataset" },
       identifiers: [{ identifier: c.uri, identifierType: "URL" }, ...(c.doi ? [{ identifier: c.doi, identifierType: "DOI" }] : [])],
       rightsList: c.license ? [{ rights: c.license }] : [],
     }),

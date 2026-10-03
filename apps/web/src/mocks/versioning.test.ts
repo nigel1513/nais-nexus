@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { creatorsFromSnapshot, diffFiles, diffMetadata, diffSchema, fileHistory, renderCitation, summarize, threeWay, type CitationInput } from "./versioning";
+import { creatorsFromSnapshot, diffFiles, diffMetadata, diffSchema, fileHistory, renderCitation, seoulYear, summarize, threeWay, type CitationInput } from "./versioning";
 
 const f = (path: string, sha: string, size = 1) => ({ path, sha256: sha.repeat(64).slice(0, 64), size_bytes: size });
 
@@ -116,6 +116,15 @@ describe("citation", () => {
     expect(data.publicationYear).toBe("2026");
     expect(data.rightsList).toEqual([{ rights: "CC-BY-4.0" }]);
     expect(Object.keys(data)).toEqual([...Object.keys(data)].sort());
+  });
+  it("DataCite types carry resourceType Dataset; keys stay sorted (byte parity with the backend)", () => {
+    const out = renderCitation("datacite-json", C);
+    expect(JSON.parse(out).types).toEqual({ resourceType: "Dataset", resourceTypeGeneral: "Dataset" });
+    expect(out).toContain('"types":{"resourceType":"Dataset","resourceTypeGeneral":"Dataset"}');
+  });
+  it("the citation year is the publication year in Asia/Seoul", () => {
+    expect(seoulYear("2025-12-31T18:00:00Z")).toBe(2026); // 2026-01-01 03:00 KST
+    expect(seoulYear("2025-12-31T14:59:59Z")).toBe(2025); // 23:59:59 KST
   });
   it("derives creators from the snapshot with an organization fallback", () => {
     const snap = {

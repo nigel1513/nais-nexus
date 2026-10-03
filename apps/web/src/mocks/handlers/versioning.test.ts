@@ -305,7 +305,7 @@ describe("diff, file history, citation", () => {
     const t = await json(USER.aResearcher, "GET", `/dataset-versions/${VERSION.battery}/citation`);
     expect(t.style).toBe("text");
     expect(t.content).toContain("(Version v2.0) [Data set].");
-    expect(JSON.parse((await json(USER.aResearcher, "GET", `/dataset-versions/${VERSION.battery}/citation?style=datacite-json`)).content).types).toEqual({ resourceTypeGeneral: "Dataset" });
+    expect(JSON.parse((await json(USER.aResearcher, "GET", `/dataset-versions/${VERSION.battery}/citation?style=datacite-json`)).content).types).toEqual({ resourceType: "Dataset", resourceTypeGeneral: "Dataset" });
     expect((await json(S, "GET", `/dataset-versions/${VERSION.batteryDraft}/citation`, undefined, 409)).error.code).toBe("DATASET_VERSION_NOT_PUBLISHED");
     expect((await send(USER.aResearcher, "GET", `/dataset-versions/${VERSION.batteryDraft}/citation`)).status).toBe(404);
     void ORG;

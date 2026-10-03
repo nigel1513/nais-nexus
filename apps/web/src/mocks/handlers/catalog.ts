@@ -6,7 +6,7 @@ import { buildResult } from "../readiness-results";
 import { emptyResearch } from "../fixtures";
 import { profileCsv, UnparseableError } from "../previews";
 import type { MockDb, MockUser, StoredDataset, StoredFile, StoredUploadSession, StoredValidation, StoredVersion } from "../types";
-import { creatorsFromSnapshot, diffFiles, diffMetadata, diffSchema, fileHistory, renderCitation, summarize, threeWay, type ProfileLite } from "../versioning";
+import { creatorsFromSnapshot, diffFiles, diffMetadata, diffSchema, fileHistory, renderCitation, seoulYear, summarize, threeWay, type ProfileLite } from "../versioning";
 
 /**
  * Mirrors apps/api/modules/catalog (access.py, service/*, domain.py): visibility D-012/D-040, steward-only writes,
@@ -1299,7 +1299,7 @@ export const catalogHandlers = [
     const content = renderCitation(style as Schemas["CitationStyle"], {
       title: String(snapshot.title ?? ds.title),
       version_label: v.version_label,
-      year: new Date(v.published_at ?? v.created_at).getUTCFullYear(),
+      year: seoulYear(v.published_at ?? v.created_at),
       publisher,
       uri: `${publicOrigin(request)}/id/dataset-version/${v.dataset_version_id}`,
       doi: (ds as { doi?: string | null }).doi ?? null,
