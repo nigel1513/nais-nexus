@@ -194,6 +194,25 @@ describe("rebase", () => {
     expect(readme.sha256).toBe((await get(a)).files.find((f: { path: string }) => f.path === "README.md").sha256);
   });
 
+  it("an invalid resolution is 422 VALIDATION_FAILED shaped like the backend's pydantic errors", async () => {
+    const { b } = await twoDrafts();
+    const value = await json(S, "POST", `/dataset-versions/${b}/rebase`, { resolutions: { "a.csv": "BOTH" } }, 422);
+    expect(value.error.code).toBe("VALIDATION_FAILED");
+    expect(value.error.details.fields).toEqual([{ field: "resolutions.a.csv", reason: "Input should be 'MINE' or 'THEIRS'" }]);
+    const key = await json(S, "POST", `/dataset-versions/${b}/rebase`, { resolutions: { "bad key": "MINE" } }, 422);
+    expect(key.error.details.fields).toEqual([{ field: "resolutions.bad key.[key]", reason: "String should match pattern '^[A-Za-z0-9._/-]{1,512}$'" }]);
+  });
+
+  it("any open, unexpired upload session blocks a rebase (not only one with pending files)", async () => {
+    const { a, b } = await twoDrafts();
+    await upload(a, { "README.md": "# a\n" });
+    await note(a);
+    await publish(a);
+    const session = await json(S, "POST", `/dataset-versions/${b}/upload-session`, { files: [{ path: "data/p.csv", size_bytes: 4, sha256: sha("1"), media_type: "text/csv" }] }, 201);
+    for (const f of getDb().uploadSessions.find((s) => s.upload_session_id === session.upload_session_id)!.files) f.status = "UPLOADED";
+    expect((await json(S, "POST", `/dataset-versions/${b}/rebase`, {}, 409)).error.code).toBe("CONFLICT");
+  });
+
   it("rejects extra body keys and more than 10,000 resolutions (422, StrictIn)", async () => {
     const { b } = await twoDrafts();
     const extra = await json(S, "POST", `/dataset-versions/${b}/rebase`, { resolutions: {}, force: true }, 422);

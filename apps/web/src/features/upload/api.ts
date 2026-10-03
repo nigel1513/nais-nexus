@@ -10,6 +10,8 @@ function useVersionInvalidation(versionId: string) {
   return () => {
     const datasetId = qc.getQueryData<{ dataset_id?: string }>(["getDatasetVersion", { versionId }])?.dataset_id;
     void qc.invalidateQueries({ queryKey: ["getDatasetVersion", { versionId }] });
+    // Its files changed: every comparison of this version (to its base, or against another) is out of date.
+    void qc.invalidateQueries({ queryKey: ["compareVersions", { versionId }] });
     // file_count lives on the version list; refresh that dataset's list (all lists if the version is not cached).
     void qc.invalidateQueries({ queryKey: datasetId ? ["listDatasetVersions", { datasetId }] : ["listDatasetVersions"] });
   };

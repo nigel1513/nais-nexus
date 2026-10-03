@@ -1194,13 +1194,19 @@ export const catalogHandlers = [
     if (extra.length) invalid(extra.map((field) => ({ field, reason: "Extra inputs are not permitted" })));
     const resolutions = input.resolutions ?? {};
     if (Object.keys(resolutions).length > 10_000) invalid([{ field: "resolutions", reason: "Dictionary should have at most 10000 items" }]);
-    const bad = Object.entries(resolutions).filter(([path, choice]) => !/^[A-Za-z0-9._/-]{1,512}$/.test(path) || (choice !== "MINE" && choice !== "THEIRS"));
-    if (bad.length) invalid([{ field: "resolutions", reason: "INVALID" }]);
+    // pydantic's errors for dict[RebasePath, Literal["MINE", "THEIRS"]], with platform/errors.py's dotted field names.
+    const PATH = "^[A-Za-z0-9._/-]{1,512}$";
+    const bad = Object.entries(resolutions).flatMap(([path, choice]) => [
+      ...(new RegExp(PATH).test(path) ? [] : [{ field: `resolutions.${path}.[key]`, reason: `String should match pattern '${PATH}'` }]),
+      ...(choice === "MINE" || choice === "THEIRS" ? [] : [{ field: `resolutions.${path}`, reason: "Input should be 'MINE' or 'THEIRS'" }]),
+    ]);
+    if (bad.length) invalid(bad);
     const { v } = stewardVersion(db, String(params.version_id), user);
     requireDraft(v);
     const latest = latestPublishedVersion(db, v.dataset_id);
     if ((v.base_version_id ?? null) === (latest?.dataset_version_id ?? null)) return HttpResponse.json(versionView(db, v, user));
-    if (db.uploadSessions.some((s) => s.dataset_version_id === v.dataset_version_id && s.status === "OPEN" && !sessionExpired(s) && s.files.some((f) => f.status === "PENDING"))) {
+    // service.rebase._has_open_upload: any OPEN, unexpired session blocks (whatever its files' states).
+    if (db.uploadSessions.some((s) => s.dataset_version_id === v.dataset_version_id && s.status === "OPEN" && !sessionExpired(s))) {
       fail("CONFLICT", "Finish or cancel the open upload before updating the draft.");
     }
     const shaMap = (files: StoredFile[]) => Object.fromEntries(files.map((f) => [f.path, f.sha256]));

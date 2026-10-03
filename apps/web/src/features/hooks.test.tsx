@@ -252,6 +252,7 @@ describe("scoped invalidation", () => {
     const { result } = renderHook(() => usePublishDatasetVersion(VERSION.electrolyte), { wrapper: wrapper(client) });
     await act(() => result.current.mutateAsync());
     expect(keys(spy)).toEqual([
+      JSON.stringify(["getDatasetVersion"]), // narrowed by a predicate to this dataset's versions
       JSON.stringify(["listDatasetVersions", { datasetId: DATASET.electrolyte }]),
       JSON.stringify(["getDataset", { datasetId: DATASET.electrolyte }]),
       JSON.stringify(["getReadiness", { versionId: VERSION.electrolyte }]),
@@ -309,6 +310,7 @@ describe("scoped invalidation", () => {
     await act(() => result.current.mutateAsync("f1"));
     expect(keys(spy)).toEqual([
       JSON.stringify(["getDatasetVersion", { versionId: VERSION.electrolyte }]),
+      JSON.stringify(["compareVersions", { versionId: VERSION.electrolyte }]),
       JSON.stringify(["listDatasetVersions", { datasetId: DATASET.electrolyte }]),
     ]);
   });

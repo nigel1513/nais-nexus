@@ -108,6 +108,11 @@ export function usePublishDatasetVersion(versionId: string) {
     onSuccess: (version) => {
       qc.setQueryData(["getDatasetVersion", { versionId }], version);
       const datasetId = version.dataset_id;
+      // Every other cached version of this dataset: sibling drafts' base_is_latest just turned false.
+      void qc.invalidateQueries({
+        queryKey: ["getDatasetVersion"],
+        predicate: (q) => (q.state.data as DatasetVersion | undefined)?.dataset_id === datasetId && q.state.data !== version,
+      });
       void qc.invalidateQueries({ queryKey: ["listDatasetVersions", { datasetId }] });
       void qc.invalidateQueries({ queryKey: ["getDataset", { datasetId }] });
       void qc.invalidateQueries({ queryKey: ["getReadiness", { versionId }] });

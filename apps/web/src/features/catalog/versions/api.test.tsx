@@ -6,7 +6,10 @@ import { DATASET, USER, VERSION } from "@/mocks/fixtures";
 import { ApiError } from "@/shared/api/errors";
 import { makeQueryClient } from "@/shared/api/query-client";
 import { setMockUser } from "../../../../tests/render";
-import { useCreateDatasetVersion, useGetDatasetVersion, useListDatasetVersions } from "../api";
+import { getDb } from "@/mocks/db";
+import type { DatasetVersion } from "@/shared/api/types";
+import { useCompleteUploadSession } from "@/features/upload/api";
+import { useCreateDatasetVersion, useGetDatasetVersion, useListDatasetVersions, usePublishDatasetVersion } from "../api";
 import { useCitation, useCompareVersions, useDiscardDraft, useFileHistory, useRebaseDraft, useUpdateVersionNote } from "./api";
 
 vi.mock("@/features/auth/use-auth-ready", () => ({ useAuthReady: () => true }));
@@ -16,6 +19,36 @@ function wrapper(client = makeQueryClient({ retry: false })) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   };
 }
+
+describe("cache freshness after publish and upload (final review M2)", () => {
+  it("publishing refreshes every cached version of the dataset (siblings' base_is_latest), not other datasets", async () => {
+    setMockUser(USER.bSteward);
+    const client = makeQueryClient({ retry: false });
+    const view = (id: string, datasetId: string) => ({ dataset_version_id: id, dataset_id: datasetId }) as DatasetVersion;
+    client.setQueryData(["getDatasetVersion", { versionId: VERSION.batteryV11 }], view(VERSION.batteryV11, DATASET.battery));
+    client.setQueryData(["getDatasetVersion", { versionId: VERSION.openMaterials }], view(VERSION.openMaterials, DATASET.openMaterials));
+    const { result } = renderHook(() => usePublishDatasetVersion(VERSION.batteryDraft), { wrapper: wrapper(client) });
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+    expect(getDb().versions.find((v) => v.dataset_version_id === VERSION.batteryDraft)!.status).toBe("PUBLISHED");
+    expect(client.getQueryState(["getDatasetVersion", { versionId: VERSION.batteryV11 }])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["getDatasetVersion", { versionId: VERSION.openMaterials }])?.isInvalidated).toBe(false);
+  });
+
+  it("completing an upload refreshes that version's comparisons", async () => {
+    setMockUser(USER.bSteward);
+    const client = makeQueryClient({ retry: false });
+    client.setQueryData(["compareVersions", { versionId: VERSION.batteryDraft, against: undefined }], { summary: {} });
+    client.setQueryData(["compareVersions", { versionId: VERSION.battery, against: undefined }], { summary: {} });
+    const { result } = renderHook(() => useCompleteUploadSession(VERSION.batteryDraft), { wrapper: wrapper(client) });
+    await act(async () => {
+      await result.current.mutateAsync({ uploadSessionId: "00000000-0000-7000-8000-00000000dead" }).catch(() => undefined);
+    });
+    expect(client.getQueryState(["compareVersions", { versionId: VERSION.batteryDraft, against: undefined }])?.isInvalidated).toBe(true);
+    expect(client.getQueryState(["compareVersions", { versionId: VERSION.battery, against: undefined }])?.isInvalidated).toBe(false);
+  });
+});
 
 describe("version hooks", () => {
   it("reads diff, file history and citation", async () => {
