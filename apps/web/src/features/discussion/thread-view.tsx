@@ -15,7 +15,20 @@ import { useAddComment, useComments, useUpdateThread, type Thread } from "./api"
  * One thread: its comments oldest first (markdown), a reply box, and 해결 / 다시 열기 for whoever may moderate it (the
  * author; a project owner or admin; the owner organization's data steward for dataset threads — the server decides).
  */
-export function ThreadView({ thread, onBack, canModerate, focusOnMount = false }: { thread: Thread; onBack: () => void; canModerate: boolean; focusOnMount?: boolean }) {
+export function ThreadView({
+  thread,
+  onBack,
+  canModerate,
+  canReply = true,
+  focusOnMount = false,
+}: {
+  thread: Thread;
+  onBack: () => void;
+  canModerate: boolean;
+  /** false where the discussion is read-only (an archived project). */
+  canReply?: boolean;
+  focusOnMount?: boolean;
+}) {
   const t = useTranslations();
   const errorText = useErrorText();
   const comments = useComments(thread.thread_id);
@@ -46,7 +59,7 @@ export function ThreadView({ thread, onBack, canModerate, focusOnMount = false }
             <DateTime value={thread.created_at} />
           </p>
         </div>
-        {canModerate ? (
+        {canModerate && canReply ? (
           <Button
             disabled={update.isPending}
             onClick={() => update.mutate({ resolved: !thread.resolved }, { onError: (err) => notify.error(errorText(err)) })}
@@ -81,7 +94,7 @@ export function ThreadView({ thread, onBack, canModerate, focusOnMount = false }
         </ol>
       )}
       <LoadMore hasNextPage={comments.hasNextPage} isFetchingNextPage={comments.isFetchingNextPage} fetchNextPage={comments.fetchNextPage} />
-      <ReplyForm thread={thread} />
+      {canReply ? <ReplyForm thread={thread} /> : null}
     </article>
   );
 }

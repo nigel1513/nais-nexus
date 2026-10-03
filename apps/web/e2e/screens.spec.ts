@@ -249,7 +249,7 @@ test.describe("screens", () => {
     await expect(page.getByRole("link", { name: "차세대 이차전지 소재 공동연구" }).first()).toBeVisible();
     await shoot(page, `${prefix}-projects-list`);
 
-    await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
+    await page.goto(`/commons/projects/${PROJECT_SEED}/members`);
     await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
     await shoot(page, `${prefix}-project-detail-members`);
 
@@ -295,7 +295,7 @@ test.describe("v2 track B: dataset form and projects", () => {
     await page.goto(`/commons/projects/${PROJECT_SEED}`);
     await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
     await shoot(page, `v2-projects-${phase}-detail`);
-    await page.goto(`/commons/projects/${PROJECT_SEED}?tab=members`);
+    await page.goto(`/commons/projects/${PROJECT_SEED}/members`);
     await expect(page.getByRole("heading", { level: 1, name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
     await shoot(page, `v2-projects-${phase}-members`, [[1440, 900]]);
     await page.goto("/commons/projects/new");

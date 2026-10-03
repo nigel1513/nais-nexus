@@ -7,7 +7,7 @@ import {
 import { useTranslations } from "next-intl";
 import type {
   AccessGrantStatus, AccessLevel, AccessRequestStatus, DatasetVersionStatus, FileStatus, ProjectStatus, ReadinessCheckStatus,
-  ReadinessOverall, ReadinessRunStatus,
+  ReadinessOverall, ReadinessRunStatus, Schemas,
 } from "@/shared/api/types";
 
 type Spec = readonly [Tone, LucideIcon];
@@ -34,6 +34,15 @@ const VERSION: Record<DatasetVersionStatus, Spec> = { DRAFT: ["neutral", PencilL
 const PROJECT: Record<ProjectStatus, Spec> = { ACTIVE: ["success", CircleCheck], ARCHIVED: ["neutral", Archive] };
 const FILE: Record<FileStatus, Spec> = { PENDING: ["neutral", Clock], UPLOADED: ["info", Upload], VERIFIED: ["success", CircleCheck], FAILED: ["danger", CircleX] };
 const RUN: Record<ReadinessRunStatus, Spec> = { QUEUED: ["neutral", Clock], RUNNING: ["info", LoaderCircle], COMPLETED: ["success", CircleCheck], FAILED: ["danger", CircleX] };
+const WORK_RUN: Record<Schemas["RunStatus"], Spec> = { QUEUED: ["neutral", Clock], RUNNING: ["info", LoaderCircle], SUCCEEDED: ["success", CircleCheck], FAILED: ["danger", CircleX] };
+const OUTPUT_PUBLISH: Record<Schemas["OutputPublishStatus"], Spec> = {
+  NONE: ["neutral", Minus],
+  PENDING: ["info", Eye],
+  APPROVED: ["info", CircleCheck],
+  REJECTED: ["danger", CircleX],
+  PUBLISHED: ["success", Globe],
+};
+const PUBLISH_REQUEST: Record<Schemas["PublishRequestStatus"], Spec> = { PENDING: ["info", Eye], APPROVED: ["success", CircleCheck], REJECTED: ["danger", CircleX] };
 const CHECK: Record<ReadinessCheckStatus, Spec> = { PASS: ["success", CircleCheck], WARNING: ["warning", TriangleAlert], FAIL: ["danger", CircleX], NOT_APPLICABLE: ["neutral", Minus] };
 
 export const AccessLevelBadge = ({ level }: { level: AccessLevel }) => <EnumBadge enumName="AccessLevel" value={level} map={ACCESS} />;
@@ -44,6 +53,10 @@ export const ProjectStatusBadge = ({ status }: { status: ProjectStatus }) => <En
 export const FileStatusBadge = ({ status }: { status: FileStatus }) => <EnumBadge enumName="FileStatus" value={status} map={FILE} />;
 export const RunStatusBadge = ({ status }: { status: ReadinessRunStatus }) => <EnumBadge enumName="ReadinessRunStatus" value={status} map={RUN} />;
 export const CheckStatusBadge = ({ status }: { status: ReadinessCheckStatus }) => <EnumBadge enumName="ReadinessCheckStatus" value={status} map={CHECK} />;
+
+export const WorkspaceRunBadge = ({ status }: { status: Schemas["RunStatus"] }) => <EnumBadge enumName="RunStatus" value={status} map={WORK_RUN} />;
+export const OutputPublishBadge = ({ status }: { status: Schemas["OutputPublishStatus"] }) => <EnumBadge enumName="OutputPublishStatus" value={status} map={OUTPUT_PUBLISH} />;
+export const PublishRequestBadge = ({ status }: { status: Schemas["PublishRequestStatus"] }) => <EnumBadge enumName="PublishRequestStatus" value={status} map={PUBLISH_REQUEST} />;
 
 export function ReadinessBadge({ value }: { value: ReadinessOverall | null | undefined }) {
   const t = useTranslations();

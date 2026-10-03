@@ -280,7 +280,7 @@ test("projects: list, detail members and the actions menu pass axe in both theme
     await expect(page.getByRole("table", { name: "내 프로젝트" })).toBeVisible();
     expect(await seriousViolations(page)).toEqual([]);
 
-    await page.goto("/commons/projects/00000000-0000-7000-8000-000000001001?tab=members");
+    await page.goto("/commons/projects/00000000-0000-7000-8000-000000001001/members");
     await expect(page.getByRole("form", { name: "구성원 초대" })).toBeVisible();
     expect(await seriousViolations(page)).toEqual([]);
     await page.getByRole("button", { name: "프로젝트 작업 더 보기" }).click();
@@ -319,6 +319,75 @@ test("data hub and the Data Card's 프로젝트 · 토론 · 이력 pass axe in 
     await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("project workspace: tabs, recipe editor, output lineage and the 공개 요청 review pass axe in both themes; no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  const P = "/commons/projects/00000000-0000-7000-8000-000000001001";
+  const RECIPE = "00000000-0000-7000-8000-000000005201";
+  const OUTPUT = "00000000-0000-7000-8000-000000005401";
+  const B_STEWARD = "00000000-0000-7000-8000-000000000b03";
+  // A publish request for the seed output, so the steward's 공개 요청 tab has a row (a rerun on the same server finds it pending already).
+  await page.goto("/");
+  await page.evaluate(
+    async ([user, path]) => {
+      await fetch(`/mock-api/v1${path}`, { method: "POST", headers: { "x-mock-user": user, "content-type": "application/json" }, body: "{}" });
+    },
+    [A_RESEARCHER, `/projects/00000000-0000-7000-8000-000000001001/outputs/${OUTPUT}/publish-requests`],
+  );
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  const narrow = async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.setViewportSize({ width: 1440, height: 900 });
+  };
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.goto(P);
+    await expect(page.getByRole("navigation", { name: "프로젝트 작업 공간" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "최근 실행" }).first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
+
+    await page.goto(`${P}/data`);
+    await expect(page.getByRole("table", { name: "입력 데이터" }).first()).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "데이터 추가" }).click();
+    await expect(page.getByRole("dialog", { name: "데이터 추가" }).getByRole("radio").first()).toBeVisible();
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
+    await page.keyboard.press("Escape");
+    await narrow();
+
+    await page.goto(`${P}/recipes/${RECIPE}`);
+    await expect(page.getByRole("region", { name: "변환 단계" })).toBeVisible();
+    await page.getByRole("button", { name: "미리보기" }).click();
+    await expect(page.getByRole("table", { name: "미리보기 결과" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
+
+    await page.goto(`${P}/outputs/${OUTPUT}`);
+    await expect(page.getByRole("img", { name: /데이터 계보/ })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
+
+    await page.goto(`${P}/discussion`);
+    await expect(page.getByRole("button", { name: /배터리 입력을 v2.0으로 올릴지 논의/ })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
+  }
+
+  await context.addCookies([{ name: "nais_mock_user", value: B_STEWARD, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.goto("/commons/access?tab=publish");
+    await page.getByRole("button", { name: /검토$/ }).first().click();
+    await expect(page.getByRole("dialog", { name: "허브 공개 검토" })).toBeVisible();
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
+    await page.keyboard.press("Escape");
+    expect(await seriousViolations(page)).toEqual([]);
+    await narrow();
   }
 });
 

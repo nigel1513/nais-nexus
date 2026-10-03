@@ -14,7 +14,7 @@ import { useCreateThread, useThreads, type Thread, type ThreadScope, type Thread
  * Threads of one target (or one project), most recent activity first. A row opens the thread; resolved threads stay in
  * the list with a 해결됨 tag. Shared by the Data Card and the project's 토론 tab.
  */
-export function ThreadList({ selector, onOpen }: { selector: ThreadSelector; onOpen: (thread: Thread) => void }) {
+export function ThreadList({ selector, onOpen, showScope = false }: { selector: ThreadSelector; onOpen: (thread: Thread) => void; /** Tag each row with what it is about (project lists mix project, recipe and output threads). */ showScope?: boolean }) {
   const t = useTranslations();
   const threads = useThreads(selector);
   const rows = flattenPages(threads.data);
@@ -32,6 +32,7 @@ export function ThreadList({ selector, onOpen }: { selector: ThreadSelector; onO
               className={cn("flex w-full min-w-0 flex-col gap-1 px-3 py-3 text-left transition-colors duration-[var(--dur-fast)] hover:bg-bg-hover sm:flex-row sm:items-baseline sm:justify-between sm:gap-4", focusRing, "focus-visible:-outline-offset-2")}
             >
               <span className="flex min-w-0 items-baseline gap-2">
+                {showScope ? <Badge tone="neutral">{t(`enums.ThreadScope.${th.scope}`)}</Badge> : null}
                 <span className="truncate font-medium text-fg">{th.title}</span>
                 {th.resolved ? <Badge tone="success">{t("discussion.resolved")}</Badge> : null}
               </span>
