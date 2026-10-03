@@ -482,3 +482,37 @@ test("version history: the 버전 tab and the new-draft dialog pass axe in both 
   await expect(page.getByRole("list", { name: "게시 이력" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+test("draft page: banner, note-required publish dialog and discard; axe in both themes; no sideways scroll at 390", async ({ page, baseURL }) => {
+  await page.context().addCookies([{ name: "nais_mock_user", value: "00000000-0000-7000-8000-000000000b03", url: baseURL! }]);
+  await page.goto("/commons/data/00000000-0000-7000-8000-000000002001?tab=versions");
+  await page.getByRole("button", { name: "새 초안", exact: true }).click();
+  const create = page.getByRole("dialog", { name: "새 초안" });
+  // The mock store outlives one run: a unique label keeps reruns and both projects independent.
+  await create.getByLabel(/^버전 이름/).fill(`v9.${Date.now().toString(36)}`);
+  await create.getByRole("button", { name: "초안 만들기" }).click();
+  await expect(page).toHaveURL(/\/versions\/[0-9a-f-]{36}$/);
+  const banner = page.getByRole("region", { name: "초안 상태" });
+  await expect(banner).toContainText("최신 버전 기준입니다");
+  await expect(page.getByRole("table").getByText("이어받음").first()).toBeVisible();
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.waitForLoadState("networkidle");
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "게시", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "버전 게시" });
+    await dialog.getByRole("button", { name: "게시", exact: true }).click();
+    await expect(dialog.getByText("변경 메모를 3자 이상 입력하세요")).toBeVisible();
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
+    await page.keyboard.press("Escape");
+    await expect(dialog).toBeHidden();
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.waitForLoadState("networkidle");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await banner.getByRole("button", { name: "초안 삭제" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "삭제", exact: true }).click();
+  await expect(page.getByText("초안을 삭제했습니다")).toBeVisible();
+  await expect(page).toHaveURL(/\?tab=versions$/);
+});

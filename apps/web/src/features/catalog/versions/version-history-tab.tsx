@@ -4,15 +4,31 @@ import { Download, GitCompareArrows, GitBranchPlus, Plus, RotateCcw } from "luci
 import Link from "next/link";
 import { useTranslations } from "next-intl";
 import { useId, useState, type ReactNode } from "react";
+import { useListAccessGrants } from "@/features/governance/api";
+import { flattenPages } from "@/shared/api/pagination";
 import type { Dataset, DatasetVersion, Me } from "@/shared/api/types";
 import { useMeData } from "@/shared/hooks/use-me";
 import { VersionStatusBadge } from "@/shared/ui/badges";
 import { DateTime } from "@/shared/ui/date-text";
 import { DelayedSkeleton } from "@/shared/ui/state-views";
 import { PanelHead } from "@/shared/ui/work-hero";
+import { decideAccessCta } from "../access-cta";
 import { useListDatasetVersions } from "../api";
 import { DiffStat } from "./diff-stat";
 import { NewDraftDialog } from "./new-draft-dialog";
+
+/**
+ * Whether the viewer can download `d` (UI convenience, M10 §7.6: the server decides on every call). The grants query is
+ * the one the header's AccessCta already runs, so it is usually cached; it only runs when the role alone does not decide.
+ */
+function useCanDownload(me: Me, d: Dataset) {
+  const byRole = decideAccessCta({ accessLevel: d.access_level, ownerOrganizationId: d.owner_organization_id, me, activeGrants: [], requests: [] });
+  const needsGrant = byRole.kind === "request";
+  const grants = useListAccessGrants({ role: "subject", dataset_id: d.dataset_id, status: ["ACTIVE"] }, { enabled: needsGrant });
+  if (!needsGrant) return byRole.kind === "download";
+  const decided = decideAccessCta({ accessLevel: d.access_level, ownerOrganizationId: d.owner_organization_id, me, activeGrants: flattenPages(grants.data), requests: [] });
+  return decided.kind === "download-grant";
+}
 
 /** Who may act on versions of `d`: stewards of the owner organization; DRAFTs are also visible to its ORG_ADMIN and platform admins (M03 §6). */
 export function versionAccess(me: Me, d: Dataset) {
@@ -34,6 +50,7 @@ export function VersionHistoryTab({ dataset: d }: { dataset: Dataset }) {
   const me = useMeData();
   const versions = useListDatasetVersions(d.dataset_id);
   const { steward, seesDrafts } = versionAccess(me, d);
+  const canDownload = useCanDownload(me, d);
   const [dialog, setDialog] = useState<{ open: boolean; from?: { id: string; label: string } }>({ open: false });
   const titleId = useId();
   const draftsId = useId();
@@ -96,6 +113,7 @@ export function VersionHistoryTab({ dataset: d }: { dataset: Dataset }) {
                     names={names}
                     labels={labels}
                     latest={v === latest}
+                    canDownload={canDownload}
                     action={
                       steward && v.status === "PUBLISHED" ? (
                         v === latest ? (
@@ -155,6 +173,7 @@ function VersionRow({
   names,
   labels,
   latest,
+  canDownload,
   action,
 }: {
   dataset: Dataset;
@@ -162,6 +181,7 @@ function VersionRow({
   names: (id: string | undefined) => string | null;
   labels: Map<string, string>;
   latest?: boolean;
+  canDownload?: boolean;
   action?: ReactNode;
 }) {
   const t = useTranslations("data.versioning");
@@ -252,11 +272,13 @@ function VersionRow({
         </div>
         {draft ? null : (
           <div className="-mx-2 flex flex-wrap items-center gap-0.5 md:mx-0 md:-mr-2 md:justify-end">
-            <Link href={`/commons/data/${d.dataset_id}/versions/compare?to=${v.dataset_version_id}`} className={buttonClass("ghost", "sm")}>
-              <GitCompareArrows aria-hidden="true" strokeWidth={1.75} />
-              {t("compare")}
-            </Link>
-            {v.status === "PUBLISHED" ? (
+            {v.previous_version_id ? (
+              <Link href={`/commons/data/${d.dataset_id}/versions/compare?to=${v.dataset_version_id}`} className={buttonClass("ghost", "sm")}>
+                <GitCompareArrows aria-hidden="true" strokeWidth={1.75} />
+                {t("compare")}
+              </Link>
+            ) : null}
+            {v.status === "PUBLISHED" && canDownload ? (
               <Link href={`${href}?download=1`} className={buttonClass("ghost", "sm")}>
                 <Download aria-hidden="true" strokeWidth={1.75} />
                 {t("download")}

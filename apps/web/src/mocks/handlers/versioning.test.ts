@@ -38,6 +38,8 @@ describe("seed lineage", () => {
     expect(d).toMatchObject({ base_version_id: VERSION.battery, base_is_latest: true, created_by: USER.bSteward });
     expect(d.files.filter((f: { inherited: boolean }) => f.inherited).map((f: { path: string }) => f.path)).toEqual(["README.md", "_codebook.csv", "_schema.json", "data/test_cells.csv"]);
     expect(v20.change_summary).toEqual({ added: 2, removed: 0, changed: 2, unchanged: 1 });
+    // A first version has nothing to compare with.
+    expect((await get(VERSION.batteryV10)).change_summary).toBeNull();
   });
 });
 

@@ -88,7 +88,8 @@ export function versionView(db: MockDb, v: StoredVersion): Schemas["DatasetVersi
     files: files.map(({ inherited_from, ...f }): Schemas["DatasetFile"] => ({ ...f, inherited: inherited_from !== undefined })).sort(byPath),
     readiness_overall: v.status === "PUBLISHED" ? readinessOverallFor(db, v.dataset_version_id) : null,
     base_is_latest: v.status === "DRAFT" ? (v.base_version_id ?? null) === (latestPublishedVersion(db, v.dataset_id)?.dataset_version_id ?? null) : null,
-    change_summary: summarize(diffFiles(filesOf(db, target), files)),
+    // Null when there is nothing to compare with (a first version, or a draft with no base): spec §3.3b.
+    change_summary: target ? summarize(diffFiles(filesOf(db, target), files)) : null,
   };
 }
 

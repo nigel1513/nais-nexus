@@ -114,6 +114,27 @@ describe("VersionHistoryTab", () => {
     expect(screen.queryByRole("list", { name: "작업 중인 초안" })).toBeNull();
   });
 
+  it("offers 비교 only where a previous version exists, and 다운로드 only to viewers who can download", async () => {
+    open(USER.bSteward);
+    const v10 = (await history()).getByRole("listitem", { name: /^v1\.0 / });
+    expect(within(v10).queryByRole("link", { name: "비교" })).toBeNull();
+    expect(within(v10).getByText("첫 버전")).toBeInTheDocument();
+    expect(within(v10).getByRole("link", { name: "다운로드" })).toBeInTheDocument();
+  });
+
+  it("a viewer with neither grant nor steward role sees no download links", async () => {
+    open(USER.bResearcher);
+    const rows = (await history()).getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    expect(within(rows[0]!).getByRole("link", { name: "비교" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("link", { name: "다운로드" })).toBeNull());
+  });
+
+  it("a grant holder sees download links", async () => {
+    open(USER.aResearcher);
+    expect(await within((await history()).getAllByRole("listitem")[0]!).findByRole("link", { name: "다운로드" })).toBeInTheDocument();
+  });
+
   it("explains the label rule in a popover", async () => {
     open(USER.bSteward);
     await userEvent.click(await screen.findByRole("button", { name: "버전 이름 규칙" }));

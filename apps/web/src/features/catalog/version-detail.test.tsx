@@ -41,8 +41,9 @@ describe("VersionDetailScreen", () => {
     const publish = await screen.findByRole("button", { name: "게시" });
     await waitFor(() => expect(publish).toBeEnabled());
     await userEvent.click(publish);
-    const dialog = screen.getByRole("dialog");
-    expect(dialog).toHaveTextContent("게시 후에는 수정할 수 없습니다");
+    const dialog = screen.getByRole("dialog", { name: "버전 게시" });
+    expect(dialog).toHaveTextContent("게시 후에는 파일과 메모를 고칠 수 없습니다");
+    expect(within(dialog).getByLabelText(/^변경 메모/)).toHaveValue("Seed data (10_SEED_DATA.md)");
     await userEvent.click(within(dialog).getByRole("button", { name: "게시" }));
     const readiness = screen.getByRole("region", { name: "AI-Ready 검증" });
     await waitFor(() => expect(within(readiness).getAllByText("완료").length).toBeGreaterThan(0), { timeout: 5000 });
