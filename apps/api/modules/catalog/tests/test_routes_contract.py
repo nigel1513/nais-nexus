@@ -33,6 +33,7 @@ EXPECTED = {
     "updateDatasetVersion",
     "discardDatasetVersion",
     "compareDatasetVersions",
+    "rebaseDatasetVersion",
     "getFileProfile",
     "getFilePreview",
 }

@@ -11,6 +11,7 @@ from api.modules.catalog.routes import (
     jsonld,
     previews,
     publish,
+    rebase,
     search,
     uploads,
     versions,
@@ -29,6 +30,7 @@ for sub in (
     completion.router,
     contributors.router,
     publish.router,
+    rebase.router,
     vocabulary.router,
     previews.router,
 ):

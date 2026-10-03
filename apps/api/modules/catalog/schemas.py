@@ -165,6 +165,15 @@ class VersionUpdateIn(StrictIn):
     change_note: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=2000)]
 
 
+RebasePath = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._/-]{1,512}$")]
+
+
+class RebaseIn(StrictIn):
+    """rebaseDatasetVersion: path -> MINE | THEIRS, only for paths in conflict (others: 422 UNKNOWN_PATH)."""
+
+    resolutions: dict[RebasePath, Literal["MINE", "THEIRS"]] = Field(default_factory=dict)
+
+
 class UploadFileIn(StrictIn):
     path: Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._/-]{1,512}$")]
     size_bytes: Annotated[int, Field(ge=1)]  # the 50 GiB limit is FILE_TOO_LARGE, checked by the service
