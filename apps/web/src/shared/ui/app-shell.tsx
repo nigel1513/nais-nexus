@@ -13,10 +13,11 @@ import { TopBar } from "./top-bar";
 const DESKTOP = "(min-width: 768px)";
 
 /**
- * Content column: max 1200px, left-aligned (spec §3), side padding 16 / 24 / 32px by width (spec §2.4). The top bar
- * uses the same padding, so the breadcrumb and the h1 share one left edge at every width.
+ * Content column: the full width beside the sidebar (no cap, so wide screens are used; forms and long text keep their
+ * own reading widths), side padding 16 / 24 / 32px by width (spec §2.4). The top bar uses the same padding, so the
+ * breadcrumb and the h1 share one left edge at every width.
  */
-const contentClass = "w-full max-w-[1200px] flex-1 px-4 py-6 md:px-6 xl:px-8";
+const contentClass = "w-full flex-1 px-4 py-6 md:px-6 xl:px-8";
 
 /**
  * Spec §3 app shell: sidebar (240px, or a 64px rail) | top bar 48px over the content. Below 768px the sidebar lives
