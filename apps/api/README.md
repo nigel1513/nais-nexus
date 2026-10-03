@@ -3,17 +3,76 @@
 모듈별 설명은 `apps/api/modules/<module>/README.md`, 전체 실행 방법은 저장소 루트 `README.md`에 있습니다.
 여기에는 데이터 허브·프로젝트 작업 공간·연구노트(2026-10-02 계획)를 운영 스택에 반영할 때 필요한 것만 적습니다.
 
-## 마이그레이션
+## 운영 반영 순서
 
-- 새 스키마: `workspace`(입력·레시피·실행·산출물·허브 공개 요청·토론), `notes`(연구노트·블록·서명·체인·근거·임베딩·daily_runs).
-- api/worker 이미지를 새로 빌드한 뒤, 트래픽을 받기 전에 한 번 실행합니다.
+새 스키마 `workspace`(입력·레시피·실행·산출물·허브 공개 요청·토론)와 `notes`(연구노트·블록·서명·체인·근거·임베딩·
+daily_runs)가 생깁니다. 아래 순서를 그대로 지킵니다(명령은 저장소 루트, 운영 스택 디렉터리에서).
 
-  ```sh
-  scripts/nais migrate
-  ```
+1. **DB 백업**
 
-  모든 모듈의 Alembic 마이그레이션을 순서대로 적용합니다(이미 적용된 것은 건너뜀). api와 worker는 같은 스키마를 보므로
-  둘 다 새 이미지로 바꾼 다음 재시작합니다.
+   ```sh
+   docker compose exec -T postgres pg_dump -U nais -Fc nais > nais-$(date +%Y%m%d-%H%M).dump
+   ```
+
+2. **슈퍼유저 SQL**(한 번만). `infra/docker/postgres/init.sql`은 DB를 처음 만들 때만 돌기 때문에, 그보다 먼저 만들어진
+   DB에는 두 스키마와 기본 권한을 직접 만듭니다. `nais_migrator`가 스키마 소유자, `nais_app`은 읽기·쓰기만(TRUNCATE·DDL 없음).
+
+   ```sh
+   docker compose exec -T postgres psql -U nais -d nais -v ON_ERROR_STOP=1 <<'SQL'
+   CREATE SCHEMA IF NOT EXISTS workspace AUTHORIZATION nais_migrator;
+   CREATE SCHEMA IF NOT EXISTS notes AUTHORIZATION nais_migrator;
+   GRANT USAGE ON SCHEMA workspace, notes TO nais_app;
+   ALTER DEFAULT PRIVILEGES FOR ROLE nais_migrator IN SCHEMA workspace, notes
+     GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO nais_app;
+   ALTER DEFAULT PRIVILEGES FOR ROLE nais_migrator IN SCHEMA workspace, notes
+     GRANT USAGE, SELECT ON SEQUENCES TO nais_app;
+   SQL
+   ```
+
+3. **`.env` 변수**: `WORKSPACE_MAX_ROWS`, `WORKSPACE_MAX_INPUT_BYTES`, `WORKSPACE_RUN_TIMEOUT_SECONDS`,
+   `WORKSPACE_WORKER_CONCURRENCY`와 아래 "로컬 LLM·검색 환경변수"를 `.env.example`을 보고 넣습니다(api·worker가 같은
+   `.env`를 읽습니다). LLM을 아직 켜지 않으려면 `NAIS_LLM_ENABLED=false` 그대로 둡니다.
+
+4. **빌드**(되돌리기용 태그를 먼저 남김):
+
+   ```sh
+   docker tag nais/api:dev nais/api:pre-hub && docker tag nais/web:dev nais/web:pre-hub
+   docker compose build api worker web
+   ```
+
+5. **마이그레이션 — api/worker를 재시작하기 전에**:
+
+   ```sh
+   scripts/nais migrate
+   ```
+
+   새 이미지로 일회성 컨테이너를 띄워 모든 모듈의 Alembic 마이그레이션을 모듈 순서대로 적용합니다(이미 적용된 것은
+   건너뜀). 순서상 `workspace`·`notes` 다음에 `audit_0003`(감사 action·resource 값 확장)이 옵니다. 새 api/worker가
+   먼저 뜨면 새 감사 값이 기존 CHECK 제약에 걸리므로 반드시 마이그레이션이 끝난 뒤 재시작합니다.
+
+6. **확인 SQL**
+
+   ```sh
+   docker compose exec -T postgres psql -U nais -d nais -At <<'SQL'
+   SELECT version_num FROM workspace.alembic_version;   -- workspace_0006
+   SELECT version_num FROM notes.alembic_version;       -- notes_0004
+   SELECT version_num FROM audit.alembic_version;       -- audit_0003
+   SELECT has_table_privilege('nais_app', 'workspace.runs', 'SELECT'),
+          has_table_privilege('nais_app', 'notes.notes', 'INSERT'),
+          has_table_privilege('nais_app', 'notes.notes', 'TRUNCATE');   -- t|t|f
+   SQL
+   ```
+
+7. **재시작**: `docker compose up -d --no-build api worker web`. worker는 **레플리카 1개**만 띄웁니다(`--scale
+   worker=N` 금지: 아래 "worker: notes 전용 큐" 참고).
+
+8. **되돌리기**: 이미지 태그로 되돌립니다. 마이그레이션은 추가만 하므로(새 스키마, 감사 값 확장) 이전 이미지가 그대로
+   동작하며 downgrade는 하지 않습니다.
+
+   ```sh
+   docker tag nais/api:pre-hub nais/api:dev && docker tag nais/web:pre-hub nais/web:dev
+   docker compose up -d --no-build api worker web
+   ```
 
 ## 로컬 LLM·검색 환경변수
 
@@ -23,17 +82,17 @@ GPU(사설망 192.168.0.2, RTX 4090)는 **다른 플랫폼과 공유**합니다.
 | 변수 | 기본값 | 뜻 |
 | --- | --- | --- |
 | `NAIS_LLM_ENABLED` | `false` | LLM·임베딩·리랭크 전체 스위치. `true`이고 각 base URL이 있을 때만 해당 클라이언트가 만들어집니다. |
-| `NAIS_LLM_BASE_URL` | (없음) | OpenAI 호환 chat 엔드포인트, 예: `http://192.168.0.2:8001` (vLLM, EXAONE 3.5 7.8B AWQ, 16K 컨텍스트) |
+| `NAIS_LLM_BASE_URL` | 코드 기본값 없음 | OpenAI 호환 chat 엔드포인트. `.env.example` 예시값 `http://192.168.0.2:8001` (vLLM, EXAONE 3.5 7.8B AWQ, 16K 컨텍스트) |
 | `NAIS_LLM_MODEL` | `llm` | vLLM에 등록된 모델 id |
 | `NAIS_LLM_TIMEOUT_S` | `60` | chat 한 번의 제한 시간(초). 임베딩·리랭크 기본 제한 시간이기도 합니다. |
-| `NAIS_EMBED_BASE_URL` | (없음) | 임베딩, 예: `http://192.168.0.2:8002` |
+| `NAIS_EMBED_BASE_URL` | 코드 기본값 없음 | 임베딩. `.env.example` 예시값 `http://192.168.0.2:8002` |
 | `NAIS_EMBED_MODEL` | `bge-m3` | 임베딩 모델 id(바꾸면 노트 임베딩이 다시 계산됩니다: text_hash에 모델 id 포함) |
-| `NAIS_RERANK_BASE_URL` | (없음) | 리랭크, 예: `http://192.168.0.2:8003` |
+| `NAIS_RERANK_BASE_URL` | 코드 기본값 없음 | 리랭크. `.env.example` 예시값 `http://192.168.0.2:8003` |
 | `NAIS_RERANK_MODEL` | `bge-reranker` | 리랭크 모델 id |
 | `NAIS_SEARCH_TIMEOUT_S` | `5` | searchNotes 요청 경로에서 질의 임베딩·리랭크를 각각 기다리는 최대 시간. 넘으면 키워드 검색으로 대체합니다. |
 
 api와 worker 둘 다 같은 값을 받아야 합니다(api: 초안 요청 가능 여부·검색, worker: 초안 생성·임베딩).
-web 컨테이너는 모의 모드가 아니면 LLM을 직접 부르지 않습니다.
+web 컨테이너는 LLM을 부르지 않습니다(모의 초안은 결정적).
 
 ## worker: `notes` 전용 큐
 
