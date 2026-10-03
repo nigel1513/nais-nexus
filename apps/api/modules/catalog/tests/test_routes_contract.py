@@ -34,6 +34,8 @@ EXPECTED = {
     "discardDatasetVersion",
     "compareDatasetVersions",
     "rebaseDatasetVersion",
+    "getFileHistory",
+    "getDatasetCitation",
     "getFileProfile",
     "getFilePreview",
 }
