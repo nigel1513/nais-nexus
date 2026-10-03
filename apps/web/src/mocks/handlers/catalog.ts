@@ -429,7 +429,7 @@ function generatePreviews(db: MockDb, v: StoredVersion) {
     try {
       const { columns, preview, rowsSampled, truncated, columnsTruncated } = profileCsv(text, f.path, {});
       const format = f.path.toLowerCase().endsWith(".tsv") ? "tsv" : "csv";
-      db.previews[f.file_id] = { status: "READY", column_profile: { format, rows_sampled: rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at };
+      db.previews[f.file_id] = { status: "READY", column_profile: { format, rows_sampled: rowsSampled, total_rows: truncated ? null : rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at };
     } catch (e) {
       if (!(e instanceof UnparseableError)) throw e;
       db.previews[f.file_id] = { status: "FAILED", failure_code: "UNPARSEABLE", generated_at };
@@ -1238,7 +1238,7 @@ export const catalogHandlers = [
     const profile = (f: StoredFile | undefined): ProfileLite | null => {
       const row = f ? previewOf(db, f) : undefined;
       const cp = row?.status === "READY" ? row.column_profile : undefined;
-      return cp ? { total_rows: cp.truncated ? null : cp.rows_sampled, columns: cp.columns } : null;
+      return cp ? { total_rows: cp.total_rows !== undefined ? cp.total_rows : cp.truncated ? null : cp.rows_sampled, columns: cp.columns } : null;
     };
     const schema = changes
       .filter((c) => c.status === "CHANGED" && /\.(csv|tsv|parquet)$/i.test(c.path))

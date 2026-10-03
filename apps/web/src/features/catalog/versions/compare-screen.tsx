@@ -4,6 +4,8 @@ import { ArrowLeftRight, History } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { Fragment, useId, useState, type ReactNode } from "react";
 import type { DatasetVersion, Schemas } from "@/shared/api/types";
+import { useMediaQuery } from "@/shared/hooks/use-media-query";
+import { ApiError } from "@/shared/api/errors";
 import { useUrlQuery } from "@/shared/hooks/use-url-query";
 import { formatBytes } from "@/shared/lib/format";
 import { useBreadcrumbs } from "@/shared/ui/breadcrumbs";
@@ -43,15 +45,19 @@ export function CompareScreen({ datasetId, to: toProp, from: fromProp }: { datas
   const latest = items.find((v) => v.status === "PUBLISHED");
   const to = params.get("to") ?? toProp ?? latest?.dataset_version_id ?? "";
   const from = params.get("from") ?? fromProp ?? undefined;
-  const diff = useCompareVersions(to, from, { enabled: !!to });
+  // Both ends must be versions of this dataset the viewer can see; anything else is "not found", never fetched.
+  const known = new Set(items.map((v) => v.dataset_version_id));
+  const foreign = versions.isSuccess && ((!!to && !known.has(to)) || (!!from && !known.has(from)));
+  const diff = useCompareVersions(to, from, { enabled: !!to && versions.isSuccess && !foreign });
   const labels = new Map(items.map((v) => [v.dataset_version_id, v.version_label]));
   const layer: Layer = LAYERS.includes(params.get("layer") as Layer) ? (params.get("layer") as Layer) : "files";
   const historyPath = params.get("file");
   useBreadcrumbs([...(ds.data ? [{ label: ds.data.title, href: `/commons/data/${datasetId}?tab=versions` }] : []), { label: t("diff.crumb") }]);
 
-  if (ds.isPending || versions.isPending || (to && diff.isPending)) return <DelayedSkeleton lines={8} />;
+  if (ds.isPending || versions.isPending || (to && !foreign && diff.isPending)) return <DelayedSkeleton lines={8} />;
   if (ds.isError) return <ErrorView error={ds.error} onRetry={() => void ds.refetch()} />;
   if (versions.isError) return <ErrorView error={versions.error} onRetry={() => void versions.refetch()} />;
+  if (foreign) return <ErrorView error={new ApiError(404, "NOT_FOUND", "Version not in this dataset", null)} />;
   if (diff.isError) return <ErrorView error={diff.error} onRetry={() => void diff.refetch()} />;
   if (!diff.data) return <EmptyState title={t("empty")} />;
 
@@ -100,7 +106,7 @@ export function CompareScreen({ datasetId, to: toProp, from: fromProp }: { datas
           <TabsContent value="files">
             <div className={cn("grid grid-cols-1 gap-6", historyPath ? "xl:grid-cols-12" : null)}>
               <div className={historyPath ? "min-w-0 xl:col-span-8" : "min-w-0"}>
-                <FilesLayer diff={d} onHistory={(path) => setParams({ file: path })} />
+                <FilesLayer key={`${d.from_version_id ?? ""}>${d.to_version_id}`} diff={d} onHistory={(path) => setParams({ file: path })} />
               </div>
               {historyPath ? (
                 <div className="min-w-0 xl:col-span-4">
@@ -253,21 +259,49 @@ function DeltaBar({ delta, max }: { delta: number; max: number }) {
   );
 }
 
+/** Rows shown per directory before "더 보기": keeps a 3,000-file diff quick to render. */
+export const DIR_PAGE = 200;
+
 function FilesLayer({ diff: d, onHistory }: { diff: VersionDiff; onHistory: (path: string) => void }) {
   const t = useTranslations("data.versioning.diff");
   const changes = d.summary.added + d.summary.removed + d.summary.changed;
   const [changedOnly, setChangedOnly] = useState(changes > 0);
+  const [shown, setShown] = useState<Record<string, number>>({});
+  const phone = useMediaQuery("(max-width: 767px)");
   const checkId = useId();
-  const rows = d.files.filter((f) => !changedOnly || f.status !== "UNCHANGED");
-  const max = Math.max(0, ...rows.map((f) => Math.abs(f.size_delta)));
-  // Path tree: files grouped under their directory, in path order (directories get a row of their own).
+  const rows = changedOnly ? d.files.filter((f) => f.status !== "UNCHANGED") : d.files;
+  let max = 0;
+  for (const f of rows) max = Math.max(max, Math.abs(f.size_delta));
+  // Path tree: files grouped under their directory in one pass (the API lists them in path order).
   const groups = new Map<string, FileChange[]>();
   for (const f of rows) {
     const cut = f.path.lastIndexOf("/");
     const dir = cut >= 0 ? f.path.slice(0, cut + 1) : "";
-    groups.set(dir, [...(groups.get(dir) ?? []), f]);
+    const list = groups.get(dir);
+    if (list) list.push(f);
+    else groups.set(dir, [f]);
   }
   const dirs = [...groups.keys()].sort((a, b) => (a === "" ? -1 : b === "" ? 1 : a.localeCompare(b)));
+  const visible = (dir: string) => groups.get(dir)!.slice(0, shown[dir] ?? DIR_PAGE);
+  const more = (dir: string) => {
+    const rest = groups.get(dir)!.length - (shown[dir] ?? DIR_PAGE);
+    return rest > 0 ? (
+      <Button variant="ghost" size="sm" onClick={() => setShown((s) => ({ ...s, [dir]: (s[dir] ?? DIR_PAGE) + DIR_PAGE }))}>
+        {t("more", { dir: dir || "/", count: rest })}
+      </Button>
+    ) : null;
+  };
+  const historyButton = (f: FileChange, compact: boolean) =>
+    compact ? (
+      <IconButton label={t("historyFor", { path: f.path })} variant="ghost" size="sm" onClick={() => onHistory(f.path)}>
+        <History aria-hidden="true" strokeWidth={1.75} />
+      </IconButton>
+    ) : (
+      <Button variant="ghost" size="sm" aria-label={t("historyFor", { path: f.path })} onClick={() => onHistory(f.path)}>
+        <History aria-hidden="true" strokeWidth={1.75} />
+        {t("history")}
+      </Button>
+    );
 
   return (
     <section aria-label={t("files")} className="flex flex-col gap-3">
@@ -284,28 +318,31 @@ function FilesLayer({ diff: d, onHistory }: { diff: VersionDiff; onHistory: (pat
         <div className="rounded-md border border-dashed border-border">
           <EmptyState title={t("noChanges")} description={t("noChangesHint")} />
         </div>
-      ) : (
-        <>
-        {/* Phones: one compact row per file (the five-column table would only scroll sideways there). */}
-        <ul aria-label={t("fileTable")} className="flex flex-col divide-y divide-border rounded-md border border-border bg-bg-panel md:hidden">
-          {rows.map((f) => (
-            <li key={f.path} className="flex items-start justify-between gap-3 px-3.5 py-3">
-              <div className="flex min-w-0 flex-col gap-1">
-                <span className={cn("break-all font-mono text-[12.5px]", f.status === "REMOVED" ? "text-fg-muted line-through decoration-danger/60" : "text-fg")}>{f.path}</span>
-                <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small">
-                  <StatusMark status={f.status} />
-                  <span className="font-mono text-[12px] text-fg-muted">
-                    {formatBytes((f.after ?? f.before)!.size_bytes)} <span className={f.size_delta ? "text-fg" : undefined}>({signedBytes(f.size_delta)})</span>
-                  </span>
-                </span>
-              </div>
-              <IconButton label={t("historyFor", { path: f.path })} variant="ghost" size="sm" onClick={() => onHistory(f.path)}>
-                <History aria-hidden="true" strokeWidth={1.75} />
-              </IconButton>
-            </li>
+      ) : phone ? (
+        // Phones: one compact row per file (the five-column table would only scroll sideways there).
+        <ul aria-label={t("fileTable")} className="flex flex-col divide-y divide-border rounded-md border border-border bg-bg-panel">
+          {dirs.map((dir) => (
+            <Fragment key={dir || "/"}>
+              {visible(dir).map((f) => (
+                <li key={f.path} className="flex items-start justify-between gap-3 px-3.5 py-3">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className={cn("break-all font-mono text-[12.5px]", f.status === "REMOVED" ? "text-fg-muted line-through decoration-danger/60" : "text-fg")}>{f.path}</span>
+                    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small">
+                      <StatusMark status={f.status} />
+                      <span className="font-mono text-[12px] text-fg-muted">
+                        {formatBytes((f.after ?? f.before)!.size_bytes)} <span className={f.size_delta ? "text-fg" : undefined}>({signedBytes(f.size_delta)})</span>
+                      </span>
+                    </span>
+                  </div>
+                  {historyButton(f, true)}
+                </li>
+              ))}
+              {more(dir) ? <li className="px-2 py-1.5">{more(dir)}</li> : null}
+            </Fragment>
           ))}
         </ul>
-        <Table caption={t("fileTable")} frameClassName="max-md:hidden" className="font-normal">
+      ) : (
+        <Table caption={t("fileTable")} className="font-normal">
           <THead>
             <Tr>
               <Th>{t("path")}</Th>
@@ -323,11 +360,11 @@ function FilesLayer({ diff: d, onHistory }: { diff: VersionDiff; onHistory: (pat
                 {dir ? (
                   <Tr className="bg-bg-subtle/60">
                     <Td colSpan={5} className="py-1.5 font-mono text-[12px] font-medium text-fg-muted">
-                      {dir}
+                      {dir} <span className="num font-sans text-caption text-fg-muted">· {groups.get(dir)!.length}</span>
                     </Td>
                   </Tr>
                 ) : null}
-                {groups.get(dir)!.map((f) => (
+                {visible(dir).map((f) => (
                   <Tr key={f.path}>
                     <Td className={cn("font-mono text-[12.5px]", dir ? "pl-7" : null, f.status === "REMOVED" ? "text-fg-muted line-through decoration-danger/60" : "text-fg")}>
                       <span className="break-all">{dir ? f.path.slice(dir.length) : f.path}</span>
@@ -341,7 +378,7 @@ function FilesLayer({ diff: d, onHistory }: { diff: VersionDiff; onHistory: (pat
                           {f.before && f.after && f.status !== "UNCHANGED" ? `${formatBytes(f.before.size_bytes)} → ` : null}
                           <span className="text-fg">{formatBytes((f.after ?? f.before)!.size_bytes)}</span>
                         </span>
-                        <span className={cn("w-[4.5rem] text-right", f.size_delta === 0 ? "text-fg-subtle" : "text-fg")}>{signedBytes(f.size_delta)}</span>
+                        <span className={cn("w-[4.5rem] text-right", f.size_delta === 0 ? "text-fg-muted" : "text-fg")}>{signedBytes(f.size_delta)}</span>
                         <DeltaBar delta={f.size_delta} max={max} />
                       </span>
                     </Td>
@@ -351,7 +388,7 @@ function FilesLayer({ diff: d, onHistory }: { diff: VersionDiff; onHistory: (pat
                           <span className="text-fg-muted" title={f.before!.sha256}>
                             {short(f.before!.sha256)}
                           </span>
-                          <span className="px-1 text-fg-subtle">→</span>
+                          <span className="px-1 text-fg-muted">→</span>
                           <span className="text-fg" title={f.after!.sha256}>
                             {short(f.after!.sha256)}
                           </span>
@@ -362,19 +399,20 @@ function FilesLayer({ diff: d, onHistory }: { diff: VersionDiff; onHistory: (pat
                         </span>
                       )}
                     </Td>
-                    <Td className="text-right">
-                      <Button variant="ghost" size="sm" aria-label={t("historyFor", { path: f.path })} onClick={() => onHistory(f.path)}>
-                        <History aria-hidden="true" strokeWidth={1.75} />
-                        <span className="max-md:sr-only">{t("history")}</span>
-                      </Button>
-                    </Td>
+                    <Td className="text-right">{historyButton(f, false)}</Td>
                   </Tr>
                 ))}
+                {more(dir) ? (
+                  <Tr>
+                    <Td colSpan={5} className={dir ? "pl-5" : undefined}>
+                      {more(dir)}
+                    </Td>
+                  </Tr>
+                ) : null}
               </Fragment>
             ))}
           </TBody>
         </Table>
-        </>
       )}
     </section>
   );
@@ -391,7 +429,7 @@ function Pair({ before, after, render = (v) => String(v) }: { before: unknown; a
   return (
     <span className="whitespace-nowrap">
       <span className="text-fg-muted">{before === null || before === undefined ? "—" : render(before)}</span>
-      <span className="px-1 text-fg-subtle">→</span>
+      <span className="px-1 text-fg-muted">→</span>
       <span className="text-fg">{after === null || after === undefined ? "—" : render(after)}</span>
     </span>
   );
@@ -434,7 +472,7 @@ function SchemaBlock({ change: c }: { change: SchemaChange }) {
           <p className="flex flex-wrap items-baseline gap-x-2 text-small">
             <span className="text-fg-muted">{t("rows")}</span>
             <span className="font-mono text-[13px] text-fg-muted">{typeof before === "number" ? nf.format(before) : t("rowsUnknown")}</span>
-            <span className="text-fg-subtle">→</span>
+            <span className="text-fg-muted">→</span>
             <span className="font-mono text-[13px] font-semibold text-fg">{typeof after === "number" ? nf.format(after) : t("rowsUnknown")}</span>
             {delta !== null && delta !== 0 ? <span className="font-mono text-[12.5px] text-fg">({delta > 0 ? "+" : "−"}{nf.format(Math.abs(delta))})</span> : null}
           </p>
@@ -477,8 +515,8 @@ function SchemaBlock({ change: c }: { change: SchemaChange }) {
                   return (
                     <Tr key={col.name}>
                       <Td className="font-mono text-[12.5px] text-fg">{col.name}</Td>
-                      <Td className="font-mono text-[12px]">{col.type ? <Pair before={col.type[0]} after={col.type[1]} /> : <span className="text-fg-subtle">—</span>}</Td>
-                      <Td className="font-mono text-[12px]">{col.unit ? <Pair before={col.unit[0]} after={col.unit[1]} /> : <span className="text-fg-subtle">—</span>}</Td>
+                      <Td className="font-mono text-[12px]">{col.type ? <Pair before={col.type[0]} after={col.type[1]} /> : <span className="text-fg-muted">—</span>}</Td>
+                      <Td className="font-mono text-[12px]">{col.unit ? <Pair before={col.unit[0]} after={col.unit[1]} /> : <span className="text-fg-muted">—</span>}</Td>
                       <Td className="text-right font-mono text-[12px]">
                         {col.missing_ratio ? (
                           <>
@@ -486,7 +524,7 @@ function SchemaBlock({ change: c }: { change: SchemaChange }) {
                             {pp !== null && pp !== 0 ? <span className="pl-1.5 text-fg">({pp > 0 ? "+" : "−"}{Math.abs(pp).toFixed(1)}%p)</span> : null}
                           </>
                         ) : (
-                          <span className="text-fg-subtle">—</span>
+                          <span className="text-fg-muted">—</span>
                         )}
                       </Td>
                     </Tr>
@@ -579,6 +617,19 @@ function MetadataLayer({ diff: d }: { diff: VersionDiff }) {
                   </Td>
                 </Tr>
               );
+            // Too long to diff word by word: both texts whole, and say so.
+            return (
+              <Tr key={m.field}>
+                {head}
+                <Td className="align-top">
+                  <p className="whitespace-pre-wrap break-words text-small text-fg-muted">{m.before ?? t("empty")}</p>
+                </Td>
+                <Td className="align-top">
+                  <p className="mb-1.5 text-caption text-fg-muted">{t("tooLong")}</p>
+                  <p className="whitespace-pre-wrap break-words text-small text-fg">{m.after ?? t("empty")}</p>
+                </Td>
+              </Tr>
+            );
           }
           if (Array.isArray(m.before) || Array.isArray(m.after)) {
             const b = ((m.before as unknown[] | null) ?? []).map((v) => one(m.field, v));

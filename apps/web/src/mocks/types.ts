@@ -45,7 +45,7 @@ export type StoredNotification = Schemas["Notification"] & { user_id: string };
 export type StoredPreview = {
   status: Schemas["FilePreviewStatus"];
   failure_code?: "UNPARSEABLE" | "TIMEOUT" | "GENERATION_FAILED";
-  column_profile?: { format: "csv" | "tsv" | "parquet"; rows_sampled: number; truncated: boolean; columns_truncated: boolean; columns: Schemas["ColumnProfile"][] };
+  column_profile?: { format: "csv" | "tsv" | "parquet"; rows_sampled: number; total_rows?: number | null; truncated: boolean; columns_truncated: boolean; columns: Schemas["ColumnProfile"][] };
   preview?: PreviewBody;
   generated_at?: string;
 };

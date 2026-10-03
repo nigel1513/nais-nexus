@@ -14,6 +14,17 @@ import type { MockDb, MockUser, StoredDataset, StoredValidation, StoredVersion }
 export const sid = (suffix: string) => `00000000-0000-7000-8000-${suffix.padStart(12, "0")}`;
 export const hex = (n: number) => n.toString(16).padStart(64, "0");
 
+/** A stable 64-hex stand-in for sha256(content): same content, same value; different content looks different from the first digit. */
+export function contentSha(text: string): string {
+  let out = "";
+  for (let seed = 0; seed < 8; seed += 1) {
+    let h = (0x811c9dc5 ^ (seed * 0x9e3779b1)) >>> 0;
+    for (let i = 0; i < text.length; i += 1) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193) >>> 0;
+    out += h.toString(16).padStart(8, "0");
+  }
+  return out;
+}
+
 export const ORG = { nais: sid("0001"), a: sid("000a"), b: sid("000b") } as const;
 export const USER = {
   admin: sid("0101"),
@@ -347,7 +358,7 @@ export function createSeed(now: Date): MockDb {
     file_id: sid(`${versionId.slice(-4)}${hex(path.length + body.length).slice(-4)}${String(path.length).padStart(2, "0")}`).slice(0, 36),
     path,
     size_bytes: encoder.encode(body).length,
-    sha256: hex(encoder.encode(body).length * 31 + path.length * 7),
+    sha256: contentSha(`${path}\n${body}`),
     media_type,
     status: "VERIFIED",
   });
@@ -446,7 +457,12 @@ export function createSeed(now: Date): MockDb {
     if (path !== "data/measurements.csv") return null;
     if (v.dataset_id === DATASET.battery) {
       const rows = v.dataset_version_id === VERSION.batteryV10 ? 200 : v.dataset_version_id === VERSION.batteryV11 ? 500 : v.dataset_version_id === VERSION.batteryDraft ? 1200 : 1000;
-      return { text: tables.batteryCycles(rows), hints: tables.BATTERY_CYCLES_HINTS };
+      // Before v2.0 the codebook was rougher: temperature logged as whole degrees, voltage in mV (v2.0 "컬럼 정의 정비").
+      const v1 = v.dataset_version_id === VERSION.batteryV10 || v.dataset_version_id === VERSION.batteryV11;
+      const hints: Record<string, Hint> = v1
+        ? { ...tables.BATTERY_CYCLES_HINTS, temp_c: { ...tables.BATTERY_CYCLES_HINTS.temp_c!, type: "integer" as const }, voltage_v: { ...tables.BATTERY_CYCLES_HINTS.voltage_v!, unit: "mV" } }
+        : tables.BATTERY_CYCLES_HINTS;
+      return { text: tables.batteryCycles(rows), hints };
     }
     if (v.dataset_id === DATASET.openMaterials) return { text: tables.openMaterials(), hints: tables.OPEN_MATERIALS_HINTS };
     if (v.dataset_id === DATASET.qcLogs) return { text: tables.qcLogs(), hints: tables.QC_LOGS_HINTS };
@@ -459,7 +475,17 @@ export function createSeed(now: Date): MockDb {
       const table = tableFor(v, file.path);
       if (!table) continue;
       const { columns, preview, rowsSampled, truncated, columnsTruncated } = profileCsv(table.text, file.path, table.hints);
-      previews[file.file_id] = { status: "READY", column_profile: { format: "csv", rows_sampled: rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at: seedTime };
+      previews[file.file_id] = {
+        status: "READY",
+        column_profile: { format: "csv", rows_sampled: rowsSampled, total_rows: truncated ? null : rowsSampled, truncated, columns_truncated: columnsTruncated, columns },
+        preview,
+        generated_at: seedTime,
+      };
+      // v1.1 lost temperature readings on 12 cycles (sensor dropout); v2.0 back-filled them.
+      if (v.dataset_version_id === VERSION.batteryV11 && file.path === "data/measurements.csv") {
+        const temp = columns.find((c) => c.name === "temp_c");
+        if (temp) temp.missing_ratio = 12 / rowsSampled;
+      }
     }
   }
 

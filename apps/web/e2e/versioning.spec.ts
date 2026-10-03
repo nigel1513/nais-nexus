@@ -7,6 +7,9 @@ const RESEARCHER = "00000000-0000-7000-8000-000000000a02";
 const DATASET = "00000000-0000-7000-8000-000000002001";
 
 async function seriousViolations(page: Page) {
+  // URL-synced tabs re-render the route (router.replace): let it settle, title included, before reading the page.
+  await page.waitForLoadState("networkidle");
+  await page.waitForFunction(() => document.title.length > 0);
   await page.waitForFunction(() => document.getAnimations().every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity));
   const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
   return results.violations.filter((v) => v.impact === "serious" || v.impact === "critical").map((v) => `${v.id}: ${v.help}`);
@@ -34,7 +37,7 @@ test("versioning journey: history → compare → file history → citation copy
   await expect(page).toHaveURL(/file=data%2Fmeasurements\.csv/);
 
   await page.getByRole("tab", { name: /^데이터 구조/ }).click();
-  await expect(page.getByRole("region", { name: "data/measurements.csv" })).toContainText("행 수");
+  await expect(page.getByRole("region", { name: "data/measurements.csv", exact: true })).toContainText("행 수");
   await page.getByRole("tab", { name: /^메타데이터/ }).click();
   await expect(page.getByRole("table", { name: "메타데이터" }).getByText("license", { exact: true })).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
@@ -47,6 +50,17 @@ test("versioning journey: history → compare → file history → citation copy
   await page.goto(`/commons/data/${DATASET}/versions/00000000-0000-7000-8000-000000002101`);
   const citation = page.getByRole("region", { name: "이 버전 인용하기" });
   await expect(citation).toContainText("v2.0에 고정된 인용입니다");
+  await expect(citation.getByRole("tabpanel")).toContainText("[Data set]");
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.waitForLoadState("networkidle");
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForLoadState("networkidle");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
   await citation.getByRole("tab", { name: "BibTeX" }).click();
   await expect(citation.getByText(/@misc\{/)).toBeVisible();
   await citation.getByRole("button", { name: "복사" }).click();

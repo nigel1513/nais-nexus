@@ -505,7 +505,7 @@ export function enrichSeed(db: MockDb, now: Date): MockDb {
     const dataFile = files[1]!;
     if (s.preview === "READY") {
       const { columns, preview, rowsSampled, truncated, columnsTruncated } = profileCsv(body, s.file, s.hints);
-      db.previews[dataFile.file_id] = { status: "READY", column_profile: { format: "csv", rows_sampled: rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at: publishedAt };
+      db.previews[dataFile.file_id] = { status: "READY", column_profile: { format: "csv", rows_sampled: rowsSampled, total_rows: truncated ? null : rowsSampled, truncated, columns_truncated: columnsTruncated, columns }, preview, generated_at: publishedAt };
     } else if (s.preview === "PENDING") {
       db.previews[dataFile.file_id] = { status: "PENDING" };
     } else {

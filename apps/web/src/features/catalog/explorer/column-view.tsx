@@ -84,6 +84,7 @@ export function ColumnView({ fileId }: { fileId: string }) {
         </TBody>
       </Table>
       <p className="text-caption text-fg-muted">
+        {p.total_rows != null ? `${t("data.explorer.totalRows", { rows: p.total_rows })} · ` : null}
         {p.rows_sampled != null ? t(p.truncated ? "data.explorer.sampledTruncated" : "data.explorer.sampled", { rows: p.rows_sampled }) : null}
         {p.columns_truncated ? ` ${t("data.explorer.columnsTruncated")}` : ""}
       </p>

@@ -128,6 +128,20 @@ describe("citation", () => {
       },
     };
     expect(creatorsFromSnapshot(snap, "Institute B").map((c) => c.name)).toEqual(["홍길동", "Co"]);
-    expect(creatorsFromSnapshot({}, "Institute B")).toEqual([{ name: "Institute B", affiliation: null, ntis: null }]);
+    expect(creatorsFromSnapshot({}, "Institute B")).toEqual([{ name: "Institute B", affiliation: null, ntis: null, kind: "organization" }]);
+  });
+  it("lists a PI who is also a co-investigator once", () => {
+    const pi = { display_name: "홍길동", affiliation: { name: "Institute B" }, national_researcher_number: "10000002" };
+    const snap = { people: { principal_investigator: pi, contributors: [{ ...pi, role: "CO_INVESTIGATOR" }] } };
+    expect(creatorsFromSnapshot(snap, "Institute B").map((c) => c.name)).toEqual(["홍길동"]);
+  });
+  it("escapes every BibTeX special and braces names that contain ' and '", () => {
+    const out = renderCitation("bibtex", { ...C, title: "a\\b ~ c^2", creators: [{ name: "Smith and Wesson Lab", affiliation: null, ntis: null }, C.creators[0]!] });
+    expect(out).toContain("title = {a\\textbackslash{}b \\textasciitilde{} c\\textasciicircum{}2}");
+    expect(out).toContain("author = {{Smith and Wesson Lab} and 홍길동}");
+  });
+  it("a person without an affiliation is still Personal in DataCite; the organization fallback is Organizational", () => {
+    const data = JSON.parse(renderCitation("datacite-json", { ...C, creators: [{ name: "Solo", affiliation: null, ntis: null, kind: "person" }, { name: "Institute B", affiliation: null, ntis: null, kind: "organization" }] }));
+    expect(data.creators.map((c: { nameType: string }) => c.nameType)).toEqual(["Personal", "Organizational"]);
   });
 });

@@ -133,7 +133,8 @@ export function fileHistory(versions: HistoryVersion[], path: string): Schemas["
 }
 
 // ---- citation ---------------------------------------------------------------------------------------------------
-export type Creator = { name: string; affiliation: string | null; ntis: string | null };
+/** `kind` organization = the owner-institute fallback; people are Personal in DataCite even without an affiliation. */
+export type Creator = { name: string; affiliation: string | null; ntis: string | null; kind?: "person" | "organization" };
 export type CitationInput = {
   title: string;
   version_label: string;
@@ -147,7 +148,7 @@ export type CitationInput = {
 
 const CREATOR_ROLES = new Set(["CO_INVESTIGATOR"]);
 type PersonLike = { display_name?: unknown; affiliation?: { name?: string } | null; national_researcher_number?: string | null; role?: unknown };
-const person = (p: PersonLike): Creator => ({ name: String(p.display_name), affiliation: p.affiliation?.name ?? null, ntis: p.national_researcher_number ?? null });
+const person = (p: PersonLike): Creator => ({ name: String(p.display_name), affiliation: p.affiliation?.name ?? null, ntis: p.national_researcher_number ?? null, kind: "person" });
 
 export function creatorsFromSnapshot(snapshot: Record<string, unknown>, fallbackOrg: string): Creator[] {
   const people = (snapshot.people ?? {}) as { principal_investigator?: PersonLike | null; contributors?: PersonLike[] };
@@ -161,10 +162,13 @@ export function creatorsFromSnapshot(snapshot: Record<string, unknown>, fallback
     return seen.has(key) ? false : (seen.add(key), true);
   });
   out.splice(0, out.length, ...unique);
-  return out.length ? out : [{ name: fallbackOrg, affiliation: null, ntis: null }];
+  return out.length ? out : [{ name: fallbackOrg, affiliation: null, ntis: null, kind: "organization" }];
 }
 
-const bib = (v: string) => v.replace(/([{}&%$#_])/g, "\\$1");
+const BIB_WORDS: Record<string, string> = { "\\": "\\textbackslash{}", "~": "\\textasciitilde{}", "^": "\\textasciicircum{}" };
+const bib = (v: string) => v.replace(/[\\{}&%$#_~^]/g, (c) => BIB_WORDS[c] ?? `\\${c}`);
+/** A name with " and " in it (or an organization) is braced, so BibTeX keeps it as one author. */
+const bibName = (c: Creator) => (c.kind === "organization" || / and /i.test(c.name) ? `{${bib(c.name)}}` : bib(c.name));
 
 export function renderCitation(style: Schemas["CitationStyle"], c: CitationInput): string {
   const names = c.creators.map((x) => x.name).join(", ");
@@ -172,7 +176,7 @@ export function renderCitation(style: Schemas["CitationStyle"], c: CitationInput
   if (style === "bibtex") {
     const key = `nais_${(c.uri.split("/").pop() ?? "").replace(/[^A-Za-z0-9]/g, "").slice(0, 32)}`;
     const fields: [string, string][] = [
-      ["author", c.creators.map((x) => bib(x.name)).join(" and ")],
+      ["author", c.creators.map(bibName).join(" and ")],
       ["title", bib(c.title)],
       ["version", bib(c.version_label)],
       ["publisher", bib(c.publisher)],
@@ -184,7 +188,7 @@ export function renderCitation(style: Schemas["CitationStyle"], c: CitationInput
   }
   const creators = c.creators.map((x) => ({
     name: x.name,
-    nameType: x.affiliation ? "Personal" : "Organizational",
+    nameType: x.kind === "organization" || (x.kind === undefined && !x.affiliation) ? "Organizational" : "Personal",
     ...(x.affiliation ? { affiliation: [{ name: x.affiliation }] } : {}),
     ...(x.ntis ? { nameIdentifiers: [{ nameIdentifier: x.ntis, nameIdentifierScheme: "NTIS" }] } : {}),
   }));

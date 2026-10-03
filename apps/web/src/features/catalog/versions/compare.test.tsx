@@ -1,7 +1,9 @@
 import { configure, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 import { DATASET, USER, VERSION } from "@/mocks/fixtures";
+import { server } from "../../../../tests/msw";
 import { router } from "../../../../tests/navigation";
 import { renderScreen } from "../../../../tests/render";
 import { VersionDetailScreen } from "../version-detail-screen";
@@ -34,6 +36,13 @@ describe("CompareScreen", () => {
     expect(within(schema).getByText(/행 수/)).toBeInTheDocument();
     expect(within(schema).getByText("500")).toBeInTheDocument();
     expect(within(schema).getByText("1,000")).toBeInTheDocument();
+    // v2.0 tidied the codebook: temp_c integer → number (and back-filled readings), voltage_v mV → V.
+    const changedCols = within(schema).getByRole("table", { name: /바뀐 컬럼/ });
+    const temp = within(changedCols).getByText("temp_c").closest("tr")!;
+    expect(temp).toHaveTextContent("integer→number");
+    expect(temp).toHaveTextContent("2.4%→0.0%");
+    expect(temp).toHaveTextContent("−2.4%p");
+    expect(within(changedCols).getByText("voltage_v").closest("tr")).toHaveTextContent("mV→V");
 
     await userEvent.click(screen.getByRole("tab", { name: /^메타데이터/ }));
     const meta = await screen.findByRole("table", { name: "메타데이터" });
@@ -65,7 +74,7 @@ describe("CompareScreen", () => {
   it("shows a file's history from a row, with inherited spans", async () => {
     open(USER.aResearcher, `to=${VERSION.battery}`);
     await userEvent.click(await screen.findByRole("checkbox", { name: "변경된 것만 보기" }));
-    await userEvent.click((await screen.findAllByRole("button", { name: "data/test_cells.csv 이력" }))[0]!); // phone list + table (CSS picks one)
+    await userEvent.click(await screen.findByRole("button", { name: "data/test_cells.csv 이력" }));
     const panel = await screen.findByRole("region", { name: "파일 이력" });
     const items = await within(panel).findAllByRole("listitem");
     expect(items.map((li) => li.getAttribute("data-state"))).toEqual(["UNCHANGED", "ADDED", "ABSENT"]); // newest first
@@ -73,6 +82,39 @@ describe("CompareScreen", () => {
     expect(within(items[0]!).getByText("비교 중")).toBeInTheDocument();
     await userEvent.click(within(panel).getByRole("button", { name: "이력 닫기" }));
     await waitFor(() => expect(screen.queryByRole("region", { name: "파일 이력" })).toBeNull());
+  });
+
+  it("a version that is not this dataset's is not found, and nothing is compared", async () => {
+    open(USER.aResearcher, `to=${VERSION.openMaterials}`);
+    expect(await screen.findByText("찾을 수 없거나 접근 권한이 없습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("tab")).toBeNull();
+  });
+
+  it("'변경된 것만 보기' starts again when the compared versions change", async () => {
+    open(USER.aResearcher, `to=${VERSION.battery}`);
+    const box = await screen.findByRole("checkbox", { name: "변경된 것만 보기" });
+    await userEvent.click(box);
+    expect(box).not.toBeChecked();
+    await userEvent.selectOptions(screen.getByLabelText("비교 기준"), "v1.0");
+    await screen.findByRole("heading", { level: 1, name: "v1.0 → v2.0" });
+    expect(await screen.findByRole("checkbox", { name: "변경된 것만 보기" })).toBeChecked();
+  });
+
+  it("a 3,000-file diff renders quickly, 200 rows per directory with '더 보기'", async () => {
+    const side = (n: number) => ({ size_bytes: 100 + n, sha256: n.toString(16).padStart(64, "a") });
+    const files = Array.from({ length: 3000 }, (_, i) => ({ path: `data/part-${String(i).padStart(4, "0")}.csv`, status: "ADDED", before: null, after: side(i), size_delta: 100 + i }));
+    server.use(
+      http.get("*/mock-api/v1/dataset-versions/:version_id/diff", () =>
+        HttpResponse.json({ from_version_id: VERSION.batteryV11, to_version_id: VERSION.battery, summary: { added: 3000, removed: 0, changed: 0, unchanged: 0 }, files, schema: [], metadata: [] }),
+      ),
+    );
+    const started = performance.now();
+    open(USER.aResearcher, `to=${VERSION.battery}`);
+    const table = await screen.findByRole("table", { name: "파일 변경 목록" });
+    expect(performance.now() - started).toBeLessThan(4000);
+    expect(within(table).getAllByRole("button", { name: /이력$/ })).toHaveLength(200);
+    await userEvent.click(within(table).getByRole("button", { name: "data/ 더 보기 (2800개 남음)" }));
+    expect(within(table).getAllByRole("button", { name: /이력$/ })).toHaveLength(400);
   });
 });
 
@@ -83,7 +125,7 @@ describe("CitationBox", () => {
     renderScreen(<CitationBox versionId={VERSION.battery} label="v2.0" />, { user: USER.aResearcher });
     expect(await screen.findByText(/\(Version v2\.0\) \[Data set\]/)).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("tab", { name: "BibTeX" }));
-    expect(await screen.findByText(/@misc\{/)).toBeInTheDocument();
+    expect(await within(screen.getByRole("tabpanel")).findByText(/@misc\{/)).toBeInTheDocument(); // a proper tabpanel
     await userEvent.click(screen.getByRole("button", { name: "복사" }));
     expect(await screen.findByText("복사했습니다")).toBeInTheDocument();
   });

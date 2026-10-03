@@ -44,6 +44,7 @@ describe("Data Explorer", () => {
     const table = await ex.findByRole("table", { name: /열 요약/ });
     expect(within(table).getByRole("cell", { name: "temp_c" })).toBeInTheDocument();
     expect(within(table).getByRole("cell", { name: "Cel" })).toBeInTheDocument();
+    expect(ex.getByText(/전체 1,000행/)).toBeInTheDocument(); // total_rows (S7): the CSV was read to the end
   });
 
   it("shows distributions and a 100-row preview to users with download permission", async () => {

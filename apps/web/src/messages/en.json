@@ -488,7 +488,8 @@
         "max": "Max",
         "mean": "Mean"
       },
-      "fileColumns": "{count, plural, one {# column} other {# columns}}"
+      "fileColumns": "{count, plural, one {# column} other {# columns}}",
+      "totalRows": "{rows, number} rows in total"
     },
     "new": {
       "stepsLabel": "Registration steps",
@@ -676,7 +677,9 @@
         "firstNote": "This is the first version, so every file shows as added.",
         "bar": "Share of file changes",
         "pick": "Versions to compare",
-        "draft": "draft"
+        "draft": "draft",
+        "more": "Show more in {dir} ({count} left)",
+        "tooLong": "Too different to mark word by word; showing both in full"
       },
       "fileHistory": {
         "title": "File history",
@@ -687,7 +690,6 @@
         "empty": "No published history for this path"
       },
       "citation": {
-        "crumb": "Cite",
         "title": "Cite this version",
         "pinned": "Pinned to <v>{label}</v>: the citation keeps pointing at this version.",
         "copy": "Copy",

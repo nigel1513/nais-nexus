@@ -111,7 +111,8 @@ export function ReadinessPanel({ versionId, published, steward, pollMs = 5000 }:
       ) : items.length === 0 ? (
         <EmptyState title={t("errors.READINESS_NOT_AVAILABLE")} />
       ) : (
-        <div className="grid gap-4">
+        // minmax(0,1fr): a wide check table scrolls inside its card instead of widening the page on phones.
+        <div className="grid grid-cols-[minmax(0,1fr)] gap-4">
           {items.map((v) => (
             <ValidationCard key={v.validation_id} v={v} />
           ))}
