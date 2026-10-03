@@ -5,7 +5,9 @@ Spec: `NAIS_PRD/modules/M03_data_catalog.md`. Schema `catalog`, migrations in `m
 ## HTTP (openapi operationIds)
 searchDatasets, createDataset, getDataset, updateDataset, getDatasetPolicy, listDatasetVersions,
 createDatasetVersion, getDatasetVersion, createUploadSession, getUploadSession, completeUploadSession,
-deleteDraftFile, publishDatasetVersion, getFileProfile, getFilePreview. No endpoint returns a download URL, bucket or storage key.
+deleteDraftFile, publishDatasetVersion, getFileProfile, getFilePreview, updateDatasetVersion, discardDatasetVersion,
+rebaseDatasetVersion, compareDatasetVersions, getFileHistory, getDatasetCitation. No endpoint returns a download URL,
+bucket or storage key.
 
 ## Upload flow
 1. `POST /dataset-versions/{id}/upload-session` → per file either `PUT` (sign `Content-Type` and
@@ -124,6 +126,82 @@ INTERNAL datasets are never visible outside the owner organization. Platform adm
 - M04 must still do these checks itself: `presign_get` does not check that the dataset is WITHDRAWN (M04 step 1 must);
   `CatalogQueryPort.is_visible` returns true for the owner organization and platform admins on WITHDRAWN datasets
   (check `DatasetPolicyView.status`); `get_version` also returns DRAFT versions (check `VersionView.status`).
+
+## Versioning (lakeFS-style, Wave 1.5 Stage 2; D-041)
+Code: `versioning/` (pure rules and the shared-object helpers), `service/versions.py`, `publish.py`, `rebase.py`,
+`diff.py`, `history.py`. Binding protocol for shared objects: `versioning/refs.py` and the rules (a)-(g) it implements.
+
+**Lineage columns** (`dataset_versions`, catalog_0004):
+- `base_version_id`: the latest PUBLISHED version when the draft was created (or last rebased). NULL only for a
+  draft created while nothing was published.
+- `source_version_id`: the version whose files the draft started from. It is the latest version by default, an
+  older PUBLISHED version for a revert, and NULL for an empty draft.
+- `previous_version_id`: set at publish to the version that was the latest just before. The default "compare with
+  the previous version" uses it.
+- `dataset_files.inherited_from_file_id`: an inherited row points at the same stored object as a PUBLISHED row
+  of the same dataset. It has no upload session (`upload_session_id` is nullable since catalog_0004).
+
+**Zero-copy reference rule.** Several file rows may share one object. An object is deleted only after commit, and
+only when no row references it any more (`release_objects`). Why this is enough:
+- Rows are only ever *copied* from PUBLISHED versions of the same dataset (`require_inheritable`).
+- Those rows can never be deleted (`files_immutable` / `versions_immutable` triggers). So an object shared with a
+  published row always keeps a reference: the published row is the anchor.
+- A per-object advisory lock serializes two transactions that remove the last two references at the same time. The
+  second one waits for the first to commit, and its reference check (a new statement under READ COMMITTED, which is
+  asserted) then sees the first one's delete.
+- Draft-owned rows are never copied into another draft. A draft changes a path by re-pointing its own row in place
+  (UPDATE, same `file_id`). Its preview rows are dropped first, and `release_objects` runs once, last.
+
+**Publishing and rebase.**
+- Publish needs a change note (3-2000 characters) and a current base. If `base_version_id` is not the latest
+  PUBLISHED version, publish returns 409 `DATASET_VERSION_STALE_BASE` with both ids. A NULL base is stale as soon as
+  anything is published.
+- `rebaseDatasetVersion` compares, per path and by sha256, the base, the draft ("mine") and the latest version
+  ("theirs"):
+  - A path only one side changed takes that side.
+  - The same change on both sides (including both deleting) is kept.
+  - Different changes are conflicts: a change against a delete, or two different additions (also against a NULL
+    base). A conflict returns 409 `CONFLICT` with `details.conflicts` (`path`, and `base`/`mine`/`theirs` as
+    `{sha256, size_bytes}` or null) and `latest_version_id`, and nothing changes.
+  - The caller answers with `resolutions` (path -> MINE | THEIRS, conflicting paths only, at most 10,000). Any other
+    path is 422 `UNKNOWN_PATH`; at most 100 paths are echoed, with `paths_total` when the list is cut.
+  - THEIRS re-points the draft's row at the latest row's object, removes it, or adds an inherited row.
+  - The rebase is a no-op when the draft is already current. It is refused (409) while an upload session is open.
+  - Lock order is version -> dataset, as publish, so a concurrent publish of another draft is either seen or waits.
+
+**Revert.** `createDatasetVersion {from_version_id}` makes a new draft holding an older PUBLISHED version's files
+(`source_version_id`), based on the latest version (`base_version_id`). Publishing it makes the old content the
+newest version; history is never rewritten.
+
+**Comparison** (`compareDatasetVersions`, `change_summary`) has three layers:
+1. **Files:** ADDED / REMOVED / CHANGED / UNCHANGED by sha256.
+2. **Schema:** for CHANGED tabular files. It reads the Data Explorer column profiles (name, type, unit, missing
+   ratio only). Following D-018 it never reads raw values, min/max or top values, and it does not use M05 results.
+3. **Metadata:** the frozen `metadata_snapshot`, or the live snapshot for a draft.
+
+`change_summary` is null when the default comparison target is invisible to the caller (Ruling S10).
+
+**File history** (`getFileHistory`) gives one path across the PUBLISHED versions the caller can see (WITHDRAWN only
+for owner stewards/admins and platform admins), oldest first. Each entry is ADDED / CHANGED / UNCHANGED / REMOVED /
+ABSENT by sha256, so an inherited span reads UNCHANGED. It runs two queries.
+
+**Citations** (`getDatasetCitation`, `style` = `text` | `bibtex` | `datacite-json`) are for PUBLISHED or WITHDRAWN
+versions. A DRAFT is 409 `DATASET_VERSION_NOT_PUBLISHED`; a version the caller cannot see is 404.
+- Each citation is pinned to the version label and the version IRI `{NAIS_PUBLIC_BASE_URL}/id/dataset-version/{id}`.
+- Creators come from the frozen snapshot: the PI, then co-investigators, de-duplicated, with the affiliation at
+  publication time and no emails. A snapshot without people falls back to the owner institute.
+- The year is the Asia/Seoul calendar year of `published_at`.
+- BibTeX escapes `\ { } & % $ # _ ~ ^` and braces names containing " and " and organization names.
+- DataCite 4.5 JSON (compact, sorted keys) uses nameType Personal for people and Organizational for the institute.
+
+**Known limits.**
+- The schema layer needs READY previews on both sides. A draft's newly uploaded files have none until publish, so
+  they show `PROFILE_MISSING`.
+- There are no intermediate commits inside a draft, and no draft-to-draft merge: rebase only onto the latest
+  PUBLISHED version.
+- No DOI registration: citations carry the URL identifier only, and a DOI only when the dataset row has one.
+- The DataCite `nameIdentifierScheme` "NTIS" (national researcher number) is not a registered DataCite scheme.
+- File history is capped at the newest 1,000 visible versions, with no truncation flag in the response.
 
 ## Known limitations (P0)
 Archive (zip) checks are header-only and archives are never extracted (ruling M03-R4); nested archives are therefore not

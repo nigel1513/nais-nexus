@@ -143,6 +143,7 @@ class MalwareScannerPort(Protocol):  # M03 내부 extension point, P0 구현 = N
 - CHECK `ck_versions_published`: `status = 'DRAFT' OR (manifest_sha256 IS NOT NULL AND published_at IS NOT NULL AND metadata_snapshot IS NOT NULL)`
 - Index: `ix_versions_dataset (dataset_id, created_at DESC)`
 - Trigger `trg_versions_immutable` (BEFORE UPDATE): `OLD.status = 'PUBLISHED'`이면 `status → 'WITHDRAWN'`과 `updated_at` 변경 외 모든 변경을 거부(RAISE). DB 레벨 immutability 보장.
+- D-041 (Wave 1.5 Stage 2, catalog_0004): lineage columns `base_version_id`, `source_version_id`, `previous_version_id` (uuid, nullable, FK → `catalog.dataset_versions`); PUBLISHED이면 trigger가 이 세 열도 고정한다.
 
 ### 4.3 `catalog.dataset_files`
 
@@ -169,6 +170,7 @@ class MalwareScannerPort(Protocol):  # M03 내부 extension point, P0 구현 = N
 - UNIQUE `uq_files_path (dataset_version_id, path)`
 - Index: `ix_files_session (upload_session_id)`, `ix_files_status (status) WHERE status IN ('PENDING','UPLOADED')`
 - Trigger `trg_files_immutable`: 소속 version이 `PUBLISHED`이면 UPDATE/DELETE 거부.
+- D-041 (Wave 1.5 Stage 2, catalog_0004): `inherited_from_file_id` (uuid, nullable, FK → `catalog.dataset_files`)는 같은 데이터셋 PUBLISHED 행의 저장 객체를 공유하는 상속 행을 표시하며, 상속 행은 `upload_session_id`가 NULL이다(nullable로 변경, CHECK `ck_files_origin`: 둘 중 하나는 NOT NULL).
 
 ### 4.4 `catalog.upload_sessions`
 
