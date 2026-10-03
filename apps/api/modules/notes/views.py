@@ -32,16 +32,15 @@ def draft_source_count(deps: NotesDeps, note: RowMapping, viewer_id: UUID) -> in
     if viewer_id != note["recorder_id"]:
         return 0
     try:
-        activity = deps.notebooks.list_notebook_activity(
-            note["recorder_id"], note["project_id"], note["note_date"]
-        )
+        return deps.notebooks.count_notebooks(note["recorder_id"], note["project_id"], note["note_date"])
     except Exception as exc:  # display only: a failing notebook source must not break reading the note
         logger.warning("draft source count unavailable", extra={"error_type": type(exc).__name__})
         return 0
-    return len(activity)
 
 
-def note_view(session: Session, deps: NotesDeps, note: RowMapping, viewer_id: UUID) -> ResearchNote:
+def note_view(
+    session: Session, deps: NotesDeps, note: RowMapping, viewer_id: UUID, *, source_count: int | None = None
+) -> ResearchNote:
     """The full note as `viewer_id` sees it. While DRAFT the witness fields mirror what a submit would snapshot now
     (display only; DRAFT is shown to its recorder only); otherwise they are the stored snapshot."""
     note_id = note["note_id"]
@@ -83,7 +82,9 @@ def note_view(session: Session, deps: NotesDeps, note: RowMapping, viewer_id: UU
             ],
             "draft_status": note["draft_status"],
             "draft_error": note["draft_error"],
-            "draft_source_count": draft_source_count(deps, note, viewer_id),
+            "draft_source_count": source_count
+            if source_count is not None
+            else draft_source_count(deps, note, viewer_id),
             "signatures": [
                 {
                     "signer_id": s["signer_id"],

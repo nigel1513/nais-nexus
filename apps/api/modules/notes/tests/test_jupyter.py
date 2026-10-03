@@ -260,3 +260,103 @@ def test_jupyter_is_the_notebook_source_only_when_configured() -> None:
         ports.get(NotebookActivityPort)
     provide_notebooks(Settings(nais_jupyter_url=JUPYTER_URL, nais_jupyter_token=JUPYTER_TOKEN))
     assert isinstance(ports.get(NotebookActivityPort), JupyterNotebooks)
+
+
+# ---------------------------------------------------------------- fix round 1: bounded walks, cheap count, limits
+
+
+def test_client_fails_on_401_and_on_timeouts() -> None:
+    unauthorized = httpx.MockTransport(lambda request: httpx.Response(401, json={"message": "Unauthorized"}))
+    with pytest.raises(JupyterUnavailable):
+        JupyterClient(JUPYTER_URL, JUPYTER_TOKEN, transport=unauthorized).list_dir("work")
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    with pytest.raises(JupyterUnavailable):
+        JupyterClient(JUPYTER_URL, JUPYTER_TOKEN, transport=httpx.MockTransport(slow)).get_notebook(
+            "work/a.ipynb"
+        )
+
+
+def test_a_walk_uses_one_http_client() -> None:
+    fake = FakeJupyter()
+    user_id, p1, p2 = new_id(), new_id(), new_id()
+    for n in range(3):
+        fake.add_notebook(f"{folder(user_id, p1)}/s{n}/n{n}.ipynb", IN_DAY, md(f"# {n}"))
+    fake.add_notebook(f"{folder(user_id, p2)}/x.ipynb", IN_DAY, md("# x"))
+    assert len(adapter(fake).list_notebook_activity(user_id, p1, DAY)) == 3
+    assert len(fake.requests) == 7 and fake.clients_closed == 1  # 4 listings + 3 notebooks, one client
+    assert adapter(fake).count_notebooks(user_id, p1, DAY) == 3
+    assert fake.clients_closed == 2
+    assert sorted(adapter(fake).list_notebook_authors(DAY)) == sorted([(user_id, p1), (user_id, p2)])
+    assert fake.clients_closed == 3
+
+
+def test_a_walk_stops_when_its_time_budget_is_spent() -> None:
+    fake = FakeJupyter()
+    fake.delay = 0.05
+    user_id, project_id = new_id(), new_id()
+    for n in range(10):
+        fake.add_notebook(f"{folder(user_id, project_id)}/s{n}/n.ipynb", IN_DAY, md("# n"))
+    notebooks_port = JupyterNotebooks(client(fake), activity_budget_s=0.12, authors_budget_s=0.12)
+    with pytest.raises(JupyterUnavailable, match="budget"):
+        notebooks_port.list_notebook_activity(user_id, project_id, DAY)
+    assert len(fake.requests) <= 4
+    fake.requests.clear()
+    with pytest.raises(JupyterUnavailable, match="budget"):
+        notebooks_port.count_notebooks(user_id, project_id, DAY)
+    with pytest.raises(JupyterUnavailable, match="budget"):
+        notebooks_port.list_notebook_authors(DAY)
+
+
+def test_default_budgets_are_5_s_for_a_researcher_and_30_s_for_the_evening_scan() -> None:
+    port = JupyterNotebooks(client(FakeJupyter()))
+    assert (port.activity_budget_s, port.authors_budget_s) == (5.0, 30.0)
+
+
+def test_count_reads_listings_only() -> None:
+    fake = FakeJupyter()
+    user_id, project_id = new_id(), new_id()
+    base = folder(user_id, project_id)
+    fake.add_notebook(f"{base}/a.ipynb", IN_DAY, md("# a"))
+    fake.add_notebook(f"{base}/sub/b.ipynb", EARLY_KST, md("# b"))
+    fake.add_notebook(f"{base}/old.ipynb", LATE_PREVIOUS, md("# old"))
+    fake.add_notebook(f"{base}/data/in.ipynb", IN_DAY, md("# data"))
+    assert adapter(fake).count_notebooks(user_id, project_id, DAY) == 2
+    assert [path for _, path in fake.contents_requests()] == [base, f"{base}/sub"]
+
+
+def test_oversized_notebooks_are_skipped(caplog: pytest.LogCaptureFixture) -> None:
+    fake = FakeJupyter()
+    user_id, project_id = new_id(), new_id()
+    base = folder(user_id, project_id)
+    fake.add_notebook(f"{base}/small.ipynb", IN_DAY, md("# small"))
+    fake.add_notebook(
+        f"{base}/huge.ipynb",
+        IN_DAY,
+        code("plot()", {"output_type": "display_data", "data": {"image/png": "A" * 5000}}),
+    )
+    small_cap = JupyterClient(JUPYTER_URL, JUPYTER_TOKEN, max_bytes=3000, transport=fake.transport())
+    activity = JupyterNotebooks(small_cap).list_notebook_activity(user_id, project_id, DAY)
+    assert [a.title for a in activity] == ["small"]
+    [record] = [r for r in caplog.records if r.getMessage() == "notebooks skipped: too large"]
+    assert record.skipped == 1
+
+
+def test_default_size_cap_is_20_mib() -> None:
+    from api.platform.jupyter import MAX_BYTES
+
+    assert MAX_BYTES == 20 * 1024 * 1024
+
+
+def test_jupyter_requests_are_not_logged_but_other_clients_are(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level("INFO", logger="httpx")
+    fake = FakeJupyter()
+    client(fake).list_dir("work")
+    other = httpx.MockTransport(lambda request: httpx.Response(200, json={}))
+    with httpx.Client(transport=other) as http:
+        http.get("http://llm.internal/v1/models")
+    messages = [r.getMessage() for r in caplog.records if r.name == "httpx"]
+    assert not any("notebook" in m for m in messages)
+    assert any("llm.internal" in m for m in messages)

@@ -2,7 +2,7 @@
 
 Recorder only (others get the getNote answer), DRAFT only (409 NOTE_LOCKED), LLM switched off -> 503
 LLM_UNAVAILABLE, no notebook saved in the project that day -> 422 VALIDATION_FAILED reason NO_NOTEBOOK_ACTIVITY (the
-drafting source is the NotebookActivityPort only; the port failing -> 503 DEPENDENCY_UNAVAILABLE), once per minute per note (429 RATE_LIMITED). A request clears a previous FAILED error. While a
+drafting source is the NotebookActivityPort only, checked with its cheap count_notebooks; the port failing -> 503 DEPENDENCY_UNAVAILABLE), once per minute per note (429 RATE_LIMITED). A request clears a previous FAILED error. While a
 draft is still QUEUED/RUNNING (younger than jobs.STALE_AFTER) a request is accepted without sending a second message;
 a stuck one is reclaimed.
 """
@@ -37,23 +37,21 @@ def request_draft(session: Session, deps: NotesDeps, user: CurrentUser, note_id:
         raise locked()
     if deps.llm() is None:
         raise ApiError(ErrorCode.LLM_UNAVAILABLE, "Drafting is unavailable: the local LLM is switched off.")
-    try:
-        activity = deps.notebooks.list_notebook_activity(
-            note["recorder_id"], note["project_id"], note["note_date"]
-        )
+    try:  # the cheap count (listings only); the job reads the notebooks themselves
+        count = deps.notebooks.count_notebooks(note["recorder_id"], note["project_id"], note["note_date"])
     except Exception as exc:  # the notebook source (M07) failed: fail closed, nothing queued
         logger.warning("draft refused: notebook source unavailable", extra={"error_type": type(exc).__name__})
         raise ApiError(ErrorCode.DEPENDENCY_UNAVAILABLE, "The notebook source is unavailable.") from exc
-    if not activity:
+    if not count:
         raise ApiError(ErrorCode.VALIDATION_FAILED, NO_NOTEBOOK_MESSAGE, {"reason": NO_NOTEBOOK_ACTIVITY})
     now = clock.now()
     last = note["draft_requested_at"]
     if last is not None and now - last < MIN_INTERVAL:
         raise ApiError(ErrorCode.RATE_LIMITED, "A draft of this note was requested less than a minute ago.")
     if jobs.in_progress(note, now):
-        return note_view(session, deps, note, user.user_id)
+        return note_view(session, deps, note, user.user_id, source_count=count)
     note = repo.update_note(
         session, note_id, draft_status=jobs.QUEUED, draft_error=None, draft_requested_at=now
     )
     jobs.enqueue_after_commit(session, note_id)
-    return note_view(session, deps, note, user.user_id)
+    return note_view(session, deps, note, user.user_id, source_count=count)

@@ -1,6 +1,7 @@
 """DisplayNameLookup over M01's public IdentityQueryPort (api.modules.identity.public), the default (empty)
 NotebookActivityPort and the shared-Jupyter one (JupyterNotebooks, M07-lite D-049)."""
 
+import logging
 from collections.abc import Iterator, Sequence
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
@@ -11,7 +12,7 @@ from api.modules.notes.interfaces import NotebookActivity, NotebookCell
 from api.platform import ports
 from api.platform.errors import ApiError
 from api.platform.generated.error_codes import ErrorCode
-from api.platform.jupyter import JupyterClient
+from api.platform.jupyter import JupyterClient, JupyterSession, JupyterTooLarge
 
 
 class IdentityDisplayNames:
@@ -60,6 +61,11 @@ class NoNotebooks:
     def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
         return []
 
+    def count_notebooks(self, user_id: UUID, project_id: UUID, day: date) -> int:
+        return 0
+
+
+logger = logging.getLogger("nais.notes")
 
 KST = timezone(timedelta(hours=9), "Asia/Seoul")
 WORK = "work"  # the shared Jupyter's work/<user_id>/<project_id>/ folders
@@ -126,19 +132,30 @@ class JupyterNotebooks:
     A researcher's notebooks of a project are the .ipynb files under work/<user_id>/<project_id>/ and its folders (at
     most MAX_DEPTH deep, MAX_ENTRIES entries looked at), except the project's data/ (copied inputs) and checkpoints.
     "Saved that day" = last_modified on that day in Asia/Seoul. Folder ids must be canonical UUIDs; the ids passed in
-    are UUIDs, so no path is built from free text. Jupyter failing raises api.platform.jupyter.JupyterUnavailable.
+    are UUIDs, so no path is built from free text.
+
+    Every call is one Jupyter session (one HTTP client) with a time budget: activity_budget_s for one researcher's
+    activity or count, authors_budget_s for the evening scan of every folder. count_notebooks reads listings only
+    (last_modified of the entries); list_notebook_activity also reads the day's notebooks (larger than the client's
+    max_bytes are skipped and counted in a log). Jupyter failing or the budget running out raises
+    api.platform.jupyter.JupyterUnavailable.
     """
 
-    def __init__(self, client: JupyterClient) -> None:
+    def __init__(
+        self, client: JupyterClient, *, activity_budget_s: float = 5.0, authors_budget_s: float = 30.0
+    ) -> None:
         self._client = client
+        self.activity_budget_s = activity_budget_s
+        self.authors_budget_s = authors_budget_s
 
-    def _notebook_entries(self, folder: str) -> Iterator[dict[str, Any]]:
+    @staticmethod
+    def _notebook_entries(session: JupyterSession, folder: str) -> Iterator[dict[str, Any]]:
         """Every notebook entry under the project folder (listings only)."""
         seen = 0
         pending: list[tuple[str, int]] = [(folder, 0)]
         while pending:
             path, depth = pending.pop(0)
-            for entry in self._client.list_dir(path):
+            for entry in session.list_dir(path):
                 seen += 1
                 if seen > MAX_ENTRIES:
                     return
@@ -158,13 +175,19 @@ class JupyterNotebooks:
                 elif kind == "notebook" and name.endswith(".ipynb"):
                     yield {**entry, "path": f"{path}/{name}"}
 
-    def _projects(self, user_id: UUID) -> list[UUID]:
-        entries = self._client.list_dir(f"{WORK}/{user_id}")
+    def _day_paths(self, session: JupyterSession, user_id: UUID, project_id: UUID, day: date) -> list[str]:
+        folder = f"{WORK}/{user_id}/{project_id}"
+        return [e["path"] for e in self._notebook_entries(session, folder) if _on(_modified(e), day)]
+
+    @staticmethod
+    def _projects(session: JupyterSession, user_id: UUID) -> list[UUID]:
+        entries = session.list_dir(f"{WORK}/{user_id}")
         found = [_uuid_folder(e.get("name")) for e in entries if e.get("type") == "directory"]
         return [p for p in found if p is not None]
 
-    def _activity(self, path: str) -> NotebookActivity | None:
-        model = self._client.get_notebook(path)
+    @staticmethod
+    def _activity(session: JupyterSession, path: str) -> NotebookActivity | None:
+        model = session.get_notebook(path)
         if model is None:  # deleted between the listing and the read
             return None
         saved_at = _modified(model)
@@ -184,25 +207,36 @@ class JupyterNotebooks:
     def list_notebook_activity(
         self, user_id: UUID, project_id: UUID | None, day: date
     ) -> list[NotebookActivity]:
-        projects = [project_id] if project_id is not None else self._projects(user_id)
         out: list[NotebookActivity] = []
-        for project in projects:
-            for entry in self._notebook_entries(f"{WORK}/{user_id}/{project}"):
-                if not _on(_modified(entry), day):
-                    continue
-                activity = self._activity(entry["path"])
-                if activity is not None and _on(activity.saved_at, day):
-                    out.append(activity)
+        too_large = 0
+        with self._client.session(self.activity_budget_s) as session:
+            projects = [project_id] if project_id is not None else self._projects(session, user_id)
+            for project in projects:
+                for path in self._day_paths(session, user_id, project, day):
+                    try:
+                        activity = self._activity(session, path)
+                    except JupyterTooLarge:
+                        too_large += 1
+                        continue
+                    if activity is not None and _on(activity.saved_at, day):
+                        out.append(activity)
+        if too_large:
+            logger.warning("notebooks skipped: too large", extra={"skipped": too_large})
         return out
+
+    def count_notebooks(self, user_id: UUID, project_id: UUID, day: date) -> int:
+        with self._client.session(self.activity_budget_s) as session:
+            return len(self._day_paths(session, user_id, project_id, day))
 
     def list_notebook_authors(self, day: date) -> list[tuple[UUID, UUID]]:
         authors: list[tuple[UUID, UUID]] = []
-        for entry in self._client.list_dir(WORK):
-            user_id = _uuid_folder(entry.get("name")) if entry.get("type") == "directory" else None
-            if user_id is None:
-                continue
-            for project_id in self._projects(user_id):
-                folder = f"{WORK}/{user_id}/{project_id}"
-                if any(_on(_modified(e), day) for e in self._notebook_entries(folder)):
-                    authors.append((user_id, project_id))
+        with self._client.session(self.authors_budget_s) as session:
+            for entry in session.list_dir(WORK):
+                user_id = _uuid_folder(entry.get("name")) if entry.get("type") == "directory" else None
+                if user_id is None:
+                    continue
+                for project_id in self._projects(session, user_id):
+                    folder = f"{WORK}/{user_id}/{project_id}"
+                    if any(_on(_modified(e), day) for e in self._notebook_entries(session, folder)):
+                        authors.append((user_id, project_id))
         return authors

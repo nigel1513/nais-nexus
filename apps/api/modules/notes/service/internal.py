@@ -15,7 +15,7 @@ from uuid import UUID
 from nais_contracts.api_models import InternalDraftSections, InternalNotebookActivity
 
 from api.modules.notes.deps import NotesDeps
-from api.modules.notes.drafting.apply import MAX_EVIDENCE_PER_BLOCK
+from api.modules.notes.drafting.apply import fresh_sentences
 from api.modules.notes.drafting.run import UnusableAnswer, ask, prepare
 from api.modules.notes.interfaces import NotebookActivity
 from api.modules.notes.sections import SECTIONS
@@ -69,11 +69,9 @@ def draft_sections(deps: NotesDeps, user_id: UUID, project_id: UUID, day: date) 
     except (LlmUnavailable, LlmTruncated, UnusableAnswer) as exc:
         logger.warning("internal draft failed", extra=log | {"error_type": type(exc).__name__})
         raise ApiError(ErrorCode.LLM_UNAVAILABLE, "The local LLM could not draft the note.") from exc
-    by_key = {item.key: item for item in items}
     sections: dict[str, list[dict[str, Any]]] = {section: [] for section in SECTIONS}
-    for sentence in sentences:
-        cited = list(dict.fromkeys(by_key[k].evidence for k in sentence.evidence))[:MAX_EVIDENCE_PER_BLOCK]
+    for sentence, evidence in fresh_sentences([], sentences, items):  # the job's in-draft dedupe and evidence
         sections[sentence.section].append(
-            {"text": sentence.text, "evidence": [{"label": e.label, "at": _utc(e.at)} for e in cited]}
+            {"text": sentence.text, "evidence": [{"label": e["label"], "at": e["at"]} for e in evidence]}
         )
     return InternalDraftSections.model_validate({"sections": sections})

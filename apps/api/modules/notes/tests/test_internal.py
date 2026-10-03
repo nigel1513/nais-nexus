@@ -299,3 +299,82 @@ def test_jupyter_down_leaves_draft_source_count_zero_and_draft_note_503(api: Not
         drafted = api.post("a.recorder", f"/notes/{today['note_id']}/draft")
         assert drafted.status_code == 503
         assert drafted.json()["error"]["code"] == "DEPENDENCY_UNAVAILABLE"
+
+
+# ---------------------------------------------------------------- fix round 1
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"",
+        b"{not json",
+        b"[]",
+        b'{"user_id": "../x", "project_id": 1, "day": "yesterday"}',
+        b'{"extra": true}',
+    ],
+)
+def test_the_token_is_checked_before_the_body(internal: Internal, raw: bytes) -> None:
+    def post(token: str | None) -> httpx.Response:
+        headers = {"content-type": "application/json"} | ({HEADER: token} if token else {})
+        return internal.client.post(DRAFT, content=raw, headers=headers)
+
+    assert post("wrong").status_code == 403
+    assert post(None).status_code == 403
+    response = post(TOKEN)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "VALIDATION_FAILED"
+    internal.token_setting = ""
+    internal.install()
+    assert post(TOKEN).status_code == 404
+    assert post("wrong").status_code == 404
+    assert internal.jupyter.requests == [] and internal.llm.calls == []
+
+
+@pytest.mark.parametrize("params", [{"user_id": "x"}, {"day": "nope"}, {"project_id": ""}])
+def test_the_token_is_checked_before_the_query(internal: Internal, params: dict[str, str]) -> None:
+    assert internal.activity(token="wrong", **params).status_code == 403
+    assert internal.activity(token=TOKEN, **params).status_code == 422
+    internal.token_setting = ""
+    internal.install()
+    assert internal.activity(token=TOKEN, **params).status_code == 404
+
+
+def test_draft_sections_drop_repeats_like_the_job(internal: Internal) -> None:
+    analysis(internal)
+    internal.llm.script(
+        answer(
+            OBJECTIVE=[
+                {"text": "고온 구간의 용량 감소를 확인한다.", "evidence": ["1.1"]},
+                {"text": "같은 근거의 다른 표현.", "evidence": ["1.1"]},
+            ],
+            METHOD=[
+                {"text": "pandas로 읽었다.", "evidence": []},
+                {"text": "pandas로 읽었다.", "evidence": []},
+            ],
+        )
+    )
+    sections = internal.draft().json()["sections"]
+    assert [s["text"] for s in sections["OBJECTIVE"]] == ["고온 구간의 용량 감소를 확인한다."]
+    assert [s["text"] for s in sections["METHOD"]] == ["pandas로 읽었다."]
+
+
+def test_draft_note_counts_once_from_listings(api: NotesApi, world: World) -> None:
+    jupyter = FakeJupyter()
+    user = USERS["a.recorder"]
+    note = api.written(world)
+    jupyter.add_notebook(
+        f"work/{user.user_id}/{world.project_id}/a.ipynb",
+        clock.now().isoformat().replace("+00:00", "Z"),
+        md("# 목표"),
+    )
+    ports.provide(
+        NotebookActivityPort,
+        JupyterNotebooks(JupyterClient(JUPYTER_URL, JUPYTER_TOKEN, transport=jupyter.transport())),
+    )
+    response = api.post("a.recorder", f"/notes/{note['note_id']}/draft")
+    assert response.status_code == 202, response.text
+    assert response.json()["draft_source_count"] == 1
+    # One listing walk (one request: a flat folder), no notebook read, one HTTP client.
+    assert jupyter.contents_requests() == [("GET", f"work/{user.user_id}/{world.project_id}")]
+    assert jupyter.clients_closed == 1

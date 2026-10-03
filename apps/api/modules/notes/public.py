@@ -40,5 +40,10 @@ class NotebookActivityPort(Protocol):
         """(user_id, project_id) with saved notebooks that day."""
         ...
 
+    def count_notebooks(self, user_id: UUID, project_id: UUID, day: date) -> int:
+        """How many notebooks the user saved in the project that day: the cheap check behind draft_source_count and
+        the draftNote gate (an implementation may answer from file listings without reading any notebook)."""
+        ...
+
 
 __all__ = ["NotebookActivity", "NotebookActivityPort", "NotebookCell"]

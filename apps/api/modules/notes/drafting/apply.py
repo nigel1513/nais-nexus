@@ -32,14 +32,16 @@ def _key(section: str, evidence: Sequence[Mapping[Any, Any]]) -> EvidenceKey:
     return str(section), frozenset((str(e["type"]), str(e["ref_id"]), str(e["label"])) for e in evidence)
 
 
-def new_blocks(
+def fresh_sentences(
     existing: Sequence[Mapping[Any, Any]], sentences: Sequence[DraftSentence], items: Sequence[PromptItem]
-) -> list[dict[str, Any]]:
+) -> list[tuple[DraftSentence, list[dict[str, Any]]]]:
+    """The sentences worth adding, each with its evidence (evidence_json, distinct, capped): repeats of an AI block
+    already in `existing` or added earlier in this draft are dropped (same section + evidence set, or same section +
+    text when there is no evidence). Shared by the job (new_blocks) and draftInternalNoteSections (existing = [])."""
     by_key = {item.key: item for item in items}
     seen_sets = {_key(b["section"], b["evidence"]) for b in existing if b["origin"] == "AI" and b["evidence"]}
     seen_texts = {(b["section"], b["text"]) for b in existing if b["origin"] == "AI" and not b["evidence"]}
-    position = max((int(b["position"]) for b in existing), default=-1) + 1
-    rows: list[dict[str, Any]] = []
+    out: list[tuple[DraftSentence, list[dict[str, Any]]]] = []
     for sentence in sentences:
         cited = [by_key[k].evidence for k in sentence.evidence]
         evidence = [evidence_json(r) for r in dict.fromkeys(cited)][:MAX_EVIDENCE_PER_BLOCK]
@@ -52,6 +54,16 @@ def new_blocks(
             if (sentence.section, sentence.text) in seen_texts:
                 continue
             seen_texts.add((sentence.section, sentence.text))
+        out.append((sentence, evidence))
+    return out
+
+
+def new_blocks(
+    existing: Sequence[Mapping[Any, Any]], sentences: Sequence[DraftSentence], items: Sequence[PromptItem]
+) -> list[dict[str, Any]]:
+    position = max((int(b["position"]) for b in existing), default=-1) + 1
+    rows: list[dict[str, Any]] = []
+    for sentence, evidence in fresh_sentences(existing, sentences, items):
         rows.append(
             {
                 "block_id": new_id(),
