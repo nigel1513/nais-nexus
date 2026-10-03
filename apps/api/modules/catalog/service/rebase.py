@@ -54,12 +54,22 @@ def _side(row: Mapping[Any, Any] | None) -> dict[str, Any] | None:
     return None if row is None else {"sha256": row["sha256"].strip(), "size_bytes": int(row["size_bytes"])}
 
 
+MAX_ECHOED_PATHS = 100
+
+
 def _unknown_paths(exc: ValueError) -> ApiError:
+    """Echoes at most MAX_ECHOED_PATHS paths (byte order); `paths_total` is added only when the list is cut, so the
+    usual shape matches the web mock."""
     paths = str(exc).removeprefix("UNKNOWN_PATH: ").split(", ")
+    field: dict[str, Any] = {
+        "field": "resolutions",
+        "reason": "UNKNOWN_PATH",
+        "paths": paths[:MAX_ECHOED_PATHS],
+    }
+    if len(paths) > MAX_ECHOED_PATHS:
+        field["paths_total"] = len(paths)
     return ApiError(
-        ErrorCode.VALIDATION_FAILED,
-        "Resolutions name paths that are not in conflict.",
-        {"fields": [{"field": "resolutions", "reason": "UNKNOWN_PATH", "paths": paths}]},
+        ErrorCode.VALIDATION_FAILED, "Resolutions name paths that are not in conflict.", {"fields": [field]}
     )
 
 
@@ -148,6 +158,8 @@ def rebase(
                 part_size_bytes=None,
                 status="VERIFIED",
                 failure_code=None,
+                # The row changed now; created_at stays (the row's identity is unchanged, as createUploadSession
+                # does when it re-points a row). verified_at is copied from the source with the object.
                 updated_at=now,
             )
         )

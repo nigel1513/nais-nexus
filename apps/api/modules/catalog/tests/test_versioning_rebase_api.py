@@ -131,6 +131,8 @@ def test_theirs_drops_the_draft_upload_and_its_preview(api: CatalogApi, db: PgUr
         "VERIFIED",
     )
     assert row["upload_session_id"] is None
+    assert row["created_at"] == mine["created_at"] and row["updated_at"] > mine["updated_at"]
+    assert row["verified_at"] == theirs["verified_at"]  # the object's verification travels with it
     assert rows(db, "SELECT 1 FROM catalog.file_previews WHERE file_id = :f", f=mine["file_id"]) == []
     assert mine["storage_key"] not in _store(api)  # only the draft referenced it: removed after commit
     assert theirs["storage_key"] in _store(api)
@@ -392,3 +394,27 @@ def test_rebase_waits_for_upload_completion_on_the_same_draft(api: CatalogApi, d
     files = {f["path"]: f for f in body["files"]}
     assert body["base_version_id"] == a
     assert files["data/late.csv"]["inherited"] is False and files["data/late.csv"]["status"] == "VERIFIED"
+
+
+def test_resolutions_are_capped_at_the_contract_limit(api: CatalogApi, db: PgUrls) -> None:
+    _, a, b = _two_drafts(api, db)
+    publish(api, a)
+    too_many = {f"data/f{i}.csv": "MINE" for i in range(10_001)}
+    error = assert_error(
+        "rebaseDatasetVersion", _rebase(api, b, {"resolutions": too_many}), 422, "VALIDATION_FAILED"
+    )
+    [field] = error["details"]["fields"]
+    assert field["field"] == "resolutions" and field["reason"] != "UNKNOWN_PATH"  # schema, not the service
+    assert api.get("b.steward", f"/dataset-versions/{b}").json()["base_version_id"] != a
+
+
+def test_unknown_paths_echo_is_capped(api: CatalogApi, db: PgUrls) -> None:
+    _, a, b = _two_drafts(api, db)
+    publish(api, a)
+    unknown = {f"data/f{i:05d}.csv": "THEIRS" for i in range(10_000)}  # at the limit: reaches the service
+    error = assert_error(
+        "rebaseDatasetVersion", _rebase(api, b, {"resolutions": unknown}), 422, "VALIDATION_FAILED"
+    )
+    [field] = error["details"]["fields"]
+    assert field["reason"] == "UNKNOWN_PATH" and field["paths_total"] == 10_000
+    assert field["paths"] == [f"data/f{i:05d}.csv" for i in range(100)]

@@ -166,12 +166,15 @@ class VersionUpdateIn(StrictIn):
 
 
 RebasePath = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._/-]{1,512}$")]
+MAX_REBASE_RESOLUTIONS = 10_000  # contract RebaseRequest.resolutions maxProperties
 
 
 class RebaseIn(StrictIn):
     """rebaseDatasetVersion: path -> MINE | THEIRS, only for paths in conflict (others: 422 UNKNOWN_PATH)."""
 
-    resolutions: dict[RebasePath, Literal["MINE", "THEIRS"]] = Field(default_factory=dict)
+    resolutions: dict[RebasePath, Literal["MINE", "THEIRS"]] = Field(
+        default_factory=dict, max_length=MAX_REBASE_RESOLUTIONS
+    )
 
 
 class UploadFileIn(StrictIn):
