@@ -54,7 +54,7 @@ test("mock login → dashboard → data search show mock data", async ({ page })
   await expect(page.getByRole("button", { name: "알림 1개 읽지 않음" })).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
 
-  await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "데이터" }).click();
+  await page.getByRole("navigation", { name: "주 메뉴" }).getByRole("link", { name: "전체 데이터", exact: true }).click();
   await expect(page).toHaveURL(/\/commons\/data$/);
   await expect(page.getByRole("heading", { level: 3, name: "리튬이온 배터리 셀 사이클 시험 데이터" })).toBeVisible();
   await expect(page.getByText("총 12건")).toBeVisible();
@@ -216,7 +216,7 @@ test("shell: ⌘K, notifications, user menu and the phone sheet pass axe in both
     const sheet = page.getByRole("dialog", { name: "메뉴" });
     await expect(sheet).toBeVisible();
     expect(await seriousViolations(page)).toEqual([]);
-    await sheet.getByRole("link", { name: "데이터" }).click();
+    await sheet.getByRole("link", { name: "전체 데이터", exact: true }).click();
     await expect(page).toHaveURL(/\/commons\/data$/);
     await expect(sheet).toBeHidden();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -288,6 +288,35 @@ test("projects: list, detail members and the actions menu pass axe in both theme
     expect(await seriousViolations(page, "[role=menu]")).toEqual([]);
     await page.keyboard.press("Escape");
 
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  }
+});
+
+test("data hub and the Data Card's 프로젝트 · 토론 · 이력 pass axe in both themes; no sideways scroll at 390", async ({ page, context, baseURL }) => {
+  await context.addCookies([{ name: "nais_mock_user", value: A_RESEARCHER, url: baseURL! }]);
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/hub");
+    await expect(page.getByRole("heading", { level: 1, name: "데이터 허브" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "많이 쓰인 데이터" })).toBeVisible();
+    await expect(page.getByRole("table", { name: "기관별 데이터 현황" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/commons/data/00000000-0000-7000-8000-000000002001?tab=discussion");
+    const discussion = page.getByRole("region", { name: "토론" });
+    await discussion.getByRole("button", { name: /temp_c 주기적 상승 구간 확인 요청/ }).click();
+    await expect(discussion.getByRole("textbox", { name: "답글" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "이 데이터를 쓴 프로젝트" }).getByRole("link", { name: "차세대 이차전지 소재 공동연구" })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+    await page.getByRole("button", { name: "프로젝트에서 열기" }).click();
+    await expect(page.getByRole("dialog", { name: "프로젝트에서 열기" })).toBeVisible();
+    expect(await seriousViolations(page, '[role="dialog"]')).toEqual([]);
+    await page.keyboard.press("Escape");
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   }

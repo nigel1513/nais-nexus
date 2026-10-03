@@ -30,12 +30,14 @@
   "nav": {
     "dashboard": "Dashboard",
     "projects": "Projects",
-    "data": "Data",
+    "data": "All data",
     "access": "Access",
     "activity": "Activity",
     "organization": "Organization",
     "settings": "Settings",
-    "notebooks": "Notebooks"
+    "notebooks": "Notebooks",
+    "hub": "Data hub",
+    "notes": "Research notes"
   },
   "shell": {
     "mainNav": "Main menu",
@@ -224,7 +226,10 @@
         "aboutCrumb": "Overview",
         "explorerCrumb": "Files & distributions",
         "columnsCrumb": "Schema",
-        "metaCrumb": "Provenance & use"
+        "metaCrumb": "Provenance & use",
+        "projectsCrumb": "Projects",
+        "discussionCrumb": "Q&A",
+        "historyCrumb": "Versions, checks, use"
       },
       "factsTitle": "At a glance",
       "sectionNav": "Data card sections",
@@ -232,7 +237,36 @@
         "overview": "Overview",
         "files": "Files",
         "schema": "Schema",
-        "meta": "Metadata"
+        "meta": "Metadata",
+        "projects": "Projects",
+        "discussion": "Discussion",
+        "history": "History"
+      },
+      "projectsTitle": "Projects using this data",
+      "discussionTitle": "Discussion",
+      "historyTitle": "History",
+      "projects": {
+        "empty": "No project uses this data as an input yet.",
+        "added": "Added",
+        "hidden": "Also used in {count, plural, one {# project} other {# projects}} you are not a member of."
+      },
+      "history": {
+        "empty": "No history recorded.",
+        "readiness": "Result: {status}",
+        "otherProject": "A project you are not in"
+      },
+      "openInProject": {
+        "title": "Open in project",
+        "description": "Pins version {version} as an input of the selected project.",
+        "descriptionLatest": "Pins the latest published version as an input of the selected project.",
+        "project": "Project",
+        "alreadyUsed": "Already an input",
+        "note": "Note (optional)",
+        "noteHint": "Say why or how the project uses it so members can follow.",
+        "submit": "Add as input",
+        "noProject": "No project to add it to. You need a researcher role or above in an active project.",
+        "done": "Added to \"{project}\" as an input",
+        "doneVersion": "Pinned version {version}"
       }
     },
     "people": {
@@ -852,5 +886,66 @@
   },
   "errorPage": {
     "message": "Something went wrong while showing this page. Try again, or tell an admin with the trace ID."
+  },
+  "hub": {
+    "title": "Data hub",
+    "context": "Research data",
+    "allData": "All data",
+    "finder": "Find data",
+    "searchLabel": "Search the data hub",
+    "search": "Search",
+    "subjects": "Fields",
+    "organizations": "Institutes",
+    "empty": "No data you can see yet.",
+    "card": {
+      "aiReady": "AI-ready {status}",
+      "updated": "Updated {date}",
+      "requests": "{count, plural, one {# access request} other {# access requests}} in 7 days",
+      "uses": "Used in {count, plural, one {# project} other {# projects}}"
+    },
+    "rails": {
+      "trending": {
+        "crumb": "Requests",
+        "title": "Most requested this week",
+        "basis": "Access requests, last 7 days"
+      },
+      "recent": {
+        "crumb": "Published",
+        "title": "Newly published",
+        "basis": "Latest publication first"
+      },
+      "most_used": {
+        "crumb": "Use",
+        "title": "Most used",
+        "basis": "Project inputs"
+      }
+    },
+    "orgs": {
+      "crumb": "Institutes",
+      "title": "Data by institute",
+      "name": "Institute",
+      "datasets": "Datasets",
+      "public": "Public",
+      "controlled": "Controlled/sensitive",
+      "updated": "Last updated"
+    }
+  },
+  "discussion": {
+    "new": "New thread",
+    "empty": "No threads yet.",
+    "emptyHint": "Ask a question or note something to check.",
+    "resolved": "Resolved",
+    "rowMeta": "{author} · {count, plural, one {# comment} other {# comments}} · {date}",
+    "title": "Title",
+    "body": "Message",
+    "markdownHint": "Markdown is supported.",
+    "start": "Start thread",
+    "backToList": "All threads",
+    "resolve": "Mark resolved",
+    "reopen": "Reopen",
+    "comments": "Comments",
+    "edited": "(edited)",
+    "reply": "Reply",
+    "send": "Post reply"
   }
 }

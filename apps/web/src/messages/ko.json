@@ -28,12 +28,14 @@
   "nav": {
     "dashboard": "대시보드",
     "projects": "프로젝트",
-    "data": "데이터",
+    "data": "전체 데이터",
     "access": "접근 관리",
     "activity": "활동",
     "organization": "기관 관리",
     "settings": "설정",
-    "notebooks": "노트북"
+    "notebooks": "노트북",
+    "hub": "데이터 허브",
+    "notes": "연구노트"
   },
   "shell": {
     "mainNav": "주 메뉴",
@@ -846,7 +848,10 @@
         "aboutCrumb": "개요",
         "explorerCrumb": "파일·분포",
         "columnsCrumb": "스키마",
-        "metaCrumb": "출처·이용"
+        "metaCrumb": "출처·이용",
+        "projectsCrumb": "프로젝트",
+        "discussionCrumb": "질문·답변",
+        "historyCrumb": "버전·검증·활용"
       },
       "factsTitle": "한눈에",
       "sectionNav": "데이터 카드 섹션",
@@ -854,7 +859,36 @@
         "overview": "개요",
         "files": "파일·분포",
         "schema": "스키마",
-        "meta": "메타데이터"
+        "meta": "메타데이터",
+        "projects": "프로젝트",
+        "discussion": "토론",
+        "history": "이력"
+      },
+      "projectsTitle": "이 데이터를 쓴 프로젝트",
+      "discussionTitle": "토론",
+      "historyTitle": "이력",
+      "projects": {
+        "empty": "아직 이 데이터를 입력으로 쓴 프로젝트가 없습니다.",
+        "added": "입력 추가",
+        "hidden": "참여하지 않은 프로젝트 {count}곳에서도 사용 중입니다."
+      },
+      "history": {
+        "empty": "기록된 이력이 없습니다.",
+        "readiness": "결과 {status}",
+        "otherProject": "참여하지 않은 프로젝트"
+      },
+      "openInProject": {
+        "title": "프로젝트에서 열기",
+        "description": "선택한 프로젝트에 {version} 버전을 입력으로 고정합니다.",
+        "descriptionLatest": "선택한 프로젝트에 최신 발행 버전을 입력으로 고정합니다.",
+        "project": "프로젝트",
+        "alreadyUsed": "이미 입력으로 사용 중",
+        "note": "메모 (선택)",
+        "noteHint": "쓰는 목적이나 범위를 적어 두면 구성원이 참고할 수 있습니다.",
+        "submit": "입력으로 추가",
+        "noProject": "입력을 추가할 수 있는 프로젝트가 없습니다. 진행 중인 프로젝트에서 연구원 이상 역할이 필요합니다.",
+        "done": "\"{project}\"에 입력으로 추가했습니다",
+        "doneVersion": "고정 버전 {version}"
       }
     },
     "people": {
@@ -1457,7 +1491,8 @@
     "marketplace": "AI Marketplace",
     "compute": "Compute",
     "comingSoon": "준비 중입니다",
-    "description": "준비 중인 기능입니다."
+    "description": "준비 중인 기능입니다.",
+    "notes": "연구노트"
   },
   "validation": {
     "notClearable": "이 항목은 비울 수 없습니다. 값을 수정해 주세요.",
@@ -1897,5 +1932,66 @@
   },
   "errorPage": {
     "message": "예기치 않은 오류로 화면을 표시하지 못했습니다. 다시 시도하거나 추적 ID와 함께 관리자에게 알려 주세요."
+  },
+  "hub": {
+    "title": "데이터 허브",
+    "context": "연구 데이터",
+    "allData": "전체 데이터",
+    "finder": "데이터 찾기",
+    "searchLabel": "데이터 허브 검색",
+    "search": "검색",
+    "subjects": "분야",
+    "organizations": "기관",
+    "empty": "아직 볼 수 있는 데이터가 없습니다.",
+    "card": {
+      "aiReady": "AI-ready {status}",
+      "updated": "{date} 갱신",
+      "requests": "최근 7일 접근 요청 {count}건",
+      "uses": "프로젝트 {count}곳에서 사용"
+    },
+    "rails": {
+      "trending": {
+        "crumb": "요청",
+        "title": "이번 주 많이 요청된 데이터",
+        "basis": "최근 7일 접근 요청 수"
+      },
+      "recent": {
+        "crumb": "공개",
+        "title": "새로 공개된 데이터",
+        "basis": "최근 발행 순"
+      },
+      "most_used": {
+        "crumb": "활용",
+        "title": "많이 쓰인 데이터",
+        "basis": "프로젝트 입력 수"
+      }
+    },
+    "orgs": {
+      "crumb": "기관",
+      "title": "기관별 데이터 현황",
+      "name": "기관",
+      "datasets": "데이터셋",
+      "public": "공개",
+      "controlled": "통제·민감",
+      "updated": "최근 갱신"
+    }
+  },
+  "discussion": {
+    "new": "새 토론",
+    "empty": "아직 토론이 없습니다.",
+    "emptyHint": "질문이나 확인할 내용을 남겨 주세요.",
+    "resolved": "해결됨",
+    "rowMeta": "{author} · 댓글 {count} · {date}",
+    "title": "제목",
+    "body": "내용",
+    "markdownHint": "마크다운을 쓸 수 있습니다.",
+    "start": "토론 시작",
+    "backToList": "토론 목록",
+    "resolve": "해결됨으로 표시",
+    "reopen": "다시 열기",
+    "comments": "댓글",
+    "edited": "(수정됨)",
+    "reply": "답글",
+    "send": "답글 달기"
   }
 }
