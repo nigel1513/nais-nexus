@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from api.modules.catalog.objects import StorageRegistry
-from api.modules.catalog.tests.support_api import CatalogApi, new_draft
+from api.modules.catalog.tests.support_api import CatalogApi, new_draft, publish_draft
 from api.modules.catalog.tests.support_upload import complete, file_row, start_upload
 from api.platform.testing.fixtures import PgUrls
 
@@ -116,7 +116,7 @@ def test_storage_port_presigned_get_downloads_through_the_gateway(
     upload = body["files"][0]["upload"]
     assert httpx.put(upload["url"], content=data, headers=upload["headers"], timeout=60).status_code == 200
     assert complete(s3_api, body["upload_session_id"]).json()["files"][0]["status"] == "VERIFIED"
-    assert s3_api.post("b.steward", f"/dataset-versions/{version_id}/publish").status_code == 200
+    assert publish_draft(s3_api, version_id).status_code == 200
     [signed] = ports.get(StoragePort).presign_get(UUID(version_id), None, 300)
     response = httpx.get(signed.url, timeout=30)
     assert response.status_code == 200 and response.content == data

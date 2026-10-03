@@ -7,13 +7,14 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select
 
+from api.modules.catalog.service.versions import discard_version
 from api.modules.catalog.tables import dataset_files
 from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import execute, rows
-from api.modules.catalog.tests.support_api import CatalogApi, assert_error, new_draft
+from api.modules.catalog.tests.support_api import USERS, CatalogApi, assert_error, new_draft
 from api.modules.catalog.tests.support_upload import start_upload, upload_files
 from api.modules.catalog.versioning.inherit import copy_rows
-from api.modules.catalog.versioning.refs import InheritanceViolation
+from api.modules.catalog.versioning.refs import InheritanceViolation, StorageCleanup
 from api.platform.db import session_factory
 from api.platform.testing.contracts import assert_matches_response
 from api.platform.testing.fixtures import PgUrls
@@ -50,6 +51,11 @@ def first_published(api: CatalogApi, db: PgUrls) -> tuple[str, str]:
 def _store(api: CatalogApi) -> dict[str, bytes]:
     objects: dict[str, bytes] = memory_store(api.deps.storage, "inst-b").objects
     return objects
+
+
+def _store_uploads(api: CatalogApi) -> dict[str, Any]:
+    uploads: dict[str, Any] = memory_store(api.deps.storage, "inst-b").uploads
+    return uploads
 
 
 def test_first_draft_has_no_base(api: CatalogApi) -> None:
@@ -252,10 +258,30 @@ def test_discard_draft_keeps_shared_objects(api: CatalogApi, db: PgUrls) -> None
 
 
 def test_discard_draft_with_open_upload_and_preview_rows(api: CatalogApi, db: PgUrls) -> None:
-    """Protocol (c): preview rows go before file rows; PENDING rows of an open session are dropped too."""
+    """Protocol (c): preview rows go before file rows; PENDING rows of an open session are dropped too, and their
+    objects (single PUT already landed, or an open multipart upload) are cleanup targets."""
     dataset_id, _ = first_published(api, db)
     v2 = draft(api, dataset_id, "v2")["dataset_version_id"]
     start_upload(api, v2, {"data/pending.csv": b"p\n1\n"})
+    big = {
+        "path": "data/big.csv",
+        "size_bytes": 100 * 1024 * 1024,
+        "sha256": "a" * 64,
+        "media_type": "text/csv",
+    }
+    response = api.post("b.steward", f"/dataset-versions/{v2}/upload-session", json={"files": [big]})
+    assert response.status_code == 201, response.text
+    pending = {
+        r["path"]: r
+        for r in rows(
+            db,
+            "SELECT * FROM catalog.dataset_files WHERE dataset_version_id = :v AND status = 'PENDING'",
+            v=v2,
+        )
+    }
+    single, multi = pending["data/pending.csv"], pending["data/big.csv"]
+    assert single["multipart_upload_id"] is None and multi["multipart_upload_id"] in _store_uploads(api)
+    _store(api)[single["storage_key"]] = b"p\n1\n"  # the client's PUT landed before the discard
     [inherited, *_] = rows(
         db,
         "SELECT file_id FROM catalog.dataset_files WHERE dataset_version_id = :v AND upload_session_id IS NULL",
@@ -267,9 +293,18 @@ def test_discard_draft_with_open_upload_and_preview_rows(api: CatalogApi, db: Pg
         f=inherited["file_id"],
         v=v2,
     )
+    with session_factory(db.app)() as session, session.begin():
+        cleanups = discard_version(session, api.deps, USERS["b.steward"], UUID(v2))
+        assert set(cleanups) == {
+            StorageCleanup(single["storage_bucket"], single["storage_key"], None),
+            StorageCleanup(multi["storage_bucket"], multi["storage_key"], multi["multipart_upload_id"]),
+        }  # inherited rows share v1's objects: no target for them
+        session.rollback()
     assert api.delete("b.steward", f"/dataset-versions/{v2}").status_code == 204
     assert rows(db, "SELECT 1 FROM catalog.file_previews WHERE dataset_version_id = :v", v=v2) == []
     assert rows(db, "SELECT 1 FROM catalog.dataset_files WHERE dataset_version_id = :v", v=v2) == []
+    assert single["storage_key"] not in _store(api)
+    assert multi["multipart_upload_id"] not in _store_uploads(api)  # aborted after commit
 
 
 def test_discard_first_draft_removes_its_objects(api: CatalogApi, db: PgUrls) -> None:

@@ -75,6 +75,7 @@ def _models(limits: PreviewLimits) -> type[BaseModel]:
         model_config = _STRICT
         format: Literal["csv", "tsv", "parquet"]
         rows_sampled: Annotated[int, Field(ge=0, le=limits.max_rows)]
+        total_rows: Annotated[int, Field(ge=0)] | None = None
         truncated: bool
         columns_truncated: bool
         column_profile: Annotated[list[ColumnProfile], Field(max_length=limits.max_columns)]

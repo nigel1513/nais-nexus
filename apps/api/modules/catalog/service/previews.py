@@ -62,6 +62,7 @@ def get_profile(session: Session, user: CurrentUser, file_id: UUID) -> dict[str,
         body.update(
             format=profile["format"],
             rows_sampled=profile["rows_sampled"],
+            total_rows=profile.get("total_rows"),  # absent from profiles generated before Wave 1.5 Stage 2
             truncated=profile["truncated"],
             columns_truncated=profile["columns_truncated"],
             columns=profile["columns"],

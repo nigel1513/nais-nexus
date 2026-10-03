@@ -101,6 +101,9 @@ class ProfileResult:
     columns_truncated: bool
     column_profile: list[dict[str, Any]]
     preview: dict[str, Any]
+    total_rows: int | None = (
+        None  # exact row count when known (parquet metadata, or a CSV/TSV read to the end)
+    )
 
 
 @dataclass
@@ -331,6 +334,7 @@ def _finish(
     truncated: bool,
     columns_truncated: bool,
     limits: PreviewLimits,
+    total_rows: int | None,
 ) -> ProfileResult:
     profile, dists = [], []
     for col in cols:
@@ -356,7 +360,13 @@ def _finish(
         "columns": dists,
     }
     return ProfileResult(
-        fmt, sampled, truncated, columns_truncated, profile, _fit_preview(preview, limits.preview_bytes)
+        fmt,
+        sampled,
+        truncated,
+        columns_truncated,
+        profile,
+        _fit_preview(preview, limits.preview_bytes),
+        total_rows,
     )
 
 
@@ -442,7 +452,10 @@ def _profile_delimited(
         raise Unparseable from exc
     finally:
         text.detach()
-    return _finish(fmt, cols, rows, sampled, truncated, columns_truncated, limits)
+    # A read to the end counts every well-formed record; a truncated sample does not know the total.
+    return _finish(
+        fmt, cols, rows, sampled, truncated, columns_truncated, limits, None if truncated else sampled
+    )
 
 
 _ARROW_TYPES = (
@@ -888,7 +901,7 @@ def _profile_parquet(
         raise classify(exc) from exc
     if not truncated and meta.num_rows > sampled:
         truncated = True
-    return _finish("parquet", cols, rows, sampled, truncated, columns_truncated, limits)
+    return _finish("parquet", cols, rows, sampled, truncated, columns_truncated, limits, int(meta.num_rows))
 
 
 def profile_table(

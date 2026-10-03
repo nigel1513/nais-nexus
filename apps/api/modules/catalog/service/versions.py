@@ -20,6 +20,7 @@ from api.modules.catalog.access import (
     visible_dataset,
 )
 from api.modules.catalog.deps import CatalogDeps
+from api.modules.catalog.previews.store import drop_previews
 from api.modules.catalog.repo import (
     files_of_versions,
     latest_published_version,
@@ -147,7 +148,8 @@ def list_versions(session: Session, user: CurrentUser, dataset_id: UUID) -> dict
     readiness = readiness_overall(
         session, [v["dataset_version_id"] for v in versions if v["status"] == "PUBLISHED"]
     )
-    latest_id = _latest_id(session, dataset_id)
+    # base_is_latest is a DRAFT-only field: skip the query when the caller sees no drafts.
+    latest_id = _latest_id(session, dataset_id) if any(v["status"] == "DRAFT" for v in versions) else None
     return {
         "items": [
             version_view(
@@ -204,9 +206,7 @@ def discard_version(
         .mappings()
         .all()
     )
-    file_ids = [f["file_id"] for f in files]
-    if file_ids:
-        session.execute(delete(file_previews).where(file_previews.c.file_id.in_(file_ids)))
+    drop_previews(session, [f["file_id"] for f in files])
     session.execute(delete(file_previews).where(file_previews.c.dataset_version_id == version_id))
     session.execute(delete(dataset_files).where(dataset_files.c.dataset_version_id == version_id))
     session.execute(delete(upload_sessions).where(upload_sessions.c.dataset_version_id == version_id))

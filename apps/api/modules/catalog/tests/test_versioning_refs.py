@@ -3,6 +3,7 @@
 Drafts that inherit rows are built in SQL here (Ruling S5): the create-draft API arrives in Task 4."""
 
 import threading
+import time
 from typing import Any
 from uuid import UUID
 
@@ -11,7 +12,7 @@ from sqlalchemy import text
 
 from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import execute, insert_dataset, insert_version, rows
-from api.modules.catalog.tests.support_api import CatalogApi, new_draft
+from api.modules.catalog.tests.support_api import CatalogApi, new_draft, publish_draft
 from api.modules.catalog.tests.support_upload import complete, put_uploaded, start_upload, upload_files
 from api.modules.catalog.versioning.refs import (
     InheritanceViolation,
@@ -44,7 +45,7 @@ def _inherit(db: PgUrls, to_version: str | UUID, src_file_id: UUID) -> UUID:
 def _published_with_draft_inheriting(api: CatalogApi, db: PgUrls) -> tuple[str, UUID, dict[str, Any]]:
     dataset_id, v1 = new_draft(api)
     upload_files(api, db, v1, DATA)
-    assert api.post("b.steward", f"/dataset-versions/{v1}/publish").status_code == 200
+    assert publish_draft(api, v1).status_code == 200
     v2 = insert_version(db, UUID(dataset_id), label="v2")  # DRAFT (Ruling S5: SQL, not the Task 4 API)
     [src] = rows(db, "SELECT * FROM catalog.dataset_files WHERE dataset_version_id = :v", v=v1)
     _inherit(db, v2, src["file_id"])
@@ -168,6 +169,7 @@ def test_concurrent_releases_of_one_object_serialize(db: PgUrls, api: CatalogApi
     results: dict[str, int] = {}
     errors: list[BaseException] = []
     t1_released = threading.Event()
+    t2_deleted = threading.Event()
     t1_may_commit = threading.Event()
 
     def remove(name: str, file_id: UUID) -> None:
@@ -181,6 +183,8 @@ def test_concurrent_releases_of_one_object_serialize(db: PgUrls, api: CatalogApi
                     .all()
                 )
                 session.execute(text("DELETE FROM catalog.dataset_files WHERE file_id = :f"), {"f": file_id})
+                if name == "t2":
+                    t2_deleted.set()
                 results[name] = len(release_objects(session, [old]))
                 if name == "t1":
                     t1_released.set()
@@ -188,20 +192,34 @@ def test_concurrent_releases_of_one_object_serialize(db: PgUrls, api: CatalogApi
         except BaseException as exc:  # surfaced below; a thread exception would otherwise be lost
             errors.append(exc)
             t1_released.set()
+            t2_deleted.set()
 
     t1 = threading.Thread(target=remove, args=("t1", row["file_id"]))
     t1.start()
     assert t1_released.wait(20)
     t2 = threading.Thread(target=remove, args=("t2", twin))
     t2.start()
-    t2.join(1.0)
-    blocked = t2.is_alive() and "t2" not in results  # waiting on T1's object lock
+    assert t2_deleted.wait(20)
+    # Deterministic: wait until T2 is queued on the advisory lock T1 holds (not a timing guess).
+    deadline = time.monotonic() + 20
+    while not _advisory_waiters(db) and time.monotonic() < deadline and t2.is_alive():
+        time.sleep(0.02)
+    blocked = bool(_advisory_waiters(db)) and "t2" not in results
     t1_may_commit.set()
     t1.join(20)
     t2.join(20)
     assert errors == []
     assert blocked, "T2 finished its reference check while T1 held the object lock"
     assert results == {"t1": 0, "t2": 1}
+
+
+def _advisory_waiters(db: PgUrls) -> int:
+    [row] = rows(
+        db,
+        "SELECT count(*) AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted"
+        " AND database = (SELECT oid FROM pg_database WHERE datname = current_database())",
+    )
+    return int(row["n"])
 
 
 def test_release_objects_requires_read_committed(db: PgUrls, api: CatalogApi) -> None:

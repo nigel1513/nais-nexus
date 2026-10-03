@@ -8,7 +8,7 @@ import pytest
 from api.modules.catalog.settings import CatalogSettings
 from api.modules.catalog.testing import memory_store
 from api.modules.catalog.tests.support import execute
-from api.modules.catalog.tests.support_api import CatalogApi, new_draft
+from api.modules.catalog.tests.support_api import CatalogApi, new_draft, publish_draft
 from api.modules.catalog.tests.support_upload import (
     complete,
     file_row,
@@ -40,7 +40,7 @@ def test_stale_presigned_put_cannot_overwrite_a_published_object(api: CatalogApi
     assert complete(api, first["upload_session_id"]).json()["files"][0]["status"] == "FAILED"
     second = upload_files(api, db, version_id, {"p.csv": GOOD})
     assert second["files"][0]["status"] == "VERIFIED"
-    assert api.post("b.steward", f"/dataset-versions/{version_id}/publish").status_code == 200
+    assert publish_draft(api, version_id).status_code == 200
     row = file_row(db, second["files"][0]["file_id"])
     assert row["storage_key"] != first_key
     store.put(first_key, EVIL, "text/csv")  # the first session's presigned URL is still live

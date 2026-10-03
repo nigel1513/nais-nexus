@@ -6,7 +6,7 @@ from api.modules.catalog.previews.jobs import dispatch_previews, generate_previe
 from api.modules.catalog.previews.store import backfill_previews
 from api.modules.catalog.settings import CatalogSettings
 from api.modules.catalog.tests.support import execute, rows
-from api.modules.catalog.tests.support_api import CatalogApi, assert_error, new_draft
+from api.modules.catalog.tests.support_api import CatalogApi, assert_error, new_draft, publish_draft
 from api.modules.catalog.tests.support_upload import upload_files
 from api.modules.catalog.tests.test_preview_sandbox import plain_page_bomb
 from api.platform.db import session_factory
@@ -29,7 +29,7 @@ def published_with_preview(
     upload_files(
         api, db, version_id, files or {"data/m.csv": DATA, "_schema.json": SCHEMA, "README.md": b"# r\n"}
     )
-    assert api.post("b.steward", f"/dataset-versions/{version_id}/publish").status_code == 200
+    assert publish_draft(api, version_id).status_code == 200
     listed = api.get("b.steward", f"/dataset-versions/{version_id}").json()["files"]
     return {f["path"]: f["file_id"] for f in listed}
 
@@ -170,7 +170,7 @@ def test_dispatch_respects_the_lease(api: CatalogApi, db: PgUrls) -> None:
 def test_unparseable_file_fails_cleanly(api: CatalogApi, db: PgUrls) -> None:
     _, version_id = new_draft(api)
     upload_files(api, db, version_id, {"data/bad.csv": b"a\n" + b"x" * (2 << 20) + b"\n"})
-    api.post("b.steward", f"/dataset-versions/{version_id}/publish")
+    publish_draft(api, version_id)
     file_id = api.get("b.steward", f"/dataset-versions/{version_id}").json()["files"][0]["file_id"]
     assert generate_preview_job(UUID(file_id), deps=api.deps) == "FAILED"
     body = api.get("b.steward", f"/dataset-files/{file_id}/profile").json()

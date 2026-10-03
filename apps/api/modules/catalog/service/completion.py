@@ -13,6 +13,7 @@ from api.modules.catalog.access import can_see_dataset, is_steward, not_found, r
 from api.modules.catalog.deps import CatalogDeps
 from api.modules.catalog.errors import dependency_errors
 from api.modules.catalog.objects import MultipartFailed, ObjectStore
+from api.modules.catalog.previews.store import drop_previews
 from api.modules.catalog.repo import load_dataset, load_version, must, rowcount
 from api.modules.catalog.schemas import UploadCompleteIn
 from api.modules.catalog.service.uploads import abort_quietly, upload_session_response
@@ -190,6 +191,7 @@ def delete_draft_file(
         )
         if sess is not None and sess["status"] == "OPEN" and sess["expires_at"] > clock.now():
             raise ApiError(ErrorCode.CONFLICT, "The file is still being uploaded in an open session.")
+    drop_previews(session, [file_id])  # protocol (f): FK without cascade
     session.execute(delete(dataset_files).where(dataset_files.c.file_id == file_id))
     targets = release_objects(session, [f])
     return targets[0] if targets else None

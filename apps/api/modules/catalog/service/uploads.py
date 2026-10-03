@@ -25,6 +25,7 @@ from api.modules.catalog.domain import (
 )
 from api.modules.catalog.errors import dependency_errors
 from api.modules.catalog.objects import MultipartFailed, ObjectStore, StorageUnavailable
+from api.modules.catalog.previews.store import drop_previews
 from api.modules.catalog.repo import load_dataset, load_version, must
 from api.modules.catalog.schemas import UploadFileIn, UploadSessionCreateIn
 from api.modules.catalog.settings import CatalogSettings
@@ -227,6 +228,8 @@ def create_upload_session(
             {"fields": [{"field": "files", "reason": "TOO_MANY_FILES"}]},
         )
     replaced: list[RowMapping] = []
+    # Protocol (f): rows re-pointed in place below keep their file_id; their preview rows describe the old object.
+    drop_previews(session, [row["file_id"] for row in existing.values()])
     with dependency_errors():
         store = org_store(deps, ds)
         upload_session_id = new_id()
