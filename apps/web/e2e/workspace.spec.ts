@@ -30,8 +30,8 @@ async function checkScreen(page: Page, name: string) {
   expect(await seriousViolations(page), `${name}: axe`).toEqual([]);
   const size = page.viewportSize()!;
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(150);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth), `${name}: 390px horizontal scroll`).toBeLessThanOrEqual(390);
+  await page.waitForFunction(() => window.innerWidth === 390); // the resize reached the page
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth), { message: `${name}: 390px horizontal scroll` }).toBeLessThanOrEqual(390);
   await page.setViewportSize(size);
 }
 
