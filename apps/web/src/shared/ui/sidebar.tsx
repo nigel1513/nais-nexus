@@ -8,6 +8,8 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { useListAccessRequests } from "@/features/governance/api";
 import type { Me } from "@/shared/api/types";
 import { hasOrgRole } from "@/shared/hooks/use-me";
+import { BrandMark } from "./brand/brand-mark";
+import { SidebarFamilyLinks } from "./family-links";
 import { sectionFor, useDestinations, useNavGroups, type NavItem } from "./nav";
 import { UserMenu } from "./user-menu";
 
@@ -48,9 +50,7 @@ function Brand({ compact }: { compact: boolean }) {
   const t = useTranslations();
   return (
     <Link href="/commons" className={cn("flex min-w-0 items-center gap-2 rounded-sm", focusRing)}>
-      <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-sm bg-primary text-caption font-semibold text-primary-fg">
-        N
-      </span>
+      <BrandMark className="size-6 shrink-0" />
       <span className={compact ? "sr-only" : "truncate text-body font-semibold text-fg"}>{t("shell.brand")}</span>
     </Link>
   );
@@ -98,7 +98,8 @@ function NavLink({ item, active, compact, count, onNavigate }: { item: NavItem; 
 
 /**
  * Left navigation (spec §3): 240px on bg-subtle, or a 64px icon rail when collapsed; inside the mobile sheet it is
- * always full width. Groups 작업 / 거버넌스 / 관리, the steward's review count on 접근 관리, the user menu at the foot.
+ * always full width. Groups 작업 / 거버넌스 / 관리, the steward's review count on 접근 관리; at the foot the parent site,
+ * 패밀리사이트 and the copyright, then the user menu.
  */
 export function Sidebar({
   me,
@@ -168,6 +169,7 @@ export function Sidebar({
           </div>
         ))}
       </nav>
+      <SidebarFamilyLinks compact={collapsed} />
       <div className={cn("shrink-0 border-t border-border p-2", collapsed && "flex justify-center")}>
         <UserMenu me={me} compact={collapsed} />
       </div>

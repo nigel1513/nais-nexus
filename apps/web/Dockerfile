@@ -15,7 +15,9 @@ FROM deps AS build
 # NEXT_PUBLIC_* are inlined at build time: mock mode is a build switch (compose passes WEB_API_MOCKING).
 ARG NEXT_PUBLIC_API_MOCKING=enabled
 ARG NEXT_PUBLIC_API_BASE=/api/v1
-ENV NEXT_PUBLIC_API_MOCKING=$NEXT_PUBLIC_API_MOCKING NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
+# Parent site for the family links; empty keeps the default in src/shared/family-sites.ts.
+ARG NEXT_PUBLIC_PARENT_SITE_URL=
+ENV NEXT_PUBLIC_API_MOCKING=$NEXT_PUBLIC_API_MOCKING NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE NEXT_PUBLIC_PARENT_SITE_URL=$NEXT_PUBLIC_PARENT_SITE_URL
 COPY packages/contracts/ts packages/contracts/ts
 COPY packages/ui packages/ui
 COPY apps/web apps/web

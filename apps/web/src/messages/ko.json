@@ -89,8 +89,13 @@
     "hintClose": "닫기"
   },
   "meta": {
-    "title": "NAIS Research Commons",
-    "description": "NAIS AI-OS 공동 연구 데이터 플랫폼"
+    "title": "NAIS Commons",
+    "description": "NAIS 국가과학AI연구센터의 연구 데이터 포털 — 연구회 데이터를 찾고, 접근을 신청하고, 함께 분석합니다."
+  },
+  "family": {
+    "label": "패밀리사이트",
+    "parentHome": "{name} 홈",
+    "newTab": "새 탭에서 열림"
   },
   "landing": {
     "nav": {

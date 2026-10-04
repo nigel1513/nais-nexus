@@ -55,6 +55,13 @@ describe("PlatformShell: sidebar", () => {
     expect(screen.getByRole("banner")).toBeInTheDocument();
     expect(screen.getByRole("main")).toContainElement(screen.getByRole("heading", { name: "본문" }));
     expect(screen.getAllByText("한국에너지기술연구원").length).toBeGreaterThan(0);
+    // Brand mark (not a letter tile) and, at the foot, the parent site and 패밀리사이트 in new tabs.
+    expect(screen.getByRole("link", { name: "NAIS Commons" }).querySelector("svg[data-brand-mark]")).not.toBeNull();
+    const home = screen.getByRole("link", { name: /국가과학AI연구센터 홈/ });
+    expect(home).toHaveAttribute("target", "_blank");
+    expect(home.getAttribute("rel")).toContain("noopener");
+    expect(screen.getByRole("button", { name: "패밀리사이트" })).toBeInTheDocument();
+    expect(screen.getByText("© 2026 NAIS 국가과학AI연구센터")).toBeInTheDocument();
     await userEvent.tab();
     expect(screen.getByRole("link", { name: "본문으로 건너뛰기" })).toHaveFocus();
   });

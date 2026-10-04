@@ -24,8 +24,13 @@
     "expiresInHours": "expires in {count} hours"
   },
   "meta": {
-    "title": "NAIS Research Commons",
-    "description": "NAIS AI-OS collaborative research data platform"
+    "title": "NAIS Commons",
+    "description": "The research data portal of NAIS (National Science AI Research Center): find research council data, request access, and analyse it together."
+  },
+  "family": {
+    "label": "Family sites",
+    "parentHome": "{name} home",
+    "newTab": "opens in a new tab"
   },
   "nav": {
     "dashboard": "Dashboard",

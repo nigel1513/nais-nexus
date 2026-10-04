@@ -66,12 +66,13 @@ describe("public landing", () => {
 
   it("links the operator only when NAIS_OPERATOR_URL is a valid http(s) URL", async () => {
     vi.stubEnv("NAIS_OPERATOR_URL", "javascript:alert(1)");
+    // The parent-site home link in the footer (src/shared/family-sites.ts) is always there; the operator link is not.
     const { unmount } = await renderPage();
-    expect(screen.queryByRole("link", { name: /국가과학AI연구센터/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /국가과학AI연구센터(?! 홈)/ })).not.toBeInTheDocument();
     unmount();
     vi.stubEnv("NAIS_OPERATOR_URL", "https://operator.example.org/");
     await renderPage();
-    const links = screen.getAllByRole("link", { name: /국가과학AI연구센터/ });
+    const links = screen.getAllByRole("link", { name: /국가과학AI연구센터(?! 홈)/ });
     expect(links).toHaveLength(3); // header, hero line, footer
     for (const link of links) {
       expect(link).toHaveAttribute("href", "https://operator.example.org/");
@@ -91,5 +92,16 @@ describe("public landing", () => {
     vi.stubEnv("NAIS_SUPPORT_CONTACT", "support@example.org");
     await renderPage();
     expect(screen.getByRole("link", { name: "support@example.org" })).toHaveAttribute("href", "mailto:support@example.org");
+  });
+
+  it("footer: copyright, the parent site home and 패밀리사이트, each opening in a new tab", async () => {
+    await renderPage();
+    const footer = screen.getByRole("contentinfo");
+    expect(within(footer).getByText("© 2026 NAIS 국가과학AI연구센터")).toBeInTheDocument();
+    const home = within(footer).getByRole("link", { name: /국가과학AI연구센터 홈/ });
+    expect(home).toHaveAttribute("href", "http://192.168.0.3:21050/");
+    expect(home).toHaveAttribute("target", "_blank");
+    expect(home.getAttribute("rel")).toContain("noopener");
+    expect(within(footer).getByRole("button", { name: "패밀리사이트" })).toBeInTheDocument();
   });
 });
