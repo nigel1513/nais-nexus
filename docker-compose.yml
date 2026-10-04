@@ -88,6 +88,11 @@ services:
         --ServerApp.root_dir=/home/jovyan
     volumes:
       - notebookwork:/home/jovyan/work
+      # Notebook history (infra/notebook): save hooks that keep each project folder a git repository, and the
+      # JupyterLab settings overrides (file browser follows the open document, no update/news checks offline).
+      - ./infra/notebook:/opt/nais:ro
+      - ./infra/notebook/jupyter_server_config.py:/usr/local/etc/jupyter/jupyter_server_config.py:ro
+      - ./infra/notebook/overrides.json:/opt/conda/share/jupyter/lab/settings/overrides.json:ro
     networks: [notebooks]
     mem_limit: 4g
     restart: unless-stopped

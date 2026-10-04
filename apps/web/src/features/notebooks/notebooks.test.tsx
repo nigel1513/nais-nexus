@@ -13,7 +13,7 @@ import { renderWorkspace } from "../../../tests/workspace-routes";
 import { NotebooksScreen } from "./notebooks-screen";
 
 const href = `/commons/projects/${PROJECT.seed}/notebook`;
-const LOCATION = `/notebooks/lab/tree/work/${USER.aResearcher}/${PROJECT.seed}?token=tok`;
+const LOCATION = `/notebooks/lab/workspaces/nais-${USER.aResearcher}-${PROJECT.seed}/tree/work/${USER.aResearcher}/${PROJECT.seed}/analysis.ipynb?token=tok`;
 /** What POST /notebooks-open answers in this test. */
 const opener = (status: number, body: object) => server.use(http.post("*/notebooks-open", () => HttpResponse.json(body, { status })));
 
@@ -53,6 +53,7 @@ describe("workspace 노트북 tab", () => {
     expect(await screen.findByText("노트북 폴더를 준비하고 있습니다")).toBeInTheDocument();
     const frame = await screen.findByTitle("차세대 이차전지 소재 공동연구 JupyterLab");
     expect(frame).toHaveAttribute("src", LOCATION);
+    expect(screen.getByText("저장할 때마다 변경 이력이 자동으로 기록됩니다 · 왼쪽 Git 패널에서 이력과 비교를 볼 수 있습니다")).toBeInTheDocument();
     expect(within(screen.getByRole("navigation", { name: "프로젝트 작업 공간" })).getByRole("link", { name: "노트북" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("link", { name: "노트북 열기" })).not.toBeInTheDocument(); // already here
     const section = frame.closest("section")!;
@@ -104,7 +105,7 @@ describe("노트북 열기 elsewhere", () => {
   it("sits next to AI 초안 on today's note; the disabled reason stays", async () => {
     renderScreen(<NoteScreen noteId={NOTE.draft} />, { user: USER.aResearcher, path: `/commons/notes/${NOTE.draft}` });
     const button = await screen.findByRole("button", { name: "AI 초안 만들기" });
-    expect(button).toHaveAccessibleDescription("오늘 저장한 노트북이 없습니다.");
+    expect(button).toHaveAccessibleDescription(/^이 프로젝트에서 오늘\(\d{4}-\d{2}-\d{2}\) 저장한 노트북이 없습니다\. 노트북 탭에서 이 프로젝트의 노트북을 저장한 뒤 다시 시도하세요\.$/);
     expect(screen.getByRole("link", { name: "노트북 열기" })).toHaveAttribute("href", href);
   });
 

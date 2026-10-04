@@ -7,6 +7,7 @@ import { getDb } from "@/mocks/db";
 import { NOTE, PROJECT, USER } from "@/mocks/fixtures";
 import { contentHash, seoulDate } from "@/mocks/note-hash";
 import { seedNotebookActivity } from "@/mocks/notebook-activity";
+import { noNotebookMessage } from "@/mocks/handlers/notes";
 import { MOCK_AUTH_TIME_COOKIE } from "@/shared/config";
 import { server } from "../../../tests/msw";
 import { router } from "../../../tests/navigation";
@@ -212,7 +213,7 @@ describe("AI 초안", () => {
     renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
     const button = await screen.findByRole("button", { name: "AI 초안 만들기" });
     expect(button).toBeDisabled();
-    expect(button).toHaveAccessibleDescription("오늘 저장한 노트북이 없습니다.");
+    expect(button).toHaveAccessibleDescription(/^이 프로젝트에서 오늘\(\d{4}-\d{2}-\d{2}\) 저장한 노트북이 없습니다\. 노트북 탭에서 이 프로젝트의 노트북을 저장한 뒤 다시 시도하세요\.$/);
   });
 
   it("is hidden when the local LLM is switched off", async () => {
@@ -294,7 +295,9 @@ describe("AI 초안", () => {
     const button = await screen.findByRole("button", { name: "AI 초안 만들기" });
     await waitFor(() => expect(button).toBeEnabled());
     await userEvent.click(button);
-    expect(await screen.findByText("오늘 저장한 노트북이 없습니다.", { selector: "[role=alert] *, [role=alert]" })).toBeInTheDocument();
+    const noNotebook = await screen.findByText(/^이 프로젝트에서 오늘\(\d{4}-\d{2}-\d{2}\) 저장한 노트북이 없습니다\. 노트북 탭에서/, { selector: "[role=alert] *, [role=alert]" });
+    // The way out: the project's 노트북 tab, right in the alert.
+    expect(within(noNotebook.closest("[role=alert]") as HTMLElement).getByRole("link", { name: "노트북 탭 열기" })).toHaveAttribute("href", expect.stringMatching(/^\/commons\/projects\/[^/]+\/notebook$/));
 
     answer = errorBody("LLM_UNAVAILABLE");
     status = 503;
@@ -312,6 +315,16 @@ describe("AI 초안", () => {
     renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
     expect(await screen.findByText("모델 응답 시간이 초과되었습니다.")).toBeInTheDocument();
     expect(screen.getByText(/AI 초안을 만들지 못했습니다/)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "노트북 탭 열기" })).toBeNull();
+  });
+
+  it("a draft that failed for want of a saved notebook links to the project's 노트북 tab", async () => {
+    const note = draftNote();
+    Object.assign(note, { draft_status: "FAILED", draft_error: noNotebookMessage(note.note_date) });
+    renderNotes(`/commons/notes/${NOTE.draft}`, USER.aResearcher);
+    const alert = (await screen.findByText(/AI 초안을 만들지 못했습니다/)).closest("[role=alert]") as HTMLElement;
+    expect(within(alert).getByText(`이 프로젝트에서 오늘(${note.note_date}) 저장한 노트북이 없습니다. 노트북 탭에서 이 프로젝트의 노트북을 저장한 뒤 다시 시도하세요.`)).toBeInTheDocument();
+    expect(within(alert).getByRole("link", { name: "노트북 탭 열기" })).toHaveAttribute("href", `/commons/projects/${note.project_id}/notebook`);
   });
 });
 

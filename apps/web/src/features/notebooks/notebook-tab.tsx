@@ -1,7 +1,7 @@
 "use client";
 import { Button, cn } from "@nais/ui";
 import { useQuery } from "@tanstack/react-query";
-import { LoaderCircle, Maximize2, Minimize2, TriangleAlert } from "lucide-react";
+import { GitCommitHorizontal, LoaderCircle, Maximize2, Minimize2, TriangleAlert } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useEffect, useRef, useState } from "react";
 import { useWorkspace } from "@/features/workspace/workspace-layout";
@@ -77,7 +77,15 @@ export function NotebookTab() {
         }
         className="mb-3"
       />
-      {expanded ? null : <p className="mb-3 max-w-3xl text-small text-fg-muted">{t("notebooks.tab.hint")}</p>}
+      {expanded ? null : (
+        <div className="mb-3 flex max-w-3xl flex-col gap-1 text-small text-fg-muted">
+          <p>{t("notebooks.tab.hint")}</p>
+          <p className="flex items-start gap-1.5">
+            <GitCommitHorizontal aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-3.5 shrink-0" />
+            {t("notebooks.tab.history")}
+          </p>
+        </div>
+      )}
       {error ? (
         <div role="alert" className="flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft p-3 text-small text-fg">
           <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />

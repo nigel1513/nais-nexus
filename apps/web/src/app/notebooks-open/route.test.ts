@@ -10,26 +10,31 @@ const TOKEN = "jupyter-secret";
 
 /** A fake Jupyter contents API over an in-memory tree (path → directory or file bytes). */
 function fakeJupyter() {
-  const tree = new Map<string, { type: "directory" } | { type: "file"; data: Buffer }>([["work", { type: "directory" }]]);
+  const tree = new Map<string, { type: "directory" } | { type: "file" | "notebook"; data: Buffer }>([["work", { type: "directory" }]]);
   const puts: string[] = [];
   const pathOf = (url: string) => decodeURIComponent(new URL(url).pathname.replace("/notebooks/api/contents/", ""));
   const authorized = (request: Request) => request.headers.get("authorization") === `token ${TOKEN}`;
   server.use(
     http.get(`${JUPYTER}/api/contents/*`, ({ request }) => {
       if (!authorized(request)) return new HttpResponse(null, { status: 403 });
-      const node = tree.get(pathOf(request.url));
+      const path = pathOf(request.url);
+      const node = tree.get(path);
       if (!node) return HttpResponse.json({ message: "No such file" }, { status: 404 });
-      return HttpResponse.json({ type: node.type, size: node.type === "file" ? node.data.byteLength : null, last_modified: "2026-10-03T00:00:00Z" });
+      const meta = (p: string, n: NonNullable<typeof node>) => ({ name: p.split("/").pop(), path: p, type: n.type, size: n.type === "directory" ? null : n.data.byteLength, last_modified: "2026-10-03T00:00:00Z" });
+      const listing = new URL(request.url).searchParams.get("content") === "1" && node.type === "directory";
+      const children = [...tree.entries()].filter(([p]) => p.startsWith(`${path}/`) && !p.slice(path.length + 1).includes("/"));
+      return HttpResponse.json(listing ? { ...meta(path, node), content: children.map(([p, n]) => meta(p, n)) } : meta(path, node));
     }),
     http.put(`${JUPYTER}/api/contents/*`, async ({ request }) => {
       if (!authorized(request)) return new HttpResponse(null, { status: 403 });
       const path = pathOf(request.url);
       const parent = path.split("/").slice(0, -1).join("/");
       if (tree.get(parent)?.type !== "directory") return HttpResponse.json({ message: "parent missing" }, { status: 404 });
-      const model = (await request.json()) as { type: string; format?: string; content?: string };
+      const model = (await request.json()) as { type: string; format?: string; content?: unknown };
       puts.push(path);
       if (model.type === "directory") tree.set(path, { type: "directory" });
-      else tree.set(path, { type: "file", data: Buffer.from(model.content ?? "", model.format === "base64" ? "base64" : "utf8") });
+      else if (model.type === "notebook") tree.set(path, { type: "notebook", data: Buffer.from(JSON.stringify(model.content)) });
+      else tree.set(path, { type: "file", data: Buffer.from(String(model.content ?? ""), model.format === "base64" ? "base64" : "utf8") });
       return HttpResponse.json({ type: model.type }, { status: 201 });
     }),
   );
@@ -58,11 +63,12 @@ describe("POST /notebooks-open (mock mode)", () => {
   });
   afterEach(() => vi.unstubAllEnvs());
 
-  it("creates the folder, copies the PUBLIC input's primary table, writes README.md and answers the JupyterLab address", async () => {
+  it("creates the folder, copies the PUBLIC input's primary table, writes README.md and the starter notebook, and answers the JupyterLab address", async () => {
     const { tree } = fakeJupyter();
     const res = await open(PROJECT.seed);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ location: `/notebooks/lab/tree/${folder}?token=${TOKEN}` });
+    expect(await res.json()).toEqual({ location: `/notebooks/lab/workspaces/nais-${USER.aResearcher}-${PROJECT.seed}/tree/${folder}/analysis.ipynb?token=${TOKEN}` });
+    expect(tree.get(`${folder}/analysis.ipynb`)?.type).toBe("notebook");
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(tree.get(`work/${USER.aResearcher}`)?.type).toBe("directory");
     expect(tree.get(`${folder}/data`)?.type).toBe("directory");
@@ -84,8 +90,10 @@ describe("POST /notebooks-open (mock mode)", () => {
     const first = puts.filter((p) => p.startsWith(`${folder}/data`)).length;
     expect(first).toBe(2); // the data/ folder and one file
     puts.length = 0;
-    expect((await open(PROJECT.seed)).status).toBe(200);
-    expect(puts).toEqual([`${folder}/README.md`]);
+    const again = await open(PROJECT.seed);
+    expect(again.status).toBe(200);
+    expect(puts).toEqual([`${folder}/README.md`]); // the starter notebook is there now: opened, not made again
+    expect(((await again.json()) as { location: string }).location).toContain(`/tree/${folder}/analysis.ipynb?`);
   });
 
   it("refuses non-UUID projects and non-members with 403 forbidden", async () => {

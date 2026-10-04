@@ -41,7 +41,7 @@ package = false
 
 [tool.pytest.ini_options]
 pythonpath = ["apps", "packages/contracts/python"]
-testpaths = ["apps/api", "tests/contract"]
+testpaths = ["apps/api", "tests/contract", "tests/infra"]
 addopts = "--import-mode=importlib -ra"
 markers = ["live_llm: calls the real shared GPU LLM/embedding/rerank services (opt-in: NAIS_LIVE_LLM=1)"]
 filterwarnings = [

@@ -7,18 +7,26 @@ import type { DatasetFile, DatasetVersion, Project, Schemas } from "@/shared/api
  *   2. `work/<user_id>/<project_id>/` and its `data/` exist (Jupyter contents API, created when missing);
  *   3. each pinned input's primary table (skip "_" files, largest VERIFIED csv/parquet) is copied to `data/` when its
  *      access level is PUBLIC or INTERNAL and it is ≤ 50 MiB; an unchanged file (same size) is not uploaded again;
- *   4. README.md (project name, copied and skipped inputs, in Korean) is rewritten;
- *   5. the answer is `/notebooks/lab/tree/work/<u>/<p>?token=…` (Jupyter turns the token into a cookie): the project's
- *      노트북 tab shows it in a frame inside the portal (notebook-tab.tsx).
+ *   4. README.md (project name, copied and skipped inputs, in Korean) is rewritten; the save carries the caller's
+ *      display name (`nais_author_name`) for the folder's notebook history (infra/notebook/nais_nb_hooks.py: Jupyter's
+ *      save hooks keep every project folder a git repository, author `<name> <<user_id>@nais.local>`, and commit each save);
+ *   5. the document to show: the folder's most recently modified notebook, else a new starter notebook `analysis.ipynb`
+ *      (`nais_starter`: the hook dates it back, so opening the tab alone is no "notebook saved today");
+ *   6. the answer is `/notebooks/lab/workspaces/<workspace>/tree/work/<u>/<p>/<doc>?token=…` (Jupyter turns the token
+ *      into a cookie): one JupyterLab workspace per user and project (workspaceName), so a project never restores
+ *      another project's tabs while its own layout is kept; the document opens in the main area and the file browser
+ *      starts in its folder. The project's 노트북 tab shows it in a frame inside the portal (notebook-tab.tsx).
  * The whole copy shares one 20 s budget: inputs it does not reach are listed as "복사 중 건너뜀" and the folder still opens.
- * Path segments are canonical UUIDs only (validated before any path is built).
+ * Path segments are canonical UUIDs only (validated before any path is built). File names the opener creates are ASCII.
  */
 
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export const MAX_FILE_BYTES = 50 * 1024 * 1024;
 export const BUDGET_MS = 20_000;
-/** Kept back from the copy budget for README.md. */
-const README_RESERVE_MS = 3_000;
+/** Kept back from the copy budget for README.md and the document to open. */
+const FINISH_RESERVE_MS = 5_000;
+/** The starter notebook made in a folder without notebooks (ASCII name). */
+export const STARTER_NOTEBOOK = "analysis.ipynb";
 
 export type NotebookError = "unavailable" | "forbidden" | "archived";
 export type OpenResult = { ok: true; location: string; copied: string[]; skipped: SkippedInput[] } | { ok: false; error: NotebookError | "unauthenticated" };
@@ -40,6 +48,32 @@ export type OpenDeps = {
 class JupyterDown extends Error {}
 
 const enc = (path: string) => path.split("/").map(encodeURIComponent).join("/");
+
+/** The JupyterLab workspace of one user's folder of one project: URL-safe (UUIDs only), unique per user and project. */
+export function workspaceName(userId: string, projectId: string): string {
+  if (!UUID_RE.test(userId) || !UUID_RE.test(projectId)) throw new Error("workspace ids must be canonical UUIDs");
+  return `nais-${userId}-${projectId}`;
+}
+
+/** The JupyterLab address: the project's own workspace, the folder (and the document opened in the main area). */
+export function labLocation({ userId, projectId, doc, token }: { userId: string; projectId: string; doc?: string | null; token: string }): string {
+  const path = `work/${userId}/${projectId}${doc ? `/${doc}` : ""}`;
+  return `/notebooks/lab/workspaces/${workspaceName(userId, projectId)}/tree/${enc(path)}?token=${encodeURIComponent(token)}`;
+}
+
+type Entry = { name?: unknown; type?: unknown; last_modified?: unknown };
+
+/** The most recently modified notebook among a folder listing's entries (hidden files skipped). */
+export function latestNotebook(entries: Entry[]): string | null {
+  let best: { name: string; at: number } | null = null;
+  for (const e of entries) {
+    if (e.type !== "notebook" || typeof e.name !== "string" || !e.name.endsWith(".ipynb") || e.name.startsWith(".")) continue;
+    const parsed = typeof e.last_modified === "string" ? Date.parse(e.last_modified) : NaN;
+    const at = Number.isNaN(parsed) ? 0 : parsed;
+    if (!best || at > best.at || (at === best.at && e.name < best.name)) best = { name: e.name, at };
+  }
+  return best?.name ?? null;
+}
 
 /** Same rule as the backend's reader.primary_file. */
 export function primaryFile(files: DatasetFile[]): DatasetFile | undefined {
@@ -70,7 +104,7 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
   const doFetch = deps.fetch ?? fetch;
   const started = now();
   const budget = deps.budgetMs ?? BUDGET_MS;
-  const deadline = started + budget - README_RESERVE_MS;
+  const deadline = started + budget - FINISH_RESERVE_MS;
   const left = () => deadline - now();
   const signal = (cap = Infinity) => AbortSignal.timeout(Math.max(1, Math.min(cap, left())));
   /** An API call bounded by `cap` and the overall budget; it settles on timeout even if the transport ignores the signal. */
@@ -239,32 +273,61 @@ export async function openNotebook(projectId: string | null, deps: OpenDeps): Pr
     }
   }
 
-  // 4. README.md (own small allowance, still within the overall budget)
-  const readme = readmeText(project.name, [...copied, ...unchanged], skipped, inputsFailed, now());
-  try {
-    await doFetch(`${jupyter.base.replace(/\/+$/, "")}/api/contents/${enc(`${folder}/README.md`)}`, {
+  // 4. README.md, 5. the document to show: their own small allowance, still within the overall budget.
+  const finish = (cap: number) => AbortSignal.timeout(Math.max(1, Math.min(cap, started + budget - now())));
+  const put = (path: string, model: Record<string, unknown>, cap: number) =>
+    doFetch(`${jupyter.base.replace(/\/+$/, "")}/api/contents/${enc(path)}`, {
       method: "PUT",
       headers: { Authorization: `token ${jupyter.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "file", format: "text", content: readme }),
-      signal: AbortSignal.timeout(Math.max(1, Math.min(README_RESERVE_MS, started + budget - now()))),
+      body: JSON.stringify(model),
+      signal: finish(cap),
       cache: "no-store",
     });
+  const files = [...copied, ...unchanged];
+  let readmeOk = false;
+  try {
+    const res = await put(`${folder}/README.md`, { type: "file", format: "text", content: readmeText(project.name, files, skipped, inputsFailed), nais_author_name: me.display_name }, 2_000);
+    readmeOk = res.ok;
   } catch {
     /* README is a courtesy; the folder is usable without it */
   }
+  let doc: string | null = null;
+  try {
+    const res = await doFetch(`${jupyter.base.replace(/\/+$/, "")}/api/contents/${enc(folder)}?content=1`, {
+      method: "GET",
+      headers: { Authorization: `token ${jupyter.token}` },
+      signal: finish(1_500),
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const listing = (await res.json()) as { content?: unknown };
+      doc = latestNotebook(Array.isArray(listing.content) ? (listing.content as Entry[]) : []);
+      if (!doc) {
+        const made = await put(`${folder}/${STARTER_NOTEBOOK}`, { type: "notebook", content: starterNotebook(project.name, files), nais_starter: true }, 2_000);
+        if (made.ok) doc = STARTER_NOTEBOOK;
+      }
+    }
+  } catch {
+    /* the folder opens without a document */
+  }
+  if (!doc && readmeOk) doc = "README.md";
 
-  return { ok: true, location: `/notebooks/lab/tree/${enc(folder)}?token=${encodeURIComponent(jupyter.token)}`, copied, skipped };
+  return { ok: true, location: labLocation({ userId: me.user_id, projectId, doc, token: jupyter.token }), copied, skipped };
 }
 
 const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ").trim();
 
-export function readmeText(projectName: string, files: string[], skipped: SkippedInput[], inputsFailed: boolean, nowMs: number): string {
-  const kst = new Date(nowMs + 9 * 3_600_000).toISOString().slice(0, 16).replace("T", " ");
+/**
+ * README.md of the folder. No timestamp: the file is rewritten on every open and enters the folder's history only when
+ * its content changes.
+ */
+export function readmeText(projectName: string, files: string[], skipped: SkippedInput[], inputsFailed: boolean): string {
   const lines = [
     `# ${oneLine(projectName)}`,
     "",
     "NAIS 프로젝트 노트북 폴더입니다. 이 폴더와 하위 폴더에 저장한 노트북(.ipynb)이 그날 연구노트 AI 초안의 근거가 됩니다.",
     "data/ 폴더는 입력 데이터 복사본이며, 그 안의 노트북은 근거에서 제외됩니다.",
+    "저장할 때마다 이 폴더의 변경 이력이 자동으로 기록됩니다(git). 왼쪽 Git 패널에서 이력과 비교를 볼 수 있습니다. data/ 폴더, 표 파일(csv·parquet 등)과 20 MB가 넘는 파일은 이력에 넣지 않습니다.",
     "",
     "## 입력 데이터 (data/)",
     "",
@@ -275,7 +338,37 @@ export function readmeText(projectName: string, files: string[], skipped: Skippe
     if (inputsFailed) lines.push("- 프로젝트 입력 목록을 읽지 못했습니다. 노트북을 다시 열어 보세요.");
     for (const s of skipped) lines.push(`- ${oneLine(s.name)}: ${s.reason}`);
   }
-  lines.push("", `마지막 갱신: ${kst} (KST)`, "");
+  lines.push("");
   return lines.join("\n");
+}
+
+const pyString = (text: string) => JSON.stringify(text);
+
+/** The starter notebook (nbformat 4.5, python3 kernel): what the folder is, and a first cell reading the first input. */
+export function starterNotebook(projectName: string, files: string[]): Record<string, unknown> {
+  const first = files[0];
+  const read = first ? `df = pd.${/\.parquet$/i.test(first) ? "read_parquet" : "read_csv"}(${pyString(`data/${first}`)})` : null;
+  const intro = [
+    `# ${oneLine(projectName)} 분석`,
+    "",
+    "NAIS 프로젝트의 내 노트북 폴더입니다.",
+    "",
+    "- `data/`: 프로젝트 입력 데이터 복사본입니다. 복사한 파일과 복사하지 않은 입력은 `README.md`에 있습니다.",
+    "- 이 폴더에 저장한 노트북(.ipynb)이 그날 연구노트 AI 초안의 근거가 됩니다.",
+    "- 저장할 때마다 변경 이력이 자동으로 기록됩니다. 왼쪽 Git 패널에서 이력과 비교를 볼 수 있습니다.",
+  ].join("\n");
+  const code = ["import pandas as pd", ...(read ? ["", read, "df.head()"] : [])].join("\n");
+  return {
+    cells: [
+      { cell_type: "markdown", id: "nais-intro", metadata: {}, source: intro },
+      { cell_type: "code", id: "nais-start", metadata: {}, execution_count: null, outputs: [], source: code },
+    ],
+    metadata: {
+      kernelspec: { name: "python3", display_name: "Python 3 (ipykernel)", language: "python" },
+      language_info: { name: "python" },
+    },
+    nbformat: 4,
+    nbformat_minor: 5,
+  };
 }
 

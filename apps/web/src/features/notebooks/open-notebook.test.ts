@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DatasetFile, DatasetVersion, Schemas } from "@/shared/api/types";
-import { MAX_FILE_BYTES, openNotebook, primaryFile, readmeText, safeName, type OpenDeps } from "./open-notebook";
+import { labLocation, latestNotebook, MAX_FILE_BYTES, openNotebook, primaryFile, readmeText, safeName, starterNotebook, STARTER_NOTEBOOK, workspaceName, type OpenDeps } from "./open-notebook";
 
 const U = "00000000-0000-4000-8000-00000000000a";
 const P = "00000000-0000-4000-8000-00000000000b";
@@ -11,12 +11,13 @@ const input = (n: number, access: Schemas["AccessLevel"], extra: Partial<Schemas
   ({ input_id: `0000000${n}-0000-4000-8000-000000000000`, dataset_title: `데이터 ${n}`, version_label: "v1", dataset_version_id: `v${n}`, access_level: access, access_lapsed: false, ...extra }) as Schemas["ProjectInput"];
 
 /** Fake NAIS API + Jupyter: records Jupyter PUTs; `existing` maps a path to the size Jupyter reports. */
-function harness({ inputs, versions, existing = {}, clock }: { inputs: Schemas["ProjectInput"][]; versions: Record<string, DatasetFile[]>; existing?: Record<string, number>; clock?: { t: number; step: number } }) {
+function harness({ inputs, versions, existing = {}, clock, listing }: { inputs: Schemas["ProjectInput"][]; versions: Record<string, DatasetFile[]>; existing?: Record<string, number>; clock?: { t: number; step: number }; listing?: unknown[] | "error" }) {
   const puts: string[] = [];
+  const bodies: Record<string, Record<string, unknown>> = {};
   const reads: string[] = [];
   const api: OpenDeps["api"] = async (path, init) => {
     if (clock) clock.t += clock.step;
-    if (path === "/me") return Response.json({ user_id: U });
+    if (path === "/me") return Response.json({ user_id: U, display_name: "홍길동" });
     if (path === `/projects/${P}`) return Response.json({ project_id: P, name: "프로젝트", my_role: "RESEARCHER" });
     if (path === `/projects/${P}/inputs`) return Response.json({ items: inputs });
     const m = /^\/dataset-versions\/([^/]+)(\/download-session)?$/.exec(path);
@@ -31,7 +32,12 @@ function harness({ inputs, versions, existing = {}, clock }: { inputs: Schemas["
     const path = decodeURIComponent(new URL(url).pathname.replace("/notebooks/api/contents/", ""));
     if (init?.method === "PUT") {
       puts.push(path);
+      bodies[path] = JSON.parse(String(init.body)) as Record<string, unknown>;
       return new Response("{}", { status: 201 });
+    }
+    if (path === `work/${U}/${P}` && new URL(url).search === "?content=1") {
+      if (listing === "error") return new Response(null, { status: 500 });
+      return Response.json({ type: "directory", content: listing ?? [] });
     }
     if (path.split("/").length <= 3) return Response.json({ type: "directory" });
     if (path in existing) return Response.json({ type: "file", size: existing[path] });
@@ -48,7 +54,7 @@ function harness({ inputs, versions, existing = {}, clock }: { inputs: Schemas["
     },
     now: clock ? () => clock.t : undefined,
   };
-  return { deps, puts, reads };
+  return { deps, puts, reads, bodies };
 }
 
 describe("primaryFile / safeName", () => {
@@ -90,7 +96,7 @@ describe("openNotebook", () => {
     const r = await openNotebook(P, deps);
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.location).toBe(`/notebooks/lab/tree/work/${U}/${P}?token=tok`);
+    expect(r.location).toBe(`/notebooks/lab/workspaces/nais-${U}-${P}/tree/work/${U}/${P}/analysis.ipynb?token=tok`);
     expect(reads).toEqual(["data/a.csv", "b.parquet"]);
     expect(puts.filter((p) => p.includes("/data/"))).toEqual([`work/${U}/${P}/data/데이터 1_v1_a.csv`, `work/${U}/${P}/data/데이터 2_v1_b.parquet`]);
     expect(r.skipped.map((s) => [s.name, s.reason])).toEqual([
@@ -99,7 +105,7 @@ describe("openNotebook", () => {
       ["데이터 5 v1", "접근 권한이 만료되었습니다"],
       ["데이터 6 v1", "파일이 50 MiB를 넘습니다 (50.0 MiB)"],
     ]);
-    expect(puts.at(-1)).toBe(`work/${U}/${P}/README.md`);
+    expect(puts.slice(-2)).toEqual([`work/${U}/${P}/README.md`, `work/${U}/${P}/${STARTER_NOTEBOOK}`]);
   });
 
   it("skips a file Jupyter already holds with the same size, re-copies a changed one", async () => {
@@ -124,7 +130,7 @@ describe("openNotebook", () => {
     expect(r.copied.length).toBeLessThan(3);
     expect(r.skipped.length).toBeGreaterThan(0);
     expect(r.skipped.every((s) => s.reason === "복사 중 건너뜀")).toBe(true);
-    expect(puts.at(-1)).toBe(`work/${U}/${P}/README.md`);
+    expect(puts).toContain(`work/${U}/${P}/README.md`);
   });
 
   it("is unavailable when Jupyter is not configured or does not answer", async () => {
@@ -177,12 +183,85 @@ describe("openNotebook (review fixes)", () => {
 });
 
 describe("readmeText", () => {
-  it("names the project, the copied files and why others were skipped", () => {
-    const text = readmeText("프로젝트\n이름", ["a.csv"], [{ name: "데이터 3 v1", reason: "복사 중 건너뜀" }], false, Date.UTC(2026, 9, 3, 1, 0));
+  it("names the project, the copied files and why others were skipped; no timestamp (no history entry per open)", () => {
+    const text = readmeText("프로젝트\n이름", ["a.csv"], [{ name: "데이터 3 v1", reason: "복사 중 건너뜀" }], false);
     expect(text).toContain("# 프로젝트 이름");
     expect(text).toContain("- data/a.csv");
     expect(text).toContain("## 복사하지 않은 입력");
     expect(text).toContain("- 데이터 3 v1: 복사 중 건너뜀");
-    expect(text).toContain("2026-10-03 10:00 (KST)");
+    expect(text).toContain("변경 이력이 자동으로 기록됩니다");
+    expect(text).not.toMatch(/KST|마지막 갱신/);
+  });
+});
+
+describe("JupyterLab address", () => {
+  it("names one workspace per user and project, URL-safe, and refuses anything but UUIDs", () => {
+    expect(workspaceName(U, P)).toBe(`nais-${U}-${P}`);
+    expect(workspaceName(U, P)).toMatch(/^[a-z0-9-]+$/);
+    expect(workspaceName(U, P)).not.toBe(workspaceName(P, U));
+    expect(() => workspaceName("../x", P)).toThrow();
+    expect(() => workspaceName(U, "a b")).toThrow();
+  });
+
+  it("opens the document in the project's workspace (no reset: the project's own layout is kept)", () => {
+    expect(labLocation({ userId: U, projectId: P, doc: "analysis.ipynb", token: "t k" })).toBe(`/notebooks/lab/workspaces/nais-${U}-${P}/tree/work/${U}/${P}/analysis.ipynb?token=t%20k`);
+    expect(labLocation({ userId: U, projectId: P, doc: "실험 1.ipynb", token: "t" })).toBe(`/notebooks/lab/workspaces/nais-${U}-${P}/tree/work/${U}/${P}/${encodeURIComponent("실험 1.ipynb")}?token=t`);
+    expect(labLocation({ userId: U, projectId: P, doc: null, token: "t" })).toBe(`/notebooks/lab/workspaces/nais-${U}-${P}/tree/work/${U}/${P}?token=t`);
+  });
+
+  it("picks the most recently modified notebook, skipping hidden files, folders and other files", () => {
+    expect(
+      latestNotebook([
+        { name: "a.ipynb", type: "notebook", last_modified: "2026-10-01T00:00:00Z" },
+        { name: "b.ipynb", type: "notebook", last_modified: "2026-10-03T00:00:00Z" },
+        { name: ".hidden.ipynb", type: "notebook", last_modified: "2026-10-04T00:00:00Z" },
+        { name: "data", type: "directory", last_modified: "2026-10-05T00:00:00Z" },
+        { name: "z.py", type: "file", last_modified: "2026-10-05T00:00:00Z" },
+      ]),
+    ).toBe("b.ipynb");
+    expect(latestNotebook([{ name: "README.md", type: "file" }])).toBeNull();
+    expect(latestNotebook([{ name: "x.ipynb", type: "notebook" }])).toBe("x.ipynb");
+  });
+
+  it("makes a python3 starter notebook that explains the folder and reads the first input", () => {
+    const nb = starterNotebook("프로젝트", ["a b.parquet"]) as { cells: { cell_type: string; source: string; id: string }[]; metadata: { kernelspec: { name: string } }; nbformat: number; nbformat_minor: number };
+    expect([nb.nbformat, nb.nbformat_minor, nb.metadata.kernelspec.name]).toEqual([4, 5, "python3"]);
+    expect(nb.cells.map((c) => c.cell_type)).toEqual(["markdown", "code"]);
+    expect(nb.cells[0]!.source).toContain("# 프로젝트 분석");
+    expect(nb.cells[0]!.source).toContain("data/");
+    expect(nb.cells[1]!.source).toContain('pd.read_parquet("data/a b.parquet")');
+    expect((starterNotebook("p", []) as typeof nb).cells[1]!.source).toBe("import pandas as pd");
+    expect(STARTER_NOTEBOOK).toMatch(/^[a-z]+\.ipynb$/);
+  });
+});
+
+describe("openNotebook: the document and the history author", () => {
+  it("sends the caller's display name with README.md and creates the starter notebook in an empty folder", async () => {
+    const { deps, bodies } = harness({ inputs: [input(1, "PUBLIC")], versions: { v1: [file("a.csv", 10)] } });
+    const r = await openNotebook(P, deps);
+    expect(r.ok && r.location).toBe(labLocation({ userId: U, projectId: P, doc: STARTER_NOTEBOOK, token: "tok" }));
+    expect(bodies[`work/${U}/${P}/README.md`]).toMatchObject({ type: "file", format: "text", nais_author_name: "홍길동" });
+    const starter = bodies[`work/${U}/${P}/${STARTER_NOTEBOOK}`]!;
+    expect(starter).toMatchObject({ type: "notebook", nais_starter: true });
+    expect(JSON.stringify(starter)).toContain("data/데이터 1_v1_a.csv");
+    expect(JSON.stringify(bodies)).not.toContain("@"); // never an e-mail address: the hook uses <user_id>@nais.local
+  });
+
+  it("opens the most recently modified notebook and creates nothing else", async () => {
+    const listing = [
+      { name: "old.ipynb", type: "notebook", last_modified: "2026-09-01T00:00:00Z" },
+      { name: "new.ipynb", type: "notebook", last_modified: "2026-10-02T00:00:00Z" },
+    ];
+    const { deps, puts } = harness({ inputs: [], versions: {}, listing });
+    const r = await openNotebook(P, deps);
+    expect(r.ok && r.location).toBe(labLocation({ userId: U, projectId: P, doc: "new.ipynb", token: "tok" }));
+    expect(puts.filter((p) => p.endsWith(".ipynb"))).toEqual([]);
+  });
+
+  it("falls back to README.md when the folder cannot be listed", async () => {
+    const { deps, puts } = harness({ inputs: [], versions: {}, listing: "error" });
+    const r = await openNotebook(P, deps);
+    expect(r.ok && r.location).toBe(labLocation({ userId: U, projectId: P, doc: "README.md", token: "tok" }));
+    expect(puts.filter((p) => p.endsWith(".ipynb"))).toEqual([]);
   });
 });

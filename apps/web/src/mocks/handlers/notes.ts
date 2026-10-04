@@ -29,7 +29,8 @@ import { isActiveMember, memberProjectIds, roleOf } from "./workspace";
 type Relation = "RECORDER" | "WITNESS" | "MEMBER" | "HIDDEN";
 
 const MIN_DRAFT_INTERVAL_MS = 60_000;
-const NO_NOTEBOOK_MESSAGE = "오늘 저장한 노트북이 없습니다.";
+/** The 422 / FAILED text when no notebook was saved in the project that day: what to do next, with the date. */
+export const noNotebookMessage = (day: string) => `이 프로젝트에서 오늘(${day}) 저장한 노트북이 없습니다. 노트북 탭에서 이 프로젝트의 노트북을 저장한 뒤 다시 시도하세요.`;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const STATUSES: Schemas["NoteStatus"][] = ["DRAFT", "SUBMITTED", "SIGNED"];
 
@@ -195,7 +196,7 @@ function runBridgedDraft(cfg: BridgeConfig, db: MockDb, note: StoredNote) {
         return;
       }
       const err = e instanceof BridgeError ? e : new BridgeError("INTERNAL_ERROR");
-      const message = err.reason === "NO_NOTEBOOK_ACTIVITY" ? NO_NOTEBOOK_MESSAGE : err.code === "LLM_UNAVAILABLE" ? LLM_DOWN_MESSAGE : DRAFT_FAILED_MESSAGE;
+      const message = err.reason === "NO_NOTEBOOK_ACTIVITY" ? noNotebookMessage(note.note_date) : err.code === "LLM_UNAVAILABLE" ? LLM_DOWN_MESSAGE : DRAFT_FAILED_MESSAGE;
       Object.assign(note, { draft_status: "FAILED", draft_error: message });
     })
     .finally(() => drafts.delete(note.note_id));
@@ -598,9 +599,9 @@ export const noteHandlers = [
         if (e instanceof BridgeError && e.reason === "NO_NOTEBOOK_ACTIVITY") count = 0;
         else fail("DEPENDENCY_UNAVAILABLE", "The notebook source is unavailable.");
       }
-      if (!count) fail("VALIDATION_FAILED", NO_NOTEBOOK_MESSAGE, { reason: "NO_NOTEBOOK_ACTIVITY" });
+      if (!count) fail("VALIDATION_FAILED", noNotebookMessage(note.note_date), { reason: "NO_NOTEBOOK_ACTIVITY" });
     } else if (!listNotebookActivity(note.recorder_id, note.project_id, note.note_date).length) {
-      fail("VALIDATION_FAILED", NO_NOTEBOOK_MESSAGE, { reason: "NO_NOTEBOOK_ACTIVITY" });
+      fail("VALIDATION_FAILED", noNotebookMessage(note.note_date), { reason: "NO_NOTEBOOK_ACTIVITY" });
     }
     if (rateLimited) fail("RATE_LIMITED", "A draft of this note was requested less than a minute ago.");
     if (note.draft_status !== "QUEUED" && note.draft_status !== "RUNNING") {

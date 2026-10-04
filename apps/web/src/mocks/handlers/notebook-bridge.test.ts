@@ -182,7 +182,7 @@ describe("notes mocks: bridged to the api's internal endpoints", () => {
     );
     await minjun.post(`/notes/${NOTE.draft}/draft`);
     await settleBridgedDrafts();
-    expect((await minjun.get(`/notes/${NOTE.draft}`)).body).toMatchObject({ draft_status: "FAILED", draft_error: "오늘 저장한 노트북이 없습니다." });
+    expect((await minjun.get(`/notes/${NOTE.draft}`)).body).toMatchObject({ draft_status: "FAILED", draft_error: expect.stringMatching(/^이 프로젝트에서 오늘\(\d{4}-\d{2}-\d{2}\) 저장한 노트북이 없습니다\. 노트북 탭에서/) });
     server.use(http.post(DRAFT, () => HttpResponse.error()));
     resetRequest();
     await minjun.post(`/notes/${NOTE.draft}/draft`);

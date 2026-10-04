@@ -186,7 +186,7 @@ describe("notes mocks: drafting from the day's notebooks", () => {
   it("answers 422 NO_NOTEBOOK_ACTIVITY while no notebook was saved that day (Jupyter is not there yet)", async () => {
     const res = await minjun.post(`/notes/${NOTE.draft}/draft`);
     expect(res.status).toBe(422);
-    expect(res.body.error).toMatchObject({ code: "VALIDATION_FAILED", message: "오늘 저장한 노트북이 없습니다.", details: { reason: "NO_NOTEBOOK_ACTIVITY" } });
+    expect(res.body.error).toMatchObject({ code: "VALIDATION_FAILED", message: expect.stringMatching(/^이 프로젝트에서 오늘\(\d{4}-\d{2}-\d{2}\) 저장한 노트북이 없습니다\. 노트북 탭에서 이 프로젝트의 노트북을 저장한 뒤 다시 시도하세요\.$/), details: { reason: "NO_NOTEBOOK_ACTIVITY" } });
     expect((await minjun.get(`/notes/${NOTE.draft}`)).body.draft_source_count).toBe(0);
     getDb().llmEnabled = false;
     expect((await minjun.post(`/notes/${NOTE.draft}/draft`)).body.error.code).toBe("LLM_UNAVAILABLE");

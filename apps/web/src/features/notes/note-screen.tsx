@@ -37,6 +37,9 @@ export function NoteScreen({ noteId }: { noteId: string }) {
 
 type Dialog = "submit" | "sign" | "reject" | null;
 
+/** A draft that FAILED for want of a saved notebook (draft_error is free text; the API and mock both say this). */
+const NO_NOTEBOOK_TEXT = /저장한 노트북이 없습니다/;
+
 function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<ResearchNote | undefined> }) {
   const t = useTranslations();
   const errorText = useErrorText();
@@ -89,9 +92,20 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
     router.replace(noteHref(note.note_id), { scroll: false });
   }, [params, recorderCanSign, witnessCanSign, router, note.note_id]);
 
+  const noSource = t("notes.ai.noSource", { date: note.note_date });
+  const noNotebook = (e: unknown) => {
+    const err = asApiError(e);
+    return err.code === "VALIDATION_FAILED" && err.details.reason === "NO_NOTEBOOK_ACTIVITY";
+  };
+  /** The way out of "no notebook saved": the project's 노트북 tab. */
+  const notebookTab = (
+    <OpenNotebookLink projectId={note.project_id} size="sm">
+      {t("notes.ai.openNotebookTab")}
+    </OpenNotebookLink>
+  );
   const draftText = (e: unknown) => {
     const err = asApiError(e);
-    if (err.code === "VALIDATION_FAILED" && err.details.reason === "NO_NOTEBOOK_ACTIVITY") return t("notes.ai.noSource");
+    if (noNotebook(e)) return noSource;
     if (err.code === "RATE_LIMITED") return t("notes.ai.rateLimited");
     if (err.code === "DEPENDENCY_UNAVAILABLE") return t("notes.ai.sourceUnavailable");
     return errorText(e);
@@ -180,7 +194,7 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
             editable && settings.data?.llm_enabled
               ? {
                   show: true,
-                  disabledReason: note.draft_source_count === 0 ? t("notes.ai.noSource") : null,
+                  disabledReason: note.draft_source_count === 0 ? noSource : null,
                   notebook: <OpenNotebookLink projectId={note.project_id}>{t("notes.ai.openNotebook")}</OpenNotebookLink>,
                   busy: draft.isPending || draftPending(note),
                   onClick: () => void startDraft(),
@@ -218,14 +232,18 @@ function NoteView({ note, reload }: { note: ResearchNote; reload: () => Promise<
             <div className="flex min-w-0 flex-col gap-0.5">
               <p className="font-medium">{t("notes.ai.failed")}</p>
               {note.draft_error ? <p>{note.draft_error}</p> : null}
+              {note.draft_error && NO_NOTEBOOK_TEXT.test(note.draft_error) ? <div className="mt-1.5">{notebookTab}</div> : null}
             </div>
           </div>
         ) : null}
         {draftError ? (
-          <p role="alert" className="flex items-start gap-2 rounded-md border border-warning-line bg-warning-soft p-3 text-small text-fg">
-            <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
-            {draftText(draftError)}
-          </p>
+          <div role="alert" className="flex flex-col items-start gap-2 rounded-md border border-warning-line bg-warning-soft p-3 text-small text-fg sm:flex-row sm:items-center sm:justify-between">
+            <p className="flex items-start gap-2">
+              <TriangleAlert aria-hidden="true" strokeWidth={1.75} className="mt-0.5 size-4 shrink-0 text-warning" />
+              {draftText(draftError)}
+            </p>
+            {noNotebook(draftError) ? notebookTab : null}
+          </div>
         ) : null}
 
         {blockedByAi ? (
