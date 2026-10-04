@@ -11,7 +11,7 @@ on every "노트북 열기" is such a save:
   ``.gitattributes`` (nbdime diff/merge drivers for ``*.ipynb``), sets the repo-local nbdime drivers and the author
   (display name sent by the portal, e-mail always the placeholder ``<user_id>@nais.local``, never a real address),
   and makes the first commit;
-* ``commit_saved`` commits the one saved file ("save: <path>", English like every message the hook writes) when it is tracked-able (not ignored, at most 20 MB)
+* ``commit_saved`` commits the one saved file ("save: <path>", English like every message the hook writes) when it is tracked-able (not ignored, at most 10 MB)
   and changed; other staged work of the user is left as it is (``git commit -- <file>``).
 
 The portal sends two extra keys in a contents-API save model, read by ``pre_save_hook`` only:
@@ -39,7 +39,8 @@ from typing import Any
 log = logging.getLogger("nais.nb_hooks")
 
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-MAX_COMMIT_BYTES = 20 * 1024 * 1024
+MAX_COMMIT_BYTES = 10 * 1024 * 1024
+LOCK_RETRY_S = 0.5
 GIT_TIMEOUT_S = 20.0
 STARTER_AGE_S = 2 * 24 * 3600
 EMAIL_DOMAIN = "nais.local"
@@ -83,6 +84,24 @@ __pycache__/
 *.onnx
 *.safetensors
 *.bin
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tif
+*.tiff
+*.webp
+*.svgz
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.mp3
+*.wav
+*.flac
+*.pdf
 """
 
 GITATTRIBUTES = "*.ipynb diff=jupyternotebook merge=jupyternotebook\n"
@@ -99,15 +118,31 @@ REPO_CONFIG: tuple[tuple[str, str], ...] = (
 )
 
 
-def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+# Every git call: no hooks, no fsmonitor, no signing, no auto gc, no global/system config, and pathspecs taken
+# literally (a Jupyter file may be named `*` or `:(exclude)x`). Kernels of every user can write every folder, so
+# nothing a folder's own config or .gitattributes names may run during another save (see _no_filters).
+_SAFE = (
+    "-c", "core.hooksPath=/dev/null",
+    "-c", "core.fsmonitor=false",
+    "-c", "commit.gpgsign=false",
+    "-c", "gc.auto=0",
+    "-c", "core.quotepath=false",
+)  # fmt: skip
+
+
+def _git(
+    repo: Path, *args: str, check: bool = True, extra: tuple[str, ...] = (), literal: bool = True
+) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_LITERAL_PATHSPECS": "1" if literal else "0",
         "LC_ALL": "C.UTF-8",
     }
     return subprocess.run(
-        ["git", "-c", "commit.gpgsign=false", "-c", "core.quotepath=false", *args],
+        ["git", *_SAFE, *extra, *args],
         cwd=repo,
         env=env,
         capture_output=True,
@@ -144,6 +179,32 @@ def clean_name(name: object, fallback: str) -> str:
 def placeholder_email(project_dir: Path) -> str:
     """``<user_id>@nais.local``: the folder's user id, never a real address."""
     return f"{project_dir.parent.name}@{EMAIL_DOMAIN}"
+
+
+def _no_filters(repo: Path) -> tuple[str, ...]:
+    """``-c`` overrides emptying every filter driver the repository config defines (clean/smudge/process).
+
+    .gitattributes can only name drivers that are configured, so with these the hook's add runs no command.
+    """
+    listed = _git(repo, "config", "--name-only", "--get-regexp", r"^filter\.", check=False).stdout.split()
+    names = {key.rsplit(".", 1)[0] for key in listed if key.count(".") >= 2}
+    out: list[str] = []
+    for name in sorted(names):
+        for part in ("clean", "smudge", "process"):
+            out += ["-c", f"{name}.{part}="]
+        out += ["-c", f"{name}.required=false"]
+    return tuple(out)
+
+
+def _git_retry(repo: Path, *args: str, extra: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
+    """``_git`` that waits once and tries again when another git (the Git panel) holds the index lock."""
+    try:
+        return _git(repo, *args, extra=extra)
+    except subprocess.CalledProcessError as exc:
+        if "index.lock" not in (exc.stderr or ""):
+            raise
+        time.sleep(LOCK_RETRY_S)
+        return _git(repo, *args, extra=extra)
 
 
 def _config_get(repo: Path, key: str) -> str | None:
@@ -193,9 +254,11 @@ def ensure_repo(project_dir: str | os.PathLike[str], author_name: str | None = N
         # Everything already there that is not ignored and not over the size cap (a folder from before the history).
         listed = _git(repo, "ls-files", "-z", "--others", "--exclude-standard").stdout.split("\0")
         small = [f for f in listed if f and _small(repo / f)]
+        safe = _no_filters(repo)
         for start in range(0, len(small), 200):
-            _git(repo, "add", "--", *small[start : start + 200])
-        _git(repo, "commit", "-q", "--allow-empty", "-m", INITIAL_MESSAGE)
+            _git_retry(repo, "add", "--", *small[start : start + 200], extra=safe)
+        _git_retry(repo, "commit", "-q", "--no-verify", "--allow-empty", "-m", INITIAL_MESSAGE, extra=safe)
+    _ready.add(str(repo))
     return created
 
 
@@ -213,14 +276,30 @@ def commit_saved(os_path: str | os.PathLike[str], work_root: str | os.PathLike[s
     if path.stat().st_size > MAX_COMMIT_BYTES:
         log.info("nb history: not committed, over %d bytes: %s", MAX_COMMIT_BYTES, rel)
         return None
-    ensure_repo(repo)
+    if str(repo) not in _ready or not (repo / ".git").is_dir():
+        ensure_repo(repo)
     name = rel.as_posix()
-    if _git(repo, "check-ignore", "-q", "--", name, check=False).returncode == 0:
+    # check-ignore matches ignore rules against the path itself but refuses the literal magic; "./" keeps a name
+    # starting with ":" from being read as pathspec magic.
+    if _git(repo, "check-ignore", "-q", "--", f"./{name}", check=False, literal=False).returncode == 0:
         return None
-    _git(repo, "add", "--", name)
-    if _git(repo, "diff", "--cached", "--quiet", "--", name, check=False).returncode == 0:
+    safe = _no_filters(repo)
+    _git_retry(repo, "add", "--", name, extra=safe)
+    unchanged = _git(
+        repo,
+        "diff",
+        "--cached",
+        "--quiet",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--",
+        name,
+        check=False,
+        extra=safe,
+    )
+    if unchanged.returncode == 0:
         return None  # saved without changes
-    _git(repo, "commit", "-q", "-m", f"save: {name}", "--", name)
+    _git_retry(repo, "commit", "-q", "--no-verify", "-m", f"save: {name}", "--", name, extra=safe)
     return _git(repo, "rev-parse", "HEAD").stdout.strip()
 
 
@@ -235,6 +314,7 @@ def age_starter(os_path: str | os.PathLike[str], age_s: float = STARTER_AGE_S) -
 _executor: ThreadPoolExecutor | None = None
 _executor_lock = threading.Lock()
 _starters: set[str] = set()
+_ready: set[str] = set()  # project folders whose repository ensure_repo set up in this process
 _starters_lock = threading.Lock()
 
 
@@ -275,9 +355,13 @@ def pre_save_hook(
         repo = project_dir_of(os_path, _work_root(contents_manager))
         if repo is None:
             return
-        if starter is True:
-            with _starters_lock:
+        with (
+            _starters_lock
+        ):  # a later save without the flag clears a starter mark that never reached post-save
+            if starter is True:
                 _starters.add(str(os_path.resolve()))
+            else:
+                _starters.discard(str(os_path.resolve()))
         if isinstance(author, str):
             submit(ensure_repo, repo, author)
     except Exception:

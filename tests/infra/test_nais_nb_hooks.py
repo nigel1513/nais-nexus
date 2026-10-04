@@ -145,14 +145,96 @@ def test_commit_saved_commits_changes_of_the_saved_file_only(hooks: Any, root: P
     assert log(repo)[0] == "save: 실험 노트.ipynb"
 
 
-def test_commit_saved_skips_files_over_20_mb(hooks: Any, root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_commit_saved_skips_files_over_the_cap(
+    hooks: Any, root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     work = root / "work"
     repo = work / U / P
+    assert hooks.MAX_COMMIT_BYTES == 10 * 1024 * 1024
     monkeypatch.setattr(hooks, "MAX_COMMIT_BYTES", 10)
     big = repo / "big.ipynb"
     big.write_text("x" * 11, encoding="utf-8")
     assert hooks.commit_saved(big, work) is None
     assert not (repo / ".git").exists()
+
+
+def test_media_is_ignored(hooks: Any, root: Path) -> None:
+    work = root / "work"
+    repo = work / U / P
+    hooks.ensure_repo(repo)
+    for name in ("plot.png", "clip.mp4", "paper.pdf", "photo.JPG".lower()):
+        (repo / name).write_bytes(b"x")
+        assert hooks.commit_saved(repo / name, work) is None
+    assert git(repo, "ls-files").splitlines() == [".gitattributes", ".gitignore"]
+
+
+@pytest.mark.parametrize("name", ["*", ":(exclude)x", "*.ipynb", ":(glob)**", ":!mine.py"])
+def test_file_names_are_literal_pathspecs(
+    hooks: Any, root: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    work = root / "work"
+    repo = work / U / P
+    hooks.ensure_repo(repo)
+    monkeypatch.setattr(hooks, "MAX_COMMIT_BYTES", 100)
+    (repo / "other.ipynb").write_text("{}", encoding="utf-8")  # untracked, must stay so
+    (repo / "big.ipynb").write_text("x" * 200, encoding="utf-8")  # over the cap, must never be staged
+    staged = repo / "mine.py"
+    staged.write_text("x = 1\n", encoding="utf-8")
+    git(repo, "add", "mine.py")  # someone's staged work stays staged, out of the auto commit
+    saved = repo / name
+    saved.write_text("{}", encoding="utf-8")
+    assert hooks.commit_saved(saved, work)
+    assert git(repo, "show", "--name-only", "--format=", "HEAD").splitlines() == [name]
+    assert log(repo)[0] == f"save: {name}"
+    assert git(repo, "diff", "--cached", "--name-only").splitlines() == ["mine.py"]
+    tracked = git(repo, "ls-files").splitlines()
+    assert "other.ipynb" not in tracked and "big.ipynb" not in tracked
+
+
+def test_no_command_from_the_folder_runs_during_a_save(hooks: Any, root: Path) -> None:
+    """A kernel can write any folder's .git/config and .gitattributes: the hook's git must run none of it."""
+    work = root / "work"
+    repo = work / U / P
+    hooks.ensure_repo(repo)
+    marker = root / "PWNED"
+    (repo / ".gitattributes").write_text("* filter=evil diff=evil\n", encoding="utf-8")
+    git(repo, "config", "filter.evil.clean", f"touch {marker}; cat")
+    git(repo, "config", "filter.evil.process", f"sh -c 'touch {marker}'")
+    git(repo, "config", "filter.evil.required", "true")
+    git(repo, "config", "diff.evil.textconv", f"touch {marker}; cat")
+    git(repo, "config", "core.fsmonitor", f"touch {marker}; true")
+    hook = repo / ".git" / "hooks" / "post-commit"
+    hook.write_text(f"#!/bin/sh\ntouch {marker}\n", encoding="utf-8")
+    hook.chmod(0o755)
+    pre = repo / ".git" / "hooks" / "pre-commit"
+    pre.write_text(f"#!/bin/sh\ntouch {marker}\nexit 1\n", encoding="utf-8")
+    pre.chmod(0o755)
+    nb = repo / "a.ipynb"
+    nb.write_text('{"cells": []}', encoding="utf-8")
+    assert hooks.commit_saved(nb, work)
+    nb.write_text('{"cells": [1]}', encoding="utf-8")
+    assert hooks.commit_saved(nb, work)
+    assert not marker.exists()
+    assert git(repo, "show", "HEAD:a.ipynb") == '{"cells": [1]}'
+
+
+def test_index_lock_is_retried_once(hooks: Any, root: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    work = root / "work"
+    repo = work / U / P
+    hooks.ensure_repo(repo)
+    lock = repo / ".git" / "index.lock"
+    lock.write_text("", encoding="utf-8")
+    monkeypatch.setattr(hooks.time, "sleep", lambda _s: lock.unlink())  # the Git panel finishes meanwhile
+    nb = repo / "a.ipynb"
+    nb.write_text("{}", encoding="utf-8")
+    assert hooks.commit_saved(nb, work)
+    lock.write_text("", encoding="utf-8")
+    monkeypatch.setattr(
+        hooks.time, "sleep", lambda _s: None
+    )  # still locked: the save logs, the next one commits
+    nb.write_text('{"x": 1}', encoding="utf-8")
+    with pytest.raises(subprocess.CalledProcessError):
+        hooks.commit_saved(nb, work)
 
 
 def manager(root: Path) -> SimpleNamespace:
@@ -184,6 +266,17 @@ def test_hooks_read_the_portal_keys_and_never_raise(hooks: Any, root: Path) -> N
     starter.write_text('{"cells": []}', encoding="utf-8")
     hooks.post_save_hook(model={"type": "notebook"}, os_path=str(starter), contents_manager=cm)
     assert time.time() - starter.stat().st_mtime < 3600
+
+    # A starter mark whose save failed before post-save is cleared by the next save without the flag.
+    hooks.pre_save_hook(
+        model={"type": "notebook", "nais_starter": True}, path=f"work/{U}/{P}/b.ipynb", contents_manager=cm
+    )
+    assert str((repo / "b.ipynb").resolve()) in hooks._starters
+    hooks.pre_save_hook(model={"type": "notebook"}, path=f"work/{U}/{P}/b.ipynb", contents_manager=cm)
+    assert hooks._starters == set()
+    (repo / "b.ipynb").write_text("{}", encoding="utf-8")
+    hooks.post_save_hook(model={"type": "notebook"}, os_path=str(repo / "b.ipynb"), contents_manager=cm)
+    assert time.time() - (repo / "b.ipynb").stat().st_mtime < 3600
 
     # Directories, odd input and git failures never raise into the save path.
     hooks.post_save_hook(model={"type": "directory"}, os_path=str(repo / "data"), contents_manager=cm)
