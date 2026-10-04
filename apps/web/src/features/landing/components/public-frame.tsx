@@ -1,18 +1,10 @@
 import { useTranslations } from "next-intl";
 import Link from "next/link";
+import { COPYRIGHT } from "@/shared/family-sites";
+import { BrandMark } from "@/shared/ui/brand/brand-mark";
+import { FamilySiteMenu, ParentHomeLink } from "@/shared/ui/family-links";
 import { APP_VERSION, supportContact } from "../version";
 import { StickyBar } from "./sticky-bar";
-
-/** Three bars of a histogram: the product mark, echoing the column profiles on the start page. */
-function Mark() {
-  return (
-    <svg viewBox="0 0 16 16" aria-hidden>
-      <rect x="1" y="7" width="4" height="8" fill="var(--color-fg-subtle)" />
-      <rect x="6" y="2" width="4" height="13" fill="var(--color-fg)" />
-      <rect x="11" y="9" width="4" height="6" fill="var(--color-accent)" />
-    </svg>
-  );
-}
 
 /** Link to the operating organisation; opens in a new tab and says so to screen readers. */
 export function OperatorLink({ href, children, className }: { href: string; children: React.ReactNode; className?: string }) {
@@ -36,7 +28,7 @@ export function PublicHeader({ operator }: { operator: string | null }) {
           {operator ? <OperatorLink href={operator}>{t("landing.operator")}</OperatorLink> : null}
         </nav>
         <Link href="/" className="lp-logo">
-          <Mark />
+          <BrandMark />
           {t("common.appName")}
         </Link>
         <div className="lp-bar-end">
@@ -95,6 +87,14 @@ export function PublicFooter({ operator }: { operator: string | null }) {
           <dt>{t("version")}</dt>
           <dd className="lp-mono">v{APP_VERSION}</dd>
         </dl>
+        {/* Family row: the parent organisation and its other sites (src/shared/family-sites.ts), all in new tabs. */}
+        <div className="lp-family">
+          <p className="lp-copy">{COPYRIGHT}</p>
+          <div className="lp-family-links">
+            <ParentHomeLink className="lp-family-home" />
+            <FamilySiteMenu variant="landing" />
+          </div>
+        </div>
       </div>
     </footer>
   );

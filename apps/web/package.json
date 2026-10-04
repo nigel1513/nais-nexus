@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
+    "brand:assets": "node scripts/brand-assets.mjs",
     "contracts:sync": "node scripts/sync-contracts.mjs",
     "contracts:check": "node scripts/sync-contracts.mjs --check"
   },

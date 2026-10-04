@@ -19,12 +19,20 @@ In **mock mode** (the default) any origin works: `http://localhost:21051/` or `h
 untracked `.env`; never commit it). Redirects inside the app are relative, so they follow whatever origin the browser used.
 In **real (Keycloak) mode** the portal works from ONE origin only, see "Real mode" below.
 
+## Brand files
+
+The favicon (`src/app/icon.svg`, `favicon.ico`), `apple-icon.png`, the manifest icons in `public/icons/` and the share
+image (`opengraph-image.png`, `twitter-image.png`) are generated from the mark in `src/shared/ui/brand/mark.ts` and the
+`--color-brand-*` tokens: run `corepack pnpm --filter @nais/web brand:assets` after changing either and commit the
+output (`src/app/brand-assets.test.ts` fails when `icon.svg` drifts).
+
 ## Environment
 
 | Variable | Meaning |
 |---|---|
 | `NEXT_PUBLIC_API_MOCKING` | `enabled` -> in-app mock API at `/mock-api/v1` + mock login; build-time (compose sets it from `WEB_API_MOCKING`, default `enabled` until Wave 2) |
 | `NEXT_PUBLIC_API_BASE` | Real API base as seen by the browser (`/api/v1`); `NEXT_PUBLIC_*` are inlined at build time, changing them needs a rebuild |
+| `NEXT_PUBLIC_PARENT_SITE_URL` | Parent site (국가과학AI연구센터) linked from the landing footer and the sidebar (홈 ↗, 패밀리사이트); default `http://192.168.0.3:21050/`, build-time. More family sites: add entries to `src/shared/family-sites.ts` |
 | `API_INTERNAL_BASE` | Server-side API base (`http://api:8000/api/v1`), reserved for Wave 2 server components |
 | `AUTH_URL`, `AUTH_SECRET`, `AUTH_TRUST_HOST` | Auth.js (`AUTH_URL` ends in `/web-auth`, D-026) |
 | `NAIS_EXTERNAL_HOST` | Public host/IP of the dev server; only adds it to the host allow-list used for the absolute logout return URL. It does NOT make real mode work from a second origin. With no allow-list configured the forwarded host is never trusted (fails closed) |

@@ -43,6 +43,9 @@
   --color-scrim: rgb(0 0 0 / 0.4); /* behind dialogs and sheets */
   /* Public landing hero: the dark app surface in both themes, so the start page and the signed-in app share one palette. */
   --color-hero: #111113; --color-hero-fg: #edeef0; --color-hero-fg-muted: #b0b4ba; --color-hero-accent: #9eb1ff;
+  /* Brand mark (NAIS Commons): one dark tile in both themes, as on the parent site's mark. scripts/brand-assets.mjs
+     reads these four to draw the favicon, app icons and the share image, so the files and the shell never drift. */
+  --color-brand-tile: #111113; --color-brand-ring: #9eb1ff; --color-brand-cell: #edeef0; --color-brand-node: #0bd8b6;
 
   /* Legacy aliases so unmigrated screens keep rendering. Task 13 removes them once grep finds no uses. */
   --color-background: var(--color-bg);
@@ -99,6 +102,7 @@
   --color-series-1: #3e63dd; --color-series-2: #12a594; --color-series-3: #ef5f00; --color-series-4: #8e4ec6;
   --color-bg-raised: #ffffff; --color-switch-thumb: #ffffff; --color-scrim: rgb(0 0 0 / 0.4);
   --color-hero: #111113; --color-hero-fg: #edeef0; --color-hero-fg-muted: #b0b4ba; --color-hero-accent: #9eb1ff;
+  --color-brand-tile: #111113; --color-brand-ring: #9eb1ff; --color-brand-cell: #edeef0; --color-brand-node: #0bd8b6;
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 0.08), 0 0 0 1px rgb(0 0 0 / 0.04);
   --shadow-popover: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -6px rgb(0 0 0 / 0.16);
   --shadow-dialog: 0 1px 2px rgb(0 0 0 / 0.06), 0 24px 48px -12px rgb(0 0 0 / 0.28);
@@ -118,6 +122,7 @@
   --color-chart-1: #5472e4; --color-chart-2: #0eb39e; --color-chart-muted: #5a6169;
   --color-series-1: #5472e4; --color-series-2: #0d9b8a; --color-series-3: #e2620f; --color-series-4: #9a5cd0;
   --color-hero: #18191b; --color-hero-fg: #edeef0; --color-hero-fg-muted: #b0b4ba; --color-hero-accent: #9eb1ff;
+  --color-brand-tile: #111113; --color-brand-ring: #9eb1ff; --color-brand-cell: #edeef0; --color-brand-node: #0bd8b6;
   --color-bg-raised: #2e3135; --color-switch-thumb: #b0b4ba; --color-scrim: rgb(0 0 0 / 0.6); /* slate-5: lighter than the slate-3 track */
   --shadow-raised: 0 0 0 1px #43484e;
   --color-danger-fill: #c62a2f; --color-danger-fill-hover: #ce2c31; --color-danger-fill-fg: #ffffff; /* white 5.6:1 / 5.2:1 */
